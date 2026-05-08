@@ -35,6 +35,11 @@ declare -A SUBPROJECTS=(
   [MCP]="${ROOT_DIR}/hisi-mcp-server/docs/codewiki"
 )
 
+# Filled by flatten_codewiki: maps flat filename (e.g. "Backend-03-模块说明-REST接口层.md")
+# to the source directory it came from (e.g. "03-模块说明" or "" for top-level).
+# Used by rewrite_links to resolve sibling links like `./Foo.md` or `Foo.md`.
+declare -A SOURCE_DIRS=()
+
 # ---- banner ----------------------------------------------------------------
 echo "[sync-wiki] dry_run=${DRY_RUN}  push=${PUSH}"
 echo "[sync-wiki] root=${ROOT_DIR}"
@@ -99,17 +104,108 @@ flatten_codewiki() {
         flat="${flat//\//-}"
       fi
       target="${prefix}-${flat}.md"
+      # Record source dir (the part of `rel` before the last `/`, or empty
+      # for top-level files like README.md). Used by rewrite_links() to
+      # resolve sibling-style links (`./Foo.md` or bare `Foo.md`).
+      if [[ "${rel}" == */* ]]; then
+        SOURCE_DIRS["${target}"]="${rel%/*}"
+      else
+        SOURCE_DIRS["${target}"]=""
+      fi
       echo "[copy] ${prefix}/${rel} -> ${target}"
       cp "${file}" "${STAGING_DIR}/${target}"
     done < <(find "${src}" -type f -name '*.md' -print0)
   done
 }
 
+# ---- rewrite relative markdown links --------------------------------------
+# Per spec, three forms occur:
+#   ../<dir>/index.md   -> <Prefix>-<dir>.md
+#   ../<dir>/<file>.md  -> <Prefix>-<dir>-<file>.md
+#   ./<file>.md         -> <Prefix>-<sourcedir>-<file>.md   (sibling)
+# README files in source also use bare relative paths (no `./` or `../`):
+#   <dir>/index.md      -> <Prefix>-<dir>.md
+#   <dir>/<file>.md     -> <Prefix>-<dir>-<file>.md
+#   <file>.md           -> <Prefix>-<sourcedir>-<file>.md   (sibling, README-less form)
+# The bare sibling form skips already-rewritten links via a negative
+# lookahead on the prefix. perl -i -pe is used for cross-platform sed
+# compatibility.
+rewrite_links() {
+  local file base prefix sourcedir sib_repl
+  while IFS= read -r -d '' file; do
+    base="$(basename "${file}")"
+    prefix="${base%%-*}"   # Backend / Frontend / MCP
+    sourcedir="${SOURCE_DIRS[${base}]:-}"
+    if [[ -n "${sourcedir}" ]]; then
+      # Sibling rewrite target: <Prefix>-<sourcedir>-$1.md
+      sib_repl="${prefix}-${sourcedir}-\$1.md"
+    else
+      # Top-level (README.md) — sibling links resolve as <Prefix>-$1.md
+      sib_repl="${prefix}-\$1.md"
+    fi
+
+    # Order matters:
+    #  1) ../ forms first (most specific)
+    #  2) ./ sibling form (uses sourcedir)
+    #  3) bare <dir>/<...> forms (README-style)
+    #  4) bare sibling <file>.md last, with negative lookahead to skip
+    #     anything already starting with a known prefix.
+    perl -i -pe "
+      s{\\]\\(\\.\\./([^/)]+)/index\\.md\\)}{](${prefix}-\$1.md)}g;
+      s{\\]\\(\\.\\./([^/)]+)/([^/)]+)\\.md\\)}{](${prefix}-\$1-\$2.md)}g;
+      s{\\]\\(\\./([^/)]+)\\.md\\)}{](${sib_repl})}g;
+      s{\\]\\(([^/):#?.][^/):#?]*)/index\\.md\\)}{](${prefix}-\$1.md)}g;
+      s{\\]\\(([^/):#?.][^/):#?]*)/([^/):#?]+)\\.md\\)}{](${prefix}-\$1-\$2.md)}g;
+      s{\\]\\((?!Backend-|Frontend-|MCP-|https?://|\\.\\./|\\./)([^/):#?]+)\\.md\\)}{](${sib_repl})}g;
+    " "${file}"
+  done < <(find "${STAGING_DIR}" -maxdepth 1 -type f -name '*.md' -print0)
+}
+
+# ---- verify all internal markdown links resolve ---------------------------
+# Skips http(s):// and any link still containing `/` or `..` (treated as
+# external / outside the flat wiki — these are reported but not flagged
+# as failures unless they reference a non-existent flat file).
+verify_links() {
+  local file target broken=0 verified=0 source_rel
+  while IFS= read -r -d '' file; do
+    source_rel="$(basename "${file}")"
+    # Extract every ](...md) target on the file.
+    while IFS= read -r target; do
+      # Strip leading `](` and trailing `)`
+      target="${target#](}"
+      target="${target%)}"
+      # Skip http(s) links
+      [[ "${target}" =~ ^https?:// ]] && continue
+      # Strip optional anchor
+      target="${target%%#*}"
+      [[ -z "${target}" ]] && continue
+      # Skip links that still contain `/` or `..` -> they point outside
+      # the flat wiki. Report them but do not count as broken (they were
+      # never destined to live in the wiki).
+      if [[ "${target}" == */* || "${target}" == *..* ]]; then
+        echo "[external] ${source_rel} -> ${target}"
+        continue
+      fi
+      verified=$((verified + 1))
+      if [[ ! -f "${STAGING_DIR}/${target}" ]]; then
+        echo "[BROKEN] ${source_rel} -> ${target}"
+        broken=$((broken + 1))
+      fi
+    done < <(grep -oE '\]\([^)]+\.md\)' "${file}" || true)
+  done < <(find "${STAGING_DIR}" -maxdepth 1 -type f -name '*.md' -print0)
+  echo "[sync-wiki] verified ${verified} internal links, ${broken} broken"
+  if [[ "${broken}" -gt 0 ]]; then
+    return 1
+  fi
+}
+
 # ---- main ------------------------------------------------------------------
 main() {
   clone_wiki
   flatten_codewiki
-  echo "[sync-wiki] flatten phase complete"
+  rewrite_links
+  verify_links
+  echo "[sync-wiki] rewrite + verify phase complete"
 }
 
 main "$@"
