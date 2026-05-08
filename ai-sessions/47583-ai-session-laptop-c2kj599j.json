@@ -1,0 +1,380 @@
+{
+  "developer": "47583",
+  "hostname": "laptop-c2kj599j",
+  "model": "claude-opus-4-6-cc",
+  "firstSeen": "2026-05-08T09:47:42.281Z",
+  "lastUpdated": "2026-05-08T10:37:37.601Z",
+  "stats": {
+    "totalOperations": 52,
+    "totalFilesEdited": 52,
+    "totalAiLines": 0,
+    "totalAiLinesDeleted": 0,
+    "totalCommits": 0
+  },
+  "pendingFiles": [
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-mcp-server/docs/codewiki/README.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T09:56:38.709Z",
+      "lastModified": "2026-05-08T09:56:38.709Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-mcp-server/docs/codewiki/01-项目概览/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T09:56:42.885Z",
+      "lastModified": "2026-05-08T09:56:42.885Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/docs/codewiki/README.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T09:57:41.378Z",
+      "lastModified": "2026-05-08T09:57:41.378Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/docs/codewiki/01-项目概览/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T09:57:45.404Z",
+      "lastModified": "2026-05-08T09:57:45.404Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/README.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T09:58:18.939Z",
+      "lastModified": "2026-05-08T09:58:18.939Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-mcp-server/docs/codewiki/02-架构设计/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T09:58:31.322Z",
+      "lastModified": "2026-05-08T09:58:31.322Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-mcp-server/docs/codewiki/03-模块说明/MCP服务入口.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T09:58:32.930Z",
+      "lastModified": "2026-05-08T09:58:32.930Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/docs/codewiki/02-架构设计/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T09:59:08.848Z",
+      "lastModified": "2026-05-08T09:59:08.848Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/01-项目概览/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T09:59:49.413Z",
+      "lastModified": "2026-05-08T09:59:49.413Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-mcp-server/docs/codewiki/03-模块说明/工具路由聚合.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:00:59.488Z",
+      "lastModified": "2026-05-08T10:00:59.488Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-mcp-server/docs/codewiki/03-模块说明/知识图谱工具.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:01:01.137Z",
+      "lastModified": "2026-05-08T10:01:01.137Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-mcp-server/docs/codewiki/03-模块说明/混合检索工具.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:01:02.624Z",
+      "lastModified": "2026-05-08T10:01:02.624Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-mcp-server/docs/codewiki/03-模块说明/日志分析工具.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:01:04.108Z",
+      "lastModified": "2026-05-08T10:01:04.108Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-mcp-server/docs/codewiki/03-模块说明/API客户端.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:01:05.590Z",
+      "lastModified": "2026-05-08T10:01:05.590Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/02-架构设计/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:02:28.709Z",
+      "lastModified": "2026-05-08T10:02:28.709Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/03-模块说明/应用启动与全局配置.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:03:15.634Z",
+      "lastModified": "2026-05-08T10:03:15.634Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/docs/codewiki/03-模块说明/应用入口与路由.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:03:40.364Z",
+      "lastModified": "2026-05-08T10:03:40.364Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/03-模块说明/REST接口层.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:04:05.481Z",
+      "lastModified": "2026-05-08T10:04:05.481Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/docs/codewiki/03-模块说明/布局与通用组件.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:04:07.039Z",
+      "lastModified": "2026-05-08T10:04:07.039Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-mcp-server/docs/codewiki/04-数据流程/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:04:30.990Z",
+      "lastModified": "2026-05-08T10:04:30.990Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-mcp-server/docs/codewiki/05-接口文档/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:04:33.894Z",
+      "lastModified": "2026-05-08T10:04:33.894Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-mcp-server/docs/codewiki/06-数据模型/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:04:38.035Z",
+      "lastModified": "2026-05-08T10:04:38.035Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-mcp-server/docs/codewiki/07-部署运维/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:04:42.054Z",
+      "lastModified": "2026-05-08T10:04:42.054Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/docs/codewiki/03-模块说明/业务视图.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:04:44.514Z",
+      "lastModified": "2026-05-08T10:04:44.514Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-mcp-server/docs/codewiki/08-技术决策/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:04:46.117Z",
+      "lastModified": "2026-05-08T10:04:46.117Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-mcp-server/docs/codewiki/09-术语表/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:04:50.191Z",
+      "lastModified": "2026-05-08T10:04:50.191Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/03-模块说明/知识图谱构建.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:05:01.365Z",
+      "lastModified": "2026-05-08T10:05:01.365Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/docs/codewiki/03-模块说明/Pinia状态管理.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:05:20.022Z",
+      "lastModified": "2026-05-08T10:05:20.022Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/03-模块说明/Neo4j图存储与检索.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:05:53.103Z",
+      "lastModified": "2026-05-08T10:05:53.103Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/docs/codewiki/03-模块说明/API服务层.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:06:07.501Z",
+      "lastModified": "2026-05-08T10:06:07.501Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/03-模块说明/终端与WebSocket.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:06:27.558Z",
+      "lastModified": "2026-05-08T10:06:27.558Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/docs/codewiki/03-模块说明/类型与数据契约.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:06:43.556Z",
+      "lastModified": "2026-05-08T10:06:43.556Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/03-模块说明/智能诊断与对话.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:07:00.945Z",
+      "lastModified": "2026-05-08T10:07:00.945Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/docs/codewiki/03-模块说明/Composables与工具.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:07:07.579Z",
+      "lastModified": "2026-05-08T10:07:07.579Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/docs/codewiki/03-模块说明/主题系统.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:07:31.098Z",
+      "lastModified": "2026-05-08T10:07:31.098Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/03-模块说明/影响分析与风险评估.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:07:35.213Z",
+      "lastModified": "2026-05-08T10:07:35.213Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/03-模块说明/会话与工作区.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:08:03.469Z",
+      "lastModified": "2026-05-08T10:08:03.469Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/docs/codewiki/04-数据流程/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:08:12.899Z",
+      "lastModified": "2026-05-08T10:08:12.899Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/03-模块说明/日志云与运维.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:08:55.235Z",
+      "lastModified": "2026-05-08T10:08:55.235Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/docs/codewiki/05-接口文档/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:09:15.504Z",
+      "lastModified": "2026-05-08T10:09:15.504Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/03-模块说明/技能市场与提示词.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:09:35.028Z",
+      "lastModified": "2026-05-08T10:09:35.029Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/docs/codewiki/06-数据模型/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:09:50.485Z",
+      "lastModified": "2026-05-08T10:09:50.485Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/docs/codewiki/07-部署运维/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:10:22.987Z",
+      "lastModified": "2026-05-08T10:10:22.987Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/04-数据流程/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:10:35.416Z",
+      "lastModified": "2026-05-08T10:10:35.416Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/docs/codewiki/08-技术决策/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:11:04.071Z",
+      "lastModified": "2026-05-08T10:11:04.071Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/05-接口文档/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:11:34.471Z",
+      "lastModified": "2026-05-08T10:11:34.471Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/docs/codewiki/09-术语表/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:11:37.292Z",
+      "lastModified": "2026-05-08T10:11:37.292Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/06-数据模型/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:12:21.572Z",
+      "lastModified": "2026-05-08T10:12:21.572Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/07-部署运维/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:13:02.170Z",
+      "lastModified": "2026-05-08T10:13:02.170Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/08-技术决策/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:13:50.973Z",
+      "lastModified": "2026-05-08T10:13:50.973Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/codewiki/09-术语表/index.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:14:30.895Z",
+      "lastModified": "2026-05-08T10:14:30.895Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/docs/plans/2026-05-08-wiki-publish-and-debt-cleanup-design.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-08T10:37:37.601Z",
+      "lastModified": "2026-05-08T10:37:37.601Z"
+    }
+  ]
+}
