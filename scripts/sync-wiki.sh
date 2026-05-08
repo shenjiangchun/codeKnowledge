@@ -68,10 +68,48 @@ clone_wiki() {
   fi
 }
 
+# ---- flatten codewiki -> staging ------------------------------------------
+# Wipes staging (preserving .git) then walks each codewiki source and copies
+# every *.md to a flat <Prefix>-<...>.md filename.
+flatten_codewiki() {
+  echo "[sync-wiki] wiping staging (preserving .git)"
+  if [[ -d "${STAGING_DIR}" ]]; then
+    find "${STAGING_DIR}" -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+  fi
+
+  local prefix src rel base flat target
+  for prefix in "${!SUBPROJECTS[@]}"; do
+    src="${SUBPROJECTS[$prefix]}"
+    if [[ ! -d "${src}" ]]; then
+      echo "[sync-wiki] warning: source not found for ${prefix}: ${src}"
+      continue
+    fi
+    while IFS= read -r -d '' file; do
+      rel="${file#${src}/}"
+      if [[ "${rel}" == "README.md" ]]; then
+        flat="README"
+      elif [[ "${rel}" == */index.md ]]; then
+        # `<dir>/index.md` -> keep full <dir> path with `/` -> `-`
+        flat="${rel%/index.md}"
+        flat="${flat//\//-}"
+      else
+        # `<dir>/<file>.md` -> replace `/` with `-`, strip `.md`.
+        # Keeps full directory name so link rewriting maps 1:1.
+        flat="${rel%.md}"
+        flat="${flat//\//-}"
+      fi
+      target="${prefix}-${flat}.md"
+      echo "[copy] ${prefix}/${rel} -> ${target}"
+      cp "${file}" "${STAGING_DIR}/${target}"
+    done < <(find "${src}" -type f -name '*.md' -print0)
+  done
+}
+
 # ---- main ------------------------------------------------------------------
 main() {
   clone_wiki
-  echo "[sync-wiki] clone phase complete"
+  flatten_codewiki
+  echo "[sync-wiki] flatten phase complete"
 }
 
 main "$@"
