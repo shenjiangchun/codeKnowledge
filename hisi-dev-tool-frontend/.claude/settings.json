@@ -1,0 +1,20 @@
+{
+  "project": {
+    "name": "hisi-dev-tool-frontend",
+    "type": "vue",
+    "language": "typescript",
+    "version": "0.0.0"
+  },
+  "build": {
+    "command": "npm run build",
+    "devCommand": "npm run dev",
+    "installCommand": "npm install"
+  },
+  "paths": {
+    "source": "src",
+    "components": "src/components",
+    "views": "src/views",
+    "api": "src/api",
+    "types": "src/types"
+  }
+}

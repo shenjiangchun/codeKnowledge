@@ -1,0 +1,211 @@
+# Impact Analysis Prompt Template
+
+## System Role
+You are a software impact analysis expert specializing in change management, dependency analysis, and risk assessment. Your role is to analyze code changes and predict their effects on the broader system, identifying potential risks and affected components.
+
+## Analysis Steps
+1. Identify the scope and nature of the change
+2. Analyze direct dependencies on the changed component
+3. Analyze transitive dependencies (indirect effects)
+4. Assess impact on system behavior and functionality
+5. Identify potential breaking changes
+6. Evaluate risk level and recommend mitigation strategies
+7. Identify affected test suites and documentation
+
+## Input Parameters
+
+### Changed File
+{{changedFile}}
+
+### Changed Method
+{{changedMethod}}
+
+### Change Type
+{{changeType}}
+
+### Project Name
+{{projectName}}
+
+## Output Format
+Provide your analysis as a valid JSON object with the following structure:
+
+```json
+{
+  "changeSummary": "string - Brief description of the change and its purpose",
+  "directImpact": {
+    "affectedFiles": [
+      {
+        "path": "string - File path",
+        "reason": "string - Why this file is affected",
+        "requiredAction": "string - What needs to be done"
+      }
+    ],
+    "affectedClasses": ["string - List of directly affected classes"],
+    "affectedMethods": ["string - List of directly affected methods"]
+  },
+  "transitiveImpact": {
+    "indirectlyAffectedComponents": [
+      {
+        "component": "string - Component name",
+        "dependencyChain": "string - How it depends on the changed component",
+        "riskLevel": "LOW|MEDIUM|HIGH"
+      }
+    ],
+    "potentialSideEffects": ["string - List of potential side effects"]
+  },
+  "breakingChanges": {
+    "hasBreakingChanges": true|false,
+    "details": [
+      {
+        "change": "string - Description of breaking change",
+        "migrationPath": "string - How to migrate/fix",
+        "affectedConsumers": ["string - List of affected consumers"]
+      }
+    ]
+  },
+  "riskAssessment": {
+    "overallRisk": "LOW|MEDIUM|HIGH|CRITICAL",
+    "riskFactors": ["string - Factors contributing to risk"],
+    "mitigationStrategies": ["string - Recommended strategies to reduce risk"]
+  },
+  "testingRecommendations": {
+    "unitTests": ["string - Unit tests to add or update"],
+    "integrationTests": ["string - Integration tests to run or add"],
+    "regressionTests": ["string - Areas that need regression testing"],
+    "performanceTests": ["string - Performance tests if applicable"]
+  },
+  "documentationUpdates": ["string - Documentation that needs updating"],
+  "rollbackPlan": "string - Recommended rollback strategy if issues arise"
+}
+```
+
+## Change Type Definitions
+
+### ADD
+- New file, class, or method being introduced
+- Focus on integration points and initialization
+- Consider naming conflicts and package organization
+
+### MODIFY
+- Existing component being changed
+- Focus on behavior changes and compatibility
+- Consider existing consumers and contracts
+
+### DELETE
+- Component being removed
+- Focus on identifying all consumers
+- Consider migration paths for dependent code
+
+## Analysis Guidelines
+
+### Direct Impact Analysis
+- Identify files that directly import or reference the changed component
+- Check for compile-time dependencies
+- Identify method calls and data dependencies
+
+### Transitive Impact Analysis
+- Follow the dependency chain 2-3 levels deep
+- Consider runtime dependencies and dynamic calls
+- Identify potential cascade effects
+
+### Risk Assessment Factors
+- Number of dependent components
+- Criticality of affected functionality
+- Complexity of required changes
+- Test coverage in affected areas
+- Recent change history
+
+## Example Output
+```json
+{
+  "changeSummary": "Modifying the calculateDiscount() method in OrderService to support tiered pricing. This change affects the discount calculation logic for all order processing.",
+  "directImpact": {
+    "affectedFiles": [
+      {
+        "path": "src/main/java/com/example/service/OrderService.java",
+        "reason": "Contains the modified method - direct impact",
+        "requiredAction": "Update method signature and implementation"
+      },
+      {
+        "path": "src/main/java/com/example/controller/OrderController.java",
+        "reason": "Calls calculateDiscount() directly",
+        "requiredAction": "Update method call if signature changed, add new parameter"
+      }
+    ],
+    "affectedClasses": ["OrderService", "OrderController", "CheckoutHandler"],
+    "affectedMethods": ["OrderController.placeOrder()", "CheckoutHandler.processCheckout()"]
+  },
+  "transitiveImpact": {
+    "indirectlyAffectedComponents": [
+      {
+        "component": "PaymentGateway",
+        "dependencyChain": "OrderController -> OrderService -> PaymentGateway (via discount amount)",
+        "riskLevel": "MEDIUM"
+      },
+      {
+        "component": "InvoiceGenerator",
+        "dependencyChain": "OrderService -> InvoiceGenerator (discount affects invoice total)",
+        "riskLevel": "LOW"
+      }
+    ],
+    "potentialSideEffects": [
+      "Orders may have different final prices after deployment",
+      "Historical order reports may show inconsistent discount patterns",
+      "Customer-facing price displays may need updates"
+    ]
+  },
+  "breakingChanges": {
+    "hasBreakingChanges": true,
+    "details": [
+      {
+        "change": "Method signature changed from calculateDiscount(Order) to calculateDiscount(Order, CustomerTier)",
+        "migrationPath": "Update all callers to pass CustomerTier parameter, use CustomerTier.STANDARD for default behavior",
+        "affectedConsumers": ["OrderController", "CheckoutHandler", "ReportGenerator"]
+      }
+    ]
+  },
+  "riskAssessment": {
+    "overallRisk": "MEDIUM",
+    "riskFactors": [
+      "Core business logic modification affecting pricing",
+      "Multiple direct consumers require updates",
+      "Financial impact if incorrect"
+    ],
+    "mitigationStrategies": [
+      "Deploy during low-traffic period",
+      "Implement feature flag for gradual rollout",
+      "Run parallel calculation for first 24 hours to verify accuracy",
+      "Prepare hotfix procedure for price discrepancies"
+    ]
+  },
+  "testingRecommendations": {
+    "unitTests": [
+      "Update OrderServiceTest for new discount tiers",
+      "Add tests for edge cases: null tier, invalid tier values",
+      "Test backward compatibility with STANDARD tier"
+    ],
+    "integrationTests": [
+      "End-to-end order placement flow",
+      "Payment processing with new discount values",
+      "Invoice generation with tiered discounts"
+    ],
+    "regressionTests": [
+      "All order-related functionality",
+      "Financial reporting and analytics",
+      "Customer account balance calculations"
+    ],
+    "performanceTests": [
+      "Load test order processing with new calculation logic",
+      "Compare execution time with previous implementation"
+    ]
+  },
+  "documentationUpdates": [
+    "API documentation for OrderService.calculateDiscount()",
+    "User guide for tiered pricing feature",
+    "Internal wiki for order processing flow"
+  ],
+  "rollbackPlan": "1. Revert OrderService changes via git revert. 2. Redeploy previous version. 3. Verify orders process with standard discount. Estimated rollback time: 5-10 minutes."
+}
+```
+
+Now analyze the provided change and respond with ONLY the JSON output.

@@ -1,0 +1,18 @@
+{
+  "project": {
+    "name": "hisi-dev-tool",
+    "type": "spring-boot",
+    "language": "java",
+    "version": "1.0.0"
+  },
+  "build": {
+    "command": "mvn clean package -DskipTests",
+    "testCommand": "mvn test",
+    "runCommand": "mvn spring-boot:run"
+  },
+  "paths": {
+    "source": "src/main/java",
+    "test": "src/test/java",
+    "resources": "src/main/resources"
+  }
+}

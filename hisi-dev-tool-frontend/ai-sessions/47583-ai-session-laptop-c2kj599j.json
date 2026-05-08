@@ -1,0 +1,371 @@
+{
+  "developer": "47583",
+  "hostname": "laptop-c2kj599j",
+  "model": "glm-5",
+  "firstSeen": "2026-04-10T00:59:51.075Z",
+  "lastUpdated": "2026-04-13T12:21:24.250Z",
+  "repoPath": "C:/Users/47583/projects/hisi_dev_tool v4.0/hisi-dev-tool-frontend",
+  "stats": {
+    "totalOperations": 152,
+    "totalFilesEdited": 47,
+    "totalAiLines": 0,
+    "totalCommits": 0,
+    "totalAiLinesDeleted": 0
+  },
+  "pendingFiles": [
+    {
+      "path": "src/views/project/ProjectList.vue",
+      "tool": "Edit",
+      "operations": 8,
+      "timestamp": "2026-04-10T00:59:51.079Z",
+      "lastModified": "2026-04-13T10:39:13.740Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/stores/workspaceStore.ts",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-04-10T01:03:14.262Z",
+      "lastModified": "2026-04-10T01:03:45.891Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/utils/request.ts",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-04-13T00:41:41.133Z",
+      "lastModified": "2026-04-13T00:41:41.133Z"
+    },
+    {
+      "path": "src/views/claude-terminal/components/SessionList.vue",
+      "tool": "Edit",
+      "operations": 13,
+      "timestamp": "2026-04-13T01:33:41.522Z",
+      "lastModified": "2026-04-13T09:30:39.426Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/views/claude-terminal/components/TerminalSidebar.vue",
+      "tool": "Write",
+      "operations": 18,
+      "timestamp": "2026-04-13T01:33:42.284Z",
+      "lastModified": "2026-04-13T12:21:24.250Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/views/claude-terminal/ClaudeTerminal.vue",
+      "tool": "Edit",
+      "operations": 18,
+      "timestamp": "2026-04-13T01:34:02.746Z",
+      "lastModified": "2026-04-13T09:29:15.137Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "docs/plans/2026-04-13-skill-market-design.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-04-13T03:32:25.377Z",
+      "lastModified": "2026-04-13T03:32:25.377Z"
+    },
+    {
+      "path": "vitest.config.ts",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-04-13T05:01:07.248Z",
+      "lastModified": "2026-04-13T05:01:07.248Z"
+    },
+    {
+      "path": "package.json",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-04-13T05:01:42.300Z",
+      "lastModified": "2026-04-13T05:01:42.300Z"
+    },
+    {
+      "path": "src/utils/request.test.ts",
+      "tool": "Write",
+      "operations": 6,
+      "timestamp": "2026-04-13T05:02:34.022Z",
+      "lastModified": "2026-04-13T05:05:56.785Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/types/skill.ts",
+      "tool": "Write",
+      "operations": 2,
+      "timestamp": "2026-04-13T05:29:24.807Z",
+      "lastModified": "2026-04-13T07:01:35.426Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/api/skillMarket.ts",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-04-13T05:29:25.514Z",
+      "lastModified": "2026-04-13T05:29:25.514Z"
+    },
+    {
+      "path": "src/stores/skillStore.ts",
+      "tool": "Write",
+      "operations": 2,
+      "timestamp": "2026-04-13T05:29:26.198Z",
+      "lastModified": "2026-04-13T06:45:08.753Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/views/skill-market/SkillMarket.vue",
+      "tool": "Write",
+      "operations": 4,
+      "timestamp": "2026-04-13T05:29:26.958Z",
+      "lastModified": "2026-04-13T07:04:12.629Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/router/index.ts",
+      "tool": "Edit",
+      "operations": 3,
+      "timestamp": "2026-04-13T05:29:43.071Z",
+      "lastModified": "2026-04-13T05:53:18.568Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/types/index.ts",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-04-13T05:29:43.827Z",
+      "lastModified": "2026-04-13T05:29:43.827Z"
+    },
+    {
+      "path": "src/stores/app.ts",
+      "tool": "Edit",
+      "operations": 3,
+      "timestamp": "2026-04-13T05:29:44.572Z",
+      "lastModified": "2026-04-13T06:44:30.226Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/stores/skillStore.test.ts",
+      "tool": "Write",
+      "operations": 5,
+      "timestamp": "2026-04-13T05:29:56.514Z",
+      "lastModified": "2026-04-13T05:36:29.072Z",
+      "lastTool": "Write"
+    },
+    {
+      "path": "src/components/layout/AppSidebar.vue",
+      "tool": "Edit",
+      "operations": 8,
+      "timestamp": "2026-04-13T05:29:59.234Z",
+      "lastModified": "2026-04-13T12:19:49.582Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/stores/sessionStore.ts",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-04-13T06:52:25.032Z",
+      "lastModified": "2026-04-13T06:52:42.152Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/stores/promptStore.ts",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-04-13T06:52:56.546Z",
+      "lastModified": "2026-04-13T06:52:56.546Z"
+    },
+    {
+      "path": "src/stores/naturalLanguageStore.ts",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-04-13T06:53:20.082Z",
+      "lastModified": "2026-04-13T06:53:31.659Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/api/search.ts",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-04-13T06:54:04.560Z",
+      "lastModified": "2026-04-13T09:40:16.609Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/views/call-chain/CallChainGraph.vue",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-04-13T06:54:14.533Z",
+      "lastModified": "2026-04-13T06:54:27.975Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/views/call-chain/UriList.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-04-13T06:54:40.209Z",
+      "lastModified": "2026-04-13T06:54:40.209Z"
+    },
+    {
+      "path": "src/views/call-chain/MethodReferenceGraph.vue",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-04-13T06:55:30.825Z",
+      "lastModified": "2026-04-13T06:55:47.590Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/views/call-chain/components/UriSelector.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-04-13T06:55:57.306Z",
+      "lastModified": "2026-04-13T06:55:57.306Z"
+    },
+    {
+      "path": "src/views/call-chain/components/ClassMethodSelector.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-04-13T06:56:22.555Z",
+      "lastModified": "2026-04-13T06:56:22.555Z"
+    },
+    {
+      "path": "src/views/ops/HealthCheck.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-04-13T06:56:42.580Z",
+      "lastModified": "2026-04-13T06:56:42.580Z"
+    },
+    {
+      "path": "src/views/ops/ImpactAnalysis.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-04-13T06:56:57.878Z",
+      "lastModified": "2026-04-13T06:56:57.878Z"
+    },
+    {
+      "path": "src/views/log-analysis/LogQuery.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-04-13T06:57:26.724Z",
+      "lastModified": "2026-04-13T06:57:26.724Z"
+    },
+    {
+      "path": "src/components/GitOperations.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-04-13T06:57:58.467Z",
+      "lastModified": "2026-04-13T06:57:58.467Z"
+    },
+    {
+      "path": "docs/plans/2026-04-13-claude-terminal-theme-design.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-04-13T07:21:34.370Z",
+      "lastModified": "2026-04-13T07:21:34.370Z"
+    },
+    {
+      "path": "src/themes/types.ts",
+      "tool": "Write",
+      "operations": 4,
+      "timestamp": "2026-04-13T07:29:33.942Z",
+      "lastModified": "2026-04-13T08:34:58.296Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/themes/presets.ts",
+      "tool": "Write",
+      "operations": 8,
+      "timestamp": "2026-04-13T07:29:34.705Z",
+      "lastModified": "2026-04-13T08:36:56.506Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/stores/themeStore.ts",
+      "tool": "Write",
+      "operations": 3,
+      "timestamp": "2026-04-13T07:30:08.275Z",
+      "lastModified": "2026-04-13T08:37:22.733Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/themes/types.test.ts",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-04-13T07:37:10.085Z",
+      "lastModified": "2026-04-13T07:37:10.085Z"
+    },
+    {
+      "path": "src/themes/presets.test.ts",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-04-13T07:37:10.848Z",
+      "lastModified": "2026-04-13T07:37:10.848Z"
+    },
+    {
+      "path": "src/themes/index.ts",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-04-13T07:39:03.882Z",
+      "lastModified": "2026-04-13T07:39:03.882Z"
+    },
+    {
+      "path": "src/stores/themeStore.test.ts",
+      "tool": "Write",
+      "operations": 2,
+      "timestamp": "2026-04-13T07:47:05.474Z",
+      "lastModified": "2026-04-13T07:53:23.017Z",
+      "lastTool": "Write"
+    },
+    {
+      "path": "src/views/claude-terminal/components/ThemeSelector.test.ts",
+      "tool": "Write",
+      "operations": 4,
+      "timestamp": "2026-04-13T08:49:42.216Z",
+      "lastModified": "2026-04-13T08:54:48.201Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/views/claude-terminal/components/ThemeSelector.vue",
+      "tool": "Write",
+      "operations": 2,
+      "timestamp": "2026-04-13T08:50:51.871Z",
+      "lastModified": "2026-04-13T09:32:00.457Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "docs/plans/2026-04-13-call-chain-status-by-path-design.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-04-13T10:00:27.805Z",
+      "lastModified": "2026-04-13T10:00:27.805Z"
+    },
+    {
+      "path": "docs/plans/2026-04-13-call-chain-status-by-path-plan.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-04-13T10:03:40.480Z",
+      "lastModified": "2026-04-13T10:03:40.480Z"
+    },
+    {
+      "path": "src/api/task.ts",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-04-13T10:35:11.484Z",
+      "lastModified": "2026-04-13T10:35:11.484Z"
+    },
+    {
+      "path": "src/api/terminal.ts",
+      "tool": "Edit",
+      "operations": 5,
+      "timestamp": "2026-04-13T12:03:45.404Z",
+      "lastModified": "2026-04-13T12:15:38.764Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/main.ts",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-04-13T12:09:57.163Z",
+      "lastModified": "2026-04-13T12:09:57.163Z"
+    }
+  ]
+}

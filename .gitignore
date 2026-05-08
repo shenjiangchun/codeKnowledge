@@ -1,0 +1,40 @@
+# Build outputs
+**/target/
+**/dist/
+**/build/
+**/out/
+
+# Node
+**/node_modules/
+**/npm-debug.log*
+**/.npm
+**/playwright-report/
+**/test-results/
+
+# IDE
+**/.idea/
+**/.vscode/
+**/*.iml
+**/*.ipr
+**/*.iws
+
+# Logs
+**/logs/
+**/*.log
+**/hs_err_pid*.log
+**/startup.log
+**/app.log
+
+# Env / local
+**/.env
+**/.env.local
+**/.env.*.local
+**/.worktrees/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc artifacts
+**/classpath.txt
+**/playwright-test-*.tgz
