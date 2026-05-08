@@ -199,13 +199,67 @@ verify_links() {
   fi
 }
 
+# ---- generate Home / _Sidebar / _Footer -----------------------------------
+generate_navigation() {
+  local short_sha today
+  short_sha="$(git -C "${ROOT_DIR}" rev-parse --short HEAD)"
+  today="$(date +%Y-%m-%d)"
+
+  # ---- Home.md -------------------------------------------------------------
+  {
+    echo "# CodeKnowlage Wiki"
+    echo
+    echo "自动同步于 ${today},基于 commit \`${short_sha}\`。"
+    echo
+    echo "## 子项目入口"
+    echo
+    echo "| 项目 | 说明 | 入口 |"
+    echo "| --- | --- | --- |"
+    echo "| Backend | hisi-dev-tool 后端服务 | [Backend-README](Backend-README.md) |"
+    echo "| Frontend | hisi-dev-tool-frontend Vue 前端 | [Frontend-README](Frontend-README.md) |"
+    echo "| MCP | hisi-mcp-server MCP 工具服务 | [MCP-README](MCP-README.md) |"
+    echo
+    echo "## 推荐阅读路径"
+    echo
+    echo "| 角色 | 起点 | 重点章节 | 备注 |"
+    echo "| --- | --- | --- | --- |"
+    echo "| 新人 | [Backend-README](Backend-README.md) | 项目概览 / 架构设计 | 先理解整体再切入模块 |"
+    echo "| 后端工程师 | [Backend-02-架构设计](Backend-02-架构设计.md) | 模块说明 / 接口文档 | 关注分层与扩展点 |"
+    echo "| 前端工程师 | [Frontend-02-架构设计](Frontend-02-架构设计.md) | 模块说明 / 状态管理 | 关注 API 契约与组件 |"
+    echo "| 运维 / SRE | [Backend-07-部署运维](Backend-07-部署运维.md) | 部署运维 / 数据流程 | 关注配置与依赖 |"
+  } > "${STAGING_DIR}/Home.md"
+
+  # ---- _Sidebar.md ---------------------------------------------------------
+  {
+    echo "## 导航"
+    echo
+    local sec
+    for sec in Backend Frontend MCP; do
+      echo "### ${sec}"
+      while IFS= read -r f; do
+        local name="${f%.md}"
+        echo "- [${name}](${f})"
+      done < <(cd "${STAGING_DIR}" && find . -maxdepth 1 -type f -name "${sec}-*.md" -printf '%f\n' | sort)
+      echo
+    done
+  } > "${STAGING_DIR}/_Sidebar.md"
+
+  # ---- _Footer.md ----------------------------------------------------------
+  {
+    echo "*Wiki 由 \`scripts/sync-wiki.sh\` 自动生成 · 最后同步:${today} · 源 commit:[\`${short_sha}\`](https://github.com/shenjiangchun/codeKnowlage/commit/${short_sha})*"
+  } > "${STAGING_DIR}/_Footer.md"
+
+  echo "[sync-wiki] generated Home.md / _Sidebar.md / _Footer.md (commit ${short_sha})"
+}
+
 # ---- main ------------------------------------------------------------------
 main() {
   clone_wiki
   flatten_codewiki
   rewrite_links
   verify_links
-  echo "[sync-wiki] rewrite + verify phase complete"
+  generate_navigation
+  echo "[sync-wiki] navigation phase complete"
 }
 
 main "$@"
