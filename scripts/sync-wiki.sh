@@ -40,9 +40,38 @@ echo "[sync-wiki] dry_run=${DRY_RUN}  push=${PUSH}"
 echo "[sync-wiki] root=${ROOT_DIR}"
 echo "[sync-wiki] staging=${STAGING_DIR}"
 
+# ---- clone / refresh wiki repo --------------------------------------------
+clone_wiki() {
+  if [[ -d "${STAGING_DIR}/.git" ]]; then
+    echo "[sync-wiki] reusing existing staging clone, fetching latest"
+    git -C "${STAGING_DIR}" fetch --all --prune --quiet || true
+    # Try to reset to remote default branch (master, then main); tolerate empty repo.
+    local default_branch
+    default_branch="$(git -C "${STAGING_DIR}" remote show origin 2>/dev/null \
+      | awk '/HEAD branch/ {print $NF}' || true)"
+    if [[ -n "${default_branch}" && "${default_branch}" != "(unknown)" ]]; then
+      git -C "${STAGING_DIR}" checkout -B "${default_branch}" \
+        "origin/${default_branch}" --quiet 2>/dev/null \
+        || git -C "${STAGING_DIR}" checkout "${default_branch}" --quiet 2>/dev/null \
+        || echo "[sync-wiki] warning: could not switch to ${default_branch} (empty wiki?)"
+    else
+      echo "[sync-wiki] warning: remote has no HEAD branch yet (empty wiki?)"
+    fi
+  else
+    echo "[sync-wiki] cloning ${WIKI_REMOTE} -> ${STAGING_DIR}"
+    if ! git clone --quiet "${WIKI_REMOTE}" "${STAGING_DIR}"; then
+      echo "[sync-wiki] warning: clone returned non-zero (likely empty wiki repo); initializing locally"
+      mkdir -p "${STAGING_DIR}"
+      git -C "${STAGING_DIR}" init --quiet -b master
+      git -C "${STAGING_DIR}" remote add origin "${WIKI_REMOTE}"
+    fi
+  fi
+}
+
 # ---- main ------------------------------------------------------------------
 main() {
-  echo "[sync-wiki] (skeleton) main pipeline not yet implemented"
+  clone_wiki
+  echo "[sync-wiki] clone phase complete"
 }
 
 main "$@"
