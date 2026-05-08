@@ -252,6 +252,34 @@ generate_navigation() {
   echo "[sync-wiki] generated Home.md / _Sidebar.md / _Footer.md (commit ${short_sha})"
 }
 
+# ---- commit + (optional) push ---------------------------------------------
+# Always commits locally to the staging clone. Pushes only when --push.
+commit_and_push() {
+  local short_sha tag
+  short_sha="$(git -C "${ROOT_DIR}" rev-parse --short HEAD)"
+  tag="wiki-sync-$(date +%Y%m%d-%H%M)"
+
+  (
+    cd "${STAGING_DIR}"
+    git add -A
+    if git diff --cached --quiet; then
+      echo "[sync-wiki] no changes to push"
+      return 0
+    fi
+    git -c user.email=wiki-sync@local -c user.name=wiki-sync \
+        commit -m "sync: from main repo @ ${short_sha}" --quiet
+    git tag -f "${tag}" >/dev/null
+    if [[ "${PUSH}" == "true" ]]; then
+      echo "[sync-wiki] pushing branch and tag=${tag}"
+      # The wiki repo's default branch is master (GitHub Wiki default).
+      git push origin HEAD --quiet
+      git push origin "${tag}" --quiet
+    else
+      echo "[sync-wiki] dry-run: would push branch and tag=${tag}"
+    fi
+  )
+}
+
 # ---- main ------------------------------------------------------------------
 main() {
   clone_wiki
@@ -259,7 +287,8 @@ main() {
   rewrite_links
   verify_links
   generate_navigation
-  echo "[sync-wiki] navigation phase complete"
+  commit_and_push
+  echo "[sync-wiki] all phases complete (dry_run=${DRY_RUN}, push=${PUSH})"
 }
 
 main "$@"
