@@ -1,6 +1,9 @@
 package com.huawei.hisi.knowledgegraph.service.storage;
 
+import com.huawei.hisi.knowledgegraph.model.ClassExtends;
 import com.huawei.hisi.knowledgegraph.model.InterfaceImplementation;
+import com.huawei.hisi.knowledgegraph.model.MethodOverride;
+import com.huawei.hisi.knowledgegraph.model.ProxyRelation;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
 import com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository;
@@ -161,12 +164,157 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
         );
     }
 
+    // ==================== 类继承关系操作 ====================
+
+    @Override
+    @Transactional(transactionManager = "neo4jTransactionManager")
+    public void saveClassExtends(ClassExtends extendsRelation) {
+        if (extendsRelation == null) {
+            return;
+        }
+        List<Map<String, Object>> relations = List.of(toExtendsRelationMap(extendsRelation));
+        List<String> projectPaths = List.of(extendsRelation.getProjectPath());
+        methodNodeRepository.createExtendsRelations(relations, projectPaths);
+        log.debug("Class extends saved: {} -> {}", extendsRelation.getSubclass(), extendsRelation.getSuperclass());
+    }
+
+    @Override
+    @Transactional(transactionManager = "neo4jTransactionManager")
+    public void saveClassExtends(List<ClassExtends> extendsRelations) {
+        if (extendsRelations == null || extendsRelations.isEmpty()) {
+            return;
+        }
+        List<Map<String, Object>> relations = extendsRelations.stream()
+                .map(Neo4jStorageService::toExtendsRelationMap)
+                .toList();
+        List<String> projectPaths = extendsRelations.stream()
+                .map(ClassExtends::getProjectPath)
+                .distinct()
+                .toList();
+        methodNodeRepository.createExtendsRelations(relations, projectPaths);
+        log.info("[Neo4j] 保存类继承关系: {} 个", extendsRelations.size());
+    }
+
+    @Override
+    @Transactional(transactionManager = "neo4jTransactionManager", readOnly = true)
+    public int countClassExtends(String projectPath) {
+        return methodNodeRepository.countExtendsRelations(projectPath);
+    }
+
+    private static Map<String, Object> toExtendsRelationMap(ClassExtends extendsRelation) {
+        return Map.of(
+                "subclass", extendsRelation.getSubclass(),
+                "superclass", extendsRelation.getSuperclass(),
+                "projectPath", extendsRelation.getProjectPath()
+        );
+    }
+
+    // ==================== 方法重写关系操作 ====================
+
+    @Override
+    @Transactional(transactionManager = "neo4jTransactionManager")
+    public void saveMethodOverride(MethodOverride overrideRelation) {
+        if (overrideRelation == null) {
+            return;
+        }
+        List<Map<String, Object>> relations = List.of(toOverrideRelationMap(overrideRelation));
+        List<String> projectPaths = List.of(overrideRelation.getProjectPath());
+        methodNodeRepository.createOverrideRelations(relations, projectPaths);
+        log.debug("Method override saved: {}#{} -> {}#{}",
+                overrideRelation.getSubclass(), overrideRelation.getMethodName(),
+                overrideRelation.getSuperclass(), overrideRelation.getMethodName());
+    }
+
+    @Override
+    @Transactional(transactionManager = "neo4jTransactionManager")
+    public void saveMethodOverrides(List<MethodOverride> overrideRelations) {
+        if (overrideRelations == null || overrideRelations.isEmpty()) {
+            return;
+        }
+        List<Map<String, Object>> relations = overrideRelations.stream()
+                .map(Neo4jStorageService::toOverrideRelationMap)
+                .toList();
+        List<String> projectPaths = overrideRelations.stream()
+                .map(MethodOverride::getProjectPath)
+                .distinct()
+                .toList();
+        methodNodeRepository.createOverrideRelations(relations, projectPaths);
+        log.info("[Neo4j] 保存方法重写关系: {} 个", overrideRelations.size());
+    }
+
+    @Override
+    @Transactional(transactionManager = "neo4jTransactionManager", readOnly = true)
+    public int countMethodOverrides(String projectPath) {
+        return methodNodeRepository.countOverrideRelations(projectPath);
+    }
+
+    private static Map<String, Object> toOverrideRelationMap(MethodOverride overrideRelation) {
+        return Map.of(
+                "subclass", overrideRelation.getSubclass(),
+                "superclass", overrideRelation.getSuperclass(),
+                "methodName", overrideRelation.getMethodName(),
+                "projectPath", overrideRelation.getProjectPath()
+        );
+    }
+
+    // ==================== 代理类关系操作 ====================
+
+    @Override
+    @Transactional(transactionManager = "neo4jTransactionManager")
+    public void saveProxyRelation(ProxyRelation proxyRelation) {
+        if (proxyRelation == null) {
+            return;
+        }
+        List<Map<String, Object>> relations = List.of(toProxyRelationMap(proxyRelation));
+        List<String> projectPaths = List.of(proxyRelation.getProjectPath());
+        methodNodeRepository.createProxyRelations(relations, projectPaths);
+        log.debug("Proxy relation saved: {} -> {} ({})",
+                proxyRelation.getProxyClass(), proxyRelation.getTargetClass(), proxyRelation.getProxyType());
+    }
+
+    @Override
+    @Transactional(transactionManager = "neo4jTransactionManager")
+    public void saveProxyRelations(List<ProxyRelation> proxyRelations) {
+        if (proxyRelations == null || proxyRelations.isEmpty()) {
+            return;
+        }
+        List<Map<String, Object>> relations = proxyRelations.stream()
+                .map(Neo4jStorageService::toProxyRelationMap)
+                .toList();
+        List<String> projectPaths = proxyRelations.stream()
+                .map(ProxyRelation::getProjectPath)
+                .distinct()
+                .toList();
+        methodNodeRepository.createProxyRelations(relations, projectPaths);
+        log.info("[Neo4j] 保存代理类关系: {} 个", proxyRelations.size());
+    }
+
+    @Override
+    @Transactional(transactionManager = "neo4jTransactionManager", readOnly = true)
+    public int countProxyRelations(String projectPath) {
+        return methodNodeRepository.countProxyRelations(projectPath);
+    }
+
+    private static Map<String, Object> toProxyRelationMap(ProxyRelation proxyRelation) {
+        return Map.of(
+                "proxyClass", proxyRelation.getProxyClass(),
+                "targetClass", proxyRelation.getTargetClass(),
+                "proxyType", proxyRelation.getProxyType(),
+                "projectPath", proxyRelation.getProjectPath()
+        );
+    }
+
     // ==================== 数据清理操作 ====================
 
     @Override
     @Transactional(transactionManager = "neo4jTransactionManager")
     public void cleanProjectData(String projectPath) {
         log.info("[Neo4j] 清理项目数据: {}", projectPath);
+        // 清理关系（按照从特殊到一般的顺序）
+        methodNodeRepository.deleteExtendsRelationsByProjectPath(projectPath);
+        methodNodeRepository.deleteOverrideRelationsByProjectPath(projectPath);
+        methodNodeRepository.deleteProxyRelationsByProjectPath(projectPath);
+        // 清理节点
         methodNodeRepository.deleteByProjectPath(projectPath);
         entryPointRepository.deleteByProjectPath(projectPath);
     }

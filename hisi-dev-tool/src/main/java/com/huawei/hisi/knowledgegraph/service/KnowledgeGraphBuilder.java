@@ -344,6 +344,21 @@ public class KnowledgeGraphBuilder {
         log.info("[Neo4j] 保存接口实现关系: {}", impls.size());
         storageService.saveInterfaceImplementations(impls);
 
+        // 10.1 保存类继承关系 EXTENDS
+        List<ClassExtends> extendsRelations = buildExtendsRelations(projectPath);
+        log.info("[Neo4j] 保存类继承关系: {}", extendsRelations.size());
+        storageService.saveClassExtends(extendsRelations);
+
+        // 10.2 保存方法重写关系 OVERRIDE
+        List<MethodOverride> overrideRelations = buildOverrideRelations(projectPath, allMethodNodes);
+        log.info("[Neo4j] 保存方法重写关系: {}", overrideRelations.size());
+        storageService.saveMethodOverrides(overrideRelations);
+
+        // 10.3 保存代理类关系 PROXY
+        List<ProxyRelation> proxyRelations = buildProxyRelations(projectPath);
+        log.info("[Neo4j] 保存代理类关系: {}", proxyRelations.size());
+        storageService.saveProxyRelations(proxyRelations);
+
         // 验证实际创建的 IMPLEMENTS 边数量
         int actualCount = neo4jMethodNodeRepository.countImplementsRelations(projectPath);
         log.info("[Neo4j] IMPLEMENTS 关系实际数量: actualCount={}, inputCount={}", actualCount, impls.size());
@@ -386,6 +401,9 @@ public class KnowledgeGraphBuilder {
         result.put("callRelationCount", allCallRelations.size());
         result.put("entryPointCount", allEntryPoints.size());
         result.put("interfaceImplCount", impls.size());
+        result.put("extendsCount", extendsRelations.size());
+        result.put("overrideCount", overrideRelations.size());
+        result.put("proxyCount", proxyRelations.size());
         result.put("myBatisMapperCount", myBatisResult.getMapperCount());
         result.put("myBatisSqlCount", myBatisResult.getSqlCount());
         result.put("dispatchEdges", Map.of(
@@ -1062,7 +1080,10 @@ public class KnowledgeGraphBuilder {
                     // 2. 定时任务入口点
                     else if (annotationName.equals("Scheduled")) {
                         String cron = extractScheduledCron(annotation);
-                        String entryKey = "SCHEDULED:" + (cron != null ? cron : className + "." + method.getNameAsString());
+                        String entryKey = "SCHEDULED:" + className + "." + method.getNameAsString();
+                        if (cron != null && !cron.isEmpty()) {
+                            entryKey = entryKey + ":" + cron;
+                        }
 
                         String entryId = projectPath + ":SCHEDULED_" + className + "." + method.getNameAsString();
 
@@ -1084,7 +1105,7 @@ public class KnowledgeGraphBuilder {
                              annotationName.equals("RocketMQMessageListener")) {
 
                         String topic = extractTopicFromAnnotation(annotation);
-                        String entryKey = "MQ:" + topic;
+                        String entryKey = "MQ:" + className + "." + method.getNameAsString() + ":" + topic;
 
                         String entryId = projectPath + ":MQ_" + className + "." + method.getNameAsString();
 
@@ -1594,5 +1615,118 @@ public class KnowledgeGraphBuilder {
 
         // 4. 无调用者的方法调用（当前类的方法）
         return "DIRECT";
+    }
+
+    // ============================================================
+    // 类继承关系、方法重写关系、代理关系构建方法
+    // ============================================================
+
+    /**
+     * 从 GlobalCache 构建类继承关系 EXTENDS
+     */
+    private List<ClassExtends> buildExtendsRelations(String projectPath) {
+        List<ClassExtends> relations = new ArrayList<>();
+
+        Map<String, Set<String>> extendMap = globalCache.getExtendMap();
+        for (Map.Entry<String, Set<String>> entry : extendMap.entrySet()) {
+            String subclass = entry.getKey();
+            for (String superclass : entry.getValue()) {
+                relations.add(ClassExtends.builder()
+                    .subclass(subclass)
+                    .superclass(superclass)
+                    .projectPath(projectPath)
+                    .build());
+            }
+        }
+
+        return relations;
+    }
+
+    /**
+     * 构建方法重写关系 OVERRIDE
+     * 遍历所有类，找出子类重写父类的方法
+     */
+    private List<MethodOverride> buildOverrideRelations(String projectPath, List<MethodNode> allMethodNodes) {
+        List<MethodOverride> relations = new ArrayList<>();
+
+        Map<String, Set<String>> extendMap = globalCache.getExtendMap();
+
+        // 建立 className -> methodNames 索引
+        Map<String, Set<String>> classMethods = new HashMap<>();
+        for (MethodNode node : allMethodNodes) {
+            classMethods
+                .computeIfAbsent(node.getClassName(), k -> new HashSet<>())
+                .add(node.getMethodName());
+        }
+
+        // 遍历继承关系，查找子类重写父类方法的情况
+        for (Map.Entry<String, Set<String>> entry : extendMap.entrySet()) {
+            String subclass = entry.getKey();
+            Set<String> subclassMethods = classMethods.getOrDefault(subclass, Set.of());
+
+            for (String superclass : entry.getValue()) {
+                Set<String> superclassMethods = classMethods.getOrDefault(superclass, Set.of());
+
+                // 找出子类和父类都有的方法（可能重写）
+                for (String methodName : subclassMethods) {
+                    if (superclassMethods.contains(methodName)) {
+                        relations.add(MethodOverride.builder()
+                            .subclass(subclass)
+                            .superclass(superclass)
+                            .methodName(methodName)
+                            .projectPath(projectPath)
+                            .build());
+                    }
+                }
+            }
+        }
+
+        return relations;
+    }
+
+    /**
+     * 从 GlobalCache 构建代理类关系 PROXY
+     */
+    private List<ProxyRelation> buildProxyRelations(String projectPath) {
+        List<ProxyRelation> relations = new ArrayList<>();
+
+        Map<String, String> proxyIndex = globalCache.getProxyIndex();
+        Map<String, Set<String>> implMap = globalCache.getImplementationMap();
+
+        for (Map.Entry<String, String> entry : proxyIndex.entrySet()) {
+            String proxyClass = entry.getKey();
+            String proxyType = entry.getValue();
+
+            // 查找这个代理类实现的接口，作为 targetClass
+            String targetClass = null;
+            for (Map.Entry<String, Set<String>> implEntry : implMap.entrySet()) {
+                if (implEntry.getValue().contains(proxyClass)) {
+                    targetClass = implEntry.getKey();
+                    break;
+                }
+            }
+
+            // 如果没有找到接口，尝试从 extendMap 查找父类
+            if (targetClass == null) {
+                Set<String> parents = globalCache.getExtendMap().getOrDefault(proxyClass, Set.of());
+                if (!parents.isEmpty()) {
+                    targetClass = parents.iterator().next();
+                }
+            }
+
+            // 如果还是没找到，跳过这个代理类（不创建自引用关系）
+            if (targetClass == null || targetClass.equals(proxyClass)) {
+                continue;
+            }
+
+            relations.add(ProxyRelation.builder()
+                .proxyClass(proxyClass)
+                .targetClass(targetClass)
+                .proxyType(proxyType)
+                .projectPath(projectPath)
+                .build());
+        }
+
+        return relations;
     }
 }

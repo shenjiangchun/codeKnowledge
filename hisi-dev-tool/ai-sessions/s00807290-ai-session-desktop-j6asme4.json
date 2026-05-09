@@ -3,11 +3,11 @@
   "hostname": "desktop-j6asme4",
   "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
   "firstSeen": "2026-04-28T02:48:49.135Z",
-  "lastUpdated": "2026-05-06T10:41:39.659Z",
+  "lastUpdated": "2026-05-09T06:40:02.036Z",
   "repoPath": "D:/hisi-code-analyser/6.0/backend",
   "stats": {
-    "totalOperations": 65,
-    "totalFilesEdited": 13,
+    "totalOperations": 95,
+    "totalFilesEdited": 20,
     "totalAiLines": 0,
     "totalCommits": 0,
     "totalAiLinesDeleted": 0
@@ -24,17 +24,17 @@
     {
       "path": "src/main/java/com/huawei/hisi/knowledgegraph/controller/KnowledgeGraphController.java",
       "tool": "Edit",
-      "operations": 5,
+      "operations": 8,
       "timestamp": "2026-04-28T02:52:50.892Z",
-      "lastModified": "2026-04-29T02:24:06.748Z",
+      "lastModified": "2026-05-09T04:09:43.579Z",
       "lastTool": "Edit"
     },
     {
       "path": "src/main/java/com/huawei/hisi/knowledgegraph/service/KnowledgeGraphBuilder.java",
       "tool": "Edit",
-      "operations": 17,
+      "operations": 26,
       "timestamp": "2026-04-28T03:10:26.572Z",
-      "lastModified": "2026-04-29T01:11:52.130Z",
+      "lastModified": "2026-05-09T06:38:43.922Z",
       "lastTool": "Edit"
     },
     {
@@ -87,9 +87,9 @@
     {
       "path": "src/main/java/com/huawei/hisi/neo4j/repository/Neo4jMethodNodeRepository.java",
       "tool": "Edit",
-      "operations": 3,
+      "operations": 5,
       "timestamp": "2026-05-06T00:40:35.739Z",
-      "lastModified": "2026-05-06T00:53:51.028Z",
+      "lastModified": "2026-05-09T06:36:47.989Z",
       "lastTool": "Edit"
     },
     {
@@ -114,6 +114,59 @@
       "operations": 7,
       "timestamp": "2026-05-06T03:57:22.589Z",
       "lastModified": "2026-05-06T10:41:39.659Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/main/java/com/huawei/hisi/handler/TerminalWebSocketHandler.java",
+      "tool": "Edit",
+      "operations": 5,
+      "timestamp": "2026-05-09T01:34:16.422Z",
+      "lastModified": "2026-05-09T05:43:26.708Z",
+      "lastTool": "Write"
+    },
+    {
+      "path": "src/main/java/com/huawei/hisi/knowledgegraph/service/FixScheduledEntryKey.java",
+      "tool": "Write",
+      "operations": 2,
+      "timestamp": "2026-05-09T04:01:59.010Z",
+      "lastModified": "2026-05-09T04:57:56.306Z",
+      "lastTool": "Write"
+    },
+    {
+      "path": "src/main/java/com/huawei/hisi/knowledgegraph/model/ClassExtends.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-09T06:22:22.997Z",
+      "lastModified": "2026-05-09T06:22:22.997Z"
+    },
+    {
+      "path": "src/main/java/com/huawei/hisi/knowledgegraph/model/MethodOverride.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-09T06:24:57.619Z",
+      "lastModified": "2026-05-09T06:24:57.619Z"
+    },
+    {
+      "path": "src/main/java/com/huawei/hisi/knowledgegraph/model/ProxyRelation.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-09T06:25:08.398Z",
+      "lastModified": "2026-05-09T06:25:08.399Z"
+    },
+    {
+      "path": "src/main/java/com/huawei/hisi/knowledgegraph/service/storage/KnowledgeGraphStorageService.java",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-05-09T06:25:52.463Z",
+      "lastModified": "2026-05-09T06:37:34.894Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/main/java/com/huawei/hisi/knowledgegraph/service/storage/Neo4jStorageService.java",
+      "tool": "Edit",
+      "operations": 4,
+      "timestamp": "2026-05-09T06:26:06.578Z",
+      "lastModified": "2026-05-09T06:40:02.036Z",
       "lastTool": "Edit"
     }
   ]

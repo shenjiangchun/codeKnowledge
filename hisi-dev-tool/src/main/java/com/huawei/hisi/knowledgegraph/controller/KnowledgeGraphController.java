@@ -456,45 +456,84 @@ public class KnowledgeGraphController {
             return ApiResponse.error(400, "projectPath or projectPaths required");
         }
 
+        log.info("[KG RootEntries] Searching for method: className={}, methodName={}, projectPaths={}",
+            className, methodName, paths);
+
         List<Map<String, Object>> rootEntries = new ArrayList<>();
         List<Map<String, Object>> directCallers = new ArrayList<>();
 
+        // 先尝试精确匹配
         List<MethodNode> nodes = neo4jMethodNodeRepository.findByProjectPathsAndClassName(paths, className);
-        for (MethodNode node : nodes) {
-            if (!node.getMethodName().equals(methodName)) {
-                continue;
-            }
-            Set<String> seenEntryIds = new HashSet<>();
-            Set<String> seenCallerIds = new HashSet<>();
+        log.info("[KG RootEntries] Found {} nodes with exact className match", nodes.size());
 
-            // 1. 根入口点
-            List<Neo4jMethodNodeRepository.EntryPointInfo> entries =
-                neo4jMethodNodeRepository.findEntryPointsCallingMethodByPaths(node.getNodeId(), paths);
-            for (Neo4jMethodNodeRepository.EntryPointInfo entry : entries) {
-                if (seenEntryIds.add(entry.entryId())) {
-                    Map<String, Object> info = new HashMap<>();
-                    info.put("entryId", entry.entryId());
-                    info.put("entryType", entry.entryType());
-                    info.put("entryKey", entry.entryKey());
-                    rootEntries.add(info);
-                }
-            }
+        // 查找节点的通用方法
+        MethodNode targetNode = nodes.stream()
+            .filter(n -> n.getMethodName().equals(methodName))
+            .findFirst()
+            .orElse(null);
 
-            // 2. 直接调用方
-            // dispatch 边已物化为 CALLS，findCallersWithRelation 会自动返回
-            // FEIGN_BRIDGE caller（feign→local 反向），无需额外 Feign 穿透
-            List<Neo4jMethodNodeRepository.CallerWithRelation> relations =
-                neo4jMethodNodeRepository.findCallersWithRelation(node.getNodeId());
-            for (Neo4jMethodNodeRepository.CallerWithRelation relation : relations) {
-                if (seenCallerIds.add(relation.callerId())) {
-                    Map<String, Object> callerInfo = new HashMap<>();
-                    callerInfo.put("callerId", relation.callerId());
-                    callerInfo.put("callerClassName", relation.callerClassName());
-                    callerInfo.put("callerMethodName", relation.callerMethodName());
-                    callerInfo.put("callType", relation.callType());
-                    callerInfo.put("callLine", relation.callLine());
-                    directCallers.add(callerInfo);
-                }
+        // 如果没找到，尝试通过 className + methodName 组合查找
+        if (targetNode == null) {
+            log.info("[KG RootEntries] Exact match failed, trying className+methodName search");
+            List<MethodNode> combinedNodes = neo4jMethodNodeRepository.findByProjectPathsAndClassNameAndMethodName(paths, className, methodName);
+            if (!combinedNodes.isEmpty()) {
+                targetNode = combinedNodes.get(0);
+                log.info("[KG RootEntries] Found by className+methodName: {}", targetNode.getNodeId());
+            }
+        }
+
+        // 如果还是没找到，尝试类名模糊匹配
+        if (targetNode == null) {
+            log.info("[KG RootEntries] Still not found, trying fuzzy className search");
+            List<MethodNode> fuzzyNodes = neo4jMethodNodeRepository.findByProjectPathsAndClassNameContaining(paths, className);
+            log.info("[KG RootEntries] Found {} nodes with fuzzy className match", fuzzyNodes.size());
+            targetNode = fuzzyNodes.stream()
+                .filter(n -> n.getMethodName().equals(methodName))
+                .findFirst()
+                .orElse(null);
+        }
+
+        if (targetNode == null) {
+            log.warn("[KG RootEntries] Method not found: {}#{}", className, methodName);
+            // 返回空结果而不是 404，让前端可以显示没有找到的状态
+            Map<String, Object> result = new HashMap<>();
+            result.put("rootEntries", rootEntries);
+            result.put("directCallers", directCallers);
+            return ApiResponse.success(result);
+        }
+
+        log.info("[KG RootEntries] Found method: nodeId={}, projectPath={}", targetNode.getNodeId(), targetNode.getProjectPath());
+
+        Set<String> seenEntryIds = new HashSet<>();
+        Set<String> seenCallerIds = new HashSet<>();
+
+        // 1. 根入口点
+        List<Neo4jMethodNodeRepository.EntryPointInfo> entries =
+            neo4jMethodNodeRepository.findEntryPointsCallingMethodByPaths(targetNode.getNodeId(), paths);
+        for (Neo4jMethodNodeRepository.EntryPointInfo entry : entries) {
+            if (seenEntryIds.add(entry.entryId())) {
+                Map<String, Object> info = new HashMap<>();
+                info.put("entryId", entry.entryId());
+                info.put("entryType", entry.entryType());
+                info.put("entryKey", entry.entryKey());
+                rootEntries.add(info);
+            }
+        }
+
+        // 2. 直接调用方
+        // dispatch 边已物化为 CALLS，findCallersWithRelation 会自动返回
+        // FEIGN_BRIDGE caller（feign→local 反向），无需额外 Feign 穿透
+        List<Neo4jMethodNodeRepository.CallerWithRelation> relations =
+            neo4jMethodNodeRepository.findCallersWithRelation(targetNode.getNodeId());
+        for (Neo4jMethodNodeRepository.CallerWithRelation relation : relations) {
+            if (seenCallerIds.add(relation.callerId())) {
+                Map<String, Object> callerInfo = new HashMap<>();
+                callerInfo.put("callerId", relation.callerId());
+                callerInfo.put("callerClassName", relation.callerClassName());
+                callerInfo.put("callerMethodName", relation.callerMethodName());
+                callerInfo.put("callType", relation.callType());
+                callerInfo.put("callLine", relation.callLine());
+                directCallers.add(callerInfo);
             }
         }
 
@@ -525,15 +564,83 @@ public class KnowledgeGraphController {
             return ApiResponse.error(400, "projectPath or projectPaths required");
         }
 
+        log.info("[KG CalleesTree] Searching for method: className={}, methodName={}, projectPaths={}",
+            className, methodName, paths);
+
+        // 先尝试精确匹配
         List<MethodNode> nodes = neo4jMethodNodeRepository.findByProjectPathsAndClassName(paths, className);
+        log.info("[KG CalleesTree] Found {} nodes with exact className match", nodes.size());
+
         MethodNode startNode = nodes.stream()
             .filter(n -> n.getMethodName().equals(methodName))
             .findFirst()
             .orElse(null);
 
+        // 如果没找到，尝试通过 className + methodName 组合查找（支持模糊类名）
         if (startNode == null) {
+            log.info("[KG CalleesTree] Exact match failed, trying className+methodName search");
+            List<MethodNode> combinedNodes = neo4jMethodNodeRepository.findByProjectPathsAndClassNameAndMethodName(paths, className, methodName);
+            if (!combinedNodes.isEmpty()) {
+                startNode = combinedNodes.get(0);
+                log.info("[KG CalleesTree] Found by className+methodName: {}", startNode.getNodeId());
+            }
+        }
+
+        // 如果还是没找到，尝试类名模糊匹配
+        if (startNode == null) {
+            log.info("[KG CalleesTree] Still not found, trying fuzzy className search");
+            List<MethodNode> fuzzyNodes = neo4jMethodNodeRepository.findByProjectPathsAndClassNameContaining(paths, className);
+            log.info("[KG CalleesTree] Found {} nodes with fuzzy className match", fuzzyNodes.size());
+            startNode = fuzzyNodes.stream()
+                .filter(n -> n.getMethodName().equals(methodName))
+                .findFirst()
+                .orElse(null);
+        }
+
+        // 如果还是没找到，尝试通过 EntryPoint 查找
+        if (startNode == null) {
+            log.info("[KG CalleesTree] Still not found, trying to find via EntryPoint");
+            List<EntryPointNode> entryPoints = neo4jEntryPointNodeRepository.findByProjectPaths(paths);
+            for (EntryPointNode ep : entryPoints) {
+                if (ep.getMethodNodeId() != null) {
+                    // 检查是否匹配 className.methodName
+                    if (ep.getMethodNodeId().contains(className) && ep.getMethodNodeId().contains(methodName)) {
+                        Optional<MethodNode> foundByEntry = neo4jMethodNodeRepository.findByNodeId(ep.getMethodNodeId());
+                        if (foundByEntry.isPresent()) {
+                            startNode = foundByEntry.get();
+                            log.info("[KG CalleesTree] Found method via EntryPoint: nodeId={}, entryKey={}",
+                                startNode.getNodeId(), ep.getEntryKey());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 如果还是没找到，尝试通过方法名模糊搜索（不限制类名）
+        if (startNode == null) {
+            log.info("[KG CalleesTree] Still not found, trying fuzzy methodName search");
+            List<MethodNode> methodNodes = neo4jMethodNodeRepository.findByProjectPaths(paths);
+            startNode = methodNodes.stream()
+                .filter(n -> n.getMethodName().equals(methodName))
+                .findFirst()
+                .orElse(null);
+            if (startNode != null) {
+                log.info("[KG CalleesTree] Found method by fuzzy methodName search: nodeId={}, className={}",
+                    startNode.getNodeId(), startNode.getClassName());
+            }
+        }
+
+        if (startNode == null) {
+            log.warn("[KG CalleesTree] Method not found: {}#{}", className, methodName);
+            // 输出诊断信息
+            List<MethodNode> allNodes = neo4jMethodNodeRepository.findByProjectPaths(paths);
+            log.info("[KG CalleesTree] Total {} method nodes in project, some samples: {}", allNodes.size(),
+                allNodes.stream().limit(10).map(n -> n.getClassName() + "#" + n.getMethodName()).collect(Collectors.toList()));
             return ApiResponse.error(404, "未找到方法: " + className + "#" + methodName);
         }
+
+        log.info("[KG CalleesTree] Found method: nodeId={}, projectPath={}", startNode.getNodeId(), startNode.getProjectPath());
 
         String resolvedPath = startNode.getProjectPath();
         List<GraphNode> graphNodes = new ArrayList<>();

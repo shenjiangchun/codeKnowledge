@@ -1680,4 +1680,129 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
         @Param("nodeId") String nodeId,
         @Param("projectPaths") List<String> projectPaths
     );
+
+    // ==================== 类继承关系 (EXTENDS) ====================
+
+    /**
+     * 批量创建 EXTENDS 关系（子类 -> 父类）
+     */
+    @Query("""
+        UNWIND $relations AS rel
+        MATCH (sub:Method)
+        WHERE sub.className = rel.subclass AND sub.projectPath IN $projectPaths
+        MATCH (sup:Method)
+        WHERE sup.className = rel.superclass AND sup.projectPath IN $projectPaths
+        WITH sub, sup, rel
+        MERGE (sub)-[e:EXTENDS]->(sup)
+        SET e.projectPath = rel.projectPath
+        """)
+    void createExtendsRelations(
+        @Param("relations") List<Map<String, Object>> relations,
+        @Param("projectPaths") List<String> projectPaths
+    );
+
+    /**
+     * 统计项目的 EXTENDS 关系数量
+     */
+    @Query("""
+        MATCH (:Method)-[e:EXTENDS]->(:Method)
+        WHERE e.projectPath = $projectPath
+        RETURN count(e)
+        """)
+    int countExtendsRelations(@Param("projectPath") String projectPath);
+
+    // ==================== 方法重写关系 (OVERRIDE) ====================
+
+    /**
+     * 批量创建 OVERRIDE 关系（子类方法 -> 父类方法）
+     */
+    @Query("""
+        UNWIND $relations AS rel
+        MATCH (sub:Method)
+        WHERE sub.className = rel.subclass
+          AND sub.methodName = rel.methodName
+          AND sub.projectPath IN $projectPaths
+        MATCH (sup:Method)
+        WHERE sup.className = rel.superclass
+          AND sup.methodName = rel.methodName
+          AND sup.projectPath IN $projectPaths
+        WITH sub, sup, rel
+        MERGE (sub)-[o:OVERRIDE]->(sup)
+        SET o.projectPath = rel.projectPath
+        """)
+    void createOverrideRelations(
+        @Param("relations") List<Map<String, Object>> relations,
+        @Param("projectPaths") List<String> projectPaths
+    );
+
+    /**
+     * 统计项目的 OVERRIDE 关系数量
+     */
+    @Query("""
+        MATCH (:Method)-[o:OVERRIDE]->(:Method)
+        WHERE o.projectPath = $projectPath
+        RETURN count(o)
+        """)
+    int countOverrideRelations(@Param("projectPath") String projectPath);
+
+    // ==================== 代理类关系 (PROXY) ====================
+
+    /**
+     * 批量创建 PROXY 关系（代理类 -> 被代理类）
+     */
+    @Query("""
+        UNWIND $relations AS rel
+        MATCH (proxy:Method)
+        WHERE proxy.className = rel.proxyClass
+          AND proxy.projectPath IN $projectPaths
+        MATCH (target:Method)
+        WHERE target.className = rel.targetClass
+          AND target.projectPath IN $projectPaths
+        WITH proxy, target, rel
+        MERGE (proxy)-[p:PROXY]->(target)
+        SET p.projectPath = rel.projectPath, p.proxyType = rel.proxyType
+        """)
+    void createProxyRelations(
+        @Param("relations") List<Map<String, Object>> relations,
+        @Param("projectPaths") List<String> projectPaths
+    );
+
+    /**
+     * 统计项目的 PROXY 关系数量
+     */
+    @Query("""
+        MATCH (:Method)-[p:PROXY]->(:Method)
+        WHERE p.projectPath = $projectPath
+        RETURN count(p)
+        """)
+    int countProxyRelations(@Param("projectPath") String projectPath);
+
+    // ==================== 清理项目数据方法 ====================
+
+    /**
+     * 删除项目的 EXTENDS 关系
+     */
+    @Query("""
+        MATCH ()-[r:EXTENDS]->() WHERE r.projectPath = $projectPath
+        DELETE r
+        """)
+    void deleteExtendsRelationsByProjectPath(@Param("projectPath") String projectPath);
+
+    /**
+     * 删除项目的 OVERRIDE 关系
+     */
+    @Query("""
+        MATCH ()-[r:OVERRIDE]->() WHERE r.projectPath = $projectPath
+        DELETE r
+        """)
+    void deleteOverrideRelationsByProjectPath(@Param("projectPath") String projectPath);
+
+    /**
+     * 删除项目的 PROXY 关系
+     */
+    @Query("""
+        MATCH ()-[r:PROXY]->() WHERE r.projectPath = $projectPath
+        DELETE r
+        """)
+    void deleteProxyRelationsByProjectPath(@Param("projectPath") String projectPath);
 }

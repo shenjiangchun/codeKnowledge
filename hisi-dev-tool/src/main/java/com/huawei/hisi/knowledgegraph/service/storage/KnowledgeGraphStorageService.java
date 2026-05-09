@@ -1,8 +1,11 @@
 package com.huawei.hisi.knowledgegraph.service.storage;
 
+import com.huawei.hisi.knowledgegraph.model.ClassExtends;
 import com.huawei.hisi.knowledgegraph.model.InterfaceImplementation;
-import com.huawei.hisi.neo4j.model.MethodNode;
+import com.huawei.hisi.knowledgegraph.model.MethodOverride;
+import com.huawei.hisi.knowledgegraph.model.ProxyRelation;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
+import com.huawei.hisi.neo4j.model.MethodNode;
 
 import java.util.List;
 import java.util.Map;
@@ -84,6 +87,57 @@ public interface KnowledgeGraphStorageService {
      * 根据项目路径查询接口实现数量
      */
     int countInterfaceImplementations(String projectPath);
+
+    // ==================== 类继承关系操作 ====================
+
+    /**
+     * 保存类继承关系
+     */
+    void saveClassExtends(ClassExtends extendsRelation);
+
+    /**
+     * 批量保存类继承关系
+     */
+    void saveClassExtends(List<ClassExtends> extendsRelations);
+
+    /**
+     * 根据项目路径查询类继承关系数量
+     */
+    int countClassExtends(String projectPath);
+
+    // ==================== 方法重写关系操作 ====================
+
+    /**
+     * 保存方法重写关系
+     */
+    void saveMethodOverride(MethodOverride overrideRelation);
+
+    /**
+     * 批量保存方法重写关系
+     */
+    void saveMethodOverrides(List<MethodOverride> overrideRelations);
+
+    /**
+     * 根据项目路径查询方法重写关系数量
+     */
+    int countMethodOverrides(String projectPath);
+
+    // ==================== 代理类关系操作 ====================
+
+    /**
+     * 保存代理类关系
+     */
+    void saveProxyRelation(ProxyRelation proxyRelation);
+
+    /**
+     * 批量保存代理类关系
+     */
+    void saveProxyRelations(List<ProxyRelation> proxyRelations);
+
+    /**
+     * 根据项目路径查询代理类关系数量
+     */
+    int countProxyRelations(String projectPath);
 
     // ==================== 数据清理操作 ====================
 
