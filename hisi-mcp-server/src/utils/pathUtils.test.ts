@@ -44,3 +44,25 @@ test('matches custom *Path / *Paths suffix keys', () => {
     targetPaths: ['c/d'],
   });
 });
+
+test('normalizes lowercase explicit path key', () => {
+  const result = normalizePathArgs({ path: 'C:\\x' });
+  assert.deepEqual(result, { path: 'C:/x' });
+});
+
+test('handles empty path array and returns a new array reference', () => {
+  const input: { projectPaths: unknown[] } = { projectPaths: [] };
+  const result = normalizePathArgs(input);
+  assert.deepEqual(result, { projectPaths: [] });
+  assert.notStrictEqual(result.projectPaths, input.projectPaths);
+});
+
+test('passes non-string elements through in path arrays', () => {
+  const result = normalizePathArgs({ filePaths: ['C:\\a', 42, null] });
+  assert.deepEqual(result, { filePaths: ['C:/a', 42, null] });
+});
+
+test('passes non-string values under path keys through unchanged', () => {
+  const result = normalizePathArgs({ projectPath: 123 });
+  assert.deepEqual(result, { projectPath: 123 });
+});

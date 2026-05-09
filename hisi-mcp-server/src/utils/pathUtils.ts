@@ -12,19 +12,27 @@
  * by reference.
  */
 
+const BACKSLASH_RE = /\\/g;
+const PATH_SUFFIX_RE = /Path$/;
+const PATHS_SUFFIX_RE = /Paths$/;
+
 const EXPLICIT_PATH_KEYS = new Set(['projectPath', 'filePath', 'path']);
-const EXPLICIT_PATH_ARRAY_KEYS = new Set(['projectPaths', 'filePaths']);
+const EXPLICIT_PATH_ARRAY_KEYS = new Set([
+  'projectPaths',
+  'filePaths',
+  'paths',
+]);
 
 function isPathKey(key: string): boolean {
-  return EXPLICIT_PATH_KEYS.has(key) || /Path$/.test(key);
+  return EXPLICIT_PATH_KEYS.has(key) || PATH_SUFFIX_RE.test(key);
 }
 
 function isPathArrayKey(key: string): boolean {
-  return EXPLICIT_PATH_ARRAY_KEYS.has(key) || /Paths$/.test(key);
+  return EXPLICIT_PATH_ARRAY_KEYS.has(key) || PATHS_SUFFIX_RE.test(key);
 }
 
 function normalizeString(value: string): string {
-  return value.replace(/\\/g, '/');
+  return value.replace(BACKSLASH_RE, '/');
 }
 
 /**
