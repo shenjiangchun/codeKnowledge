@@ -31,7 +31,6 @@ export const useAppStore = defineStore('app', () => {
     'project-management': true, // Always available
     'skill-market': true, // Always available
     'claude-terminal': true, // Always available
-    'search': projectDirConfigured.value && projectSelected.value,
     'knowledge-graph': projectDirConfigured.value && projectSelected.value,
     'log-analysis': projectDirConfigured.value && projectSelected.value,
     'prompt-config': true, // Always available
