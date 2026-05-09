@@ -1,14 +1,18 @@
 # HiSi DevTool Backend
 
+> Last verified against commit `0b82da1` on 2026-05-08. If architecture changes, re-verify.
+
 开发者工具后端服务，提供日志分析、调用链追踪、知识图谱和运维监控功能。
 
 ## 技术栈
 
-- **Java 17**
-- **Spring Boot 3.2.0**
-- **Neo4j 5.x** - 知识图谱存储
-- **PostgreSQL/OpenGauss** - 关系型数据库
-- **Spring Data Neo4j** - Neo4j 集成
+- **Java 17** + **Spring Boot 3.2.0**
+- **Neo4j 5.11+** — 知识图谱 + 原生向量索引（VECTOR INDEX, cosine）
+- **SQLite** — 本地会话/任务元数据（`~/.hisi-devtool/devtool.db`）
+- **智谱 AI** — embedding-3 (2048d) 向量生成 + glm-4-flash 描述生成
+- **Spring Data Neo4j 7.x** — Neo4j 集成
+- **ANTLR4** — Java/Python 源码 AST 解析（知识图谱构建）
+- **PTY4J** — 嵌入式伪终端（Claude Terminal）
 
 ## 快速开始
 
@@ -31,12 +35,6 @@
 编辑 `src/main/resources/application.yml`:
 
 ```yaml
-# PostgreSQL 配置
-app:
-  dburl: jdbc:postgresql://localhost:5432/hisi_devtool
-  dbuser: postgres
-  dbpassword: your_password
-
 # Neo4j 配置
 neo4j:
   uri: neo4j://127.0.0.1:7687
@@ -48,7 +46,6 @@ neo4j:
 
 ```powershell
 # PowerShell
-$env:DB_PASSWORD = "your_postgres_password"
 $env:NEO4J_PASSWORD = "your_neo4j_password"
 ```
 
@@ -217,8 +214,8 @@ mvn test -Dtest='!*IntegrationTest'
 
 ## 相关项目
 
-- **前端**: `../hisi-dev-tool-frontend` - Vue 3 + TypeScript + Element Plus
-- **向量服务**: `../hisi-vector-service` - Python FastAPI 向量服务 (已废弃)
+- **前端**: `../hisi-dev-tool-frontend` — Vue 3 + TypeScript + Element Plus
+- **MCP 服务**: `../hisi-mcp-server` — MCP 协议服务（知识图谱/混合检索/日志查询工具）
 
 ---
 
@@ -228,6 +225,19 @@ mvn test -Dtest='!*IntegrationTest'
 - [Neo4j 配置指南](./docs/neo4j/README.md)
 - [Neo4j 本地部署](./docs/neo4j/README-local.md)
 - [GraphRAG 设计文档](./docs/plans/2026-04-17-neo4j-graphrag-design.md)
+
+---
+
+## 架构演进
+
+| 版本 | 变更 |
+|------|------|
+| v3.x | ChromaDB + hisi-vector-service (Python FastAPI) 做向量存储与检索 |
+| v4.0 | 迁移至 Neo4j 5.11+ 原生 VECTOR INDEX；废弃 ChromaDB 和 hisi-vector-service |
+| v4.1 | 新增 Python 源码解析（ANTLR4）；知识图谱支持 Java + Python 双语言 |
+| v4.4 | 新增公共知识图谱（`publicProjectPath` 分区）；混合检索支持 scope/language 过滤 |
+
+> 本 README 最后一次与代码对齐：commit `0b82da1` (2026-05-08)
 
 ---
 
