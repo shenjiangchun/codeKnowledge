@@ -852,9 +852,13 @@ const doRecursiveQuery = async (type: 'upstream' | 'downstream', method: string)
     } else {
       // 向下：调用 callees-tree 拿完整树（带 depth）
       const graph = await knowledgeGraphApi.getCalleesTree(className, methodName, primaryPath, 10, paths) as unknown as CallChainGraphData
-      if (!graph || !Array.isArray(graph.nodes) || graph.nodes.length === 0) {
+      if (!graph || !Array.isArray(graph.nodes)) {
         recursiveData.value = []
         ElMessage.info('未找到相关数据')
+      } else if (graph.nodes.length === 0) {
+        // 方法存在但没有下游调用，显示空结果
+        recursiveData.value = []
+        ElMessage.info('该方法没有下游调用')
       } else {
         recursiveData.value = flattenDownstreamGraph(graph)
       }

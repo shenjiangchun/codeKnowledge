@@ -97,6 +97,7 @@
           v-if="selectedEntry"
           :entry="selectedEntry"
           :project-path="projectPath"
+          :project-paths="projectPaths"
         />
         <el-empty v-else description="请选择入口点查看详情" :image-size="120" />
       </div>

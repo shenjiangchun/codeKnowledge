@@ -21,7 +21,7 @@
           </el-tag>
           <el-input
             v-model="methodInput"
-            placeholder="输入方法名（如：com.example.Service.method）"
+            placeholder="输入完整方法签名，例如：com.hisilicon.dm.client.fallback.ApmMoveFallback.syncApmDeliverGroup"
             @keyup.enter="addMethod"
             style="width: 400px;"
             size="small"
@@ -31,27 +31,36 @@
             </template>
           </el-input>
         </div>
-        <el-radio-group v-model="analysisDirection" size="small">
-          <el-radio-button label="upstream">向上（调用方）</el-radio-button>
-          <el-radio-button label="downstream">向下（被调用方）</el-radio-button>
-        </el-radio-group>
-        <el-button
-          type="primary"
-          @click="loadDependencyGraph"
-          :loading="loading"
-          :disabled="entryMethods.length === 0"
-        >
-          查询
-        </el-button>
-        <el-button
-          v-if="analysisDirection === 'downstream' && chainData"
-          type="success"
-          @click="handleAIAnalysis"
-          :loading="analysisLoading"
-        >
-          <el-icon><ChatDotRound /></el-icon>
-          AI 影响分析
-        </el-button>
+        <div class="toolbar-controls">
+          <el-select v-model="maxDepth" size="small" style="width: 120px;">
+            <el-option :value="3" label="3 层" />
+            <el-option :value="5" label="5 层" />
+            <el-option :value="10" label="10 层" />
+            <el-option :value="15" label="15 层" />
+            <el-option :value="20" label="20 层" />
+          </el-select>
+          <el-radio-group v-model="analysisDirection" size="small">
+            <el-radio-button label="upstream">向上（调用方）</el-radio-button>
+            <el-radio-button label="downstream">向下（被调用方）</el-radio-button>
+          </el-radio-group>
+          <el-button
+            type="primary"
+            @click="loadDependencyGraph"
+            :loading="loading"
+            :disabled="entryMethods.length === 0"
+          >
+            查询
+          </el-button>
+          <el-button
+            v-if="analysisDirection === 'downstream' && chainData"
+            type="success"
+            @click="handleAIAnalysis"
+            :loading="analysisLoading"
+          >
+            <el-icon><ChatDotRound /></el-icon>
+            AI 影响分析
+          </el-button>
+        </div>
       </div>
 
       <!-- 向上查询：展示调用者方法 -->
@@ -81,7 +90,7 @@
         v-if="analysisDirection === 'downstream'"
         :data="chainData"
         :loading="loading"
-        :project-paths="appStore.getSelectedProjectPaths()"
+        :project-paths="effectiveProjectPaths"
         @node-contextmenu="handleContextMenu"
       />
     </el-card>
@@ -131,10 +140,22 @@ interface Selection {
   methodName: string
 }
 
+const props = defineProps<{
+  projectPaths?: string[]
+}>()
+
 const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
 const promptStore = usePromptStore()
+
+// 优先使用传入的 projectPaths，否则从 store 获取
+const effectiveProjectPaths = computed(() => {
+  if (props.projectPaths && props.projectPaths.length > 0) {
+    return props.projectPaths
+  }
+  return appStore.getSelectedProjectPaths()
+})
 
 const projectName = computed(() => appStore.selectedProject || '')
 const selection = ref<Selection | null>(null)
@@ -143,6 +164,7 @@ const analysisLoading = ref(false)
 const chainData = ref<ChainNode | null>(null)
 const upstreamCallers = ref<UpstreamCaller[]>([])
 const hasQueried = ref(false)
+const maxDepth = ref<number>(5)
 
 // Multi-method input
 const methodInput = ref('')
@@ -161,6 +183,10 @@ const contextMenuNode = ref<ChainNode | null>(null)
 const addMethod = () => {
   const method = methodInput.value.trim()
   if (method && !entryMethods.value.includes(method)) {
+    if (!isValidMethodSignature(method)) {
+      ElMessage.warning('请输入完整的方法签名，格式为：包名.类名.方法名')
+      return
+    }
     entryMethods.value.push(method)
     methodInput.value = ''
   }
@@ -175,20 +201,29 @@ const removeMethod = (index: number) => {
 const loadDependencyGraph = async () => {
   if (entryMethods.value.length === 0) return
 
+  // 验证所有方法签名
+  for (const method of entryMethods.value) {
+    if (!isValidMethodSignature(method)) {
+      ElMessage.error(`方法签名无效：${method}，请使用格式：包名.类名.方法名`)
+      return
+    }
+  }
+
   loading.value = true
   hasQueried.value = true
   upstreamCallers.value = []
   chainData.value = null
 
   try {
-    const projectPath = appStore.projectDir || ''
+    const projectPaths = effectiveProjectPaths.value
+    const projectPath = projectPaths[0] || ''
 
     if (analysisDirection.value === 'upstream') {
       // 向上：使用合并接口获取根入口 + 直接调用者
       const callers: UpstreamCaller[] = []
       for (const method of entryMethods.value) {
         const { className, methodName } = splitFqn(method)
-        const resp = await knowledgeGraphApi.getRootEntries(className, methodName, projectPath) as unknown as { rootEntries: any[]; directCallers: any[] }
+        const resp = await knowledgeGraphApi.getRootEntries(className, methodName, projectPath, projectPaths) as unknown as { rootEntries: any[]; directCallers: any[] }
         for (const item of (resp?.directCallers || [])) {
           callers.push({
             callerId: item.callerId || '',
@@ -212,9 +247,14 @@ const loadDependencyGraph = async () => {
       for (const method of entryMethods.value) {
         const { className, methodName } = splitFqn(method)
         try {
-          const graph = await knowledgeGraphApi.getCalleesTree(className, methodName, projectPath, 5) as unknown as any
-          if (graph && Array.isArray(graph.nodes) && graph.nodes.length > 0) {
-            rootChildren.push(buildSubtreeFromCalleesTree(graph, method))
+          const graph = await knowledgeGraphApi.getCalleesTree(className, methodName, projectPath, maxDepth.value, projectPaths) as unknown as any
+          if (graph && Array.isArray(graph.nodes)) {
+            if (graph.nodes.length > 0) {
+              rootChildren.push(buildSubtreeFromCalleesTree(graph, method))
+            } else {
+              // 方法存在但没有下游调用
+              rootChildren.push({ name: methodName, className, methodSignature: method, children: [] })
+            }
           } else {
             rootChildren.push({ name: methodName, className, methodSignature: method, children: [] })
           }
@@ -233,12 +273,26 @@ const loadDependencyGraph = async () => {
   }
 }
 
+// 解析完整方法签名: className.methodName
 const splitFqn = (method: string): { className: string; methodName: string } => {
   const lastDot = method.lastIndexOf('.')
-  return {
-    className: lastDot > 0 ? method.substring(0, lastDot) : '',
-    methodName: lastDot > 0 ? method.substring(lastDot + 1) : method
+  if (lastDot <= 0) {
+    // 无效的方法签名
+    return {
+      className: '',
+      methodName: method
+    }
   }
+  return {
+    className: method.substring(0, lastDot),
+    methodName: method.substring(lastDot + 1)
+  }
+}
+
+// 验证是否是有效的完整方法签名
+const isValidMethodSignature = (method: string): boolean => {
+  const { className, methodName } = splitFqn(method)
+  return className.length > 0 && methodName.length > 0
 }
 
 // 用 callees-tree 返回的图结构（nodes+edges）构建子树

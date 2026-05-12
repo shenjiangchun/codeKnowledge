@@ -111,7 +111,7 @@
           <el-empty v-else description="请先选择项目" />
         </el-tab-pane>
         <el-tab-pane label="引用分析" name="methodRef">
-          <MethodReferenceGraph ref="methodRefGraphRef" />
+          <MethodReferenceGraph ref="methodRefGraphRef" :project-paths="projectPaths" />
         </el-tab-pane>
         <el-tab-pane label="跨服务调用" name="crossService">
           <CrossServiceBridgeTab
@@ -339,7 +339,7 @@ const loadProjects = async () => {
   }
 }
 
-// 加载知识图谱状态：批量查询所有选中项目，自动聚焦到第一个有数据的项目
+// 加载知识图谱状态：使用多项目合并统计
 const loadGraphStatus = async () => {
   if (projectPaths.value.length === 0) {
     graphStatus.value = null
@@ -347,14 +347,9 @@ const loadGraphStatus = async () => {
   }
 
   try {
-    const batchResult = await knowledgeGraphApi.getBatchStatus(projectPaths.value) as unknown as KnowledgeGraphStatus[]
-    if (Array.isArray(batchResult) && batchResult.length > 0) {
-      // 优先选择有数据的项目状态展示，否则展示第一个
-      const withData = batchResult.find(s => (s.methodNodeCount ?? 0) > 0 || (s.entryPointCount ?? 0) > 0)
-      graphStatus.value = withData ?? batchResult[0]
-    } else {
-      graphStatus.value = null
-    }
+    // 使用多项目合并查询，传入所有 projectPaths
+    const result = await knowledgeGraphApi.getStatus(projectPaths.value[0], projectPaths.value)
+    graphStatus.value = result as unknown as KnowledgeGraphStatus
   } catch (error) {
     console.error('[KnowledgeGraph] Failed to load graph status:', error)
     graphStatus.value = null

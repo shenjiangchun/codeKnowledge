@@ -24,6 +24,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'Claude 终端' }
   },
   {
+    path: '/search',
+    name: 'SemanticSearch',
+    component: () => import('@/views/search/SemanticSearchView.vue'),
+    meta: { title: '增强检索' }
+  },
+  {
     path: '/log-analysis',
     name: 'LogAnalysis',
     component: () => import('@/views/log-analysis/LogQuery.vue'),
@@ -46,6 +52,22 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: '提示词配置'
     }
+  },
+  {
+    path: '/call-chain',
+    redirect: '/knowledge-graph?tab=methodRef'
+  },
+  {
+    path: '/call-chain/uri-chain',
+    redirect: '/knowledge-graph?tab=methodRef'
+  },
+  {
+    path: '/call-chain/method-reference',
+    redirect: '/knowledge-graph?tab=methodRef'
+  },
+  {
+    path: '/call-chain/chain',
+    redirect: '/knowledge-graph?tab=methodRef'
   },
   {
     path: '/knowledge-graph',
@@ -108,6 +130,11 @@ router.beforeEach(async (to, _from, next) => {
   const menuAvailability = appStore.availableMenus
 
   if (to.path.startsWith('/knowledge-graph') && !menuAvailability['knowledge-graph']) {
+    ElMessage.warning('请先在项目管理页面选择项目')
+    return next('/project')
+  }
+
+  if (to.path.startsWith('/search') && !menuAvailability['search']) {
     ElMessage.warning('请先在项目管理页面选择项目')
     return next('/project')
   }

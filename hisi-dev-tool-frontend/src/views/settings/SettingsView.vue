@@ -74,6 +74,20 @@
             <el-form-item label="重试基础延迟（毫秒）">
               <el-input-number v-model="form.embeddingRetryDelay" :min="1000" :max="300000" :step="1000" />
             </el-form-item>
+            <el-form-item label="自定义请求头">
+              <div style="width: 500px">
+                <div v-for="(value, key) in form.embeddingHeaders" :key="key" class="header-row">
+                  <el-input v-model="key" placeholder="Header Name" style="width: 180px; margin-right: 8px" disabled />
+                  <el-input v-model="form.embeddingHeaders[key]" placeholder="Header Value" style="width: 200px" />
+                  <el-button type="danger" icon="Delete" @click="removeEmbeddingHeader(key)" style="margin-left: 8px" />
+                </div>
+                <div class="header-add-row">
+                  <el-input v-model="newHeaderName" placeholder="Header Name" style="width: 180px; margin-right: 8px" />
+                  <el-input v-model="newHeaderValue" placeholder="Header Value" style="width: 200px" />
+                  <el-button type="primary" icon="Plus" @click="addEmbeddingHeader" style="margin-left: 8px" />
+                </div>
+              </div>
+            </el-form-item>
           </el-collapse-item>
         </el-collapse>
 
@@ -210,6 +224,8 @@ interface EmbeddingPreset {
   baseUrl: string
   model: string
   dimension: number
+  apiKey?: string
+  csbToken?: string
 }
 
 interface TextPreset {
@@ -223,6 +239,15 @@ const EMBEDDING_PRESETS: EmbeddingPreset[] = [
   { key: 'siliconflow', label: '硅基流动 - Qwen3-VL-Embedding-8B (4096d)', baseUrl: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen3-VL-Embedding-8B', dimension: 4096 },
   { key: 'zhipu', label: '智谱AI - embedding-3 (2048d)', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'embedding-3', dimension: 2048 },
   { key: 'iflytek', label: '科大讯飞 - xop3qwen8bembedding (768d)', baseUrl: 'https://maas-api.cn-huabei-1.xf-yun.com/v2', model: 'xop3qwen8bembedding', dimension: 768 },
+  {
+    key: 'huawei-qwen3',
+    label: '华为云 - Qwen3-Embedding-8B (4096d)',
+    baseUrl: 'http://onlineservice.cn-southwest-2.roma.huawei.com:8085/csb-inner-service/rest/infers/91d5b5d2-77cc-49bc-ab5d-aafe8e48e555?endpoint=infer-modelarts-cn-southwest-2.myhuaweicloud.com&path=/v1',
+    model: 'Qwen3-Embedding-8B',
+    dimension: 4096,
+    apiKey: '***REMOVED_API_KEY***',
+    csbToken: '***REMOVED_TOKEN***'
+  },
 ]
 
 const TEXT_PRESETS: TextPreset[] = [
@@ -244,6 +269,7 @@ interface ConfigForm {
   embeddingTimeout: number
   embeddingMaxRetries: number
   embeddingRetryDelay: number
+  embeddingHeaders: Record<string, string>
   // Text model
   textApiKey: string
   textBaseUrl: string
@@ -268,6 +294,8 @@ const embeddingPresetKey = ref('custom')
 const textPresetKey = ref('custom')
 const embeddingAdvanced = ref<string[]>([])
 const textAdvanced = ref<string[]>([])
+const newHeaderName = ref('')
+const newHeaderValue = ref('')
 
 // Detect Electron environment
 const isElectron = typeof window !== 'undefined' && !!(window as Record<string, unknown>).electronAPI
@@ -285,6 +313,7 @@ const form = reactive<ConfigForm>({
   embeddingTimeout: 30000,
   embeddingMaxRetries: 3,
   embeddingRetryDelay: 60000,
+  embeddingHeaders: {},
   // Text
   textApiKey: '',
   textBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
@@ -321,8 +350,30 @@ function onEmbeddingPresetChange(key: string) {
     form.embeddingBaseUrl = preset.baseUrl
     form.embeddingModel = preset.model
     form.embeddingDimension = preset.dimension
-    // API Key 保持不变，让用户自己填
+    // Set API Key if provided
+    if (preset.apiKey) {
+      form.embeddingApiKey = preset.apiKey
+    }
+    // Set CSB Token if provided
+    form.embeddingHeaders = {}
+    if (preset.csbToken) {
+      form.embeddingHeaders['csb-token'] = preset.csbToken
+    }
   }
+}
+
+function addEmbeddingHeader() {
+  const name = newHeaderName.value.trim()
+  const value = newHeaderValue.value.trim()
+  if (name && value) {
+    form.embeddingHeaders[name] = value
+    newHeaderName.value = ''
+    newHeaderValue.value = ''
+  }
+}
+
+function removeEmbeddingHeader(key: string) {
+  delete form.embeddingHeaders[key]
 }
 
 function onTextPresetChange(key: string) {
@@ -385,6 +436,8 @@ function mapToForm(config: Record<string, unknown>): void {
   form.embeddingTimeout = (deepGet(config, 'embedding.timeout') as number) ?? 30000
   form.embeddingMaxRetries = (deepGet(config, 'embedding.max-retries') as number) ?? 3
   form.embeddingRetryDelay = (deepGet(config, 'embedding.retry-base-delay-ms') as number) ?? 60000
+  const headers = deepGet(config, 'embedding.headers') as Record<string, string>
+  form.embeddingHeaders = headers ? { ...headers } : {}
   // Text model
   form.textApiKey = (deepGet(config, 'text-model.api-key') as string) ?? ''
   form.textBaseUrl = (deepGet(config, 'text-model.base-url') as string) ?? 'https://open.bigmodel.cn/api/paas/v4'
@@ -418,6 +471,7 @@ function formToConfig(config: Record<string, unknown>): Record<string, unknown> 
   deepSet(result, 'embedding.timeout', form.embeddingTimeout)
   deepSet(result, 'embedding.max-retries', form.embeddingMaxRetries)
   deepSet(result, 'embedding.retry-base-delay-ms', form.embeddingRetryDelay)
+  deepSet(result, 'embedding.headers', form.embeddingHeaders)
   // Text model
   deepSet(result, 'text-model.api-key', form.textApiKey)
   deepSet(result, 'text-model.base-url', form.textBaseUrl)
@@ -576,5 +630,11 @@ onMounted(() => {
 
 :deep(.el-collapse-item__wrap) {
   border-bottom: none;
+}
+
+.header-row, .header-add-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
 }
 </style>

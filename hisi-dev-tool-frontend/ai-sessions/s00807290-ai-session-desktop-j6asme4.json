@@ -3,11 +3,11 @@
   "hostname": "desktop-j6asme4",
   "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
   "firstSeen": "2026-04-29T01:42:02.668Z",
-  "lastUpdated": "2026-05-06T10:10:47.686Z",
+  "lastUpdated": "2026-05-11T02:19:40.799Z",
   "repoPath": "D:/hisi-code-analyser/6.0/frontend",
   "stats": {
-    "totalOperations": 46,
-    "totalFilesEdited": 5,
+    "totalOperations": 72,
+    "totalFilesEdited": 8,
     "totalAiLines": 0,
     "totalCommits": 0,
     "totalAiLinesDeleted": 0
@@ -16,17 +16,17 @@
     {
       "path": "src/views/settings/SettingsView.vue",
       "tool": "Edit",
-      "operations": 3,
+      "operations": 12,
       "timestamp": "2026-04-29T01:42:02.670Z",
-      "lastModified": "2026-04-29T01:43:00.013Z",
+      "lastModified": "2026-05-09T07:25:50.034Z",
       "lastTool": "Edit"
     },
     {
       "path": "src/views/knowledge-graph/KnowledgeGraphView.vue",
       "tool": "Edit",
-      "operations": 29,
+      "operations": 31,
       "timestamp": "2026-04-29T02:19:09.441Z",
-      "lastModified": "2026-05-06T10:10:47.686Z",
+      "lastModified": "2026-05-11T02:17:49.916Z",
       "lastTool": "Edit"
     },
     {
@@ -39,10 +39,10 @@
     {
       "path": "src/views/knowledge-graph/components/EntryDetail.vue",
       "tool": "Edit",
-      "operations": 4,
+      "operations": 6,
       "timestamp": "2026-05-06T03:26:35.872Z",
-      "lastModified": "2026-05-06T03:53:29.480Z",
-      "lastTool": "Write"
+      "lastModified": "2026-05-11T02:17:19.233Z",
+      "lastTool": "Edit"
     },
     {
       "path": "src/views/project/ProjectList.vue",
@@ -51,6 +51,28 @@
       "timestamp": "2026-05-06T03:58:41.759Z",
       "lastModified": "2026-05-06T06:03:36.682Z",
       "lastTool": "Edit"
+    },
+    {
+      "path": "src/views/call-chain/MethodReferenceGraph.vue",
+      "tool": "Edit",
+      "operations": 11,
+      "timestamp": "2026-05-09T10:15:47.859Z",
+      "lastModified": "2026-05-11T02:19:04.450Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "src/views/call-chain/components/ChainChart.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-09T10:16:03.881Z",
+      "lastModified": "2026-05-09T10:16:03.881Z"
+    },
+    {
+      "path": "src/views/knowledge-graph/components/CodeUnderstandingTab.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-11T02:19:40.799Z",
+      "lastModified": "2026-05-11T02:19:40.799Z"
     }
   ]
 }

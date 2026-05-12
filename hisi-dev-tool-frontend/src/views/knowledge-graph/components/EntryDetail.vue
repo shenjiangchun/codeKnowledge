@@ -82,6 +82,7 @@ import ContextMenu from '@/views/call-chain/components/ContextMenu.vue'
 const props = defineProps<{
   entry: EntryPoint
   projectPath: string
+  projectPaths?: string[]
 }>()
 
 const router = useRouter()
@@ -267,12 +268,14 @@ const loadChain = async () => {
     const [chainResult, graphResult] = await Promise.all([
       knowledgeGraphApi.getCallChainByKey(
         props.entry.entryKey,
-        props.projectPath
+        props.projectPath,
+        props.projectPaths
       ),
       knowledgeGraphApi.getCallChainGraph(
         props.entry.entryKey,
         props.projectPath,
-        true // includeCycles
+        true, // includeCycles
+        props.projectPaths
       )
     ])
 
