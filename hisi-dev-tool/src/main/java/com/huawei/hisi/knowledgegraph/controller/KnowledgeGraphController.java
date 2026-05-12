@@ -559,6 +559,11 @@ public class KnowledgeGraphController {
             @RequestParam(required = false) List<String> projectPaths,
             @RequestParam(defaultValue = "10") int maxDepth) {
 
+        // 标准化单个 projectPath
+        if (projectPath != null) {
+            projectPath = normalizePath(projectPath);
+        }
+
         List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
         if (paths.isEmpty()) {
             return ApiResponse.error(400, "projectPath or projectPaths required");
@@ -637,7 +642,20 @@ public class KnowledgeGraphController {
             List<MethodNode> allNodes = neo4jMethodNodeRepository.findByProjectPaths(paths);
             log.info("[KG CalleesTree] Total {} method nodes in project, some samples: {}", allNodes.size(),
                 allNodes.stream().limit(10).map(n -> n.getClassName() + "#" + n.getMethodName()).collect(Collectors.toList()));
-            return ApiResponse.error(404, "未找到方法: " + className + "#" + methodName);
+            // 返回空图而不是 404，让前端可以显示没有找到的状态
+            CallChainGraphResponse emptyResponse = CallChainGraphResponse.builder()
+                .entryId(null)
+                .entryType("METHOD")
+                .entryKey(className + "." + methodName)
+                .maxDepth(0)
+                .totalNodes(0)
+                .nodes(new ArrayList<>())
+                .edges(new ArrayList<>())
+                .cycles(new ArrayList<>())
+                .cycleCount(0)
+                .nodesInCycle(new HashSet<>())
+                .build();
+            return ApiResponse.success(emptyResponse);
         }
 
         log.info("[KG CalleesTree] Found method: nodeId={}, projectPath={}", startNode.getNodeId(), startNode.getProjectPath());

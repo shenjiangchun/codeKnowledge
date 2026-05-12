@@ -130,28 +130,10 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
             env.put("LANG", "en_US.UTF-8");
             env.put("LC_ALL", "en_US.UTF-8");
 
-            // Ensure node/npm paths are in PATH
-            String npmPath = claudePath.contains("\\npm\\") ?
-                claudePath.substring(0, claudePath.lastIndexOf("\\npm\\") + 5) : "";
-            String[] nodePaths = {
-                "C:\\Program Files\\nodejs",
-                "C:\\Program Files (x86)\\nodejs",
-                System.getenv("APPDATA") + "\\npm",
-                System.getProperty("user.home") + "\\AppData\\Roaming\\npm"
-            };
-
-            String currentPath = env.getOrDefault("PATH", "");
-            StringBuilder pathBuilder = new StringBuilder(currentPath);
-            if (!npmPath.isEmpty() && !currentPath.contains(npmPath)) {
-                pathBuilder.insert(0, npmPath + ";");
+            // 修复 PATH 环境变量，确保 Node.js 可用
+            if (osName.contains("win")) {
+                enhancePathForWindows(env);
             }
-            for (String nodePath : nodePaths) {
-                if (nodePath != null && !nodePath.isEmpty() &&
-                    !currentPath.contains(nodePath) && new java.io.File(nodePath).exists()) {
-                    pathBuilder.insert(0, nodePath + ";");
-                }
-            }
-            env.put("PATH", pathBuilder.toString());
 
             builder.setEnvironment(env);
             builder.setInitialColumns(termCols);
@@ -201,6 +183,108 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    /**
+     * 增强 Windows PATH 环境变量，确保 Node.js 可用
+     */
+    private void enhancePathForWindows(Map<String, String> env) {
+        String currentPath = env.getOrDefault("PATH", "");
+        StringBuilder pathBuilder = new StringBuilder();
+
+        // 1. 先尝试通过 where 命令找到 node/npm
+        try {
+            String nodePath = findExecutablePath("node.exe");
+            String npmPath = findExecutablePath("npm.cmd");
+            String npxPath = findExecutablePath("npx.cmd");
+
+            if (nodePath != null && !nodePath.isEmpty()) {
+                String nodeDir = new java.io.File(nodePath).getParent();
+                if (nodeDir != null && !currentPath.contains(nodeDir)) {
+                    pathBuilder.append(nodeDir).append(";");
+                    log.info("[Terminal] Added Node.js to PATH: {}", nodeDir);
+                }
+            }
+
+            if (npmPath != null && !npmPath.isEmpty()) {
+                String npmDir = new java.io.File(npmPath).getParent();
+                if (npmDir != null && !currentPath.contains(npmDir)) {
+                    pathBuilder.append(npmDir).append(";");
+                    log.info("[Terminal] Added npm to PATH: {}", npmDir);
+                }
+            }
+
+            if (npxPath != null && !npxPath.isEmpty()) {
+                String npxDir = new java.io.File(npxPath).getParent();
+                if (npxDir != null && !currentPath.contains(npxDir)) {
+                    pathBuilder.append(npxDir).append(";");
+                    log.info("[Terminal] Added npx to PATH: {}", npxDir);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[Terminal] Failed to find Node.js via where command: {}", e.getMessage());
+        }
+
+        // 2. 常见的 Node.js 安装路径
+        String[] commonPaths = {
+            "C:\\Program Files\\nodejs",
+            "C:\\Program Files (x86)\\nodejs",
+            System.getenv("APPDATA") + "\\npm",
+            System.getProperty("user.home") + "\\AppData\\Roaming\\npm",
+            System.getenv("LOCALAPPDATA") + "\\Programs\\Node.js",
+            System.getenv("ProgramFiles") + "\\nodejs",
+            System.getenv("ProgramFiles(x86)") + "\\nodejs"
+        };
+
+        for (String path : commonPaths) {
+            if (path != null && !path.isEmpty() && !currentPath.contains(path)) {
+                java.io.File dir = new java.io.File(path);
+                if (dir.exists() && dir.isDirectory()) {
+                    pathBuilder.append(path).append(";");
+                    log.debug("[Terminal] Added common path to PATH: {}", path);
+                }
+            }
+        }
+
+        // 3. 从 claudePath 提取 npm 路径
+        if (claudePath.contains("\\npm\\")) {
+            String npmBasePath = claudePath.substring(0, claudePath.lastIndexOf("\\npm\\") + 5);
+            if (!currentPath.contains(npmBasePath)) {
+                pathBuilder.append(npmBasePath).append(";");
+            }
+        }
+
+        // 4. 添加原有的 PATH
+        pathBuilder.append(currentPath);
+
+        String newPath = pathBuilder.toString();
+        env.put("PATH", newPath);
+
+        log.debug("[Terminal] Updated PATH length: {}", newPath.length());
+    }
+
+    /**
+     * 通过 Windows where 命令查找可执行文件路径
+     */
+    private String findExecutablePath(String exeName) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder("where.exe", exeName);
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+            String line = reader.readLine();
+            process.waitFor();
+
+            if (line != null && !line.isEmpty() && new java.io.File(line).exists()) {
+                log.info("[Terminal] Found {} at: {}", exeName, line);
+                return line;
+            }
+        } catch (Exception e) {
+            log.debug("[Terminal] Failed to find {}: {}", exeName, e.getMessage());
+        }
+        return null;
+    }
+
     private void continueRecentSession(WebSocketSession session, String workingDirectory, int cols, int rows, String initialPrompt) {
         if (ptyProcessMap.containsKey(session)) {
             sendError(session, "Process already running for this session");
@@ -222,11 +306,9 @@ public class TerminalWebSocketHandler extends TextWebSocketHandler {
             env.put("LANG", "en_US.UTF-8");
             env.put("LC_ALL", "en_US.UTF-8");
 
-            String npmPath = claudePath.contains("\\npm\\") ?
-                claudePath.substring(0, claudePath.lastIndexOf("\\npm\\") + 5) : "";
-            String currentPath = env.getOrDefault("PATH", "");
-            if (!npmPath.isEmpty() && !currentPath.contains(npmPath)) {
-                env.put("PATH", npmPath + ";" + currentPath);
+            // 修复 PATH 环境变量，确保 Node.js 可用
+            if (osName.contains("win")) {
+                enhancePathForWindows(env);
             }
 
             builder.setEnvironment(env);
