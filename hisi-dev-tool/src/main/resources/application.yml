@@ -2,7 +2,7 @@ spring:
   application:
     name: devTool
   profiles:
-    active: dev
+    active: dev,local
   datasource:
     url: jdbc:sqlite:${user.home}/.hisi-devtool/devtool.db
   # WebSocket 配置 - 保持长连接
@@ -22,7 +22,7 @@ server:
 # 用于代码语义向量化，支持任意 OpenAI 兼容的 /embeddings 端点
 # 前端「系统设置」可快速切换预置供应商或自定义
 embedding:
-  api-key: ${EMBEDDING_API_KEY}
+  api-key: ${EMBEDDING_API_KEY:}
   base-url: https://api.siliconflow.cn/v1
   model: Qwen/Qwen3-VL-Embedding-8B
   dimension: 4096
@@ -36,7 +36,7 @@ embedding:
 # ==================== 自然语言生成模型（Text / Chat） ====================
 # 用于代码描述生成，支持任意 OpenAI 兼容的 /chat/completions 端点
 text-model:
-  api-key: ${TEXT_MODEL_API_KEY}
+  api-key: ${TEXT_MODEL_API_KEY:}
   base-url: https://open.bigmodel.cn/api/paas/v4
   model: glm-4-flash
   temperature: 0.1
@@ -155,14 +155,14 @@ neo4j:
 # HTTP 代理配置（用于内网环境连接外部大模型 API）
 # 前端可通过 /api/settings/proxy 实时修改
 proxy:
-  enabled: ${PROXY_ENABLED:true}
-  host: ${PROXY_HOST:proxy.huawei.com}
-  port: ${PROXY_PORT:8080}
+  enabled: ${PROXY_ENABLED:false}
+  host: ${PROXY_HOST:}
+  port: ${PROXY_PORT:0}
   # 代理类型: HTTP / SOCKS
   type: ${PROXY_TYPE:HTTP}
   # 代理认证（可选）
-  username: ${PROXY_USERNAME}
-  password: ${PROXY_PASSWORD}
+  username: ${PROXY_USERNAME:}
+  password: ${PROXY_PASSWORD:}
   # 不走代理的地址列表（逗号分隔）
   non-proxy-hosts: ${PROXY_NON_HOSTS:localhost,127.0.0.1}
   # 是否禁用 SSL 证书验证（仅用于内网/测试环境）

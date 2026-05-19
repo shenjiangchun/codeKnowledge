@@ -77,15 +77,25 @@ public class MqLinkStrategy implements LinkStrategy {
     }
 
     /**
-     * Normalize topic: strip "MQ:" prefix if present (Java-style entryKey).
+     * Normalize topic from MQ entryKey.
+     * EntryKey format: "MQ:className.methodName:topic"
+     * We need to extract just the topic part.
      */
     static String normalizeTopic(String entryKey) {
-        if (entryKey == null) {
+        if (entryKey == null || entryKey.isEmpty()) {
             return "";
         }
-        if (entryKey.startsWith(MQ_PREFIX)) {
-            return entryKey.substring(MQ_PREFIX.length());
+        // Strip "MQ:" prefix
+        String stripped = entryKey.startsWith(MQ_PREFIX)
+                ? entryKey.substring(MQ_PREFIX.length())
+                : entryKey;
+        // Extract topic: everything after the last colon
+        // Format after stripping: "className.methodName:topic"
+        int lastColon = stripped.lastIndexOf(':');
+        if (lastColon >= 0 && lastColon < stripped.length() - 1) {
+            return stripped.substring(lastColon + 1);
         }
-        return entryKey;
+        // Fallback: return stripped value (no colon found, treat entire string as topic)
+        return stripped;
     }
 }

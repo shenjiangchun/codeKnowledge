@@ -25,10 +25,12 @@
 **/startup.log
 **/app.log
 
-# Env / local
+# Env / local (protect secrets: API keys, passwords, tokens)
 **/.env
-**/.env.local
-**/.env.*.local
+**/.env.*
+!**/.env.*.example
+**/application-local.yml
+**/application-local.yaml
 **/.worktrees/
 /.worktrees/
 /.wiki-staging/

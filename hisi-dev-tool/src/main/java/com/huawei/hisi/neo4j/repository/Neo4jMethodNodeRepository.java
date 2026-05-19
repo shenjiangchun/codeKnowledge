@@ -219,22 +219,22 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     List<MethodNode> findCalleesUpToDepth(@Param("nodeId") String nodeId, @Param("depth") int depth);
 
     /**
-     * 跨项目下游调用链 — 同时遍历 CALLS 和 EXTERNAL_CALL 关系
+     * 跨项目下游调用链 — 遍历 CALLS 关系（包含同项目内部调用和跨服务 EXTERNAL_CALL）
      * 用于多项目模式下追踪跨服务调用
      */
     @Query("""
-        MATCH path = (start:Method {nodeId: $nodeId})-[:CALLS|EXTERNAL_CALL*1..10]->(end:Method)
+        MATCH path = (start:Method {nodeId: $nodeId})-[:CALLS*1..10]->(end:Method)
         WHERE length(path) <= $depth
         RETURN DISTINCT end
         """)
     List<MethodNode> findDownstreamCrossService(@Param("nodeId") String nodeId, @Param("depth") int depth);
 
     /**
-     * 跨项目上游调用链 — 同时遍历 CALLS 和 EXTERNAL_CALL 关系
+     * 跨项目上游调用链 — 遍历 CALLS 关系（包含同项目内部调用和跨服务 EXTERNAL_CALL）
      * 用于多项目模式下追踪跨服务调用
      */
     @Query("""
-        MATCH path = (start:Method)-[:CALLS|EXTERNAL_CALL*1..10]->(end:Method {nodeId: $nodeId})
+        MATCH path = (start:Method)-[:CALLS*1..10]->(end:Method {nodeId: $nodeId})
         WHERE length(path) <= $depth
         RETURN DISTINCT start
         """)
@@ -1602,11 +1602,13 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     List<String> findDistinctClassNamesByProjectPaths(@Param("projectPaths") List<String> projectPaths);
 
     /**
-     * 删除指定项目路径之间的 EXTERNAL_CALL 关系
+     * 删除指定项目路径之间的跨服务调用关系
+     * 匹配 :CALLS 关系中 callType='EXTERNAL_CALL' 的边（由 LinkStrategy 创建）
      */
     @Query("""
-        MATCH (a:Method)-[r:EXTERNAL_CALL]->(b:Method)
+        MATCH (a:Method)-[r:CALLS]->(b:Method)
         WHERE a.projectPath IN $projectPaths AND b.projectPath IN $projectPaths
+          AND r.callType = 'EXTERNAL_CALL'
         DELETE r
         RETURN count(r) AS deleted
         """)

@@ -467,13 +467,14 @@ import { useRouter } from 'vue-router'
 import { Search, Loading, Document, Warning, Cpu, Check, Delete, Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { logAnalysisApi } from '@/api/logAnalysis'
+import { aiAnalysisApi } from '@/api/aiAnalysis'
 import { claudeApi } from '@/api/claude'
-import { usePromptStore } from '@/stores/promptStore'
+import { useWorkspaceStore } from '@/stores/workspaceStore'
 import type { LogEntry } from '@/types/log'
 import { parseJavaErrorLog, formatForAnalysis, type ParsedErrorLog } from '@/utils/logParser'
 
 const router = useRouter()
-const promptStore = usePromptStore()
+const workspaceStore = useWorkspaceStore()
 
 const loading = ref(false)
 const logs = ref<LogEntry[]>([])
@@ -973,47 +974,30 @@ const handleAnalyze = async (row: MockLogEntry) => {
   const parsed = parseJavaErrorLog(rawLog)
   const formatted = formatForAnalysis(parsed)
 
-  // 获取提示词模板并渲染
-  await promptStore.loadTemplates()
-  const prompt = promptStore.render('log-analysis', {
-    errorMessage: formatted.errorSummary || formatted.errorMessage || rawLog,
-    errorType: formatted.errorType || '',
-    stackTrace: formatted.stackTrace || parsed.rawStackTrace || '',
-    projectPath: row.serviceName || parsed.loggerName || ''
-  })
-
-  // 使用通用对话接口创建会话并跳转
   try {
-    const sessionId = await claudeApi.universalChat(
-      {
-        prompt,
-        scene: 'log-analysis',
-        metadata: {
-          sourceId: row.id,
-          errorType: formatted.errorType,
-          serviceName: row.serviceName
-        }
-      },
-      {
-        onOutput: () => {
-          // 流式输出处理
-        },
-        onDone: () => {
-          // 分析完成
-        },
-        onError: (error) => {
-          console.error('Analysis error:', error)
-          ElMessage.error(`分析失败: ${error}`)
-        }
-      }
-    )
+    // 1. 调后端接口，从 Neo4j 拉取相关代码上下文组装为富提示词
+    const result = await aiAnalysisApi.buildLogPrompt({
+      errorMessage: formatted.errorSummary || formatted.errorMessage || rawLog,
+      errorType: formatted.errorType || '',
+      stackTrace: formatted.stackTrace || parsed.rawStackTrace || '',
+      projectPath: row.serviceName || parsed.loggerName || ''
+    }) as any
 
-    // 跳转到 Claude 会话页面
-    router.push({ name: 'ClaudeSession', query: { sessionId } })
-    ElMessage.success('已创建分析会话')
-  } catch (error) {
-    console.error('创建会话失败:', error)
-    ElMessage.error('创建分析会话失败')
+    const prompt = result?.prompt || result
+    if (!prompt) {
+      ElMessage.warning('生成分析提示词失败')
+      return
+    }
+
+    // 2. 创建 workspace session，通过 PTY 终端发送到 Claude CLI
+    const session = await workspaceStore.createSession(
+      'log-analysis',
+      typeof prompt === 'string' ? prompt : JSON.stringify(prompt)
+    )
+    router.push({ name: 'ClaudeTerminal', query: { sessionId: session.id } })
+    ElMessage.success('已创建日志分析会话')
+  } catch (error: any) {
+    ElMessage.error(`创建分析会话失败: ${error.message || error}`)
   }
 }
 

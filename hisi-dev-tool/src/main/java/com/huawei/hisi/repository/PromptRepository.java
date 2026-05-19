@@ -149,17 +149,15 @@ public class PromptRepository {
 
     private String buildLogAnalysisTemplate() {
         return """
-你是一个专业的日志分析和代码诊断专家。
+你是一个专业的日志分析和代码诊断专家。你可以通过 MCP 工具访问项目的知识图谱来辅助分析。
 
-## 可用工具
-- search_methods: 搜索项目中的方法定义
-- find_callers: 查找调用某个方法的上游代码
-- find_callees: 查找某个方法调用的下游代码
-- list_classes: 列出项目中的类
-- list_projects: 列出可用项目
-- list_uris: 列出项目的 URI 端点
-- query_error_logs: 查询错误日志
-- analyze_interface: 分析接口定义
+## 可用的知识图谱 MCP 工具
+- hybrid_search: 混合检索（关键词+向量语义匹配），用自然语言搜索相关方法
+- kg_root_entries: 查询方法的上游入口点（Controller/MQ/定时任务等）
+- kg_affecting: 查找影响指定方法的上游调用链
+- kg_callees_tree: 获取方法的完整下游调用树
+- kg_method_detail: 获取方法详细信息（参数、返回值、注解、代码体）
+- kg_mybatis_sql: 获取 MyBatis SQL 映射信息
 
 ## 项目信息
 #{projectPath}
@@ -178,23 +176,28 @@ public class PromptRepository {
 ```
 
 ## 分析步骤
-1. 定位错误源：从堆栈信息中找到第一个项目代码位置
-2. 分析根本原因：检查错误位置的代码逻辑
-3. 评估影响范围：找出所有受影响的调用方
-4. 提供修复建议：给出具体的代码修改方案
+1. **定位错误源**：从堆栈信息中找到第一个项目代码位置
+2. **查询知识图谱**：使用 hybrid_search 或 kg_method_detail 获取错误位置的完整代码和上下游关系
+3. **追溯调用链**：使用 kg_root_entries 找到触发该方法的入口点（API/定时任务/MQ）
+4. **分析根本原因**：结合代码逻辑和调用关系判断根因
+5. **评估影响范围**：使用 kg_affecting 找出所有受影响的上游调用方
+6. **提供修复建议**：给出具体的代码修改方案
 
-请输出：
-- 错误类型
-- 根本原因
-- 受影响的代码
-- 修复建议
-- 影响范围
+请输出：根本原因 → 受影响代码/入口点 → 具体修复建议 → 预防措施
 """;
     }
 
     private String buildCodeAnalysisTemplate() {
         return """
-你是一个专业的代码分析专家。
+你是一个专业的代码分析专家。你可以通过 MCP 工具访问项目的知识图谱来获取完整的代码上下文。
+
+## 可用的知识图谱 MCP 工具
+- hybrid_search: 混合检索，搜索相关方法
+- kg_callees_tree: 获取方法的下游调用树
+- kg_root_entries: 查询方法的上游入口点
+- kg_method_detail: 获取方法详细信息
+- kg_mybatis_sql: 获取 SQL 映射信息
+- kg_implementations: 获取接口的所有实现类
 
 ## 项目上下文
 #{projectContext}
@@ -207,39 +210,44 @@ public class PromptRepository {
 #{codeSnippet}
 ```
 
-请分析这段代码：
+请分析这段代码，结合知识图谱中的上下游调用关系：
 1. 代码质量和最佳实践
-2. 潜在问题和风险
-3. 性能优化建议
-4. 安全隐患检查
+2. 潜在 bug 和边界情况
+3. 性能优化建议（N+1 查询、缓存策略）
+4. 安全隐患检查（注入、权限）
 5. 改进建议
 """;
     }
 
     private String buildTraceAnalysisTemplate() {
         return """
-你是一个专业的分布式系统调用链分析专家。
+你是一个专业的调用链分析专家。
 
-## Trace ID
-#{traceId}
+> 注意：调用链的完整数据（节点、边、方法签名、代码体、SQL）现在由后端 /api/ai-analysis/call-chain/prompt 接口自动从知识图谱组装。
+> 此模板仅作为手动分析的参考。如需完整分析，请使用前端的「AI 调用链分析」按钮。
 
 ## 入口点
 #{entryPoint}
 
-## 调用链
+## 调用链数据
 #{callChain}
 
 请分析这个调用链：
-1. 调用链路梳理
-2. 性能瓶颈识别
-3. 异常节点定位
-4. 优化建议
+1. **业务流程梳理**：描述完整的数据流转过程
+2. **关键路径识别**：核心方法 vs 辅助方法
+3. **性能瓶颈**：N+1 查询、无缓存热点、同步阻塞
+4. **异常处理**：是否完善？事务一致性？
+5. **安全隐患**：SQL 注入、权限检查缺失
+6. **架构建议**：调用链是否过深？循环依赖？
 """;
     }
 
     private String buildImpactAnalysisTemplate() {
         return """
 你是一个专业的代码影响分析专家。
+
+> 注意：变更影响的完整数据（上下游调用者、受影响入口点）现在由后端 /api/ai-analysis/impact/prompt 接口自动从知识图谱组装。
+> 此模板仅作为手动分析的参考。
 
 ## 项目名称
 #{projectName}
@@ -254,11 +262,11 @@ public class PromptRepository {
 #{changeType}
 
 请分析这个变更的影响：
-1. 直接影响的模块和方法
-2. 间接影响的调用链
-3. 可能的兼容性问题
-4. 测试覆盖建议
-5. 部署风险评估
+1. **直接影响**：上游调用方需要做哪些适配？
+2. **间接影响**：受影响入口点涉及哪些业务场景？
+3. **风险评估**：修改风险等级（LOW/MEDIUM/HIGH/CRITICAL），理由
+4. **测试策略**：需要覆盖哪些测试用例？重点回归哪些接口？
+5. **部署建议**：是否需要灰度发布？数据迁移？
 """;
     }
 

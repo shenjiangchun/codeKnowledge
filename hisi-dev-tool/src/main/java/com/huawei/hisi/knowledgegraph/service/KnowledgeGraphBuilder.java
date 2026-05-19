@@ -24,6 +24,7 @@ import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.SqlNode;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jSqlNodeRepository;
+import com.huawei.hisi.neo4j.repository.Neo4jGenerationCheckpointRepository;
 import com.huawei.hisi.knowledgegraph.python.PythonKnowledgeGraphBuilder;
 import com.huawei.hisi.knowledgegraph.util.ProjectLanguageDetector;
 import com.huawei.hisi.knowledgegraph.util.ProjectLanguageDetector.Language;
@@ -87,6 +88,9 @@ public class KnowledgeGraphBuilder {
     // Python 知识图谱构建器
     private final PythonKnowledgeGraphBuilder pythonKnowledgeGraphBuilder;
 
+    // Neo4j 增量刷新 Checkpoint 仓库
+    private final Neo4jGenerationCheckpointRepository checkpointRepository;
+
     public KnowledgeGraphBuilder(
             CodeAnalysisCoreService coreService,
             GlobalAnalysisCache globalCache,
@@ -103,7 +107,8 @@ public class KnowledgeGraphBuilder {
             VectorGenerationService vectorGenerationService,
             GenerationTaskRepository generationTaskRepository,
             GitStatusService gitStatusService,
-            PythonKnowledgeGraphBuilder pythonKnowledgeGraphBuilder) {
+            PythonKnowledgeGraphBuilder pythonKnowledgeGraphBuilder,
+            Neo4jGenerationCheckpointRepository checkpointRepository) {
         this.coreService = coreService;
         this.globalCache = globalCache;
         this.storageService = storageService;
@@ -120,6 +125,7 @@ public class KnowledgeGraphBuilder {
         this.generationTaskRepository = generationTaskRepository;
         this.gitStatusService = gitStatusService;
         this.pythonKnowledgeGraphBuilder = pythonKnowledgeGraphBuilder;
+        this.checkpointRepository = checkpointRepository;
     }
 
     /**
@@ -1499,6 +1505,18 @@ public class KnowledgeGraphBuilder {
 
             generationTaskRepository.insert(logTask);
             this.log.info("知识图谱生成日志已保存: projectPath={}, commitHash={}", projectPath, commitHash);
+
+            // Also create/update Neo4j checkpoint for IncrementalRefreshService (V2)
+            if (commitHash != null) {
+                try {
+                    String branch = gitStatusService.getCurrentBranch(projectPath);
+                    checkpointRepository.upsertCheckpoint(projectPath, commitHash, branch);
+                    this.log.info("增量刷新 checkpoint 已保存: projectPath={}, commit={}, branch={}",
+                            projectPath, commitHash, branch);
+                } catch (Exception ce) {
+                    this.log.warn("保存增量刷新 checkpoint 失败: {}", ce.getMessage());
+                }
+            }
         } catch (Exception e) {
             this.log.warn("保存知识图谱生成日志失败: {}", e.getMessage());
         }

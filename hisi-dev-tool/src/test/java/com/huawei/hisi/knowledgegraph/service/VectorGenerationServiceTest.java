@@ -6,7 +6,6 @@ import com.huawei.hisi.neo4j.model.MethodNode;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jSqlNodeRepository;
 import com.huawei.hisi.neo4j.service.EmbeddingService;
-import com.huawei.hisi.service.ZhipuService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -49,9 +48,6 @@ class VectorGenerationServiceTest {
     @Mock
     private EmbeddingService embeddingService;
 
-    @Mock
-    private ZhipuService zhipuService;
-
     private VectorGenerationService service;
     private ExecutorService testExecutor;
 
@@ -62,8 +58,7 @@ class VectorGenerationServiceTest {
                 neo4jSqlNodeRepository,
                 taskRepository,
                 llmDescriptionService,
-                embeddingService,
-                zhipuService
+                embeddingService
         );
 
         // 设置默认并发配置
@@ -89,8 +84,7 @@ class VectorGenerationServiceTest {
                 neo4jSqlNodeRepository,
                 taskRepository,
                 llmDescriptionService,
-                embeddingService,
-                zhipuService
+                embeddingService
         );
 
         // When & Then - 默认值应该是5（通过@Value注解的默认值）
@@ -361,10 +355,6 @@ class VectorGenerationServiceTest {
         lenient().when(embeddingService.generateEmbedding(anyString()))
                 .thenReturn(new float[2048]);
         lenient().when(embeddingService.getEmbeddingDimension()).thenReturn(2048);
-
-        // 智谱AI服务 - 使用lenient
-        lenient().when(zhipuService.isEmbeddingAvailable()).thenReturn(true);
-        lenient().when(zhipuService.getEmbeddingDimension()).thenReturn(2048);
 
         // Neo4j更新 - 使用lenient
         lenient().doNothing().when(neo4jMethodNodeRepository).updateDescriptionAndCodeEmbedding(

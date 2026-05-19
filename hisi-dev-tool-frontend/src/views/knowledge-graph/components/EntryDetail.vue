@@ -294,22 +294,33 @@ const loadChain = async () => {
 }
 
 // AI 分析
+// 混合模式：后端从 Neo4j 组装完整调用链数据 → 前端创建 workspace session → PTY 终端
 const handleAIAnalysis = async () => {
   if (!chainData.value) return
 
-  const prompt = `分析以下调用链的代码逻辑和潜在问题：
-
-入口: ${chainData.value.entryType} - ${chainData.value.entryKey}
-最大深度: ${chainData.value.maxDepth}
-节点数: ${chainData.value.totalNodes}
-
-请分析这个调用链的关键路径和可能的风险点。`
-
   try {
-    const newSession = await workspaceStore.createSession('call-chain-analysis', prompt)
-    router.push({ name: 'ClaudeTerminal', query: { sessionId: newSession.id } })
-  } catch (error) {
-    ElMessage.error('创建 AI 分析会话失败')
+    // 1. 调后端接口，从 Neo4j 拉取完整调用链数据组装为富提示词
+    const { aiAnalysisApi } = await import('@/api/aiAnalysis')
+    const result = await aiAnalysisApi.buildCallChainPrompt({
+      entryKey: props.entry.entryKey,
+      projectPath: props.projectPath
+    }) as any
+
+    const prompt = result?.prompt || result
+    if (!prompt || (typeof prompt === 'string' && prompt.length < 10)) {
+      ElMessage.warning('未找到调用链数据，请先生成知识图谱')
+      return
+    }
+
+    // 2. 创建 workspace session，通过 PTY 终端发送到 Claude CLI
+    const session = await workspaceStore.createSession(
+      'call-chain-analysis',
+      typeof prompt === 'string' ? prompt : JSON.stringify(prompt),
+      props.projectPath || undefined
+    )
+    router.push({ name: 'ClaudeTerminal', query: { sessionId: session.id } })
+  } catch (error: any) {
+    ElMessage.error(`创建 AI 分析会话失败: ${error.message || error}`)
   }
 }
 
