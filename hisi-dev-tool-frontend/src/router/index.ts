@@ -12,6 +12,12 @@ const routes: RouteRecordRaw[] = [
     redirect: '/skill-market'
   },
   {
+    path: '/apm-debug',
+    name: 'ApmDebug',
+    component: () => import('@/views/apm-debug/ApmDebugView.vue'),
+    meta: { title: 'APM 调试' }
+  },
+  {
     path: '/claude-session',
     name: 'ClaudeSession',
     component: () => import('@/views/claude-session/ClaudeSession.vue'),

@@ -120,6 +120,44 @@ public class SQLiteSchemaInitializer {
             )
             """);
 
-        log.info("[SQLite] Schema initialization complete - 7 tables ensured");
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS apm_session (
+                id              TEXT PRIMARY KEY,
+                project_path    TEXT NOT NULL,
+                service_name    TEXT,
+                target_port     INTEGER,
+                status          TEXT DEFAULT 'CREATED',
+                created_at      INTEGER DEFAULT (strftime('%s','now')),
+                finished_at     INTEGER
+            )
+            """);
+
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS apm_span (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id      TEXT NOT NULL,
+                trace_id        TEXT NOT NULL,
+                span_id         TEXT NOT NULL,
+                parent_span_id  TEXT,
+                service_name    TEXT,
+                operation_name  TEXT NOT NULL,
+                span_kind       TEXT,
+                start_time_ns   INTEGER NOT NULL,
+                end_time_ns     INTEGER NOT NULL,
+                status_code     TEXT,
+                status_message  TEXT,
+                attributes      TEXT,
+                resource_attrs  TEXT,
+                kg_node_id      TEXT,
+                kg_match_level  INTEGER DEFAULT 3,
+                created_at      INTEGER DEFAULT (strftime('%s','now'))
+            )
+            """);
+
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_apm_span_trace ON apm_span(trace_id)");
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_apm_span_session ON apm_span(session_id)");
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_apm_span_created ON apm_span(created_at)");
+
+        log.info("[SQLite] Schema initialization complete - 9 tables ensured");
     }
 }
