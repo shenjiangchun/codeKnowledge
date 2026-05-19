@@ -5,6 +5,7 @@
  *   - Knowledge Graph (14 tools, prefix kg_)   → knowledgeGraphTools.ts
  *   - Hybrid Search   (1 tool)                 → vectorTools.ts
  *   - Log Query       (4 tools, prefix log_)   → logTools.ts
+ *   - APM Debug       (6 tools, prefix apm_)   → apmTools.ts
  */
 
 export {
@@ -46,6 +47,19 @@ export {
   type LogReportParams,
 } from './logTools.js';
 
+export {
+  apmToolDefinitions,
+  handleApmToolCall,
+  ApmTools,
+  APM_TOOLS,
+  type ApmStartSessionParams,
+  type ApmExecuteRequestParams,
+  type ApmListTracesParams,
+  type ApmGetTraceParams,
+  type ApmGetReportParams,
+  type ApmStopSessionParams,
+} from './apmTools.js';
+
 // ============================================================================
 // Aggregate
 // ============================================================================
@@ -53,16 +67,19 @@ export {
 import { knowledgeGraphToolDefinitions, KG_TOOLS } from './knowledgeGraphTools.js';
 import { vectorToolDefinitions, VECTOR_TOOLS } from './vectorTools.js';
 import { logToolDefinitions, LOG_TOOLS } from './logTools.js';
+import { apmToolDefinitions, APM_TOOLS } from './apmTools.js';
 
 import { handleKnowledgeGraphToolCall } from './knowledgeGraphTools.js';
 import { handleVectorToolCall } from './vectorTools.js';
 import { handleLogToolCall } from './logTools.js';
+import { handleApmToolCall } from './apmTools.js';
 import { normalizePathArgs } from '../utils/pathUtils.js';
 
 export const allToolDefinitions = [
   ...knowledgeGraphToolDefinitions,
   ...vectorToolDefinitions,
   ...logToolDefinitions,
+  ...apmToolDefinitions,
 ];
 
 /**
@@ -84,6 +101,10 @@ export async function handleToolCall(
 
   if (LOG_TOOLS.includes(toolName)) {
     return handleLogToolCall(toolName, args);
+  }
+
+  if (APM_TOOLS.includes(toolName)) {
+    return handleApmToolCall(toolName, args);
   }
 
   throw new Error(`Unknown tool: ${toolName}`);

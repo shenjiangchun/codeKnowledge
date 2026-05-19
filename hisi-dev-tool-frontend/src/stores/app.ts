@@ -36,6 +36,7 @@ export const useAppStore = defineStore('app', () => {
     'log-analysis': projectDirConfigured.value && projectSelected.value,
     'prompt-config': true, // Always available
     'settings': true, // Always available
+    'apm-debug': true, // Always available
   }))
 
   // Actions

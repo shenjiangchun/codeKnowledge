@@ -168,3 +168,10 @@ proxy:
   # 是否禁用 SSL 证书验证（仅用于内网/测试环境）
   disable-ssl-verification: ${PROXY_DISABLE_SSL_VERIFICATION:true}
 
+# APM（Application Performance Monitoring）配置
+apm:
+  otel-agent-version: "2.14.0"
+  target-ready-timeout-seconds: 60
+  span-ttl-hours: 24
+  target-shutdown-grace-seconds: 5
+

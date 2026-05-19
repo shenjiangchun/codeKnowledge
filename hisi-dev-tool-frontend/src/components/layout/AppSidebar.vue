@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { Document, Folder, Monitor, Search, Shop, DataAnalysis, Setting } from '@element-plus/icons-vue'
+import { Document, Folder, Monitor, Search, Shop, DataAnalysis, Setting, Cpu } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import { computed } from 'vue'
 import type { Component } from 'vue'
 import { useAppStore } from '@/stores/app'
 
 // Define menu key type that matches availableMenus keys
-type MenuKey = 'log-analysis' | 'project-management' | 'claude-terminal' | 'prompt-config' | 'search' | 'skill-market' | 'knowledge-graph' | 'settings'
+type MenuKey = 'log-analysis' | 'project-management' | 'claude-terminal' | 'prompt-config' | 'search' | 'skill-market' | 'knowledge-graph' | 'settings' | 'apm-debug'
 
 interface MenuItem {
   index: string
@@ -32,6 +32,12 @@ const baseMenuItems: MenuItem[] = [
     title: 'Claude 终端',
     icon: Monitor,
     menuKey: 'claude-terminal'
+  },
+  {
+    index: '/apm-debug',
+    title: 'APM 调试',
+    icon: Cpu,
+    menuKey: 'apm-debug' as MenuKey
   },
   {
     index: '/search',
