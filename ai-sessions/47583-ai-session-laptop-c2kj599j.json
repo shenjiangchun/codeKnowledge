@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "claude-opus-4-6-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-05-19T05:06:06.918Z",
+  "lastUpdated": "2026-05-19T11:40:04.450Z",
   "stats": {
-    "totalOperations": 111,
-    "totalFilesEdited": 66,
-    "totalAiLines": 1025,
-    "totalAiLinesDeleted": 110,
-    "totalCommits": 4
+    "totalOperations": 126,
+    "totalFilesEdited": 69,
+    "totalAiLines": 1829,
+    "totalAiLinesDeleted": 204,
+    "totalCommits": 5
   },
   "pendingFiles": [
     {
@@ -363,14 +363,6 @@
       "lastModified": "2026-05-08T10:14:30.895Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/.gitignore",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-05-08T10:48:29.988Z",
-      "lastModified": "2026-05-19T03:54:05.980Z",
-      "lastTool": "Edit"
-    },
-    {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/docs/presentation/HiSi-DevTool-产品宣讲材料.md",
       "tool": "Write",
       "operations": 29,
@@ -379,57 +371,27 @@
       "lastTool": "Edit"
     },
     {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/test/java/com/huawei/hisi/knowledgegraph/service/IncrementalRefreshServiceTest.java",
+      "tool": "Edit",
+      "operations": 3,
+      "timestamp": "2026-05-19T08:42:19.438Z",
+      "lastModified": "2026-05-19T08:42:33.710Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/apm/service/OtelAgentManager.java",
+      "tool": "Edit",
+      "operations": 11,
+      "timestamp": "2026-05-19T09:27:47.847Z",
+      "lastModified": "2026-05-19T11:40:04.450Z",
+      "lastTool": "Edit"
+    },
+    {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/resources/application.yml",
       "tool": "Edit",
-      "operations": 3,
-      "timestamp": "2026-05-19T03:53:31.368Z",
-      "lastModified": "2026-05-19T03:53:43.391Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/service/AIAnalysisPromptService.java",
-      "tool": "Write",
-      "operations": 6,
-      "timestamp": "2026-05-19T04:55:43.512Z",
-      "lastModified": "2026-05-19T05:02:35.568Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/controller/AIAnalysisController.java",
-      "tool": "Write",
       "operations": 1,
-      "timestamp": "2026-05-19T05:00:05.937Z",
-      "lastModified": "2026-05-19T05:00:05.937Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/api/aiAnalysis.ts",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-05-19T05:04:19.165Z",
-      "lastModified": "2026-05-19T05:04:19.165Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/call-chain/CallChainGraph.vue",
-      "tool": "Edit",
-      "operations": 3,
-      "timestamp": "2026-05-19T05:04:27.317Z",
-      "lastModified": "2026-05-19T05:04:54.177Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/knowledge-graph/components/EntryDetail.vue",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-05-19T05:05:05.628Z",
-      "lastModified": "2026-05-19T05:05:05.628Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/log-analysis/LogQuery.vue",
-      "tool": "Edit",
-      "operations": 4,
-      "timestamp": "2026-05-19T05:05:34.528Z",
-      "lastModified": "2026-05-19T05:06:06.918Z",
-      "lastTool": "Edit"
+      "timestamp": "2026-05-19T09:28:30.713Z",
+      "lastModified": "2026-05-19T09:28:30.713Z"
     }
   ]
 }

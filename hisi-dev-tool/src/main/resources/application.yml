@@ -171,6 +171,9 @@ proxy:
 # APM（Application Performance Monitoring）配置
 apm:
   otel-agent-version: "2.14.0"
+  # 可选：指定本地 OTel Agent JAR 路径（内网环境无法下载时使用）
+  # 留空则自动从 GitHub releases 下载（需能访问 github.com 或配置 proxy）
+  otel-agent-path: ${APM_OTEL_AGENT_PATH:}
   target-ready-timeout-seconds: 60
   span-ttl-hours: 24
   target-shutdown-grace-seconds: 5
