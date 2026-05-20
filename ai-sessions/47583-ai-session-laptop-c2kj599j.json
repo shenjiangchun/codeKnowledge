@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "claude-opus-4-6-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-05-19T11:40:04.450Z",
+  "lastUpdated": "2026-05-20T05:47:24.409Z",
   "stats": {
-    "totalOperations": 126,
-    "totalFilesEdited": 69,
-    "totalAiLines": 1829,
-    "totalAiLinesDeleted": 204,
-    "totalCommits": 5
+    "totalOperations": 212,
+    "totalFilesEdited": 100,
+    "totalAiLines": 2015,
+    "totalAiLinesDeleted": 219,
+    "totalCommits": 6
   },
   "pendingFiles": [
     {
@@ -379,19 +379,237 @@
       "lastTool": "Edit"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/apm/service/OtelAgentManager.java",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/types/apm.ts",
       "tool": "Edit",
-      "operations": 11,
-      "timestamp": "2026-05-19T09:27:47.847Z",
-      "lastModified": "2026-05-19T11:40:04.450Z",
+      "operations": 2,
+      "timestamp": "2026-05-19T12:44:01.409Z",
+      "lastModified": "2026-05-20T01:35:46.288Z",
       "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/stores/apmStore.ts",
+      "tool": "Write",
+      "operations": 6,
+      "timestamp": "2026-05-19T12:44:58.121Z",
+      "lastModified": "2026-05-20T01:35:20.212Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/ProjectSelector.vue",
+      "tool": "Write",
+      "operations": 3,
+      "timestamp": "2026-05-19T12:45:17.895Z",
+      "lastModified": "2026-05-20T01:14:48.215Z",
+      "lastTool": "Write"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/EntryList.vue",
+      "tool": "Write",
+      "operations": 7,
+      "timestamp": "2026-05-19T12:45:45.615Z",
+      "lastModified": "2026-05-20T01:47:09.760Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/RequestEditor.vue",
+      "tool": "Write",
+      "operations": 5,
+      "timestamp": "2026-05-19T12:46:23.645Z",
+      "lastModified": "2026-05-20T01:26:54.866Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/TraceView.vue",
+      "tool": "Write",
+      "operations": 6,
+      "timestamp": "2026-05-19T12:47:09.615Z",
+      "lastModified": "2026-05-20T02:35:32.478Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/ApmDebugView.vue",
+      "tool": "Write",
+      "operations": 2,
+      "timestamp": "2026-05-19T12:47:36.229Z",
+      "lastModified": "2026-05-19T12:55:09.780Z",
+      "lastTool": "Write"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/api/apmDebug.ts",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-19T12:53:48.276Z",
+      "lastModified": "2026-05-19T12:53:48.276Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/controller/ClaudeChatController.java",
+      "tool": "Write",
+      "operations": 2,
+      "timestamp": "2026-05-20T00:50:55.736Z",
+      "lastModified": "2026-05-20T00:51:26.674Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/service/KnowledgeGraphBuilder.java",
+      "tool": "Edit",
+      "operations": 3,
+      "timestamp": "2026-05-20T01:59:34.763Z",
+      "lastModified": "2026-05-20T02:00:52.121Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/controller/KnowledgeGraphController.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-20T02:02:06.266Z",
+      "lastModified": "2026-05-20T02:02:06.266Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/apm/service/TargetProcessManager.java",
+      "tool": "Edit",
+      "operations": 10,
+      "timestamp": "2026-05-20T02:23:31.386Z",
+      "lastModified": "2026-05-20T05:40:17.738Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/apm/model/TargetProcessInfo.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-20T02:24:17.397Z",
+      "lastModified": "2026-05-20T02:24:17.397Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/apm/service/ApmDebugService.java",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-05-20T02:24:28.258Z",
+      "lastModified": "2026-05-20T02:24:41.625Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/repository/Neo4jMethodNodeRepository.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-20T03:03:35.546Z",
+      "lastModified": "2026-05-20T03:03:35.546Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/controller/VectorGenerationController.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-20T03:04:01.397Z",
+      "lastModified": "2026-05-20T03:04:01.397Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/api/vectorGeneration.ts",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-05-20T03:05:11.267Z",
+      "lastModified": "2026-05-20T03:05:29.196Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/knowledge-graph/KnowledgeGraphView.vue",
+      "tool": "Edit",
+      "operations": 10,
+      "timestamp": "2026-05-20T03:07:14.060Z",
+      "lastModified": "2026-05-20T03:10:16.473Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/apm/handler/ApmWebSocketHandler.java",
+      "tool": "Edit",
+      "operations": 3,
+      "timestamp": "2026-05-20T03:28:04.472Z",
+      "lastModified": "2026-05-20T03:28:24.792Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/utils/TokenBucketRateLimiter.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-20T03:46:06.856Z",
+      "lastModified": "2026-05-20T03:46:06.856Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/config/EmbeddingModelConfig.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-20T03:46:17.792Z",
+      "lastModified": "2026-05-20T03:46:17.792Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/config/TextModelConfig.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-20T03:46:25.446Z",
+      "lastModified": "2026-05-20T03:46:25.446Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/service/UnifiedEmbeddingService.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-20T03:47:19.550Z",
+      "lastModified": "2026-05-20T03:47:19.550Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/service/UnifiedTextService.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-20T03:48:10.974Z",
+      "lastModified": "2026-05-20T03:48:10.974Z"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/resources/application.yml",
       "tool": "Edit",
+      "operations": 3,
+      "timestamp": "2026-05-20T03:48:19.213Z",
+      "lastModified": "2026-05-20T04:00:09.121Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/config/ProxyConfig.java",
+      "tool": "Edit",
       "operations": 1,
-      "timestamp": "2026-05-19T09:28:30.713Z",
-      "lastModified": "2026-05-19T09:28:30.713Z"
+      "timestamp": "2026-05-20T03:59:58.614Z",
+      "lastModified": "2026-05-20T03:59:58.614Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/service/VectorGenerationService.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-20T04:02:31.893Z",
+      "lastModified": "2026-05-20T04:02:31.893Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/pom.xml",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-20T05:40:08.032Z",
+      "lastModified": "2026-05-20T05:40:08.032Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/apm/controller/OtlpReceiverController.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-20T05:40:33.774Z",
+      "lastModified": "2026-05-20T05:40:33.774Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/AiDiagnosisChat.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-20T05:45:06.174Z",
+      "lastModified": "2026-05-20T05:45:06.174Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/hisi-dev-tool/src/test/java/com/huawei/hisi/knowledgegraph/service/VectorGenerationServiceTest.java",
+      "tool": "Edit",
+      "operations": 5,
+      "timestamp": "2026-05-20T05:46:48.404Z",
+      "lastModified": "2026-05-20T05:47:24.409Z",
+      "lastTool": "Edit"
     }
   ]
 }

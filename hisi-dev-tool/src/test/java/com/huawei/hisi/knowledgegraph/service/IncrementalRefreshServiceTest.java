@@ -6,6 +6,7 @@ import com.huawei.hisi.knowledgegraph.link.CrossServiceLinker;
 import com.huawei.hisi.knowledgegraph.vector.VectorWriter;
 import com.huawei.hisi.neo4j.model.GenerationCheckpointNode;
 import com.huawei.hisi.neo4j.repository.Neo4jGenerationCheckpointRepository;
+import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,7 @@ class IncrementalRefreshServiceTest {
     @Mock private Neo4jGenerationCheckpointRepository checkpointRepository;
     @Mock private VectorWriter vectorWriter;
     @Mock private CrossServiceLinker crossServiceLinker;
+    @Mock private Neo4jMethodNodeRepository methodNodeRepository;
 
     private IncrementalRefreshService service;
 
@@ -36,7 +38,7 @@ class IncrementalRefreshServiceTest {
     @BeforeEach
     void setUp() {
         service = new IncrementalRefreshService(
-                gitStatusService, checkpointRepository, vectorWriter, crossServiceLinker);
+                gitStatusService, checkpointRepository, vectorWriter, crossServiceLinker, methodNodeRepository);
     }
 
     @Test

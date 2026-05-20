@@ -57,9 +57,14 @@ public class VectorGenerationService {
     private final EmbeddingService embeddingService;
 
     /**
-     * 固定线程数（同时最多 N 个 API 请求在飞）
+     * 工作线程数（同时最多 N 个 HTTP 请求"在飞"）。
+     *
+     * <p>注意：限流策略已由 {@code UnifiedEmbeddingService} / {@code UnifiedTextService} 的
+     * 令牌桶承担（qps + burst）。这里的线程数只决定"有几个工人去取令牌"，
+     * 不再是限流主体。设置原则：threads ≤ embedding.burst，且大致 ≈ embedding.qps
+     * （避免一启动就把桶吸干），默认 10 配合 burst=40 / qps=25。
      */
-    @Value("${vector.generation.concurrency:2}")
+    @Value("${vector.generation.concurrency:10}")
     private int concurrency;
 
     @Value("${vector.generation.progress-update-interval:10}")

@@ -77,7 +77,7 @@
             <el-form-item label="自定义请求头">
               <div style="width: 500px">
                 <div v-for="(value, key) in form.embeddingHeaders" :key="key" class="header-row">
-                  <el-input v-model="key" placeholder="Header Name" style="width: 180px; margin-right: 8px" disabled />
+                  <el-input :model-value="String(key)" placeholder="Header Name" style="width: 180px; margin-right: 8px" disabled />
                   <el-input v-model="form.embeddingHeaders[key]" placeholder="Header Value" style="width: 200px" />
                   <el-button type="danger" icon="Delete" @click="removeEmbeddingHeader(key)" style="margin-left: 8px" />
                 </div>

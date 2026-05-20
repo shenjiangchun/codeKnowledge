@@ -43,6 +43,25 @@
             >
               生成向量
             </el-button>
+            <!-- 补齐缺失向量按钮 -->
+            <el-button
+              v-if="missingInfo && missingInfo.missingCount > 0"
+              type="warning"
+              :loading="isRefreshingMissing"
+              @click="handleRefreshMissing"
+              :disabled="!projectPath || isRefreshingMissing || isInCooldown"
+            >
+              补齐缺失 ({{ missingInfo.missingCount }})
+            </el-button>
+            <!-- 查看缺失详情 -->
+            <el-button
+              v-if="missingInfo && missingInfo.missingCount > 0"
+              text
+              type="info"
+              @click="showMissingDrawer = true"
+            >
+              查看缺失
+            </el-button>
             <!-- 全量生成按钮 -->
             <el-button
               type="primary"
@@ -88,6 +107,17 @@
           <span class="stat-value">{{ graphStatus.callChainCount }}</span>
           <span class="stat-label">调用链</span>
         </div>
+        <div v-if="missingInfo" class="stat-item stat-item-vector">
+          <span class="stat-value" :class="missingInfo.missingCount > 0 ? 'stat-value-warning' : 'stat-value-success'">
+            {{ missingInfo.generatedCount }}/{{ missingInfo.totalMethods }}
+          </span>
+          <span class="stat-label">
+            已向量化
+            <el-tag v-if="missingInfo.missingCount > 0" size="small" type="warning" effect="plain" style="margin-left: 4px">
+              缺 {{ missingInfo.missingCount }}
+            </el-tag>
+          </span>
+        </div>
       </div>
 
       <!-- Tab 切换 -->
@@ -123,6 +153,47 @@
         </el-tab-pane>
       </el-tabs>
     </el-card>
+
+    <!-- 缺失向量方法详情抽屉 -->
+    <el-drawer
+      v-model="showMissingDrawer"
+      title="缺失向量的方法"
+      direction="rtl"
+      size="480px"
+    >
+      <div v-if="missingInfo" class="missing-drawer-content">
+        <div class="missing-summary">
+          <el-statistic title="总方法" :value="missingInfo.totalMethods" />
+          <el-statistic title="已生成" :value="missingInfo.generatedCount" />
+          <el-statistic title="缺失" :value="missingInfo.missingCount" />
+        </div>
+        <el-divider />
+        <p class="missing-hint">以下为缺失向量的方法预览（最多 50 条）。点击"补齐缺失"将自动跑增量向量生成。</p>
+        <el-table :data="missingInfo.preview" size="small" stripe max-height="500">
+          <el-table-column prop="className" label="类名" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">
+              <code style="font-size: 11px">{{ row.className?.split('.').pop() }}</code>
+            </template>
+          </el-table-column>
+          <el-table-column prop="methodName" label="方法名" min-width="120" show-overflow-tooltip>
+            <template #default="{ row }">
+              <code style="font-size: 11px">{{ row.methodName }}</code>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div v-if="missingInfo.missingCount > missingInfo.preview.length" class="missing-more">
+          还有 {{ missingInfo.missingCount - missingInfo.preview.length }} 个方法未显示
+        </div>
+        <el-button
+          type="warning"
+          :loading="isRefreshingMissing"
+          @click="handleRefreshMissing"
+          style="margin-top: 16px; width: 100%"
+        >
+          补齐缺失向量 ({{ missingInfo.missingCount }})
+        </el-button>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -132,7 +203,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { projectApi } from '@/api/project'
 import { knowledgeGraphApi, type KnowledgeGraphStatus, type GitStatus } from '@/api/knowledgeGraph'
-import { getVectorGenerationStatus, startVectorGeneration, type VectorGenerationTask } from '@/api/vectorGeneration'
+import { getVectorGenerationStatus, startVectorGeneration, getMissingEmbeddings, refreshMissing, type VectorGenerationTask, type MissingEmbeddingInfo } from '@/api/vectorGeneration'
 import { useAppStore } from '@/stores/app'
 import CodeUnderstandingTab from './components/CodeUnderstandingTab.vue'
 import SemanticSearchPanel from './components/SemanticSearchPanel.vue'
@@ -159,6 +230,9 @@ const vectorStatus = ref<VectorGenerationTask | null>(null)
 const gitStatus = ref<GitStatus | null>(null)
 const isGenerating = ref(false)
 const isGeneratingVector = ref(false)
+const missingInfo = ref<MissingEmbeddingInfo | null>(null)
+const isRefreshingMissing = ref(false)
+const showMissingDrawer = ref(false)
 let pollingTimer: number | null = null
 let vectorPollingTimer: number | null = null
 
@@ -302,6 +376,7 @@ const startVectorPolling = () => {
       if (vectorStatus.value?.status === 'COMPLETED' || vectorStatus.value?.status === 'FAILED') {
         console.log('[KnowledgeGraph] Vector task completed, stopping polling')
         stopVectorPolling()
+        loadMissingInfo()
       }
     }
   }, 5000)
@@ -508,11 +583,43 @@ const handleGenerateVector = async () => {
   }
 }
 
+// 加载缺失向量信息
+const loadMissingInfo = async () => {
+  if (!projectPath.value) {
+    missingInfo.value = null
+    return
+  }
+  try {
+    missingInfo.value = await getMissingEmbeddings(projectPath.value)
+  } catch (error) {
+    console.error('[KnowledgeGraph] Failed to load missing info:', error)
+    missingInfo.value = null
+  }
+}
+
+// 补齐缺失向量
+const handleRefreshMissing = async () => {
+  if (!projectPath.value) return
+  try {
+    isRefreshingMissing.value = true
+    const msg = await refreshMissing(projectPath.value)
+    ElMessage.success(msg || '补齐任务已启动')
+    await loadVectorStatus()
+    startVectorPolling()
+  } catch (error: any) {
+    console.error('[KnowledgeGraph] Failed to refresh missing:', error)
+    ElMessage.error('补齐任务启动失败')
+  } finally {
+    isRefreshingMissing.value = false
+  }
+}
+
 // 监听项目路径变化
 watch(projectPath, (path) => {
   if (path) {
     loadGraphStatus()
     loadGitStatus()
+    loadMissingInfo()
   }
 })
 
@@ -547,6 +654,7 @@ onMounted(() => {
     loadGraphStatus()
     loadGitStatus()
     loadVectorStatus()
+    loadMissingInfo()
   }
   startPolling()
   startVectorPolling()
@@ -632,5 +740,41 @@ watch(() => appStore.selectedProjectNames, (newNames) => {
 :deep(.el-tabs__content) {
   height: calc(100vh - 350px);
   overflow: auto;
+}
+
+.stat-value-warning {
+  color: #E6A23C !important;
+}
+
+.stat-value-success {
+  color: #67C23A !important;
+}
+
+.stat-item-vector {
+  border-left: 1px solid #dcdfe6;
+  padding-left: 24px;
+}
+
+.missing-drawer-content {
+  padding: 0 4px;
+}
+
+.missing-summary {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+}
+
+.missing-hint {
+  font-size: 13px;
+  color: #909399;
+  margin-bottom: 12px;
+}
+
+.missing-more {
+  font-size: 12px;
+  color: #909399;
+  text-align: center;
+  margin-top: 8px;
 }
 </style>

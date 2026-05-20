@@ -1036,6 +1036,7 @@ public class KnowledgeGraphBuilder {
                         .entryId(entryId)
                         .entryType(EntryPointNode.TYPE_FEIGN_CLIENT)
                         .entryKey(entryKey)
+                        .entryInfo(buildEntryInfo(className, method))
                         .projectPath(projectPath)
                         .methodNodeId(nodeId)
                         .serviceName(feignServiceName)
@@ -1075,6 +1076,7 @@ public class KnowledgeGraphBuilder {
                             .entryId(entryId)
                             .entryType(EntryPointNode.TYPE_HTTP)
                             .entryKey(entryKey)
+                            .entryInfo(buildEntryInfo(className, method))
                             .projectPath(projectPath)
                             .methodNodeId(nodeId)
                             .build();
@@ -1200,8 +1202,120 @@ public class KnowledgeGraphBuilder {
     }
 
     /**
-     * 提取类级别的 URI 路径（来自 @RequestMapping）
+     * 构建入口点的 entryInfo JSON，包含方法签名、参数信息和返回类型。
+     * JSON 格式:
+     * {
+     *   "className": "com.example.UserController",
+     *   "methodName": "createUser",
+     *   "returnType": "ResponseEntity",
+     *   "parameters": [
+     *     {"name":"user","type":"UserDto","annotations":["RequestBody"]},
+     *     {"name":"id","type":"Long","annotations":["PathVariable"]}
+     *   ]
+     * }
      */
+    private String buildEntryInfo(String className, MethodDeclaration method) {
+        try {
+            StringBuilder sb = new StringBuilder();
+            sb.append("{\"className\":\"").append(escapeJson(className)).append("\"");
+            sb.append(",\"methodName\":\"").append(escapeJson(method.getNameAsString())).append("\"");
+            sb.append(",\"returnType\":\"").append(escapeJson(method.getType().asString())).append("\"");
+
+            sb.append(",\"parameters\":[");
+            var params = method.getParameters();
+            for (int i = 0; i < params.size(); i++) {
+                var param = params.get(i);
+                if (i > 0) sb.append(",");
+                sb.append("{\"name\":\"").append(escapeJson(param.getNameAsString())).append("\"");
+                sb.append(",\"type\":\"").append(escapeJson(param.getType().asString())).append("\"");
+
+                // Collect Spring MVC parameter annotations
+                sb.append(",\"annotations\":[");
+                var annotations = param.getAnnotations();
+                boolean first = true;
+                for (var ann : annotations) {
+                    String annName = ann.getNameAsString();
+                    if (!first) sb.append(",");
+                    sb.append("\"").append(escapeJson(annName)).append("\"");
+                    first = false;
+                }
+                sb.append("]");
+
+                // Extract annotation value (e.g., @PathVariable("userId") → "userId")
+                for (var ann : annotations) {
+                    String annName = ann.getNameAsString();
+                    if (annName.equals("PathVariable") || annName.equals("RequestParam")
+                        || annName.equals("RequestHeader") || annName.equals("CookieValue")) {
+                        String val = extractAnnotationValue(ann);
+                        if (val != null && !val.isEmpty()) {
+                            sb.append(",\"aliasName\":\"").append(escapeJson(val)).append("\"");
+                        }
+                        // Extract defaultValue and required for @RequestParam
+                        if (annName.equals("RequestParam")) {
+                            String defaultVal = extractAnnotationAttribute(ann, "defaultValue");
+                            if (defaultVal != null) {
+                                sb.append(",\"defaultValue\":\"").append(escapeJson(defaultVal)).append("\"");
+                            }
+                            String required = extractAnnotationAttribute(ann, "required");
+                            if (required != null) {
+                                sb.append(",\"required\":").append(required);
+                            }
+                        }
+                        break;
+                    }
+                }
+
+                sb.append("}");
+            }
+            sb.append("]}");
+            return sb.toString();
+        } catch (Exception e) {
+            log.debug("Failed to build entryInfo for {}.{}: {}", className, method.getNameAsString(), e.getMessage());
+            return "{\"className\":\"" + escapeJson(className) + "\",\"methodName\":\"" + escapeJson(method.getNameAsString()) + "\",\"parameters\":[]}";
+        }
+    }
+
+    private static String escapeJson(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    /**
+     * 从注解中提取 value 属性值
+     * 支持 @PathVariable("id") 和 @PathVariable(value = "id")
+     */
+    private String extractAnnotationValue(com.github.javaparser.ast.expr.AnnotationExpr ann) {
+        if (ann instanceof com.github.javaparser.ast.expr.SingleMemberAnnotationExpr single) {
+            return single.getMemberValue().toString().replace("\"", "");
+        }
+        if (ann instanceof com.github.javaparser.ast.expr.NormalAnnotationExpr normal) {
+            for (var pair : normal.getPairs()) {
+                if (pair.getNameAsString().equals("value") || pair.getNameAsString().equals("name")) {
+                    return pair.getValue().toString().replace("\"", "");
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 从注解中提取指定属性的值
+     */
+    private String extractAnnotationAttribute(com.github.javaparser.ast.expr.AnnotationExpr ann, String attrName) {
+        if (ann instanceof com.github.javaparser.ast.expr.NormalAnnotationExpr normal) {
+            for (var pair : normal.getPairs()) {
+                if (pair.getNameAsString().equals(attrName)) {
+                    String val = pair.getValue().toString().replace("\"", "");
+                    // Filter out Java default sentinel values
+                    if (val.equals("\\n\\t\\t\\n\\t\\t\\n\\uE000\\uE001\\uE002\\n\\t\\t\\t\\t\\n")) {
+                        return null;
+                    }
+                    return val;
+                }
+            }
+        }
+        return null;
+    }
     private String extractClassLevelPath(com.github.javaparser.ast.body.ClassOrInterfaceDeclaration clazz) {
         for (com.github.javaparser.ast.expr.AnnotationExpr annotation : clazz.getAnnotations()) {
             if (annotation.getNameAsString().equals("RequestMapping")) {

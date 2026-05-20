@@ -704,8 +704,18 @@ public class KnowledgeGraphController {
 
         List<Map<String, Object>> entryPoints = new ArrayList<>();
         List<com.huawei.hisi.neo4j.model.EntryPointNode> neo4jEntryPoints;
-        if (entryType != null && !entryType.isEmpty()) {
-            neo4jEntryPoints = neo4jEntryPointNodeRepository.findByProjectPathsAndEntryType(paths, entryType);
+        // Normalize entryType alias: MCP uses "CONTROLLER"/"MQ_LISTENER" but Neo4j stores "HTTP"/"MQ_CONSUMER"
+        String resolvedType = entryType;
+        if (resolvedType != null) {
+            resolvedType = switch (resolvedType.toUpperCase()) {
+                case "CONTROLLER" -> "HTTP";
+                case "MQ_LISTENER" -> "MQ_CONSUMER";
+                case "ALL" -> null;
+                default -> resolvedType;
+            };
+        }
+        if (resolvedType != null && !resolvedType.isEmpty()) {
+            neo4jEntryPoints = neo4jEntryPointNodeRepository.findByProjectPathsAndEntryType(paths, resolvedType);
         } else {
             neo4jEntryPoints = neo4jEntryPointNodeRepository.findByProjectPaths(paths);
         }
@@ -716,6 +726,7 @@ public class KnowledgeGraphController {
             map.put("entryType", ep.getEntryType());
             map.put("entryKey", ep.getEntryKey());
             map.put("entryInfo", ep.getEntryInfo());
+            map.put("methodNodeId", ep.getMethodNodeId());
             map.put("projectPath", ep.getProjectPath());
             entryPoints.add(map);
         }

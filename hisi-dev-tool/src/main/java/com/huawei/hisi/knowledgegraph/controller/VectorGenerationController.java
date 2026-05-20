@@ -129,6 +129,50 @@ public class VectorGenerationController {
         return ResponseEntity.ok(ApiResponse.success(tasks));
     }
 
+    /**
+     * 查询缺失描述向量的方法数量及预览列表
+     * GET /api/vector-generation/missing?projectPath=xxx&limit=50
+     */
+    @GetMapping("/missing")
+    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>> getMissing(
+            @RequestParam String projectPath,
+            @RequestParam(defaultValue = "50") int limit) {
+        projectPath = normalizePath(projectPath);
+        long totalMethods = neo4jMethodNodeRepository.countByProjectPath(projectPath);
+        long missingCount = neo4jMethodNodeRepository.countMissingDescriptionEmbedding(projectPath);
+        java.util.List<java.util.Map<String, Object>> preview =
+                neo4jMethodNodeRepository.findMissingDescriptionEmbedding(projectPath, Math.min(limit, 100));
+
+        java.util.Map<String, Object> result = new java.util.HashMap<>();
+        result.put("totalMethods", totalMethods);
+        result.put("missingCount", missingCount);
+        result.put("generatedCount", totalMethods - missingCount);
+        result.put("preview", preview);
+
+        return ResponseEntity.ok(ApiResponse.success(result));
+    }
+
+    /**
+     * 补齐缺失向量（仅处理 descriptionEmbedding 为 null 的方法）
+     * POST /api/vector-generation/refresh-missing?projectPath=xxx
+     * 等价于重新调用 startVectorGeneration，但语义更清晰：只补齐，不清空。
+     */
+    @PostMapping("/refresh-missing")
+    public ResponseEntity<ApiResponse<String>> refreshMissing(
+            @RequestParam String projectPath) {
+        projectPath = normalizePath(projectPath);
+        long missingCount = neo4jMethodNodeRepository.countMissingDescriptionEmbedding(projectPath);
+        if (missingCount == 0) {
+            return ResponseEntity.ok(ApiResponse.success("所有方法已有向量，无需补齐"));
+        }
+        try {
+            vectorGenerationService.startVectorGeneration(projectPath);
+            return ResponseEntity.ok(ApiResponse.success("补齐任务已启动，待处理 " + missingCount + " 个方法"));
+        } catch (Exception e) {
+            return ResponseEntity.ok(ApiResponse.error(500, "补齐任务启动失败: " + e.getMessage()));
+        }
+    }
+
     private String normalizePath(String path) {
         return com.huawei.hisi.utils.PathUtils.normalize(path);
     }

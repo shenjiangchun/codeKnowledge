@@ -20,4 +20,7 @@ public class TargetProcessInfo {
 
     /** LAUNCHING, READY, RUNNING, STOPPED, ERROR */
     private String status;
+
+    /** Exit code captured when the process has terminated; null while alive. */
+    private Integer exitCode;
 }

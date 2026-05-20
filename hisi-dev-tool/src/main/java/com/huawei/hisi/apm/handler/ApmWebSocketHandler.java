@@ -3,7 +3,10 @@ package com.huawei.hisi.apm.handler;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.huawei.hisi.apm.model.ApmSpanEntity;
+import com.huawei.hisi.apm.service.TargetProcessManager;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -25,6 +28,14 @@ public class ApmWebSocketHandler extends TextWebSocketHandler {
     private final Map<String, ConcurrentWebSocketSessionDecorator> sessionMap = new ConcurrentHashMap<>();
     // WebSocket session ID -> APM session ID (for cleanup on disconnect)
     private final Map<String, String> wsToApmSessionMap = new ConcurrentHashMap<>();
+
+    /** Lazy to break the cycle: TargetProcessManager indirectly back-references this handler. */
+    private final TargetProcessManager targetProcessManager;
+
+    @Autowired
+    public ApmWebSocketHandler(@Lazy TargetProcessManager targetProcessManager) {
+        this.targetProcessManager = targetProcessManager;
+    }
 
     private static final int SEND_TIME_LIMIT = 5000;   // 5s per message send timeout
     private static final int BUFFER_SIZE_LIMIT = 65536; // 64KB buffer per session
@@ -60,6 +71,23 @@ public class ApmWebSocketHandler extends TextWebSocketHandler {
 
         log.info("[APM WS] Client connected for session: {}", sessionId);
         sendMessage(sessionId, "connected", Map.of("sessionId", sessionId));
+
+        // Replay buffered stdout lines emitted before this client connected,
+        // so a fast-dying target process's error output is not lost.
+        try {
+            List<String> buffered = targetProcessManager.getOutputLines(sessionId, 500);
+            if (!buffered.isEmpty()) {
+                log.info("[APM WS] Replaying {} buffered log lines for session {}",
+                        buffered.size(), sessionId);
+                for (String line : buffered) {
+                    sendMessage(sessionId, "PROCESS_LOG",
+                            Map.of("sessionId", sessionId, "line", line, "replayed", true));
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("[APM WS] Failed to replay buffered logs for session {}: {}",
+                    sessionId, ex.getMessage());
+        }
     }
 
     @Override

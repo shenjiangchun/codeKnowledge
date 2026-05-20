@@ -35,6 +35,16 @@ public class TextModelConfig {
     /** 429 限流时最大重试次数 */
     private int maxRetries = 3;
 
-    /** 重试基础延迟（毫秒），实际延迟 = baseDelay × 2^retryCount */
-    private long retryBaseDelayMs = 60000;
+    /** 重试基础延迟（毫秒），实际延迟 = baseDelay × 2^retryCount。
+     *  令牌桶启用后大多数 429 已被提前压制，这里只覆盖偶发抖动。 */
+    private long retryBaseDelayMs = 5000;
+
+    /** 令牌桶 QPS（每秒允许的请求数）。 */
+    private double qps = 3.0;
+
+    /** 令牌桶突发容量。 */
+    private int burst = 6;
+
+    /** 获取令牌的最长等待时间（秒）。 */
+    private long acquireTimeoutSeconds = 120;
 }

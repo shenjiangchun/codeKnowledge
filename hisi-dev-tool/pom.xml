@@ -239,6 +239,23 @@
             <artifactId>antlr4-runtime</artifactId>
             <version>${antlr4.version}</version>
         </dependency>
+
+        <!-- OpenTelemetry OTLP protobuf model (for /v1/traces receiver).
+             Agent 2.x 仅支持 grpc / http/protobuf 协议（不再支持 http/json），
+             我们走 http/protobuf：直接接收 protobuf bytes 并解码。 -->
+        <dependency>
+            <groupId>io.opentelemetry.proto</groupId>
+            <artifactId>opentelemetry-proto</artifactId>
+            <version>1.3.2-alpha</version>
+        </dependency>
+        <!-- protobuf-java-util 提供 JsonFormat：将 protobuf message 转为
+             OTLP/JSON 字符串，再由 Jackson 复用现有 OtlpTraceData 反序列化，
+             避免下游 SpanIngestionService 改动。 -->
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java-util</artifactId>
+            <version>3.25.5</version>
+        </dependency>
     </dependencies>
 
     <build>

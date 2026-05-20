@@ -158,6 +158,24 @@ public class SQLiteSchemaInitializer {
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_apm_span_session ON apm_span(session_id)");
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_apm_span_created ON apm_span(created_at)");
 
-        log.info("[SQLite] Schema initialization complete - 9 tables ensured");
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS apm_test_case (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                name         VARCHAR(200) NOT NULL,
+                project_path VARCHAR(500) NOT NULL,
+                entry_node_id VARCHAR(200),
+                method       VARCHAR(10),
+                url          VARCHAR(500),
+                headers      TEXT,
+                params       TEXT,
+                body         TEXT,
+                created_at   INTEGER DEFAULT (strftime('%s','now')),
+                updated_at   INTEGER DEFAULT (strftime('%s','now'))
+            )
+            """);
+
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_apm_test_case_project ON apm_test_case(project_path)");
+
+        log.info("[SQLite] Schema initialization complete - 10 tables ensured");
     }
 }

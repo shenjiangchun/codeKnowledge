@@ -32,6 +32,17 @@ public class EmbeddingModelConfig {
     /** 429 限流时最大重试次数 */
     private int maxRetries = 3;
 
-    /** 重试基础延迟（毫秒），实际延迟 = baseDelay × 2^retryCount */
-    private long retryBaseDelayMs = 60000;
+    /** 重试基础延迟（毫秒），实际延迟 = baseDelay × 2^retryCount。
+     *  令牌桶启用后大多数 429 已被提前压制，这里只覆盖偶发抖动，
+     *  推荐 5000 即可；若服务端返回 Retry-After 则以其为准。 */
+    private long retryBaseDelayMs = 5000;
+
+    /** 令牌桶 QPS（每秒允许的请求数，平滑节奏避免触发服务端 429）。 */
+    private double qps = 5.0;
+
+    /** 令牌桶突发容量（瞬时最多并发请求数，启动时桶满）。 */
+    private int burst = 10;
+
+    /** 获取令牌的最长等待时间（秒），超时则放弃本次请求。 */
+    private long acquireTimeoutSeconds = 120;
 }

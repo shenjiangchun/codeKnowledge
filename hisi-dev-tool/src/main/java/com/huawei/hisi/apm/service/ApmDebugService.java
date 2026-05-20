@@ -113,9 +113,15 @@ public class ApmDebugService {
         // Build the status callback
         Consumer<TargetProcessInfo> callback = buildStatusCallback(sessionId, serviceName);
 
+        // Per-line log consumer pushes each stdout line over WebSocket in real time
+        Consumer<String> logConsumer = line -> webSocketHandler.pushEvent(sessionId, "PROCESS_LOG", Map.of(
+                "sessionId", sessionId,
+                "line", line
+        ));
+
         // Launch target process
         TargetProcessInfo processInfo = targetProcessManager.launch(
-                sessionId, projectPath, serviceName, targetPort, callback);
+                sessionId, projectPath, serviceName, targetPort, callback, logConsumer);
 
         int resolvedPort = processInfo.getTargetPort();
         // Update session with the resolved port if auto-assigned
@@ -348,11 +354,22 @@ public class ApmDebugService {
                 spanIngestionService.registerSession(serviceName, sessionId, projectPath);
             }
 
-            webSocketHandler.pushEvent(sessionId, "PROCESS_" + info.getStatus(), Map.of(
-                    "sessionId", sessionId,
-                    "status", info.getStatus(),
-                    "port", info.getTargetPort()
-            ));
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("sessionId", sessionId);
+            payload.put("status", info.getStatus());
+            payload.put("port", info.getTargetPort());
+            if (info.getExitCode() != null) {
+                payload.put("exitCode", info.getExitCode());
+            }
+            // On terminal failure, include the last log lines so a late-joining
+            // WebSocket client can still see what went wrong.
+            if ("ERROR".equals(info.getStatus()) || "STOPPED".equals(info.getStatus())) {
+                List<String> tail = targetProcessManager.getOutputLines(sessionId, 50);
+                if (!tail.isEmpty()) {
+                    payload.put("tailLines", tail);
+                }
+            }
+            webSocketHandler.pushEvent(sessionId, "PROCESS_" + info.getStatus(), payload);
         };
     }
 

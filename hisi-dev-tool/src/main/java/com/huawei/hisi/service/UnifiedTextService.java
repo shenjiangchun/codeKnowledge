@@ -6,16 +6,25 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.huawei.hisi.config.ProxyConfig;
 import com.huawei.hisi.config.TextModelConfig;
+import com.huawei.hisi.utils.TokenBucketRateLimiter;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
+
+import java.util.concurrent.TimeUnit;
 
 /**
  * 统一自然语言生成服务
  * 调用 OpenAI 兼容的 /chat/completions 端点，配置来自 TextModelConfig。
- * 内置 429 限流指数退避重试。
+ *
+ * <p>并发控制：令牌桶 ({@link TokenBucketRateLimiter}) 主动限流 +
+ * 429 / Retry-After / 偶发 IO 异常的指数退避重试。
  *
  * 取代原来 ZhipuService 的 generateText / generateDescription 功能。
  */
@@ -26,20 +35,28 @@ public class UnifiedTextService {
     private final TextModelConfig config;
     private final ProxyConfig proxyConfig;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private TokenBucketRateLimiter rateLimiter;
 
     public UnifiedTextService(TextModelConfig config, ProxyConfig proxyConfig) {
         this.config = config;
         this.proxyConfig = proxyConfig;
     }
 
+    @PostConstruct
+    public void init() {
+        this.rateLimiter = new TokenBucketRateLimiter(
+                "text-model", config.getQps(), config.getBurst());
+    }
+
+    @PreDestroy
+    public void destroy() {
+        if (rateLimiter != null) {
+            rateLimiter.shutdown();
+        }
+    }
+
     /**
      * 生成代码描述
-     *
-     * @param className  类名
-     * @param methodName 方法名
-     * @param signature  方法签名
-     * @param comment    方法注释
-     * @return 生成的中文描述
      */
     public String generateDescription(String className, String methodName, String signature, String comment) {
         String prompt = buildCodeDescriptionPrompt(className, methodName, signature, comment);
@@ -48,12 +65,6 @@ public class UnifiedTextService {
 
     /**
      * 基于方法体内容生成详细描述
-     *
-     * @param className  类名
-     * @param methodName 方法名
-     * @param signature  方法签名
-     * @param methodBody 方法体源码
-     * @return 生成的中文描述
      */
     public String generateDescriptionWithBody(String className, String methodName, String signature, String methodBody) {
         String truncatedBody = methodBody != null && methodBody.length() > 2000
@@ -76,15 +87,22 @@ public class UnifiedTextService {
 
     /**
      * 通用文本生成
-     *
-     * @param prompt 提示词
-     * @return 生成的文本
      */
     public String generateText(String prompt) {
         int maxRetries = config.getMaxRetries();
         long baseDelay = config.getRetryBaseDelayMs();
 
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                if (!rateLimiter.tryAcquire(config.getAcquireTimeoutSeconds(), TimeUnit.SECONDS)) {
+                    throw new RuntimeException("[TextModel] 获取令牌超时（"
+                            + config.getAcquireTimeoutSeconds() + "s），上游限流过严或负载过高");
+                }
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("[TextModel] 等待令牌被中断", ie);
+            }
+
             try {
                 String url = config.getBaseUrl() + "/chat/completions";
 
@@ -105,8 +123,9 @@ public class UnifiedTextService {
                 HttpEntity<String> entity = new HttpEntity<>(
                         objectMapper.writeValueAsString(requestBody), headers);
 
-                log.debug("[TextModel] 调用文本生成API: url={}, model={}, attempt={}/{}",
-                        url, config.getModel(), attempt + 1, maxRetries + 1);
+                log.debug("[TextModel] 调用文本生成API: url={}, model={}, attempt={}/{}, permits={}",
+                        url, config.getModel(), attempt + 1, maxRetries + 1,
+                        rateLimiter.availablePermits());
 
                 RestTemplate rt = proxyConfig.getCurrentRestTemplate();
                 ResponseEntity<String> response = rt.exchange(url, HttpMethod.POST, entity, String.class);
@@ -115,12 +134,33 @@ public class UnifiedTextService {
 
             } catch (HttpClientErrorException e) {
                 if (e.getStatusCode().value() == 429 && attempt < maxRetries) {
-                    long delay = baseDelay * (1L << attempt);
-                    log.warn("[TextModel] 限流(429)，第{}次重试，等待{}ms", attempt + 1, delay);
+                    long delay = computeRetryDelay(e.getResponseHeaders(), baseDelay, attempt);
+                    log.warn("[TextModel] 限流(429)，第{}次重试，等待{}ms (Retry-After 优先)", attempt + 1, delay);
                     sleepQuietly(delay);
                     continue;
                 }
-                log.error("[TextModel] 文本生成失败: {}", e.getMessage());
+                log.error("[TextModel] 文本生成失败: status={}, body={}",
+                        e.getStatusCode(), truncate(e.getResponseBodyAsString(), 200));
+                throw new RuntimeException("文本生成失败: " + e.getMessage(), e);
+            } catch (HttpServerErrorException e) {
+                if (attempt < maxRetries) {
+                    long delay = computeRetryDelay(e.getResponseHeaders(), baseDelay, attempt);
+                    log.warn("[TextModel] 服务端错误({})，第{}次重试，等待{}ms",
+                            e.getStatusCode().value(), attempt + 1, delay);
+                    sleepQuietly(delay);
+                    continue;
+                }
+                log.error("[TextModel] 文本生成失败(5xx 重试耗尽): {}", e.getMessage());
+                throw new RuntimeException("文本生成失败: " + e.getMessage(), e);
+            } catch (ResourceAccessException e) {
+                if (attempt < maxRetries) {
+                    long delay = baseDelay * (1L << attempt);
+                    log.warn("[TextModel] IO 异常({})，第{}次重试，等待{}ms",
+                            e.getMostSpecificCause().getClass().getSimpleName(), attempt + 1, delay);
+                    sleepQuietly(delay);
+                    continue;
+                }
+                log.error("[TextModel] 文本生成失败(IO 重试耗尽): {}", e.getMessage());
                 throw new RuntimeException("文本生成失败: " + e.getMessage(), e);
             } catch (Exception e) {
                 log.error("[TextModel] 文本生成失败: {}", e.getMessage());
@@ -137,7 +177,25 @@ public class UnifiedTextService {
         return config.getApiKey() != null && !config.getApiKey().isBlank();
     }
 
+    public int availablePermits() {
+        return rateLimiter == null ? 0 : rateLimiter.availablePermits();
+    }
+
     // ==================== 内部方法 ====================
+
+    private long computeRetryDelay(HttpHeaders headers, long baseDelay, int attempt) {
+        if (headers != null) {
+            String v = headers.getFirst(HttpHeaders.RETRY_AFTER);
+            if (v != null && !v.isBlank()) {
+                try {
+                    return Long.parseLong(v.trim()) * 1000L;
+                } catch (NumberFormatException ignored) {
+                    // 回退指数退避
+                }
+            }
+        }
+        return baseDelay * (1L << attempt);
+    }
 
     private String buildCodeDescriptionPrompt(String className, String methodName, String signature, String comment) {
         String commentStr = (comment == null || comment.isEmpty()) ? "无" : comment;

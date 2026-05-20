@@ -598,6 +598,27 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     long countWithCodeEmbedding(@Param("projectPath") String projectPath);
 
     /**
+     * 统计项目中缺失描述向量的方法数量
+     */
+    @Query("""
+        MATCH (m:Method {projectPath: $projectPath})
+        WHERE m.descriptionEmbedding IS NULL
+        RETURN count(m)
+        """)
+    long countMissingDescriptionEmbedding(@Param("projectPath") String projectPath);
+
+    /**
+     * 查询项目中缺失描述向量的方法预览列表（最多返回 limit 条）
+     */
+    @Query("""
+        MATCH (m:Method {projectPath: $projectPath})
+        WHERE m.descriptionEmbedding IS NULL
+        RETURN m.nodeId as nodeId, m.className as className, m.methodName as methodName, m.signature as signature
+        LIMIT $limit
+        """)
+    List<Map<String, Object>> findMissingDescriptionEmbedding(@Param("projectPath") String projectPath, @Param("limit") int limit);
+
+    /**
      * 查询带关系属性的调用者
      * 返回调用者和关系属性
      */

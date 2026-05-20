@@ -15,6 +15,10 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
@@ -121,6 +125,20 @@ public class TargetProcessManager {
                                     String serviceName,
                                     int targetPort,
                                     Consumer<TargetProcessInfo> callback) throws IOException {
+        return launch(sessionId, projectPath, serviceName, targetPort, callback, null);
+    }
+
+    /**
+     * Launch with an additional per-line log consumer for real-time stdout streaming.
+     *
+     * @param logConsumer receives each captured stdout line as it is read (may be null)
+     */
+    public TargetProcessInfo launch(String sessionId,
+                                    String projectPath,
+                                    String serviceName,
+                                    int targetPort,
+                                    Consumer<TargetProcessInfo> callback,
+                                    Consumer<String> logConsumer) throws IOException {
 
         if (processes.containsKey(sessionId)) {
             throw new IllegalStateException("Session already has a running process: " + sessionId);
@@ -128,6 +146,8 @@ public class TargetProcessManager {
 
         // 1. Resolve OTel agent
         String agentPath = otelAgentManager.ensureAgentAvailable();
+        // JAVA_TOOL_OPTIONS 不支持空格转义。若 agent 路径含空格,则复制到无空格临时目录后再用。
+        agentPath = ensureSpaceFreeAgentPath(agentPath);
 
         // 2. Resolve port
         int resolvedPort = targetPort > 0 ? targetPort : allocatePort();
@@ -144,7 +164,7 @@ public class TargetProcessManager {
         Map<String, String> env = pb.environment();
         env.put("JAVA_TOOL_OPTIONS", "-javaagent:" + agentPath);
         env.put("OTEL_SERVICE_NAME", serviceName);
-        env.put("OTEL_EXPORTER_OTLP_PROTOCOL", "http/json");
+        env.put("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf");
         env.put("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:" + serverPort);
         env.put("OTEL_TRACES_EXPORTER", "otlp");
         env.put("OTEL_METRICS_EXPORTER", "none");
@@ -152,6 +172,10 @@ public class TargetProcessManager {
         env.put("SERVER_PORT", String.valueOf(resolvedPort));
 
         // 5. Start process
+        log.info("[TargetProcess] Session {} launch summary:\n  workDir = {}\n  command = {}\n  JAVA_TOOL_OPTIONS = {}\n  SERVER_PORT = {}\n  OTEL_SERVICE_NAME = {}\n  OTEL_EXPORTER_OTLP_ENDPOINT = {}",
+                sessionId, projectPath, command,
+                env.get("JAVA_TOOL_OPTIONS"), env.get("SERVER_PORT"),
+                env.get("OTEL_SERVICE_NAME"), env.get("OTEL_EXPORTER_OTLP_ENDPOINT"));
         Process process = pb.start();
         long pid = process.pid();
         log.info("[TargetProcess] Session {} started PID {} on port {}", sessionId, pid, resolvedPort);
@@ -163,7 +187,7 @@ public class TargetProcessManager {
         // We need to create threads that reference mp, so we use a holder pattern
         // and set them after construction via reflection-free approach:
         // Actually, we build them here and store the full ManagedProcess with threads.
-        Thread readerThread = createReaderThread(sessionId, process, mp, callback, projectPath, serviceName);
+        Thread readerThread = createReaderThread(sessionId, process, mp, callback, projectPath, serviceName, logConsumer);
         Thread readinessThread = createReadinessThread(sessionId, resolvedPort, mp, callback, projectPath, serviceName, pid);
 
         // Replace with properly threaded version
@@ -186,6 +210,12 @@ public class TargetProcessManager {
     /**
      * Gracefully shut down a target process, falling back to forced kill
      * if the process does not exit within the configured grace period.
+     *
+     * <p><b>Process tree:</b> on Windows we launch via {@code cmd /c mvn spring-boot:run},
+     * which spawns cmd → mvn.cmd (cmd) → java (Maven) → forked java (Spring Boot).
+     * {@code Process.destroy()} only signals the direct child (cmd.exe), leaving
+     * grandchildren orphaned and the target port occupied. We use {@link ProcessHandle}
+     * to enumerate the full descendant tree and terminate every process.
      */
     public void shutdown(String sessionId) {
         ManagedProcess mp = processes.get(sessionId);
@@ -193,24 +223,62 @@ public class TargetProcessManager {
             return;
         }
 
-        log.info("[TargetProcess] Shutting down session {}", sessionId);
+        log.info("[TargetProcess] Shutting down session {} (pid={})",
+                sessionId, mp.process.isAlive() ? mp.process.pid() : -1);
         mp.status = "STOPPED";
-        mp.process.destroy();
 
+        // 1. Collect the whole descendant tree BEFORE killing the root,
+        // otherwise we lose the parent->child link.
+        List<ProcessHandle> tree = new ArrayList<>();
         try {
-            boolean exited = mp.process.waitFor(
-                    apmConfig.getTargetShutdownGraceSeconds(), TimeUnit.SECONDS);
-            if (!exited) {
-                log.warn("[TargetProcess] Session {} did not exit gracefully, forcing", sessionId);
-                mp.process.destroyForcibly();
+            ProcessHandle root = mp.process.toHandle();
+            root.descendants().forEach(tree::add);
+            tree.add(root);
+        } catch (Exception e) {
+            log.warn("[TargetProcess] Could not enumerate descendants for {}: {}",
+                    sessionId, e.getMessage());
+        }
+
+        // 2. Graceful destroy on every node
+        for (ProcessHandle h : tree) {
+            try {
+                h.destroy();
+            } catch (Exception ignored) {
+                // some handles may already be gone
             }
+        }
+
+        // 3. Wait up to grace period for everything to die
+        long graceMs = apmConfig.getTargetShutdownGraceSeconds() * 1000L;
+        long deadline = System.currentTimeMillis() + graceMs;
+        try {
+            mp.process.waitFor(graceMs, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
-            mp.process.destroyForcibly();
             Thread.currentThread().interrupt();
         }
 
+        // 4. Force kill anything still alive (Windows is especially stubborn with cmd chains)
+        for (ProcessHandle h : tree) {
+            if (h.isAlive()) {
+                long remaining = Math.max(0, deadline - System.currentTimeMillis());
+                log.warn("[TargetProcess] Session {} pid={} did not exit, forcing",
+                        sessionId, h.pid());
+                try {
+                    h.destroyForcibly();
+                } catch (Exception ignored) {
+                }
+                if (remaining > 0) {
+                    try {
+                        h.onExit().get(remaining, TimeUnit.MILLISECONDS);
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+        }
+
         processes.remove(sessionId);
-        log.info("[TargetProcess] Session {} removed", sessionId);
+        log.info("[TargetProcess] Session {} removed (killed {} processes in tree)",
+                sessionId, tree.size());
     }
 
     /**
@@ -356,6 +424,48 @@ public class TargetProcessManager {
     //  Port allocation
     // ---------------------------------------------------------------
 
+    /**
+     * Ensure the OTel agent JAR is at a path without spaces.
+     *
+     * <p><b>Why:</b> JVM tokenizes {@code JAVA_TOOL_OPTIONS} by whitespace and does
+     * not support quote escaping. If the agent path contains a space, e.g.
+     * {@code C:/Users/me/projects/my app/agent.jar}, the JVM will treat
+     * {@code -javaagent:C:/Users/me/projects/my} as one token and {@code app/agent.jar}
+     * as another, causing immediate startup failure (exit code 1) before any output.
+     *
+     * <p>If the resolved agent path contains a space, copy it into a cache directory
+     * under {@code user.home} (which is typically space-free on Windows) and return
+     * the safe path. Subsequent launches reuse the cached copy.
+     */
+    private String ensureSpaceFreeAgentPath(String agentPath) throws IOException {
+        if (agentPath == null || !agentPath.contains(" ")) {
+            return agentPath;
+        }
+        Path source = Paths.get(agentPath);
+        Path cacheDir = Paths.get(System.getProperty("user.home"), ".hisi-devtool", "otel-agent");
+        if (cacheDir.toAbsolutePath().toString().contains(" ")) {
+            // user.home itself has spaces (rare); fall back to system temp dir
+            cacheDir = Paths.get(System.getProperty("java.io.tmpdir"), "hisi-otel-agent");
+        }
+        if (cacheDir.toAbsolutePath().toString().contains(" ")) {
+            throw new IOException(
+                    "Cannot find a space-free directory to host OTel agent. "
+                            + "Please move the project to a path without spaces, "
+                            + "or set apm.otel-agent-path to a space-free location. "
+                            + "Original path: " + agentPath);
+        }
+        Files.createDirectories(cacheDir);
+        Path target = cacheDir.resolve(source.getFileName().toString());
+        if (!Files.exists(target) || Files.size(target) != Files.size(source)) {
+            log.info("[TargetProcess] Agent path contains spaces ({}). Copying to space-free cache: {}",
+                    agentPath, target);
+            Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+        } else {
+            log.info("[TargetProcess] Reusing space-free cached agent: {}", target);
+        }
+        return target.toAbsolutePath().toString();
+    }
+
     private int allocatePort() {
         // Try deterministic ports starting from AUTO_PORT_START
         for (int port = AUTO_PORT_START; port < AUTO_PORT_START + 100; port++) {
@@ -401,7 +511,8 @@ public class TargetProcessManager {
     private Thread createReaderThread(String sessionId, Process process,
                                       ManagedProcess mp,
                                       Consumer<TargetProcessInfo> callback,
-                                      String projectPath, String serviceName) {
+                                      String projectPath, String serviceName,
+                                      Consumer<String> logConsumer) {
         Thread thread = new Thread(() -> {
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
@@ -411,6 +522,15 @@ public class TargetProcessManager {
                     ManagedProcess current = processes.get(sessionId);
                     if (current != null) {
                         current.addOutputLine(line);
+                    }
+                    // Real-time stream out to listener (e.g. WebSocket push)
+                    if (logConsumer != null) {
+                        try {
+                            logConsumer.accept(line);
+                        } catch (Exception ex) {
+                            log.debug("[TargetProcess] logConsumer threw for session {}: {}",
+                                    sessionId, ex.getMessage());
+                        }
                     }
                 }
             } catch (IOException e) {
@@ -429,8 +549,10 @@ public class TargetProcessManager {
                 } catch (UnsupportedOperationException ignored) {
                     // pid not available after exit on some platforms
                 }
-                notifyCallback(callback,
-                        buildInfo(sessionId, projectPath, serviceName, current.port, pid, finalStatus));
+                TargetProcessInfo exitInfo = buildInfo(sessionId, projectPath, serviceName,
+                        current.port, pid, finalStatus);
+                exitInfo.setExitCode(exitCode);
+                notifyCallback(callback, exitInfo);
                 log.info("[TargetProcess] Session {} process exited with code {}", sessionId, exitCode);
             }
         }, "apm-reader-" + sessionId);
@@ -451,6 +573,19 @@ public class TargetProcessManager {
                 ManagedProcess current = processes.get(sessionId);
                 if (current == null || !current.process.isAlive()) {
                     log.warn("[TargetProcess] Session {} process died before becoming ready", sessionId);
+                    if (current != null && !"ERROR".equals(current.status) && !"STOPPED".equals(current.status)) {
+                        current.status = "ERROR";
+                        int exitCode = -1;
+                        try {
+                            exitCode = current.process.exitValue();
+                        } catch (IllegalThreadStateException ignored) {
+                            // still alive in a tiny race window; ignore
+                        }
+                        TargetProcessInfo errInfo = buildInfo(
+                                sessionId, projectPath, serviceName, port, pid, "ERROR");
+                        errInfo.setExitCode(exitCode);
+                        notifyCallback(callback, errInfo);
+                    }
                     return;
                 }
 
