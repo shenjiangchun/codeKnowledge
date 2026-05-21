@@ -20,11 +20,15 @@ public final class ApmRequest {
      * @param projectPath absolute path to the project root
      * @param targetPort  port for the target application (0 = auto-assign)
      * @param serviceName optional service name; auto-derived from project directory if null
+     * @param entryNodeId optional KG nodeId of the entry method; when present the
+     *                    backend builds {@code OTEL_INSTRUMENTATION_METHODS_INCLUDE}
+     *                    from the KG callee tree to capture method-level spans
      */
     public record LaunchRequest(
         String projectPath,
         int targetPort,
-        String serviceName
+        String serviceName,
+        String entryNodeId
     ) {}
 
     /**

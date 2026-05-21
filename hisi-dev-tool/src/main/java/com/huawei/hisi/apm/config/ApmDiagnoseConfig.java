@@ -1,13 +1,18 @@
 package com.huawei.hisi.apm.config;
 
+import java.util.List;
 import java.util.concurrent.ThreadPoolExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+
+import com.huawei.hisi.apm.service.locator.KgEnricher;
+import com.huawei.hisi.apm.service.locator.LlmDiagnoser;
 
 /**
  * Wires the dedicated executor used by the APM Failure Locator async pipeline.
@@ -44,5 +49,28 @@ public class ApmDiagnoseConfig {
                 props.getExecutorMaxPoolSize(),
                 props.getExecutorQueueCapacity());
         return exec;
+    }
+
+    /**
+     * Default no-op {@link KgEnricher} used when no real implementation is on
+     * the classpath. Returns an empty evidence list. Task 10 supplies the
+     * production implementation which will override this bean.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public KgEnricher noopKgEnricher() {
+        return (projectPath, exceptionSpans) -> List.of();
+    }
+
+    /**
+     * Default stub {@link LlmDiagnoser} returning a template fallback at a
+     * mid-range confidence. Task 11 supplies the production implementation
+     * which will override this bean.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public LlmDiagnoser stubLlmDiagnoser() {
+        return (projectPath, exceptionSpans, kgEvidence, userNote) ->
+            new LlmDiagnoser.LlmResult("(LLM disabled — template fallback)", 0.6);
     }
 }

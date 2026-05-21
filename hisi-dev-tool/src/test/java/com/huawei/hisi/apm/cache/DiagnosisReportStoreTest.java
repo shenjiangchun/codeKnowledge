@@ -130,4 +130,35 @@ class DiagnosisReportStoreTest {
         assertThatThrownBy(() -> store.transition("missing", DiagnoseReport.Status.RUNNING))
             .isInstanceOf(NoSuchElementException.class);
     }
+
+    @Test
+    @DisplayName("markDoneOrLowConfidence with LOW_CONFIDENCE populates results and finalises")
+    void markLowConfidence_setsFields() {
+        store.createPending("r-low", "t", "/p");
+        store.transition("r-low", DiagnoseReport.Status.RUNNING);
+
+        List<DiagnoseReport.EvidenceAnchor> evidence = List.of(
+            new DiagnoseReport.EvidenceAnchor("kg_method", "com.A", "doIt", "A.java", 10, null, "snip")
+        );
+        DiagnoseReport low = store.markDoneOrLowConfidence("r-low",
+            DiagnoseReport.Status.LOW_CONFIDENCE, "## tentative", 0.25, evidence);
+
+        assertThat(low.getStatus()).isEqualTo(DiagnoseReport.Status.LOW_CONFIDENCE);
+        assertThat(low.getRootCauseMarkdown()).isEqualTo("## tentative");
+        assertThat(low.getConfidence()).isEqualTo(0.25);
+        assertThat(low.getEvidence()).hasSize(1);
+        assertThat(low.getFinishedAt()).isNotNull();
+        assertThat(low.getElapsedMs()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("markDoneOrLowConfidence rejects non-success terminal statuses")
+    void markDoneOrLowConfidence_rejectsInvalidTerminal() {
+        store.createPending("r-bad", "t", "/p");
+        store.transition("r-bad", DiagnoseReport.Status.RUNNING);
+
+        assertThatThrownBy(() -> store.markDoneOrLowConfidence("r-bad",
+            DiagnoseReport.Status.FAILED, "x", 0.5, List.of()))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
 }

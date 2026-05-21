@@ -33,17 +33,27 @@ public class OtlpReceiverController {
     private final SpanIngestionService spanIngestionService;
     private final ObjectMapper objectMapper;
 
+    // JsonFormat.Printer 默认输出 camelCase(traceId/resourceSpans/scopeSpans...)，
+    // 正好匹配 OtlpTraceData POJO 上的 @JsonProperty。
+    // 不要加 .preservingProtoFieldNames() —— 那会输出 snake_case(resource_spans...)，
+    // 导致 Jackson 反序列化时所有嵌套字段全部为 null，spans 被静默丢弃。
+    // .printingEnumsAsInts() —— protobuf enum(SpanKind/StatusCode) 默认输出名称字符串
+    // (如 "SPAN_KIND_SERVER")，但 POJO Span.kind / Status.code 是 Integer，会反序列化失败。
     private static final JsonFormat.Printer PROTO_JSON_PRINTER = JsonFormat.printer()
-            .preservingProtoFieldNames()    // 保持 OTLP camelCase 原样（traceId/spanId 等）
+            .printingEnumsAsInts()
             .omittingInsignificantWhitespace();
 
     @PostMapping(value = "/v1/traces", consumes = "application/x-protobuf")
     public ResponseEntity<Void> receiveTraces(@RequestBody byte[] body) {
         try {
+            log.info("[OTLP Receiver] Received protobuf trace payload ({} bytes)",
+                    body == null ? 0 : body.length);
             ExportTraceServiceRequest proto = ExportTraceServiceRequest.parseFrom(body);
             String json = PROTO_JSON_PRINTER.print(proto);
             OtlpTraceData.ExportTraceServiceRequest traceData =
                     objectMapper.readValue(json, OtlpTraceData.ExportTraceServiceRequest.class);
+            int rsCount = traceData.resourceSpans() == null ? 0 : traceData.resourceSpans().size();
+            log.info("[OTLP Receiver] Parsed {} resourceSpans from payload", rsCount);
             spanIngestionService.ingest(traceData);
             return ResponseEntity.ok().build();
         } catch (Exception e) {

@@ -55,15 +55,18 @@ public class TargetProcessManager {
     private final ApmConfig apmConfig;
     private final OtelAgentManager otelAgentManager;
     private final int serverPort;
+    private final String otelExtensionPath;
 
     private final ConcurrentHashMap<String, ManagedProcess> processes = new ConcurrentHashMap<>();
 
     public TargetProcessManager(ApmConfig apmConfig,
                                 OtelAgentManager otelAgentManager,
-                                @Value("${server.port:8080}") int serverPort) {
+                                @Value("${server.port:8080}") int serverPort,
+                                @Value("${apm.otel-extension-path:}") String otelExtensionPath) {
         this.apmConfig = apmConfig;
         this.otelAgentManager = otelAgentManager;
         this.serverPort = serverPort;
+        this.otelExtensionPath = otelExtensionPath;
     }
 
     // ---------------------------------------------------------------
@@ -125,7 +128,7 @@ public class TargetProcessManager {
                                     String serviceName,
                                     int targetPort,
                                     Consumer<TargetProcessInfo> callback) throws IOException {
-        return launch(sessionId, projectPath, serviceName, targetPort, callback, null);
+        return launch(sessionId, projectPath, serviceName, targetPort, callback, null, null);
     }
 
     /**
@@ -139,6 +142,22 @@ public class TargetProcessManager {
                                     int targetPort,
                                     Consumer<TargetProcessInfo> callback,
                                     Consumer<String> logConsumer) throws IOException {
+        return launch(sessionId, projectPath, serviceName, targetPort, callback, logConsumer, null);
+    }
+
+    /**
+     * Full launch with optional method-level instrumentation include string.
+     *
+     * @param methodsInclude value for {@code OTEL_INSTRUMENTATION_METHODS_INCLUDE};
+     *                       when null or blank, the env var is not set
+     */
+    public TargetProcessInfo launch(String sessionId,
+                                    String projectPath,
+                                    String serviceName,
+                                    int targetPort,
+                                    Consumer<TargetProcessInfo> callback,
+                                    Consumer<String> logConsumer,
+                                    String methodsInclude) throws IOException {
 
         if (processes.containsKey(sessionId)) {
             throw new IllegalStateException("Session already has a running process: " + sessionId);
@@ -170,6 +189,46 @@ public class TargetProcessManager {
         env.put("OTEL_METRICS_EXPORTER", "none");
         env.put("OTEL_LOGS_EXPORTER", "none");
         env.put("SERVER_PORT", String.valueOf(resolvedPort));
+
+        // Capture as much data-flow detail as possible from built-in instrumentations:
+        //  - keep raw SQL params (otherwise they're masked as "?")
+        //  - record HTTP request/response headers as span attributes
+        //  - record route templates + matrix/path vars
+        env.put("OTEL_INSTRUMENTATION_COMMON_DB_STATEMENT_SANITIZER_ENABLED", "false");
+        env.put("OTEL_INSTRUMENTATION_HTTP_CLIENT_CAPTURE_REQUEST_HEADERS",
+                "content-type,user-agent,authorization,x-request-id");
+        env.put("OTEL_INSTRUMENTATION_HTTP_CLIENT_CAPTURE_RESPONSE_HEADERS",
+                "content-type,content-length");
+        env.put("OTEL_INSTRUMENTATION_HTTP_SERVER_CAPTURE_REQUEST_HEADERS",
+                "content-type,user-agent,x-request-id");
+        env.put("OTEL_INSTRUMENTATION_HTTP_SERVER_CAPTURE_RESPONSE_HEADERS",
+                "content-type,content-length");
+        env.put("OTEL_INSTRUMENTATION_SPRING_WEBMVC_EXPERIMENTAL_SPAN_ATTRIBUTES", "true");
+        env.put("OTEL_INSTRUMENTATION_JDBC_EXPERIMENTAL_CAPTURE_QUERY_PARAMETERS", "true");
+
+        // Optional: instrument arbitrary methods (driven by KG callee tree) so we
+        // capture method-level spans matching the expected call chain. The OTel
+        // Java agent only auto-instruments framework boundaries by default.
+        if (methodsInclude != null && !methodsInclude.isBlank()) {
+            env.put("OTEL_INSTRUMENTATION_METHODS_INCLUDE", methodsInclude);
+            log.info("[TargetProcess] Session {} OTEL_INSTRUMENTATION_METHODS_INCLUDE has {} chars",
+                    sessionId, methodsInclude.length());
+
+            // Attach the hisi-otel-extension JAR (ByteBuddy advice that captures
+            // method args / return values as code.input.* / code.output span
+            // attributes). Without this, methods-include only creates spans but
+            // does not capture data-flow intermediate state.
+            String extPath = resolveExtensionPath();
+            if (extPath != null) {
+                env.put("OTEL_JAVAAGENT_EXTENSIONS", extPath);
+                log.info("[TargetProcess] Session {} OTEL_JAVAAGENT_EXTENSIONS = {}", sessionId, extPath);
+            } else {
+                log.warn("[TargetProcess] Session {} hisi-otel-extension JAR not found; "
+                        + "method args/return capture disabled. Build it via "
+                        + "`mvn -f hisi-otel-extension/pom.xml package` or set apm.otel-extension-path",
+                        sessionId);
+            }
+        }
 
         // 5. Start process
         log.info("[TargetProcess] Session {} launch summary:\n  workDir = {}\n  command = {}\n  JAVA_TOOL_OPTIONS = {}\n  SERVER_PORT = {}\n  OTEL_SERVICE_NAME = {}\n  OTEL_EXPORTER_OTLP_ENDPOINT = {}",
@@ -464,6 +523,45 @@ public class TargetProcessManager {
             log.info("[TargetProcess] Reusing space-free cached agent: {}", target);
         }
         return target.toAbsolutePath().toString();
+    }
+
+    /**
+     * Resolve the path to the hisi-otel-extension shaded JAR.
+     * <p>
+     * Lookup order:
+     * <ol>
+     *   <li>{@code apm.otel-extension-path} property (if set)</li>
+     *   <li>{@code <cwd>/hisi-otel-extension/target/hisi-otel-extension-1.0.0.jar} (dev)</li>
+     *   <li>{@code <cwd>/../hisi-otel-extension/target/hisi-otel-extension-1.0.0.jar}</li>
+     *   <li>{@code ~/.hisi-devtool/otel-ext/hisi-otel-extension-1.0.0.jar} (installed copy)</li>
+     * </ol>
+     * Returns {@code null} if not found. Like {@link #ensureSpaceFreeAgentPath}, the
+     * returned path is guaranteed to be space-free (copied to cache if needed).
+     */
+    private String resolveExtensionPath() {
+        List<Path> candidates = new ArrayList<>();
+        if (otelExtensionPath != null && !otelExtensionPath.isBlank()) {
+            candidates.add(Paths.get(otelExtensionPath));
+        }
+        Path cwd = Paths.get("").toAbsolutePath();
+        String jarName = "hisi-otel-extension-1.0.0.jar";
+        candidates.add(cwd.resolve("hisi-otel-extension").resolve("target").resolve(jarName));
+        candidates.add(cwd.getParent() != null
+                ? cwd.getParent().resolve("hisi-otel-extension").resolve("target").resolve(jarName)
+                : cwd.resolve(jarName));
+        candidates.add(Paths.get(System.getProperty("user.home"),
+                ".hisi-devtool", "otel-ext", jarName));
+
+        for (Path c : candidates) {
+            if (c != null && Files.exists(c) && Files.isRegularFile(c)) {
+                try {
+                    return ensureSpaceFreeAgentPath(c.toAbsolutePath().toString());
+                } catch (IOException e) {
+                    log.warn("[TargetProcess] Failed to stage extension JAR {}: {}", c, e.getMessage());
+                }
+            }
+        }
+        return null;
     }
 
     private int allocatePort() {

@@ -50,6 +50,7 @@ public class ApmDebugService {
     private final SpanToKgMapper spanToKgMapper;
     private final ApmWebSocketHandler webSocketHandler;
     private final DebugReportService debugReportService;
+    private final KgMethodIncludeBuilder kgMethodIncludeBuilder;
 
     private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json; charset=utf-8");
 
@@ -119,9 +120,19 @@ public class ApmDebugService {
                 "line", line
         ));
 
+        // Build OTEL_INSTRUMENTATION_METHODS_INCLUDE from the KG callee tree when
+        // the caller selected an entry method. Empty string means "don't set" so
+        // the agent keeps default auto-instrumentation only.
+        String methodsInclude = "";
+        try {
+            methodsInclude = kgMethodIncludeBuilder.build(request.entryNodeId());
+        } catch (Exception e) {
+            log.warn("[ApmDebug] Failed to build OTel methods include: {}", e.getMessage());
+        }
+
         // Launch target process
         TargetProcessInfo processInfo = targetProcessManager.launch(
-                sessionId, projectPath, serviceName, targetPort, callback, logConsumer);
+                sessionId, projectPath, serviceName, targetPort, callback, logConsumer, methodsInclude);
 
         int resolvedPort = processInfo.getTargetPort();
         // Update session with the resolved port if auto-assigned

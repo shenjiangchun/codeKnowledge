@@ -137,14 +137,42 @@ public class DiagnosisReportStore {
                                    String rootCauseMarkdown,
                                    Double confidence,
                                    List<DiagnoseReport.EvidenceAnchor> evidence) {
+        return markDoneOrLowConfidence(reportId, DiagnoseReport.Status.DONE,
+            rootCauseMarkdown, confidence, evidence);
+    }
+
+    /**
+     * Mark a report as a successful terminal state ({@link DiagnoseReport.Status#DONE}
+     * or {@link DiagnoseReport.Status#LOW_CONFIDENCE}) with results.
+     * Must be called from {@link DiagnoseReport.Status#RUNNING}.
+     *
+     * @param reportId          the report UUID
+     * @param terminal          target terminal status, must be DONE or LOW_CONFIDENCE
+     * @param rootCauseMarkdown LLM-rendered root cause analysis
+     * @param confidence        confidence score in {@code [0.0, 1.0]}, may be null
+     * @param evidence          evidence anchors (defensively copied)
+     * @return the updated report
+     * @throws IllegalArgumentException if {@code terminal} is not DONE or LOW_CONFIDENCE
+     */
+    public DiagnoseReport markDoneOrLowConfidence(String reportId,
+                                                  DiagnoseReport.Status terminal,
+                                                  String rootCauseMarkdown,
+                                                  Double confidence,
+                                                  List<DiagnoseReport.EvidenceAnchor> evidence) {
         Objects.requireNonNull(reportId, "reportId");
+        Objects.requireNonNull(terminal, "terminal");
+        if (terminal != DiagnoseReport.Status.DONE
+            && terminal != DiagnoseReport.Status.LOW_CONFIDENCE) {
+            throw new IllegalArgumentException(
+                "terminal must be DONE or LOW_CONFIDENCE, got " + terminal);
+        }
         return updateAtomically(reportId, current -> {
-            validateTransition(current.getStatus(), DiagnoseReport.Status.DONE);
-            current.setStatus(DiagnoseReport.Status.DONE);
+            validateTransition(current.getStatus(), terminal);
+            current.setStatus(terminal);
             current.setRootCauseMarkdown(rootCauseMarkdown);
             current.setConfidence(confidence);
             current.setEvidence(evidence == null ? List.of() : List.copyOf(evidence));
-            applyTerminalTimestamps(current, DiagnoseReport.Status.DONE);
+            applyTerminalTimestamps(current, terminal);
             return current;
         });
     }

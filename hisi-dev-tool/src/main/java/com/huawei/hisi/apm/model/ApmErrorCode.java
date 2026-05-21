@@ -38,6 +38,7 @@ public enum ApmErrorCode {
     DIAGNOSE_REQUEST_DUPLICATED(3002, "A diagnose request for this trace is already in flight"),
     DIAGNOSE_TIMEOUT(3003, "Diagnose flow exceeded its time budget"),
     DIAGNOSE_CANCELLED(3004, "Diagnose flow was cancelled by the caller"),
+    DIAGNOSE_NO_EXCEPTION_SPANS(3006, "No exception spans indexed for the supplied traceId"),
     DIAGNOSE_INTERNAL_ERROR(3500, "Unexpected internal error during diagnose"),
 
     // 4xxx — LLM
