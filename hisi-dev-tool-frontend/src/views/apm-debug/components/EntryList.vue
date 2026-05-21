@@ -85,6 +85,51 @@ const methodTagType: Record<string, string> = {
 function handleEntryClick(entry: KgEntryPoint): void {
   store.selectEntry(entry)
 }
+
+/** Item shape consumed by el-autocomplete's slot. */
+interface SuggestionItem {
+  display: string
+  className: string
+  entry: KgEntryPoint
+}
+
+/**
+ * Build dropdown suggestions for the autocomplete from the loaded entry
+ * points. Matches against path / method / class name / fully-qualified
+ * info. Capped at 30 to keep the popper snappy.
+ */
+function fetchSuggestions(
+  queryString: string,
+  cb: (results: SuggestionItem[]) => void,
+): void {
+  const q = (queryString || '').trim().toLowerCase()
+  const all = store.entryPoints
+  const items: SuggestionItem[] = []
+  for (const entry of all) {
+    const path = (entry.httpPath || entry.entryKey || '').toLowerCase()
+    const method = (entry.httpMethod || '').toLowerCase()
+    const info = (entry.entryInfo || entry.nodeId || '').toLowerCase()
+    if (!q || path.includes(q) || method.includes(q) || info.includes(q)) {
+      const className = extractClassName(entry.entryInfo || extractInfoFromNodeId(entry.nodeId))
+      items.push({
+        display: `${entry.httpMethod || ''} ${entry.httpPath || entry.entryKey}`.trim(),
+        className,
+        entry,
+      })
+      if (items.length >= 30) break
+    }
+  }
+  cb(items)
+}
+
+function handleSuggestionSelect(item: SuggestionItem | Record<string, unknown>): void {
+  const picked = (item as SuggestionItem).entry
+  if (picked) {
+    store.selectEntry(picked)
+    // Reflect the chosen entry in the search box for clarity.
+    searchQuery.value = (item as SuggestionItem).display
+  }
+}
 </script>
 
 <template>
@@ -96,15 +141,37 @@ function handleEntryClick(entry: KgEntryPoint): void {
       </el-tag>
     </div>
 
-    <!-- Search filter -->
+    <!-- Search filter with dropdown suggestions -->
     <div v-if="store.entryPoints.length > 0" class="search-bar">
-      <el-input
+      <el-autocomplete
         v-model="searchQuery"
+        :fetch-suggestions="fetchSuggestions"
         placeholder="搜索 API (路径/方法/类名)"
         size="small"
         clearable
         prefix-icon="Search"
-      />
+        :trigger-on-focus="false"
+        :debounce="120"
+        popper-class="entry-search-popper"
+        value-key="display"
+        style="width: 100%"
+        @select="handleSuggestionSelect"
+      >
+        <template #default="{ item }">
+          <div class="suggestion-row">
+            <el-tag
+              :type="(methodTagType[item.entry.httpMethod || ''] as any) || 'info'"
+              size="small"
+              effect="dark"
+              class="suggestion-method"
+            >
+              {{ item.entry.httpMethod || item.entry.entryType }}
+            </el-tag>
+            <span class="suggestion-path">{{ item.entry.httpPath || item.entry.entryKey }}</span>
+            <span class="suggestion-class">{{ item.className }}</span>
+          </div>
+        </template>
+      </el-autocomplete>
     </div>
 
     <div v-if="store.entryPointsLoading" class="loading-state">
@@ -257,3 +324,33 @@ function handleEntryClick(entry: KgEntryPoint): void {
   font-weight: 500;
 }
 </style>
+
+<!-- Popper styles must be unscoped: el-autocomplete renders into body. -->
+<style>
+.entry-search-popper .suggestion-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.2;
+}
+.entry-search-popper .suggestion-method {
+  flex-shrink: 0;
+  min-width: 48px;
+  text-align: center;
+  font-size: 10px;
+}
+.entry-search-popper .suggestion-path {
+  font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--el-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.entry-search-popper .suggestion-class {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  flex-shrink: 0;
+}

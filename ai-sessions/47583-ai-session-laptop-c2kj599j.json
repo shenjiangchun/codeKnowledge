@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "claude-opus-4-6-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-05-21T07:03:38.599Z",
+  "lastUpdated": "2026-05-21T07:40:46.697Z",
   "stats": {
-    "totalOperations": 280,
-    "totalFilesEdited": 139,
-    "totalAiLines": 7346,
-    "totalAiLinesDeleted": 527,
-    "totalCommits": 13
+    "totalOperations": 283,
+    "totalFilesEdited": 140,
+    "totalAiLines": 7659,
+    "totalAiLinesDeleted": 548,
+    "totalCommits": 14
   },
   "pendingFiles": [
     {
@@ -379,21 +379,6 @@
       "lastTool": "Edit"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/stores/apmStore.ts",
-      "tool": "Edit",
-      "operations": 4,
-      "timestamp": "2026-05-20T06:17:28.137Z",
-      "lastModified": "2026-05-20T10:38:36.568Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/ApmDebugView.vue",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-05-20T06:17:48.511Z",
-      "lastModified": "2026-05-20T06:17:48.511Z"
-    },
-    {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/service/CodeAnalysisCoreService.java",
       "tool": "Edit",
       "operations": 3,
@@ -445,21 +430,6 @@
       "lastTool": "Edit"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/types/apm.ts",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-05-20T10:38:16.665Z",
-      "lastModified": "2026-05-20T10:38:16.665Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/CallChainPreview.vue",
-      "tool": "Edit",
-      "operations": 4,
-      "timestamp": "2026-05-20T10:40:50.425Z",
-      "lastModified": "2026-05-21T00:32:05.564Z",
-      "lastTool": "Edit"
-    },
-    {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-otel-extension/pom.xml",
       "tool": "Write",
       "operations": 1,
@@ -495,30 +465,6 @@
       "lastModified": "2026-05-21T00:29:06.442Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/ProjectSelector.vue",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-05-21T00:31:06.351Z",
-      "lastModified": "2026-05-21T00:31:12.068Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/TraceView.vue",
-      "tool": "Edit",
-      "operations": 4,
-      "timestamp": "2026-05-21T00:32:11.877Z",
-      "lastModified": "2026-05-21T00:32:33.357Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/TestCaseManager.vue",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-05-21T00:32:53.297Z",
-      "lastModified": "2026-05-21T00:33:01.355Z",
-      "lastTool": "Edit"
-    },
-    {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/service/AIAnalysisPromptService.java",
       "tool": "Edit",
       "operations": 1,
@@ -545,6 +491,14 @@
       "operations": 1,
       "timestamp": "2026-05-21T02:38:17.728Z",
       "lastModified": "2026-05-21T02:38:17.729Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/EntryList.vue",
+      "tool": "Edit",
+      "operations": 3,
+      "timestamp": "2026-05-21T07:40:27.013Z",
+      "lastModified": "2026-05-21T07:40:46.697Z",
+      "lastTool": "Edit"
     }
   ]
 }
