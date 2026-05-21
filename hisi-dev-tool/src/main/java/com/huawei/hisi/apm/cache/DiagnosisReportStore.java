@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -78,8 +79,14 @@ public class DiagnosisReportStore {
      * @return the newly stored report
      */
     public DiagnoseReport createPending(String reportId, String traceId, String projectPath) {
+        Objects.requireNonNull(reportId, "reportId");
+        Objects.requireNonNull(traceId, "traceId");
+        Objects.requireNonNull(projectPath, "projectPath");
         DiagnoseReport report = DiagnoseReport.pending(reportId, traceId, projectPath).build();
-        cache.put(reportId, report);
+        DiagnoseReport prior = cache.asMap().putIfAbsent(reportId, report);
+        if (prior != null) {
+            throw new IllegalStateException("DiagnoseReport already exists: " + reportId);
+        }
         return report;
     }
 
@@ -90,6 +97,7 @@ public class DiagnosisReportStore {
      * @return the report wrapped in an {@link Optional}, empty if absent or expired
      */
     public Optional<DiagnoseReport> findById(String reportId) {
+        Objects.requireNonNull(reportId, "reportId");
         return Optional.ofNullable(cache.getIfPresent(reportId));
     }
 
@@ -105,6 +113,8 @@ public class DiagnosisReportStore {
      * @throws IllegalStateException  if the transition is not permitted
      */
     public DiagnoseReport transition(String reportId, DiagnoseReport.Status newStatus) {
+        Objects.requireNonNull(reportId, "reportId");
+        Objects.requireNonNull(newStatus, "newStatus");
         return updateAtomically(reportId, current -> {
             validateTransition(current.getStatus(), newStatus);
             current.setStatus(newStatus);
@@ -127,6 +137,7 @@ public class DiagnosisReportStore {
                                    String rootCauseMarkdown,
                                    Double confidence,
                                    List<DiagnoseReport.EvidenceAnchor> evidence) {
+        Objects.requireNonNull(reportId, "reportId");
         return updateAtomically(reportId, current -> {
             validateTransition(current.getStatus(), DiagnoseReport.Status.DONE);
             current.setStatus(DiagnoseReport.Status.DONE);
@@ -148,10 +159,12 @@ public class DiagnosisReportStore {
      * @return the updated report
      */
     public DiagnoseReport markFailed(String reportId, ApmErrorCode errorCode, String errorMessage) {
+        Objects.requireNonNull(reportId, "reportId");
+        Objects.requireNonNull(errorCode, "errorCode");
         return updateAtomically(reportId, current -> {
             validateTransition(current.getStatus(), DiagnoseReport.Status.FAILED);
             current.setStatus(DiagnoseReport.Status.FAILED);
-            current.setErrorCode(errorCode == null ? null : errorCode.getCode());
+            current.setErrorCode(errorCode.getCode());
             current.setErrorMessage(errorMessage);
             applyTerminalTimestamps(current, DiagnoseReport.Status.FAILED);
             return current;
