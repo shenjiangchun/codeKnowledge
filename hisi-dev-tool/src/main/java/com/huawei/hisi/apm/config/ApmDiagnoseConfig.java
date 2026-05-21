@@ -28,7 +28,7 @@ import com.huawei.hisi.service.UnifiedTextService;
  * as {@code @Component}s elsewhere and intentionally NOT redefined here.
  */
 @Configuration
-@EnableConfigurationProperties(ApmDiagnoseProperties.class)
+@EnableConfigurationProperties({ApmDiagnoseProperties.class, ApmLlmProperties.class})
 public class ApmDiagnoseConfig {
 
     private static final Logger LOG = LoggerFactory.getLogger(ApmDiagnoseConfig.class);

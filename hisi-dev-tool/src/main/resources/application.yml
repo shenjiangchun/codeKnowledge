@@ -55,6 +55,21 @@ text-model:
   # ---- 备选文本模型（修改上方配置即可切换） ----
   # 智谱 glm-4-flash: base-url=https://open.bigmodel.cn/api/paas/v4  model=glm-4-flash (当前默认)
 
+# ==================== APM Failure Locator LLM ====================
+# 独立的诊断 LLM 配置，与 text-model（用于 KG 描述生成）解耦。
+# api-key 留占位，真实 token 在 application-local.yml。
+hisi:
+  apm:
+    diagnose:
+      llm:
+        base-url: https://www.dmxapi.cn
+        model: claude-opus-4-6-cc
+        api-key: ${APM_DIAGNOSE_LLM_API_KEY:}
+        timeout-seconds: 40
+        max-concurrency: 2
+        temperature: 0.2
+        max-tokens: 1024
+
 # ==================== 旧版平台配置（已废弃，保留向后兼容） ====================
 # 以下配置已迁移至上方 embedding / text-model 统一配置，不再生效
 # 如需恢复旧模式，请联系管理员
@@ -182,7 +197,10 @@ apm:
   # 可选：指定本地 OTel Agent JAR 路径（内网环境无法下载时使用）
   # 留空则自动从 GitHub releases 下载（需能访问 github.com 或配置 proxy）
   otel-agent-path: ${APM_OTEL_AGENT_PATH:}
-  target-ready-timeout-seconds: 60
+  # 目标 JVM 启动 + OTel agent 加载 + Spring Boot 端口监听的总超时（秒）
+  # 实测大型 Spring Boot 应用首次冷启动 + agent instrumentation 需要 3-8 分钟
+  # 若仍超时可继续调大，或通过环境变量 APM_TARGET_READY_TIMEOUT 覆盖
+  target-ready-timeout-seconds: ${APM_TARGET_READY_TIMEOUT:600}
   span-ttl-hours: 24
   target-shutdown-grace-seconds: 5
 
