@@ -228,6 +228,27 @@ class SpanIngestionServiceTest {
             // (the index itself filters internally)
             verify(exceptionSpanIndex, times(2)).index(any(ApmSpanEntity.class));
         }
+
+        @Test
+        @DisplayName("runtime exception thrown by ExceptionSpanIndex.index() does not abort ingestion")
+        void exceptionInIndexIsBestEffort() {
+            service.registerSession("test-service", "session-1", "/project");
+
+            doThrow(new RuntimeException("boom"))
+                    .when(exceptionSpanIndex).index(any(ApmSpanEntity.class));
+
+            ApmSpanEntity errorSpan = buildSpan("ERROR", "INTERNAL", "OrderService.create",
+                    Map.of("exception.type", "RuntimeException"));
+
+            OtlpTraceData.ExportTraceServiceRequest request = buildOtlpRequest(
+                    "test-service", List.of(buildOtlpSpan(errorSpan)));
+
+            // Must NOT throw — forwarding is best-effort
+            service.ingest(request);
+
+            // Downstream side-effects still happen
+            verify(spanRepository).batchInsert(anyList());
+        }
     }
 
     // ── OTLP test data builders ───────────────────────────────────

@@ -130,4 +130,30 @@ class ExceptionSpanIndexTest {
                 .tag("cache", "apm.exception.span.index")
                 .gauge()).isNotNull();
     }
+
+    @Test
+    @DisplayName("per-trace cap: at most 50 spans retained per traceId; extras dropped")
+    void perTraceCap() {
+        for (int i = 0; i < 60; i++) {
+            index.index(ApmSpanEntity.builder()
+                    .traceId("trace-cap")
+                    .spanId("span-" + i)
+                    .statusCode("ERROR")
+                    .build());
+        }
+
+        List<ApmSpanEntity> result = index.getByTraceId("trace-cap");
+        assertThat(result).hasSize(50);
+        // First 50 retained, later ones dropped
+        assertThat(result.get(0).getSpanId()).isEqualTo("span-0");
+        assertThat(result.get(49).getSpanId()).isEqualTo("span-49");
+    }
+
+    @Test
+    @DisplayName("empty lookup: unknown traceId returns empty list, never null")
+    void emptyLookupReturnsEmptyList() {
+        assertThat(index.getByTraceId("nope")).isNotNull().isEmpty();
+        assertThat(index.hasExceptionSpans("nope")).isFalse();
+        assertThat(index.size()).isZero();
+    }
 }

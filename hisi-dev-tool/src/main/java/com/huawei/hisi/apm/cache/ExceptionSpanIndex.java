@@ -7,11 +7,13 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.cache.CaffeineCacheMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -27,12 +29,15 @@ import java.util.concurrent.TimeUnit;
  * @author HiSi DevTool Team
  */
 @Component
+@ConditionalOnProperty(prefix = "hisi.apm.diagnose", name = "enabled",
+        havingValue = "true", matchIfMissing = true)
 public class ExceptionSpanIndex {
 
     private static final Logger LOG = LoggerFactory.getLogger(ExceptionSpanIndex.class);
 
     private static final long MAX_SIZE = 10_000L;
     private static final long EXPIRE_HOURS = 2L;
+    private static final int MAX_SPANS_PER_TRACE = 50;
     private static final String CACHE_NAME = "apm.exception.span.index";
 
     private final Cache<String, List<ApmSpanEntity>> cache;
@@ -65,6 +70,7 @@ public class ExceptionSpanIndex {
      * @param span the span to index
      */
     public void index(ApmSpanEntity span) {
+        Objects.requireNonNull(span, "span");
         if (!isExceptionSpan(span)) {
             return;
         }
@@ -73,6 +79,11 @@ public class ExceptionSpanIndex {
             List<ApmSpanEntity> list = (existing != null)
                     ? new ArrayList<>(existing)
                     : new ArrayList<>();
+            if (list.size() >= MAX_SPANS_PER_TRACE) {
+                LOG.debug("ExceptionSpanIndex per-trace cap reached for traceId={} ({} spans); dropping span={}",
+                        traceId, MAX_SPANS_PER_TRACE, span.getSpanId());
+                return Collections.unmodifiableList(list);
+            }
             list.add(span);
             return Collections.unmodifiableList(list);
         });
