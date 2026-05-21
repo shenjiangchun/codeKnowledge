@@ -116,6 +116,17 @@ public class ApmSpanRepository {
         );
     }
 
+    /**
+     * Update the serialized attributes JSON for a single span.
+     * Used after in-memory attribute enrichment (e.g. silent_catch markers).
+     */
+    public void updateAttributes(String spanId, String sessionId, Map<String, String> attributes) {
+        jdbcTemplate.update(
+            "UPDATE apm_span SET attributes = ? WHERE span_id = ? AND session_id = ?",
+            toJson(attributes), spanId, sessionId
+        );
+    }
+
     public List<String> findDistinctTraceIds(String sessionId) {
         return jdbcTemplate.queryForList(
             "SELECT trace_id FROM apm_span WHERE session_id = ? GROUP BY trace_id ORDER BY MIN(start_time_ns)",

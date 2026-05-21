@@ -1,5 +1,6 @@
 package com.huawei.hisi.apm.service;
 
+import com.huawei.hisi.apm.cache.ExceptionSpanIndex;
 import com.huawei.hisi.apm.handler.ApmWebSocketHandler;
 import com.huawei.hisi.apm.model.ApmSpanEntity;
 import com.huawei.hisi.apm.model.OtlpTraceData;
@@ -24,6 +25,7 @@ public class SpanIngestionService {
     private final ApmSpanRepository spanRepository;
     private final SpanToKgMapper spanToKgMapper;
     private final ApmWebSocketHandler webSocketHandler;
+    private final ExceptionSpanIndex exceptionSpanIndex;
 
     private static final Map<Integer, String> SPAN_KIND_MAP = Map.of(
             0, "UNSPECIFIED",
@@ -70,7 +72,8 @@ public class SpanIngestionService {
 
             String sessionId = resolveSessionId(serviceName);
             if (sessionId == null) {
-                log.debug("[Ingestion] No active session for service: {}", serviceName);
+                log.warn("[Ingestion] No active session for service: '{}' (registered services: {})",
+                        serviceName, serviceSessionMap.keySet());
                 continue;
             }
 
@@ -94,7 +97,13 @@ public class SpanIngestionService {
         }
 
         spanRepository.batchInsert(allSpans);
-        log.debug("[Ingestion] Stored {} spans", allSpans.size());
+        log.info("[Ingestion] Stored {} spans", allSpans.size());
+
+        // Detect and mark silent_catch spans (before KG enrichment so markers are visible)
+        markSilentCatchSpans(allSpans);
+
+        // Feed spans to exception index (best-effort, the index filters internally)
+        indexExceptionSpans(allSpans);
 
         // Enrich spans with KG mapping (best-effort, non-blocking)
         enrichWithKgMapping(allSpans);
@@ -128,6 +137,131 @@ public class SpanIngestionService {
     }
 
     // ── Internal helpers ───────────────────────────────────────────
+
+    /**
+     * Mark spans suspected of silently catching exceptions.
+     * <p>
+     * A span is suspected when it has an {@code "exception.type"} attribute
+     * (OTel auto-instrumentation saw an exception) but its status is not
+     * {@code "ERROR"} — meaning the exception was caught and suppressed.
+     * <p>
+     * Exempt spans include HTTP handlers, DB queries, CLIENT-kind spans,
+     * and spans with {@code db.system} or {@code messaging.system} attributes.
+     * <p>
+     * Adds a synthetic {@code "hisi.silent_catch" = "suspected"} attribute
+     * and persists the updated attributes back to storage.
+     *
+     * @param spans the full list of ingested spans (modified in-place)
+     */
+    private void markSilentCatchSpans(List<ApmSpanEntity> spans) {
+        try {
+            int count = 0;
+            for (ApmSpanEntity span : spans) {
+                if (isSilentCatchSuspected(span)) {
+                    Map<String, String> attrs = span.getAttributes();
+                    // Always copy to a mutable LinkedHashMap to handle potentially
+                    // immutable maps (e.g. Collections.emptyMap()).
+                    Map<String, String> mutableAttrs = (attrs == null)
+                            ? new LinkedHashMap<>()
+                            : new LinkedHashMap<>(attrs);
+                    mutableAttrs.put("hisi.silent_catch", "suspected");
+                    span.setAttributes(mutableAttrs);
+
+                    spanRepository.updateAttributes(
+                            span.getSpanId(), span.getSessionId(), span.getAttributes());
+                    count++;
+                }
+            }
+            if (count > 0) {
+                log.info("[Ingestion] Marked {} silent_catch spans out of {}", count, spans.size());
+            }
+        } catch (Exception e) {
+            log.warn("[Ingestion] Silent catch detection failed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Determine whether a span is suspected of silently catching an exception.
+     * <p>
+     * Positive when ALL of:
+     * <ol>
+     *   <li>{@code statusCode} is NOT {@code "ERROR"}</li>
+     *   <li>Span attributes contain {@code "exception.type"}</li>
+     * </ol>
+     * <p>
+     * Exempt when ANY of:
+     * <ol>
+     *   <li>{@code operationName} starts with {@code "HTTP "}</li>
+     *   <li>{@code operationName} starts with {@code "SELECT"}, {@code "INSERT"},
+     *       {@code "UPDATE"}, or {@code "DELETE"}</li>
+     *   <li>{@code spanKind} is {@code "CLIENT"}</li>
+     *   <li>Attributes contain {@code "db.system"}</li>
+     *   <li>Attributes contain {@code "messaging.system"}</li>
+     * </ol>
+     *
+     * @param span the span to evaluate
+     * @return {@code true} if the span is suspected of silent exception catching
+     */
+    static boolean isSilentCatchSuspected(ApmSpanEntity span) {
+        // Must NOT be ERROR status
+        if ("ERROR".equals(span.getStatusCode())) {
+            return false;
+        }
+
+        // Must have exception.type attribute
+        Map<String, String> attrs = span.getAttributes();
+        if (attrs == null || !attrs.containsKey("exception.type")) {
+            return false;
+        }
+
+        // Exemption 1: HTTP handler span
+        String opName = span.getOperationName();
+        if (opName != null && opName.startsWith("HTTP ")) {
+            return false;
+        }
+
+        // Exemption 2: DB query span (operation name prefix)
+        if (opName != null && (opName.startsWith("SELECT") || opName.startsWith("INSERT")
+                || opName.startsWith("UPDATE") || opName.startsWith("DELETE"))) {
+            return false;
+        }
+
+        // Exemption 3: CLIENT span kind
+        if ("CLIENT".equals(span.getSpanKind())) {
+            return false;
+        }
+
+        // Exemption 4: db.system attribute
+        if (attrs.containsKey("db.system")) {
+            return false;
+        }
+
+        // Exemption 5: messaging.system attribute
+        if (attrs.containsKey("messaging.system")) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Feed all ingested spans to the {@link ExceptionSpanIndex}.
+     * The index filters internally (only indexes ERROR or exception.type spans),
+     * so all spans are passed without pre-filtering.
+     * <p>
+     * Best-effort: failures are logged and do not block the ingestion pipeline.
+     *
+     * @param spans the full list of ingested spans
+     */
+    private void indexExceptionSpans(List<ApmSpanEntity> spans) {
+        try {
+            for (ApmSpanEntity span : spans) {
+                exceptionSpanIndex.index(span);
+            }
+        } catch (Exception e) {
+            log.warn("[Ingestion] Exception span indexing failed: {}", e.getMessage());
+        }
+    }
 
     /**
      * Enrich spans with KG MethodNode mapping.
@@ -179,11 +313,14 @@ public class SpanIngestionService {
 
         for (Map.Entry<String, List<ApmSpanEntity>> entry : bySession.entrySet()) {
             String sessionId = entry.getKey();
-            if (webSocketHandler.isConnected(sessionId)) {
+            boolean connected = webSocketHandler.isConnected(sessionId);
+            log.info("[Ingestion] Pushing {} spans to session {} (wsConnected={})",
+                    entry.getValue().size(), sessionId, connected);
+            if (connected) {
                 try {
                     webSocketHandler.pushSpans(sessionId, entry.getValue());
                 } catch (Exception e) {
-                    log.debug("[Ingestion] WebSocket push failed for session {}: {}", sessionId, e.getMessage());
+                    log.warn("[Ingestion] WebSocket push failed for session {}: {}", sessionId, e.getMessage());
                 }
             }
         }
@@ -200,9 +337,13 @@ public class SpanIngestionService {
         String statusCode = "UNSET";
         String statusMessage = null;
         if (span.status() != null) {
-            statusCode = STATUS_CODE_MAP.getOrDefault(span.status().code(), "UNSET");
+            Integer code = span.status().code();
+            statusCode = code == null ? "UNSET" : STATUS_CODE_MAP.getOrDefault(code, "UNSET");
             statusMessage = span.status().message();
         }
+
+        Integer kind = span.kind();
+        String spanKind = kind == null ? "UNSPECIFIED" : SPAN_KIND_MAP.getOrDefault(kind, "UNSPECIFIED");
 
         return ApmSpanEntity.builder()
                 .sessionId(sessionId)
@@ -211,7 +352,7 @@ public class SpanIngestionService {
                 .parentSpanId(span.parentSpanId())
                 .serviceName(serviceName)
                 .operationName(span.name() != null ? span.name() : "unknown")
-                .spanKind(SPAN_KIND_MAP.getOrDefault(span.kind(), "UNSPECIFIED"))
+                .spanKind(spanKind)
                 .startTimeNs(parseNanos(span.startTimeUnixNano()))
                 .endTimeNs(parseNanos(span.endTimeUnixNano()))
                 .statusCode(statusCode)
