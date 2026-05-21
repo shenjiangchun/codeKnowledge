@@ -9,6 +9,7 @@ import com.huawei.hisi.apm.model.ApmSession;
 import com.huawei.hisi.apm.model.ApmSpanEntity;
 import com.huawei.hisi.apm.model.DebugReport;
 import com.huawei.hisi.apm.service.ApmDebugService;
+import com.huawei.hisi.apm.service.SpanIngestionService;
 import com.huawei.hisi.model.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +38,7 @@ import java.util.Map;
 public class ApmController {
 
     private final ApmDebugService apmDebugService;
+    private final SpanIngestionService spanIngestionService;
 
     /**
      * Launch a target process and create a new APM debug session.
@@ -204,5 +206,21 @@ public class ApmController {
             log.error("[ApmController] Failed to get process output for session {}", sessionId, e);
             return ApiResponse.error("Failed to get process output");
         }
+    }
+
+
+    @PostMapping("/dev/register-session")
+    public ApiResponse<Map<String, String>> devRegisterSession(@RequestBody Map<String, String> body) {
+        String serviceName = body.get("serviceName");
+        String sessionId = body.getOrDefault("sessionId", "dev-" + serviceName);
+        String projectPath = body.get("projectPath");
+        if (serviceName == null || serviceName.isBlank()) {
+            return ApiResponse.error(400, "serviceName required");
+        }
+        spanIngestionService.registerSession(serviceName, sessionId, projectPath);
+        return ApiResponse.success(Map.of(
+                "serviceName", serviceName,
+                "sessionId", sessionId,
+                "projectPath", projectPath == null ? "" : projectPath));
     }
 }

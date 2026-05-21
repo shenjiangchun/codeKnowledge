@@ -5,8 +5,6 @@ import com.huawei.hisi.neo4j.model.MethodNode;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -26,8 +24,6 @@ import java.util.Optional;
  *
  * @author HiSi DevTool Team
  */
-@Service
-@ConditionalOnBean(Neo4jMethodNodeRepository.class)
 public class KgQueryFacade {
 
     private static final Logger LOG = LoggerFactory.getLogger(KgQueryFacade.class);

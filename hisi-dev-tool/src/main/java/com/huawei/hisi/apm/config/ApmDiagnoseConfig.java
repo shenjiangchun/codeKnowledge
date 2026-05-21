@@ -13,8 +13,11 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import com.huawei.hisi.apm.service.locator.KgEnricher;
+import com.huawei.hisi.apm.service.locator.KgEnricherImpl;
+import com.huawei.hisi.apm.service.locator.KgQueryFacade;
 import com.huawei.hisi.apm.service.locator.LlmClient;
 import com.huawei.hisi.apm.service.locator.LlmDiagnoser;
+import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.service.UnifiedTextService;
 
 /**
@@ -52,6 +55,32 @@ public class ApmDiagnoseConfig {
                 props.getExecutorMaxPoolSize(),
                 props.getExecutorQueueCapacity());
         return exec;
+    }
+
+    /**
+     * KG query facade — only registered when the Neo4j-backed method-node
+     * repository is on the application context (i.e. {@code neo4j.uri} is set).
+     * Declared as a {@code @Bean} (rather than {@code @Service}) so the
+     * {@link ConditionalOnBean} guard evaluates reliably at bean-definition
+     * time, avoiding the component-scan ordering pitfall.
+     */
+    @Bean
+    @ConditionalOnBean(Neo4jMethodNodeRepository.class)
+    public KgQueryFacade kgQueryFacade(Neo4jMethodNodeRepository repository) {
+        return new KgQueryFacade(repository);
+    }
+
+    /**
+     * Production {@link KgEnricher} backed by {@link KgQueryFacade}. Only
+     * registered when the facade bean above is present; otherwise the no-op
+     * {@link #noopKgEnricher()} fallback wins. Marked {@code @Primary} so it
+     * overrides the no-op when both happen to be present.
+     */
+    @Bean
+    @org.springframework.context.annotation.Primary
+    @ConditionalOnBean(KgQueryFacade.class)
+    public KgEnricher kgEnricherImpl(KgQueryFacade facade) {
+        return new KgEnricherImpl(facade);
     }
 
     /**

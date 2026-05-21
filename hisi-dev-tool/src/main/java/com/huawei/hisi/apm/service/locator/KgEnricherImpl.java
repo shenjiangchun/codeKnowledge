@@ -4,9 +4,6 @@ import com.huawei.hisi.apm.model.ApmSpanEntity;
 import com.huawei.hisi.apm.model.DiagnoseReport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.context.annotation.Primary;
-import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -30,9 +27,6 @@ import java.util.Set;
  *
  * @author HiSi DevTool Team
  */
-@Component
-@Primary
-@ConditionalOnBean(KgQueryFacade.class)
 public class KgEnricherImpl implements KgEnricher {
 
     private static final Logger LOG = LoggerFactory.getLogger(KgEnricherImpl.class);

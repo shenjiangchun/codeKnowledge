@@ -13,7 +13,10 @@ class ApmDiagnoseConfigTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(PropertyPlaceholderAutoConfiguration.class))
-            .withUserConfiguration(ApmDiagnoseConfig.class);
+            .withUserConfiguration(ApmDiagnoseConfig.class)
+            .withPropertyValues(
+                    "hisi.apm.diagnose.llm.base-url=https://example.invalid",
+                    "hisi.apm.diagnose.llm.model=test-model");
 
     @Test
     @DisplayName("apmDiagnoseExecutor bean is created with properties applied")

@@ -332,7 +332,22 @@ public class SpanIngestionService {
 
     private ApmSpanEntity convertSpan(OtlpTraceData.Span span, String sessionId,
                                        String serviceName, Map<String, String> resourceAttrs) {
-        Map<String, String> attrs = extractAttributes(span.attributes());
+        Map<String, String> attrs = new LinkedHashMap<>(extractAttributes(span.attributes()));
+
+        // Promote exception event attributes onto the span so downstream
+        // consumers (ExceptionSpanIndex, PromptBuilder) can read exception.type
+        // / .message / .stacktrace without walking the events list. OTel
+        // semantics always carry exception details in an event named
+        // "exception" (one per thrown exception). We take the LAST exception
+        // event so the most-recent throw wins.
+        if (span.events() != null) {
+            for (OtlpTraceData.Event ev : span.events()) {
+                if (ev != null && "exception".equals(ev.name()) && ev.attributes() != null) {
+                    Map<String, String> evAttrs = extractAttributes(ev.attributes());
+                    attrs.putAll(evAttrs);
+                }
+            }
+        }
 
         String statusCode = "UNSET";
         String statusMessage = null;
