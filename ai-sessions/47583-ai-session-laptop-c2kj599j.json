@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "claude-opus-4-6-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-05-21T03:33:46.997Z",
+  "lastUpdated": "2026-05-21T04:26:01.961Z",
   "stats": {
     "totalOperations": 279,
     "totalFilesEdited": 138,
-    "totalAiLines": 7026,
-    "totalAiLinesDeleted": 520,
-    "totalCommits": 10
+    "totalAiLines": 7311,
+    "totalAiLinesDeleted": 525,
+    "totalCommits": 11
   },
   "pendingFiles": [
     {
@@ -449,44 +449,6 @@
       "operations": 3,
       "timestamp": "2026-05-20T08:29:23.650Z",
       "lastModified": "2026-05-20T08:29:40.234Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/apm/controller/OtlpReceiverController.java",
-      "tool": "Edit",
-      "operations": 4,
-      "timestamp": "2026-05-20T08:40:30.763Z",
-      "lastModified": "2026-05-20T09:42:39.378Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/apm/service/KgMethodIncludeBuilder.java",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-05-20T10:35:39.572Z",
-      "lastModified": "2026-05-20T10:35:39.572Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/apm/service/TargetProcessManager.java",
-      "tool": "Edit",
-      "operations": 6,
-      "timestamp": "2026-05-20T10:36:00.889Z",
-      "lastModified": "2026-05-21T00:30:23.122Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/apm/model/ApmRequest.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-05-20T10:36:30.551Z",
-      "lastModified": "2026-05-20T10:36:30.551Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/apm/service/ApmDebugService.java",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-05-20T10:36:39.016Z",
-      "lastModified": "2026-05-20T10:36:50.011Z",
       "lastTool": "Edit"
     },
     {
