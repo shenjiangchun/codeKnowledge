@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.concurrent.ThreadPoolExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -12,7 +13,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import com.huawei.hisi.apm.service.locator.KgEnricher;
+import com.huawei.hisi.apm.service.locator.LlmClient;
 import com.huawei.hisi.apm.service.locator.LlmDiagnoser;
+import com.huawei.hisi.service.UnifiedTextService;
 
 /**
  * Wires the dedicated executor used by the APM Failure Locator async pipeline.
@@ -64,13 +67,30 @@ public class ApmDiagnoseConfig {
 
     /**
      * Default stub {@link LlmDiagnoser} returning a template fallback at a
-     * mid-range confidence. Task 11 supplies the production implementation
-     * which will override this bean.
+     * mid-range confidence. The production {@code LlmDiagnoseAdapter} marks
+     * itself {@code @Primary} so it wins whenever an {@link LlmClient} bean
+     * exists and {@code hisi.apm.diagnose.llmEnabled=true}.
      */
     @Bean
     @ConditionalOnMissingBean
     public LlmDiagnoser stubLlmDiagnoser() {
         return (projectPath, exceptionSpans, kgEvidence, userNote) ->
             new LlmDiagnoser.LlmResult("(LLM disabled — template fallback)", 0.6);
+    }
+
+    /**
+     * Default {@link LlmClient} backed by {@link UnifiedTextService}. Only
+     * registered when {@code UnifiedTextService} is on the application context
+     * (it auto-loads whenever the text model is configured).
+     *
+     * <p>System and user prompts are concatenated since {@code UnifiedTextService}
+     * exposes only a single-prompt {@code generateText} entry point.
+     */
+    @Bean
+    @ConditionalOnMissingBean(LlmClient.class)
+    @ConditionalOnBean(UnifiedTextService.class)
+    public LlmClient unifiedTextServiceLlmClient(UnifiedTextService textService) {
+        return (systemPrompt, userPrompt) ->
+            textService.generateText(systemPrompt + "\n\n" + userPrompt);
     }
 }

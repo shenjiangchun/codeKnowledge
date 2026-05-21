@@ -79,7 +79,7 @@ public class FailureLocatorService {
      * poll {@code GET /api/apm/diagnose/{reportId}}.
      *
      * @param request the diagnose request (non-null)
-     * @return the reportId â€?either freshly created or the existing in-flight one
+     * @return the reportId ï¿½?either freshly created or the existing in-flight one
      */
     public String startDiagnose(DiagnoseRequest request) {
         Objects.requireNonNull(request, "request");
@@ -145,7 +145,7 @@ public class FailureLocatorService {
             inLlmCall = true;
             LlmDiagnoser.LlmResult llm = props.isLlmEnabled()
                 ? llmDiagnoser.diagnose(request.projectPath(), spans, evidence, request.userNote())
-                : new LlmDiagnoser.LlmResult("(LLM disabled â€?template fallback)", 0.6);
+                : new LlmDiagnoser.LlmResult("(LLM disabled ï¿½?template fallback)", 0.6);
             inLlmCall = false;
             if (deadlinePassed(deadlineNanos)) {
                 markTimeout(reportId);
@@ -160,7 +160,7 @@ public class FailureLocatorService {
                 llm.rootCauseMarkdown(), llm.confidence(), evidence);
             LOG.debug("Pipeline complete reportId={} status={}", reportId, terminal);
         } catch (IllegalStateException stateBug) {
-            // State machine should never disagree with our flow â€?surface the bug.
+            // State machine should never disagree with our flow ï¿½?surface the bug.
             LOG.error("State machine violation in diagnose pipeline reportId={}", reportId, stateBug);
             throw stateBug;
         } catch (Exception ex) {
@@ -186,6 +186,15 @@ public class FailureLocatorService {
      * @return the matching error code
      */
     ApmErrorCode mapException(Throwable ex, boolean inLlmCall) {
+        if (ex instanceof DiagnoseLlmTimeoutException) {
+            return ApmErrorCode.LLM_TIMEOUT;
+        }
+        if (ex instanceof DiagnoseLlmInvalidResponseException) {
+            return ApmErrorCode.LLM_INVALID_RESPONSE;
+        }
+        if (ex instanceof DiagnoseLlmException) {
+            return ApmErrorCode.LLM_UPSTREAM_ERROR;
+        }
         if (ex instanceof TimeoutException) {
             return inLlmCall ? ApmErrorCode.LLM_TIMEOUT : ApmErrorCode.DIAGNOSE_TIMEOUT;
         }
