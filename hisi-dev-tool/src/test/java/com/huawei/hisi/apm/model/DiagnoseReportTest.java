@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Unit tests for {@link DiagnoseReport} and its nested {@code EvidenceAnchor} record.
@@ -59,6 +60,21 @@ class DiagnoseReportTest {
         String json = mapper.writeValueAsString(r);
         DiagnoseReport back = mapper.readValue(json, DiagnoseReport.class);
         assertThat(back).isEqualTo(r);
+    }
+
+    @Test
+    @DisplayName("getEvidence returns unmodifiable defensive copy")
+    void getEvidence_returnsDefensiveCopy() {
+        var anchor = new DiagnoseReport.EvidenceAnchor(
+            "slow_span", "OrderService", "placeOrder", "OrderService.java", 42, "span1", "snippet");
+        DiagnoseReport report = DiagnoseReport.builder()
+            .evidence(new java.util.ArrayList<>(List.of(anchor)))
+            .build();
+
+        List<DiagnoseReport.EvidenceAnchor> evidence = report.getEvidence();
+        assertThat(evidence).hasSize(1);
+        assertThatThrownBy(() -> evidence.add(anchor))
+            .isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test

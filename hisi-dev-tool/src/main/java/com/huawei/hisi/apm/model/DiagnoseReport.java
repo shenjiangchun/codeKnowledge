@@ -16,6 +16,9 @@ import java.util.List;
  * {@link Status#RUNNING}, then terminates in one of
  * {@link Status#DONE} / {@link Status#FAILED} / {@link Status#CANCELLED} /
  * {@link Status#TIMEOUT} / {@link Status#LOW_CONFIDENCE}.
+ * <p><strong>Thread safety:</strong> This class is mutable and not thread-safe.
+ * Concurrent access must be protected by the enclosing store or by replacing
+ * instances atomically (copy-on-write).
  */
 @Data
 @Builder
@@ -93,6 +96,14 @@ public class DiagnoseReport {
         String spanId,
         String snippet
     ) {}
+
+    /**
+     * Returns a defensive copy of the evidence list.
+     * @return unmodifiable list of evidence anchors, or null if no evidence
+     */
+    public List<EvidenceAnchor> getEvidence() {
+        return evidence == null ? null : List.copyOf(evidence);
+    }
 
     /**
      * Factory returning a builder pre-populated with {@link Status#PENDING}
