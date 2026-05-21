@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, computed } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useApmStore } from '@/stores/apmStore'
 import type { KgProject } from '@/types/apm'
 
@@ -12,6 +13,30 @@ function handleProjectChange(projectPath: string | null): void {
   }
   const project = store.projects.find(p => p.projectPath === projectPath) ?? null
   store.selectProject(project)
+}
+
+/**
+ * Launch with safety check: warn if no entry point was selected, since
+ * without an entry node the KG-driven method-level instrumentation
+ * (and the call-chain preview) will be empty.
+ */
+async function handleLaunch(): Promise<void> {
+  if (!store.selectedEntry) {
+    try {
+      await ElMessageBox.confirm(
+        '尚未选择入口方法。启动后将无法基于知识图谱进行方法级埋点,调用链将只包含框架默认 Span(HTTP/SQL 等),且无法捕获方法入参/返回值中间态。建议先在左侧选择一个 Controller 入口再启动。',
+        '未选择入口',
+        {
+          confirmButtonText: '仍然启动',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }
+      )
+    } catch {
+      return // user cancelled
+    }
+  }
+  await store.launchSession()
 }
 
 /**
@@ -134,7 +159,7 @@ onMounted(() => {
         :loading="store.status === 'LAUNCHING'"
         :disabled="store.status === 'LAUNCHING'"
         class="launch-btn"
-        @click="store.launchSession()"
+        @click="handleLaunch"
       >
         启动调试
       </el-button>

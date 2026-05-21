@@ -164,6 +164,98 @@ function formatTime(epoch: number | undefined): string {
     minute: '2-digit',
   })
 }
+
+// ==========================================================
+// JSON Import / Export
+// ==========================================================
+
+interface ExportPayload {
+  exportedAt: string
+  projectPath: string
+  cases: Array<Omit<ApmTestCase, 'id' | 'createdAt' | 'updatedAt'>>
+}
+
+function handleExport(): void {
+  if (!store.selectedProject || testCases.value.length === 0) {
+    ElMessage.warning('当前项目没有可导出的测试用例')
+    return
+  }
+  const payload: ExportPayload = {
+    exportedAt: new Date().toISOString(),
+    projectPath: store.selectedProject.projectPath,
+    cases: testCases.value.map(tc => ({
+      name: tc.name,
+      projectPath: tc.projectPath,
+      entryNodeId: tc.entryNodeId ?? null,
+      method: tc.method,
+      url: tc.url,
+      headers: tc.headers,
+      params: tc.params,
+      body: tc.body,
+    })),
+  }
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  const safeName = (store.selectedProject.label || 'project').replace(/[^\w.-]+/g, '_')
+  a.href = url
+  a.download = `apm-testcases-${safeName}-${Date.now()}.json`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  ElMessage.success(`已导出 ${payload.cases.length} 条测试用例`)
+}
+
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
+function triggerImport(): void {
+  fileInputRef.value?.click()
+}
+
+async function handleImportFile(e: Event): Promise<void> {
+  const target = e.target as HTMLInputElement
+  const file = target.files?.[0]
+  target.value = '' // allow re-importing the same file
+  if (!file) return
+  if (!store.selectedProject) {
+    ElMessage.warning('请先选择项目')
+    return
+  }
+  try {
+    const text = await file.text()
+    const parsed = JSON.parse(text) as Partial<ExportPayload>
+    const cases = Array.isArray(parsed.cases) ? parsed.cases : null
+    if (!cases || cases.length === 0) {
+      ElMessage.warning('文件中没有可导入的测试用例')
+      return
+    }
+    let okCount = 0
+    let failCount = 0
+    for (const c of cases) {
+      try {
+        await testCaseApi.create({
+          name: c.name,
+          // 强制绑定到当前选中项目,避免跨项目串扰
+          projectPath: store.selectedProject.projectPath,
+          entryNodeId: c.entryNodeId ?? null,
+          method: c.method,
+          url: c.url,
+          headers: c.headers,
+          params: c.params,
+          body: c.body,
+        } as ApmTestCase)
+        okCount++
+      } catch {
+        failCount++
+      }
+    }
+    ElMessage.success(`导入完成: 成功 ${okCount} 条${failCount ? `,失败 ${failCount} 条` : ''}`)
+    await loadTestCases(store.selectedProject.projectPath)
+  } catch (err) {
+    ElMessage.error('导入失败: 文件格式不合法')
+  }
+}
 </script>
 
 <template>
@@ -172,6 +264,26 @@ function formatTime(epoch: number | undefined): string {
     <div class="tc-toolbar">
       <el-text size="small" type="info" tag="b">测试用例</el-text>
       <div class="tc-actions">
+        <el-button
+          size="small"
+          text
+          :disabled="!hasProject"
+          title="从 JSON 文件导入"
+          @click="triggerImport"
+        >
+          <el-icon><Upload /></el-icon>
+          导入
+        </el-button>
+        <el-button
+          size="small"
+          text
+          :disabled="!hasProject || testCases.length === 0"
+          title="导出当前项目的所有测试用例"
+          @click="handleExport"
+        >
+          <el-icon><Download /></el-icon>
+          导出
+        </el-button>
         <el-button
           size="small"
           type="primary"
@@ -184,6 +296,15 @@ function formatTime(epoch: number | undefined): string {
         </el-button>
       </div>
     </div>
+
+    <!-- Hidden file input for import -->
+    <input
+      ref="fileInputRef"
+      type="file"
+      accept="application/json,.json"
+      style="display: none"
+      @change="handleImportFile"
+    />
 
     <!-- Test case list -->
     <div v-if="loading" class="tc-loading">

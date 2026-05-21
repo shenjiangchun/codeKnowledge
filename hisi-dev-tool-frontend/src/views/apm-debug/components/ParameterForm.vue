@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useApmStore } from '@/stores/apmStore'
 import type { KgMethodParam } from '@/types/apm'
+import BodySchemaForm from './BodySchemaForm.vue'
 
 const store = useApmStore()
 
@@ -152,10 +153,8 @@ function typeHint(type: string): string {
         <el-tag size="small" type="info" class="body-type" effect="plain">
           {{ bodyParam.type }}
         </el-tag>
-        <el-text type="info" size="small" style="margin-left: auto">
-          在 Body 标签页编辑 JSON
-        </el-text>
       </div>
+      <BodySchemaForm />
     </div>
   </div>
 

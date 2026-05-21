@@ -75,7 +75,7 @@ onUnmounted(() => {
         :logs="store.wsProcessLogs"
         :status="store.wsProcessStatus"
         :error-banner="store.wsProcessError"
-        @clear="store.wsProcessLogs.splice(0)"
+        @clear="store.clearProcessConsole()"
       />
     </div>
 

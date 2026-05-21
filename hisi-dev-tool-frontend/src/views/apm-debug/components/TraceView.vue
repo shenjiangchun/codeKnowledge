@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch, nextTick, ref } from 'vue'
 import { useApmStore } from '@/stores/apmStore'
 import type { ApmSpan, TraceNode } from '@/types/apm'
 
@@ -89,6 +89,21 @@ function handleRowClick(span: ApmSpan): void {
   store.selectSpan(store.selectedSpan?.spanId === span.spanId ? null : span)
 }
 
+// Auto-scroll the active row into view when selection changes (e.g. user
+// clicked on a node in CallChainPreview to select the corresponding span).
+const waterfallRef = ref<HTMLElement | null>(null)
+watch(
+  () => store.selectedSpan?.spanId,
+  async (spanId) => {
+    if (!spanId) return
+    await nextTick()
+    const root = waterfallRef.value
+    if (!root) return
+    const activeRow = root.querySelector('.waterfall-row.active') as HTMLElement | null
+    activeRow?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  },
+)
+
 // Extract useful attributes for display
 const selectedSpanAttributes = computed(() => {
   const span = store.selectedSpan
@@ -160,7 +175,7 @@ function formatJson(s: string): string {
 
     <!-- Waterfall chart -->
     <el-scrollbar v-else class="waterfall-scrollbar">
-      <div class="waterfall-container">
+      <div class="waterfall-container" ref="waterfallRef">
         <!-- Time ruler -->
         <div class="time-ruler">
           <span class="time-mark" style="left: 0">0ms</span>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
+import { ArrowRight, Loading, WarningFilled } from '@element-plus/icons-vue'
 import { useApmStore } from '@/stores/apmStore'
 import { knowledgeGraphApi } from '@/api/knowledgeGraph'
 
@@ -152,6 +153,24 @@ function isSpanMatched(nodeId: string): boolean {
   return store.wsSpans.some(s => s.kgNodeId === nodeId)
 }
 
+/** True if this KG node corresponds to the currently selected span (bidirectional highlight). */
+function isCurrentlySelected(nodeId: string): boolean {
+  return store.selectedSpan?.kgNodeId === nodeId
+}
+
+/**
+ * Click a KG node -> select the first matching runtime span (if any),
+ * so TraceView highlights it. If no span matches yet (preview-only),
+ * do nothing visible — user gets the "matched/unmatched" dot to know
+ * whether the node was hit.
+ */
+function handleNodeClick(nodeId: string): void {
+  const span = store.wsSpans.find(s => s.kgNodeId === nodeId)
+  if (span) {
+    store.selectSpan(store.selectedSpan?.spanId === span.spanId ? null : span)
+  }
+}
+
 const hasSpans = computed(() => store.wsSpans.length > 0)
 
 // ============================================================
@@ -245,13 +264,16 @@ const hasMismatch = computed(() => {
             v-for="node in flatNodes"
             :key="node.nodeId"
             class="tree-node"
+            :class="{ 'tree-node-clickable': hasSpans && isSpanMatched(node.nodeId) }"
             :style="{ paddingLeft: `${node.depth * 16 + 4}px` }"
+            @click="handleNodeClick(node.nodeId)"
           >
             <span
               class="tree-node-label"
               :class="{
                 matched: hasSpans && isSpanMatched(node.nodeId),
                 unmatched: hasSpans && !isSpanMatched(node.nodeId),
+                current: isCurrentlySelected(node.nodeId),
               }"
             >
               <span class="node-dot" :class="{ 'matched-dot': hasSpans && isSpanMatched(node.nodeId) }" />
@@ -379,6 +401,20 @@ const hasMismatch = computed(() => {
 
 .tree-node {
   padding: 2px 0;
+}
+
+.tree-node-clickable {
+  cursor: pointer;
+}
+
+.tree-node-clickable:hover {
+  background-color: var(--el-fill-color-light);
+}
+
+.tree-node-label.current {
+  outline: 1px solid var(--el-color-primary);
+  background-color: var(--el-color-primary-light-9) !important;
+  color: var(--el-color-primary) !important;
 }
 
 .tree-node-label {

@@ -74,6 +74,23 @@ export interface EntryPoint {
   projectPath: string
 }
 
+/**
+ * DTO 字段 schema —— APM 调试 RequestBody 表单的渲染数据。
+ */
+export interface DtoField {
+  name: string
+  type: string
+  required: boolean
+  constraints: string[]
+}
+
+export interface DtoSchema {
+  fqn: string
+  simpleName: string
+  kind: 'class' | 'record'
+  fields: DtoField[]
+}
+
 export interface MethodNode {
   nodeId: string
   className: string
@@ -439,6 +456,16 @@ export const knowledgeGraphApi = {
   getEntryPoints(projectPath: string, entryType?: string, projectPaths?: string[]) {
     return request.get<EntryPoint[]>('/knowledge-graph/entry-points', {
       params: { projectPath, entryType, projectPaths }
+    })
+  },
+
+  /**
+   * 解析 DTO 类的字段 schema（用于 APM 调试 RequestBody 表单）
+   * className 支持简单名或全限定名；解析失败返回 null。
+   */
+  getTypeSchema(className: string, projectPath: string) {
+    return request.get<DtoSchema | null>('/knowledge-graph/type/schema', {
+      params: { className, projectPath }
     })
   },
 

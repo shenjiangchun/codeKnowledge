@@ -78,6 +78,12 @@ export interface LaunchRequest {
   projectPath: string
   targetPort?: number
   serviceName?: string
+  /**
+   * Optional KG nodeId of the entry method. When provided, backend builds
+   * OTEL_INSTRUMENTATION_METHODS_INCLUDE from the KG callee tree so the
+   * OTel Java agent captures method-level spans matching the expected chain.
+   */
+  entryNodeId?: string
 }
 
 export interface LaunchResult {

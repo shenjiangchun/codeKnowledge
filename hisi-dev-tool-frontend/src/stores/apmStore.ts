@@ -16,7 +16,7 @@ import type {
   WsMessage,
 } from '@/types/apm'
 import { extractProjectLabel, parseEntryKey, parseEntryInfo, buildTraceTree } from '@/types/apm'
-import type { EntryPoint } from '@/api/knowledgeGraph'
+import type { EntryPoint, DtoSchema } from '@/api/knowledgeGraph'
 
 export const useApmStore = defineStore('apm', () => {
   // ============================================================
@@ -55,6 +55,10 @@ export const useApmStore = defineStore('apm', () => {
   const entryPoints = ref<KgEntryPoint[]>([])
   const selectedEntry = ref<KgEntryPoint | null>(null)
   const entryPointsLoading = ref(false)
+
+  /** Schema of the @RequestBody DTO for selected entry (null if no body / not resolved) */
+  const bodySchema = ref<DtoSchema | null>(null)
+  const bodySchemaLoading = ref(false)
 
   // ============================================================
   // Request State
@@ -209,6 +213,7 @@ export const useApmStore = defineStore('apm', () => {
 
   function selectEntry(entry: KgEntryPoint | null): void {
     selectedEntry.value = entry
+    bodySchema.value = null
     if (entry) {
       const method = entry.httpMethod || 'GET'
       let url = entry.httpPath || entry.entryKey
@@ -218,14 +223,15 @@ export const useApmStore = defineStore('apm', () => {
 
       // Parse entryInfo to auto-populate parameters
       const info = entry.parsedInfo
+      let bodyParamType: string | null = null
       if (info && info.parameters.length > 0) {
         for (const param of info.parameters) {
           const annSet = new Set(param.annotations)
           const paramName = param.aliasName || param.name
 
           if (annSet.has('RequestBody')) {
-            // Generate JSON body template from type
-            body = generateBodyTemplate(param.type, param.name)
+            bodyParamType = param.type
+            body = generateBodyTemplate(param.type)
             headers['Content-Type'] = 'application/json'
           } else if (annSet.has('PathVariable')) {
             // Replace {name} placeholder in URL with empty value hint
@@ -246,12 +252,7 @@ export const useApmStore = defineStore('apm', () => {
             headers[paramName] = ''
           } else if (!annSet.has('PathVariable') && annSet.size === 0) {
             // Unannotated params in Spring default to @RequestParam
-            if (['POST', 'PUT', 'PATCH'].includes(method)) {
-              // might be form or body — add as query param by default
-              queryParams.push({ key: paramName, value: '', enabled: true })
-            } else {
-              queryParams.push({ key: paramName, value: '', enabled: true })
-            }
+            queryParams.push({ key: paramName, value: '', enabled: true })
           }
         }
       }
@@ -263,23 +264,84 @@ export const useApmStore = defineStore('apm', () => {
         body,
         queryParams,
       }
+
+      // Async-load DTO schema for @RequestBody param (if any)
+      if (bodyParamType && entry.projectPath) {
+        loadBodySchema(bodyParamType, entry.projectPath)
+      }
     }
   }
 
   /**
-   * Generate a JSON body template from the type name.
-   * Since we don't have full type schema, we create a placeholder.
+   * Fetch DTO field schema for the current @RequestBody parameter, then regenerate
+   * a richer JSON body template from the field list.
    */
-  function generateBodyTemplate(typeName: string, paramName: string): string {
-    // Common wrapper types → unwrap
+  async function loadBodySchema(typeName: string, projectPath: string): Promise<void> {
+    // unwrap List<X> / Set<X> / Collection<X> generics
+    const inner = typeName.replace(/^(List|Set|Collection)<(.+)>$/, '$2').trim()
+    if (!inner || isPrimitiveLike(inner)) return
+    bodySchemaLoading.value = true
+    try {
+      const schema = await knowledgeGraphApi.getTypeSchema(inner, projectPath) as unknown as DtoSchema | null
+      if (schema && schema.fields.length > 0) {
+        bodySchema.value = schema
+        // Regenerate body skeleton from real fields → valid JSON
+        const skeleton = buildJsonSkeletonFromSchema(schema)
+        const finalBody = typeName.startsWith('List<') || typeName.startsWith('Set<') || typeName.startsWith('Collection<')
+          ? `[\n${indent(skeleton, 2)}\n]`
+          : skeleton
+        requestConfig.value = { ...requestConfig.value, body: finalBody }
+      }
+    } catch {
+      // silent — interceptor surfaces HTTP errors; missing schema is acceptable
+    } finally {
+      bodySchemaLoading.value = false
+    }
+  }
+
+  /**
+   * Generate a placeholder JSON body when DTO schema isn't yet loaded.
+   * Must produce VALID JSON (no comments) so Jackson can parse it.
+   */
+  function generateBodyTemplate(typeName: string): string {
     const inner = typeName.replace(/^(List|Set|Collection)<(.+)>$/, '$2')
     const isCollection = inner !== typeName
+    const obj = '{}'
+    return isCollection ? `[\n  ${obj}\n]` : obj
+  }
 
-    const template = `{\n  // ${inner} ${paramName}\n}`
-    if (isCollection) {
-      return `[\n  ${template}\n]`
+  function isPrimitiveLike(t: string): boolean {
+    const lower = t.toLowerCase()
+    return [
+      'string', 'integer', 'int', 'long', 'short', 'byte',
+      'double', 'float', 'bigdecimal', 'biginteger',
+      'boolean', 'char', 'character',
+      'date', 'localdate', 'localdatetime', 'instant', 'zoneddatetime', 'offsetdatetime',
+      'object', 'void',
+    ].includes(lower)
+  }
+
+  function defaultForType(type: string): unknown {
+    const t = type.toLowerCase()
+    if (t === 'string' || t.endsWith('.string')) return ''
+    if (t === 'boolean') return false
+    if (['integer', 'int', 'long', 'short', 'byte', 'double', 'float', 'bigdecimal', 'biginteger'].includes(t)) return 0
+    if (t.startsWith('list<') || t.startsWith('set<') || t.startsWith('collection<')) return []
+    if (t.startsWith('map<')) return {}
+    return null
+  }
+
+  function buildJsonSkeletonFromSchema(schema: DtoSchema): string {
+    const obj: Record<string, unknown> = {}
+    for (const f of schema.fields) {
+      obj[f.name] = defaultForType(f.type)
     }
-    return template
+    return JSON.stringify(obj, null, 2)
+  }
+
+  function indent(text: string, n: number): string {
+    const pad = ' '.repeat(n)
+    return text.split('\n').map(l => pad + l).join('\n')
   }
 
   // ============================================================
@@ -336,12 +398,27 @@ export const useApmStore = defineStore('apm', () => {
       return
     }
 
+    // Clear any residual state from a previous (errored/stopped) session
+    // so the console panel, status badge and error banner start fresh.
+    wsDisconnect()
+    wsReset()
+    sessionId.value = ''
+    serviceName.value = ''
+    targetPort.value = 0
+    lastResponse.value = null
+    report.value = null
+    selectedSpan.value = null
+
     status.value = 'LAUNCHING'
     errorMessage.value = ''
 
     try {
       const result = await apmApi.launch({
         projectPath: selectedProject.value.projectPath,
+        // When the user already chose an entry method, pass its nodeId so the
+        // backend can generate OTEL_INSTRUMENTATION_METHODS_INCLUDE from the
+        // KG callee tree — this captures method-level spans matching the chain.
+        entryNodeId: selectedEntry.value?.nodeId,
       })
       sessionId.value = result.sessionId
       serviceName.value = result.serviceName
@@ -453,6 +530,15 @@ export const useApmStore = defineStore('apm', () => {
     wsDisconnect()
   }
 
+  /**
+   * Clear all process console panel state (logs + status + error banner).
+   * Used by the "清空" button in ProcessLogViewer so the user can wipe
+   * lingering output without losing the current session.
+   */
+  function clearProcessConsole(): void {
+    wsReset()
+  }
+
   return {
     // State
     projects,
@@ -467,6 +553,8 @@ export const useApmStore = defineStore('apm', () => {
     entryPoints,
     selectedEntry,
     entryPointsLoading,
+    bodySchema,
+    bodySchemaLoading,
     requestConfig,
     lastResponse,
     report,
@@ -515,6 +603,7 @@ export const useApmStore = defineStore('apm', () => {
     resetRequest,
     resetAll,
     cleanup,
+    clearProcessConsole,
   }
 })
 
