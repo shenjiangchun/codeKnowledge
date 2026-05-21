@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "claude-opus-4-6-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-05-21T04:26:01.961Z",
+  "lastUpdated": "2026-05-21T06:16:47.255Z",
   "stats": {
     "totalOperations": 279,
     "totalFilesEdited": 138,
-    "totalAiLines": 7311,
-    "totalAiLinesDeleted": 525,
-    "totalCommits": 11
+    "totalAiLines": 7330,
+    "totalAiLinesDeleted": 526,
+    "totalCommits": 12
   },
   "pendingFiles": [
     {
@@ -377,13 +377,6 @@
       "timestamp": "2026-05-20T05:46:48.404Z",
       "lastModified": "2026-05-20T05:47:24.409Z",
       "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/resources/application.yml",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-05-20T06:10:25.508Z",
-      "lastModified": "2026-05-20T06:10:25.508Z"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/stores/apmStore.ts",

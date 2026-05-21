@@ -1,0 +1,91 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "order-service"}},
+          {"key": "service.version", "value": {"stringValue": "1.0.0"}},
+          {"key": "telemetry.sdk.language", "value": {"stringValue": "java"}}
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {"name": "io.opentelemetry.spring-webmvc-6.0", "version": "2.10.0"},
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000002",
+              "spanId": "aaaaaaaaaaaaaaa1",
+              "name": "GET /api/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1747828900000000000",
+              "endTimeUnixNano": "1747828900220000000",
+              "status": {"code": 2, "message": "PSQLException"},
+              "attributes": [
+                {"key": "http.method", "value": {"stringValue": "GET"}},
+                {"key": "http.route", "value": {"stringValue": "/api/orders"}},
+                {"key": "http.status_code", "value": {"intValue": "500"}}
+              ]
+            },
+            {
+              "traceId": "00000000000000000000000000000002",
+              "spanId": "aaaaaaaaaaaaaaa2",
+              "parentSpanId": "aaaaaaaaaaaaaaa1",
+              "name": "OrderService.listAll",
+              "kind": 1,
+              "startTimeUnixNano": "1747828900020000000",
+              "endTimeUnixNano": "1747828900210000000",
+              "status": {"code": 2, "message": "PSQLException"},
+              "attributes": [
+                {"key": "code.namespace", "value": {"stringValue": "com.example.demo.OrderService"}},
+                {"key": "code.function", "value": {"stringValue": "listAll"}}
+              ]
+            },
+            {
+              "traceId": "00000000000000000000000000000002",
+              "spanId": "aaaaaaaaaaaaaaa3",
+              "parentSpanId": "aaaaaaaaaaaaaaa2",
+              "name": "OrderRepository.findAll",
+              "kind": 1,
+              "startTimeUnixNano": "1747828900050000000",
+              "endTimeUnixNano": "1747828900205000000",
+              "status": {"code": 2, "message": "PSQLException"},
+              "attributes": [
+                {"key": "code.namespace", "value": {"stringValue": "com.example.demo.OrderRepository"}},
+                {"key": "code.function", "value": {"stringValue": "findAll"}}
+              ]
+            },
+            {
+              "traceId": "00000000000000000000000000000002",
+              "spanId": "aaaaaaaaaaaaaaa4",
+              "parentSpanId": "aaaaaaaaaaaaaaa3",
+              "name": "SELECT orders",
+              "kind": 3,
+              "startTimeUnixNano": "1747828900090000000",
+              "endTimeUnixNano": "1747828900200000000",
+              "status": {"code": 2, "message": "relation \"orders\" does not exist"},
+              "attributes": [
+                {"key": "db.system", "value": {"stringValue": "postgresql"}},
+                {"key": "db.name", "value": {"stringValue": "shop"}},
+                {"key": "db.statement", "value": {"stringValue": "SELECT id, customer_name, total FROM orders ORDER BY id"}},
+                {"key": "db.operation", "value": {"stringValue": "SELECT"}},
+                {"key": "net.peer.name", "value": {"stringValue": "db.internal"}},
+                {"key": "net.peer.port", "value": {"intValue": "5432"}}
+              ],
+              "events": [
+                {
+                  "name": "exception",
+                  "timeUnixNano": "1747828900198000000",
+                  "attributes": [
+                    {"key": "exception.type", "value": {"stringValue": "org.postgresql.util.PSQLException"}},
+                    {"key": "exception.message", "value": {"stringValue": "ERROR: relation \"orders\" does not exist"}},
+                    {"key": "exception.stacktrace", "value": {"stringValue": "org.postgresql.util.PSQLException: ERROR: relation \"orders\" does not exist\n\tat org.postgresql.core.v3.QueryExecutorImpl.receiveErrorResponse(QueryExecutorImpl.java:2713)\n\tat org.postgresql.core.v3.QueryExecutorImpl.processResults(QueryExecutorImpl.java:2400)\n\tat org.postgresql.core.v3.QueryExecutorImpl.execute(QueryExecutorImpl.java:368)\n\tat org.postgresql.jdbc.PgStatement.executeInternal(PgStatement.java:498)\n\tat org.postgresql.jdbc.PgStatement.execute(PgStatement.java:415)\n\tat com.zaxxer.hikari.pool.ProxyStatement.execute(ProxyStatement.java:94)\n\tat com.example.demo.OrderRepository.findAll(OrderRepository.java:31)\n\tat com.example.demo.OrderService.listAll(OrderService.java:25)\n\tat com.example.demo.OrderController.list(OrderController.java:22)"}}
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
