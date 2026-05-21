@@ -11,7 +11,7 @@ import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -40,7 +40,7 @@ import com.huawei.hisi.apm.config.ApmLlmProperties;
  */
 @Component
 @Primary
-@ConditionalOnProperty(name = "hisi.apm.diagnose.llm.api-key", matchIfMissing = false)
+@ConditionalOnExpression("'${hisi.apm.diagnose.llm.api-key:}' != ''")
 public class ApmClaudeLlmClient implements LlmClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(ApmClaudeLlmClient.class);
