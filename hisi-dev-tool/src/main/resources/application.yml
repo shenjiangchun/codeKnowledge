@@ -4,7 +4,9 @@ spring:
   profiles:
     active: dev,local
   datasource:
-    url: jdbc:sqlite:${user.home}/.hisi-devtool/devtool.db
+    url: jdbc:sqlite:${user.home}/.hisi-devtool/devtool.db?foreign_keys=on
+    hikari:
+      connection-init-sql: PRAGMA foreign_keys = ON
   # WebSocket 配置 - 保持长连接
   websocket:
     max-text-message-buffer-size: 65536
