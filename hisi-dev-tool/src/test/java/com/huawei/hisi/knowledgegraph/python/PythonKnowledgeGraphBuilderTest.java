@@ -7,6 +7,13 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.List;
 
+import com.huawei.hisi.knowledgegraph.python.call.PythonCallGraphResolver;
+import com.huawei.hisi.knowledgegraph.python.scanner.CeleryTaskScanner;
+import com.huawei.hisi.knowledgegraph.python.scanner.DjangoUrlScanner;
+import com.huawei.hisi.knowledgegraph.python.scanner.FastApiRouteScanner;
+import com.huawei.hisi.knowledgegraph.python.scanner.FlaskRouteScanner;
+import com.huawei.hisi.knowledgegraph.python.scanner.PythonHttpCallScanner;
+import com.huawei.hisi.knowledgegraph.python.scanner.PythonMqCallScanner;
 import com.huawei.hisi.knowledgegraph.service.storage.Neo4jStorageService;
 import com.huawei.hisi.neo4j.model.MethodNode;
 import org.junit.jupiter.api.DisplayName;
@@ -20,8 +27,19 @@ import static org.mockito.Mockito.verify;
 
 class PythonKnowledgeGraphBuilderTest {
 
-    private final PythonKnowledgeGraphBuilder builder =
-            new PythonKnowledgeGraphBuilder(mock(Neo4jStorageService.class));
+    private final PythonKnowledgeGraphBuilder builder = newBuilder(mock(Neo4jStorageService.class));
+
+    private static PythonKnowledgeGraphBuilder newBuilder(Neo4jStorageService storage) {
+        return new PythonKnowledgeGraphBuilder(
+                storage,
+                new PythonCallGraphResolver(),
+                new FastApiRouteScanner(),
+                new DjangoUrlScanner(),
+                new FlaskRouteScanner(),
+                new PythonHttpCallScanner(),
+                new PythonMqCallScanner(),
+                new CeleryTaskScanner());
+    }
 
     private Path writePy(Path dir, String name, String content) throws IOException {
         Path file = dir.resolve(name);
@@ -127,7 +145,7 @@ class PythonKnowledgeGraphBuilderTest {
     void buildAndSave_saves(@TempDir Path dir) throws IOException {
         writePy(dir, "x.py", "def f():\n    pass\n");
         Neo4jStorageService storage = mock(Neo4jStorageService.class);
-        PythonKnowledgeGraphBuilder b = new PythonKnowledgeGraphBuilder(storage);
+        PythonKnowledgeGraphBuilder b = newBuilder(storage);
 
         b.buildAndSave(dir.toString(), List.of());
 

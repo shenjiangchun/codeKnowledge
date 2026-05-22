@@ -12,7 +12,10 @@ import com.huawei.hisi.knowledgegraph.python.model.PyModule;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Lexer;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser;
 import com.huawei.hisi.knowledgegraph.python.scanner.CeleryTaskScanner;
+import com.huawei.hisi.knowledgegraph.python.scanner.DjangoUrlScanner;
+import com.huawei.hisi.knowledgegraph.python.scanner.FastApiRouteScanner;
 import com.huawei.hisi.knowledgegraph.python.scanner.FlaskRouteScanner;
+import com.huawei.hisi.knowledgegraph.python.scanner.PythonHttpCallScanner;
 import com.huawei.hisi.knowledgegraph.python.scanner.PythonMqCall;
 import com.huawei.hisi.knowledgegraph.python.scanner.PythonMqCallScanner;
 import com.huawei.hisi.knowledgegraph.service.storage.Neo4jStorageService;
@@ -76,7 +79,15 @@ class PythonP2EndToEndTest {
 
     @BeforeEach
     void setUp() {
-        kgBuilder = new PythonKnowledgeGraphBuilder(mock(Neo4jStorageService.class));
+        kgBuilder = new PythonKnowledgeGraphBuilder(
+                mock(Neo4jStorageService.class),
+                new PythonCallGraphResolver(),
+                new FastApiRouteScanner(),
+                new DjangoUrlScanner(),
+                new FlaskRouteScanner(),
+                new PythonHttpCallScanner(),
+                new PythonMqCallScanner(),
+                new CeleryTaskScanner());
         flaskScanner = new FlaskRouteScanner();
         celeryScanner = new CeleryTaskScanner();
         callGraphResolver = new PythonCallGraphResolver();

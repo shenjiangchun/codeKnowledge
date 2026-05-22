@@ -8,12 +8,17 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
+import com.huawei.hisi.knowledgegraph.python.call.PythonCallGraphResolver;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Lexer;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser;
+import com.huawei.hisi.knowledgegraph.python.scanner.CeleryTaskScanner;
+import com.huawei.hisi.knowledgegraph.python.scanner.DjangoUrlScanner;
 import com.huawei.hisi.knowledgegraph.python.scanner.FastApiRouteScanner;
+import com.huawei.hisi.knowledgegraph.python.scanner.FlaskRouteScanner;
 import com.huawei.hisi.knowledgegraph.python.scanner.PythonHttpCall;
 import com.huawei.hisi.knowledgegraph.python.scanner.PythonHttpCallScanner;
+import com.huawei.hisi.knowledgegraph.python.scanner.PythonMqCallScanner;
 import com.huawei.hisi.knowledgegraph.service.storage.Neo4jStorageService;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
@@ -36,7 +41,15 @@ class FastApiE2ETest {
             Paths.get("src/test/resources/python-fixtures/fastapi-app").toAbsolutePath().toString();
 
     private final PythonKnowledgeGraphBuilder kgBuilder =
-            new PythonKnowledgeGraphBuilder(mock(Neo4jStorageService.class));
+            new PythonKnowledgeGraphBuilder(
+                    mock(Neo4jStorageService.class),
+                    new PythonCallGraphResolver(),
+                    new FastApiRouteScanner(),
+                    new DjangoUrlScanner(),
+                    new FlaskRouteScanner(),
+                    new PythonHttpCallScanner(),
+                    new PythonMqCallScanner(),
+                    new CeleryTaskScanner());
 
     private final FastApiRouteScanner routeScanner = new FastApiRouteScanner();
     private final PythonHttpCallScanner httpCallScanner = new PythonHttpCallScanner();
