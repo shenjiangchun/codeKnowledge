@@ -9,16 +9,30 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Stream;
 
+import com.huawei.hisi.knowledgegraph.python.PythonFrameworkDetector.Framework;
+import com.huawei.hisi.knowledgegraph.python.call.PythonCallGraphResolver;
 import com.huawei.hisi.knowledgegraph.python.model.PyClass;
 import com.huawei.hisi.knowledgegraph.python.model.PyFunction;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Lexer;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser;
+import com.huawei.hisi.knowledgegraph.python.scanner.CeleryTaskScanner;
+import com.huawei.hisi.knowledgegraph.python.scanner.DjangoUrlScanner;
+import com.huawei.hisi.knowledgegraph.python.scanner.FastApiRouteScanner;
+import com.huawei.hisi.knowledgegraph.python.scanner.FlaskRouteScanner;
+import com.huawei.hisi.knowledgegraph.python.scanner.PythonHttpCall;
+import com.huawei.hisi.knowledgegraph.python.scanner.PythonHttpCallScanner;
+import com.huawei.hisi.knowledgegraph.python.scanner.PythonMqCall;
+import com.huawei.hisi.knowledgegraph.python.scanner.PythonMqCallScanner;
 import com.huawei.hisi.knowledgegraph.service.storage.Neo4jStorageService;
 import com.huawei.hisi.knowledgegraph.util.KnowledgeGraphCommonUtils;
+import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,10 +41,19 @@ import org.antlr.v4.runtime.CommonTokenStream;
 import org.springframework.stereotype.Service;
 
 /**
- * Builds knowledge-graph {@link MethodNode}s from Python source files.
+ * Builds knowledge-graph data from Python source files.
  *
- * <p>Provides single-file parsing ({@link #parseFile}) and project-level
- * walking ({@link #buildProject}, {@link #buildAndSave}).
+ * <p>Pipeline:
+ * <ol>
+ *   <li>Walk project, parse each {@code .py} file into a {@link PyModule}.</li>
+ *   <li>Emit {@link MethodNode} for each function / method.</li>
+ *   <li>Resolve intra-/inter-module calls into call relations
+ *       via {@link PythonCallGraphResolver}.</li>
+ *   <li>Detect frameworks (FastAPI / Django / Flask) and run the matching
+ *       entry-point scanners + always-on HTTP/MQ/Celery scanners.</li>
+ *   <li>Persist methods, call relations, entry points, and bridge edges
+ *       to Neo4j.</li>
+ * </ol>
  */
 @Service
 @RequiredArgsConstructor
@@ -40,16 +63,144 @@ public class PythonKnowledgeGraphBuilder {
     private static final String LANGUAGE = "python";
 
     private final Neo4jStorageService neo4jStorageService;
+    private final PythonCallGraphResolver pythonCallGraphResolver;
+    private final FastApiRouteScanner fastApiRouteScanner;
+    private final DjangoUrlScanner djangoUrlScanner;
+    private final FlaskRouteScanner flaskRouteScanner;
+    private final PythonHttpCallScanner pythonHttpCallScanner;
+    private final PythonMqCallScanner pythonMqCallScanner;
+    private final CeleryTaskScanner celeryTaskScanner;
 
     /**
      * Parse a single Python file and return one {@link MethodNode} per
-     * function/method found.
-     *
-     * @param filePath    absolute path to the {@code .py} file
-     * @param projectPath root directory of the project
-     * @return method nodes extracted from the file (never null)
+     * function/method found. (Kept for backwards compatibility / unit tests.)
      */
     public List<MethodNode> parseFile(String filePath, String projectPath) throws IOException {
+        ParsedFile parsed = parseFileInternal(filePath, projectPath);
+        return parsed.nodes();
+    }
+
+    /**
+     * Walk {@code projectPath} recursively, parse every {@code .py} file
+     * (excluding paths matched by {@code excludePaths}), and return the
+     * aggregated list of method nodes.
+     */
+    public List<MethodNode> buildProject(String projectPath, List<String> excludePaths) throws IOException {
+        BuildResult result = buildProjectInternal(projectPath, excludePaths);
+        return result.methodNodes;
+    }
+
+    /**
+     * Build the project and persist all nodes / relations / entry points / bridges via Neo4j.
+     */
+    public void buildAndSave(String projectPath, List<String> excludePaths) throws IOException {
+        BuildResult result = buildProjectInternal(projectPath, excludePaths);
+
+        neo4jStorageService.saveMethodNodes(result.methodNodes);
+        log.info("[Python KG] Saved {} method nodes for project {}",
+                result.methodNodes.size(), projectPath);
+
+        if (!result.callRelations.isEmpty()) {
+            neo4jStorageService.saveCallRelations(result.callRelations);
+            log.info("[Python KG] Saved {} call relations", result.callRelations.size());
+        }
+
+        if (!result.entryPoints.isEmpty()) {
+            neo4jStorageService.saveEntryPoints(result.entryPoints);
+            log.info("[Python KG] Saved {} entry points", result.entryPoints.size());
+        }
+
+        if (!result.bridgeRelations.isEmpty()) {
+            neo4jStorageService.saveCallRelations(result.bridgeRelations);
+            log.info("[Python KG] Saved {} bridge relations (HTTP/MQ)",
+                    result.bridgeRelations.size());
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Internal pipeline
+    // ------------------------------------------------------------------
+
+    private BuildResult buildProjectInternal(String projectPath, List<String> excludePaths) throws IOException {
+        List<String> effectiveExcludes = new ArrayList<>(
+                com.huawei.hisi.service.CodeAnalysisCoreService.EXCLUDED_SCAN_DIRS);
+        if (excludePaths != null) {
+            effectiveExcludes.addAll(excludePaths);
+        }
+
+        Set<Framework> frameworks = PythonFrameworkDetector.detect(projectPath);
+        String primaryFramework = pickPrimaryFramework(frameworks);
+
+        List<MethodNode> allNodes = new ArrayList<>();
+        List<PyModule> allModules = new ArrayList<>();
+
+        try (Stream<Path> walk = Files.walk(Paths.get(projectPath))) {
+            List<Path> pyFiles = walk
+                    .filter(Files::isRegularFile)
+                    .filter(p -> p.toString().endsWith(".py"))
+                    .filter(p -> !KnowledgeGraphCommonUtils.shouldExclude(
+                            p.toString(), effectiveExcludes))
+                    .toList();
+
+            for (Path pyFile : pyFiles) {
+                try {
+                    ParsedFile parsed = parseFileInternal(pyFile.toString(), projectPath);
+                    allNodes.addAll(parsed.nodes());
+                    allModules.add(parsed.module());
+                } catch (Exception e) {
+                    log.warn("Failed to parse Python file {}: {}", pyFile, e.getMessage());
+                }
+            }
+        }
+
+        // Entry points: framework-gated + always-on Celery
+        List<EntryPointNode> entryPoints = new ArrayList<>();
+        // Outbound HTTP / MQ records (collected then converted to bridge relations)
+        List<PythonHttpCall> httpCalls = new ArrayList<>();
+        List<PythonMqCall> mqCalls = new ArrayList<>();
+
+        for (PyModule module : allModules) {
+            if (frameworks.contains(Framework.DJANGO)) {
+                entryPoints.addAll(djangoUrlScanner.scanModule(module, projectPath));
+            }
+            if (frameworks.contains(Framework.FASTAPI)) {
+                entryPoints.addAll(fastApiRouteScanner.scanModule(module, projectPath));
+            }
+            if (frameworks.contains(Framework.FLASK)) {
+                entryPoints.addAll(flaskRouteScanner.scanModule(module, projectPath));
+            }
+            entryPoints.addAll(celeryTaskScanner.scanModule(module, projectPath));
+
+            httpCalls.addAll(pythonHttpCallScanner.scanModule(module, projectPath, primaryFramework));
+            mqCalls.addAll(pythonMqCallScanner.scanModule(module, projectPath, primaryFramework));
+        }
+
+        // Resolve intra-/cross-module call edges
+        List<Map<String, Object>> callRelations = new ArrayList<>(
+                pythonCallGraphResolver.resolveProject(allModules, projectPath));
+
+        // Build bridge edges (caller method → synthetic endpoint id)
+        List<Map<String, Object>> bridgeRelations = new ArrayList<>();
+        for (PythonHttpCall c : httpCalls) {
+            bridgeRelations.add(buildHttpBridgeEdge(c, allModules, projectPath));
+        }
+        for (PythonMqCall c : mqCalls) {
+            bridgeRelations.add(buildMqBridgeEdge(c, allModules, projectPath));
+        }
+
+        log.info("[Python KG] Built methods={}, callRelations={}, entryPoints={}, "
+                        + "httpBridges={}, mqBridges={}",
+                allNodes.size(), callRelations.size(), entryPoints.size(),
+                httpCalls.size(), mqCalls.size());
+
+        return new BuildResult(
+                Collections.unmodifiableList(allNodes),
+                Collections.unmodifiableList(callRelations),
+                Collections.unmodifiableList(entryPoints),
+                Collections.unmodifiableList(bridgeRelations));
+    }
+
+    private ParsedFile parseFileInternal(String filePath, String projectPath) throws IOException {
         String source = Files.readString(Path.of(filePath), StandardCharsets.UTF_8);
         String relativePath = KnowledgeGraphCommonUtils.relativeFilePath(projectPath, filePath);
         String modulePath = toModulePath(relativePath);
@@ -95,56 +246,116 @@ public class PythonKnowledgeGraphBuilder {
             }
         }
 
-        return Collections.unmodifiableList(nodes);
+        return new ParsedFile(module, Collections.unmodifiableList(nodes));
+    }
+
+    // ------------------------------------------------------------------
+    // Bridge edge builders
+    // ------------------------------------------------------------------
+
+    private Map<String, Object> buildHttpBridgeEdge(PythonHttpCall call,
+                                                    List<PyModule> allModules,
+                                                    String projectPath) {
+        String callerId = locateCallerNodeId(call.getFilePath(),
+                call.getEnclosingFunction(), allModules);
+        String endpoint = call.getHttpMethod() != null
+                ? call.getHttpMethod() + " " + safe(call.getUrl())
+                : safe(call.getUrl());
+        String calleeId = "http-bridge:" + toNodeId(endpoint + ":" + safe(call.getLibrary()));
+
+        Map<String, Object> rel = new LinkedHashMap<>();
+        rel.put("callerId", callerId != null ? callerId : "unresolved:" + toNodeId(call.getFilePath() + ":" + call.getLineNumber()));
+        rel.put("calleeId", calleeId);
+        rel.put("callType", "HTTP");
+        rel.put("bridgeType", "HTTP");
+        rel.put("targetEndpoint", endpoint);
+        rel.put("library", safe(call.getLibrary()));
+        rel.put("callLine", call.getLineNumber());
+        return rel;
+    }
+
+    private Map<String, Object> buildMqBridgeEdge(PythonMqCall call,
+                                                  List<PyModule> allModules,
+                                                  String projectPath) {
+        String callerId = locateCallerNodeId(call.getFilePath(),
+                call.getEnclosingFunction(), allModules);
+        String topic = safe(call.getTopic());
+        String calleeId = "mq-bridge:" + toNodeId(topic + ":" + safe(call.getLibrary()));
+
+        Map<String, Object> rel = new LinkedHashMap<>();
+        rel.put("callerId", callerId != null ? callerId : "unresolved:" + toNodeId(call.getFilePath() + ":" + call.getLineNumber()));
+        rel.put("calleeId", calleeId);
+        rel.put("callType", "MQ");
+        rel.put("bridgeType", "MQ");
+        rel.put("targetEndpoint", topic);
+        rel.put("library", safe(call.getLibrary()));
+        rel.put("callLine", call.getLineNumber());
+        return rel;
     }
 
     /**
-     * Walk {@code projectPath} recursively, parse every {@code .py} file
-     * (excluding paths matched by {@code excludePaths}), and return the
-     * aggregated list of method nodes.
-     *
-     * <p>Files that fail to parse are logged and skipped.
+     * Locate the {@link MethodNode#getNodeId()} for the method enclosing a
+     * call site by matching {@code filePath} and {@code enclosingFunction}
+     * (which is the {@code qualName}: either {@code "func"} or {@code "Class.method"}).
      */
-    public List<MethodNode> buildProject(String projectPath, List<String> excludePaths) throws IOException {
-        List<String> effectiveExcludes = new ArrayList<>(
-                com.huawei.hisi.service.CodeAnalysisCoreService.EXCLUDED_SCAN_DIRS);
-        if (excludePaths != null) {
-            effectiveExcludes.addAll(excludePaths);
+    private String locateCallerNodeId(String filePath, String enclosingFunction,
+                                      List<PyModule> allModules) {
+        if (filePath == null || enclosingFunction == null || enclosingFunction.isEmpty()) {
+            return null;
         }
-        List<MethodNode> result = new ArrayList<>();
-
-        try (Stream<Path> walk = Files.walk(Paths.get(projectPath))) {
-            List<Path> pyFiles = walk
-                    .filter(Files::isRegularFile)
-                    .filter(p -> p.toString().endsWith(".py"))
-                    .filter(p -> !KnowledgeGraphCommonUtils.shouldExclude(
-                            p.toString(), effectiveExcludes))
-                    .toList();
-
-            for (Path pyFile : pyFiles) {
-                try {
-                    result.addAll(parseFile(pyFile.toString(), projectPath));
-                } catch (Exception e) {
-                    log.warn("Failed to parse Python file {}: {}", pyFile, e.getMessage());
+        for (PyModule module : allModules) {
+            if (!filePath.equals(module.getFilePath())) {
+                continue;
+            }
+            int dot = enclosingFunction.indexOf('.');
+            if (dot < 0) {
+                for (PyFunction f : module.getTopLevelFunctions()) {
+                    if (f.getName().equals(enclosingFunction)) {
+                        String sig = f.getQualName() + "(" + String.join(",", f.getParamNames()) + ")";
+                        return toNodeId(module.getModulePath() + "::" + sig);
+                    }
+                }
+            } else {
+                String className = enclosingFunction.substring(0, dot);
+                String methodName = enclosingFunction.substring(dot + 1);
+                for (PyClass c : module.getClasses()) {
+                    if (!c.getName().equals(className)) {
+                        continue;
+                    }
+                    for (PyFunction m : c.getMethods()) {
+                        if (m.getName().equals(methodName)) {
+                            String sig = className + "." + methodName
+                                    + "(" + String.join(",", m.getParamNames()) + ")";
+                            return toNodeId(module.getModulePath() + "::" + sig);
+                        }
+                    }
                 }
             }
+            return null;
         }
-
-        return Collections.unmodifiableList(result);
+        return null;
     }
 
-    /**
-     * Build the project and persist all nodes via Neo4j.
-     *
-     * @param projectPath       root directory
-     * @param excludePaths      paths to exclude
-     */
-    public void buildAndSave(String projectPath, List<String> excludePaths)
-            throws IOException {
-        List<MethodNode> nodes = buildProject(projectPath, excludePaths);
-        neo4jStorageService.saveMethodNodes(nodes);
-        log.info("[Python] Saved {} method nodes for project {}", nodes.size(), projectPath);
+    private static String pickPrimaryFramework(Set<Framework> frameworks) {
+        if (frameworks.contains(Framework.FASTAPI)) {
+            return "fastapi";
+        }
+        if (frameworks.contains(Framework.DJANGO)) {
+            return "django";
+        }
+        if (frameworks.contains(Framework.FLASK)) {
+            return "flask";
+        }
+        return null;
     }
+
+    private static String safe(String s) {
+        return s == null ? "" : s;
+    }
+
+    // ------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------
 
     /**
      * Convert a relative file path to a dotted Python module path.
@@ -177,5 +388,14 @@ public class PythonKnowledgeGraphBuilder {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 not available", e);
         }
+    }
+
+    private record ParsedFile(PyModule module, List<MethodNode> nodes) {
+    }
+
+    private record BuildResult(List<MethodNode> methodNodes,
+                               List<Map<String, Object>> callRelations,
+                               List<EntryPointNode> entryPoints,
+                               List<Map<String, Object>> bridgeRelations) {
     }
 }
