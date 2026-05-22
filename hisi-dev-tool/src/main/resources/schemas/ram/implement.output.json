@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Implement Stage Output",
+  "type": "object",
+  "required": ["biz_plan", "tech_plan"],
+  "properties": {
+    "biz_plan": {
+      "type": "object",
+      "required": ["steps", "data_flow"],
+      "properties": {
+        "steps":     { "type": "array", "items": {} },
+        "data_flow": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "tech_plan": {
+      "type": "object",
+      "required": ["files", "new_apis", "schema_changes"],
+      "properties": {
+        "files":          { "type": "array", "items": {} },
+        "new_apis":       { "type": "array", "items": {} },
+        "schema_changes": { "type": "array", "items": {} }
+      },
+      "additionalProperties": true
+    },
+    "ui_plan": {
+      "type": "object",
+      "properties": {
+        "screens":      { "type": "array", "items": {} },
+        "interactions": { "type": "array", "items": {} }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
