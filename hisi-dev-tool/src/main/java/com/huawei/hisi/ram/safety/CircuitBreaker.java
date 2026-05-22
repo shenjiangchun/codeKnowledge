@@ -4,8 +4,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Evaluates {@link SessionStats} against a {@link CircuitPolicy} and returns
- * a {@link Decision} that callers use to either continue, degrade gracefully,
- * or hand control back to a human.
+ * a {@link Decision}. {@code tripped=true} is reserved for hard ABORT/HUMAN
+ * cases; soft degradations (e.g. retry-cap → fallback model, approaching
+ * token cap) return {@code tripped=false} with a non-NONE fallback.
  */
 @Component
 public class CircuitBreaker {
@@ -25,6 +26,11 @@ public class CircuitBreaker {
     }
 
     public Decision check(SessionStats stats) {
+        return check(stats, 0);
+    }
+
+    public Decision check(SessionStats stats, int currentParallelSessions) {
+        // Hard caps → tripped=true
         if (stats.cumulativeTokens() > policy.maxTokensGlobal()) {
             return new Decision(true, Fallback.HUMAN_TAKEOVER, "token cap exceeded");
         }
@@ -34,11 +40,22 @@ public class CircuitBreaker {
         if (stats.clarifyRounds() > policy.maxClarifyRounds()) {
             return new Decision(true, Fallback.ABORT, "too many clarify rounds");
         }
-        if (stats.retriesThisNode() > policy.maxRetriesPerNode()) {
-            return new Decision(true, Fallback.FALLBACK_MODEL, "node retry cap");
+        if (stats.costUsd() > policy.maxCostUsd()) {
+            return new Decision(true, Fallback.ABORT, "cost cap exceeded");
         }
-        if (stats.cumulativeTokens() > policy.maxTokensGlobal() * 0.8) {
+        if (currentParallelSessions > policy.maxParallelSessions()) {
+            return new Decision(true, Fallback.ABORT, "parallel sessions cap exceeded");
+        }
+
+        // Soft degradations → tripped=false
+        if (stats.retriesThisNode() > policy.maxRetriesPerNode()) {
+            return new Decision(false, Fallback.FALLBACK_MODEL, "node retry cap");
+        }
+        if (stats.cumulativeTokens() > policy.maxTokensGlobal() * policy.warnThresholdRatio()) {
             return new Decision(false, Fallback.FALLBACK_MODEL, "approaching token cap");
+        }
+        if (stats.costUsd() > policy.maxCostUsd() * policy.warnThresholdRatio()) {
+            return new Decision(false, Fallback.FALLBACK_MODEL, "approaching cost cap");
         }
         return new Decision(false, Fallback.NONE, "ok");
     }

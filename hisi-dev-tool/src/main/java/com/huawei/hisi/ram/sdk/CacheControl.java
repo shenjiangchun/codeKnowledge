@@ -35,10 +35,15 @@ public final class CacheControl {
         }
 
         public Map<String, Object> toAnthropicBlock() {
+            // Anthropic API today only honours {"type": "ephemeral"}. We additionally
+            // tag the tier so downstream serialization preserves intent (Anthropic
+            // ignores unknown fields) and tests can assert tier differentiation.
             return Map.of(
                     "type", "text",
                     "text", text,
-                    "cache_control", Map.of("type", "ephemeral")
+                    "cache_control", Map.of(
+                            "type", "ephemeral",
+                            "tier", tier.name())
             );
         }
     }
