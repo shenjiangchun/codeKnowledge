@@ -66,15 +66,17 @@ class AgentEventRepositoryTest {
     }
 
     @Test
-    @DisplayName("findBySessionId returns events in seq order")
+    @DisplayName("findBySessionId returns events in seq order (server-assigned)")
     void findBySessionId_returnsEventsInSeqOrder() {
         AgentSession s = sessionRepo.save(AgentSession.newRunning("user-3"));
         long sid = s.getId();
         long nano = System.nanoTime();
 
-        eventRepo.append(AgentEvent.userMsg(sid, 3, "c", "k-c-" + nano));
-        eventRepo.append(AgentEvent.userMsg(sid, 1, "a", "k-a-" + nano));
-        eventRepo.append(AgentEvent.userMsg(sid, 2, "b", "k-b-" + nano));
+        // seq is server-assigned in insertion order; the caller-supplied seq
+        // value in the factory method is ignored by append().
+        eventRepo.append(AgentEvent.userMsg(sid, 0, "a", "k-a-" + nano));
+        eventRepo.append(AgentEvent.userMsg(sid, 0, "b", "k-b-" + nano));
+        eventRepo.append(AgentEvent.userMsg(sid, 0, "c", "k-c-" + nano));
 
         List<AgentEvent> events = eventRepo.findBySessionId(sid);
 
@@ -84,15 +86,16 @@ class AgentEventRepositoryTest {
     }
 
     @Test
-    @DisplayName("findMaxSeq returns zero when session has no events")
+    @DisplayName("findMaxSeq returns zero when session has no events, and tracks server-assigned seq")
     void findMaxSeq_returnsZero_whenSessionHasNoEvents() {
         AgentSession s = sessionRepo.save(AgentSession.newRunning("user-4"));
 
         assertThat(eventRepo.findMaxSeq(s.getId())).isEqualTo(0L);
 
-        eventRepo.append(AgentEvent.userMsg(s.getId(), 1, "x", "k-x-" + System.nanoTime()));
-        eventRepo.append(AgentEvent.userMsg(s.getId(), 5, "y", "k-y-" + System.nanoTime()));
+        eventRepo.append(AgentEvent.userMsg(s.getId(), 0, "x", "k-x-" + System.nanoTime()));
+        eventRepo.append(AgentEvent.userMsg(s.getId(), 0, "y", "k-y-" + System.nanoTime()));
 
-        assertThat(eventRepo.findMaxSeq(s.getId())).isEqualTo(5L);
+        // append assigns seq atomically: 1, then 2
+        assertThat(eventRepo.findMaxSeq(s.getId())).isEqualTo(2L);
     }
 }

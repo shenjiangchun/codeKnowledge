@@ -28,6 +28,8 @@ public class RamSchemaInitializer {
     public void initialize() {
         log.info("[RAM-SQLite] Initializing schema...");
 
+        jdbcTemplate.execute("PRAGMA foreign_keys = ON");
+
         jdbcTemplate.execute("""
             CREATE TABLE IF NOT EXISTS agent_session (
                 id                        INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -22,13 +22,21 @@ import java.util.Optional;
 @Repository
 public class JdbcAgentEventRepository implements AgentEventRepository {
 
+    /**
+     * Atomic insert: seq is allocated server-side as
+     * {@code COALESCE(MAX(seq), 0) + 1} within a single statement, so concurrent
+     * appenders cannot collide on (session_id, seq). The {@code WHERE NOT EXISTS}
+     * guard makes the insert idempotent on {@code idempotency_key}.
+     */
     private static final String INSERT_SQL = """
             INSERT INTO agent_event
-                (session_id, seq, type, payload, tool_use_id, parent_event_id,
-                 idempotency_key, cumulative_tokens, retry_count, clarify_round_no,
+                (session_id, seq, type, payload, idempotency_key, tool_use_id, parent_event_id,
+                 cumulative_tokens, retry_count, clarify_round_no,
                  inputs_hash, circuit_state, cost_usd_cents, validator_status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(idempotency_key) DO NOTHING
+            SELECT ?,
+                   COALESCE((SELECT MAX(seq) FROM agent_event WHERE session_id = ?), 0) + 1,
+                   ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            WHERE NOT EXISTS (SELECT 1 FROM agent_event WHERE idempotency_key = ?)
             """;
 
     private static final String SELECT_COLS = """
@@ -73,12 +81,12 @@ public class JdbcAgentEventRepository implements AgentEventRepository {
         }
         jdbc.update(INSERT_SQL,
                 e.getSessionId(),
-                e.getSeq(),
+                e.getSessionId(),
                 e.getType().name(),
                 e.getPayload(),
+                e.getIdempotencyKey(),
                 e.getToolUseId(),
                 e.getParentEventId(),
-                e.getIdempotencyKey(),
                 e.getCumulativeTokens(),
                 e.getRetryCount(),
                 e.getClarifyRoundNo(),
@@ -86,7 +94,8 @@ public class JdbcAgentEventRepository implements AgentEventRepository {
                 e.getCircuitState() == null ? "OK" : e.getCircuitState(),
                 e.getCostUsdCents(),
                 e.getValidatorStatus() == null ? "OK" : e.getValidatorStatus(),
-                e.getCreatedAt());
+                e.getCreatedAt(),
+                e.getIdempotencyKey());
         return findByIdempotencyKey(e.getIdempotencyKey())
                 .orElseThrow(() -> new IllegalStateException(
                         "append failed: " + e.getIdempotencyKey()));

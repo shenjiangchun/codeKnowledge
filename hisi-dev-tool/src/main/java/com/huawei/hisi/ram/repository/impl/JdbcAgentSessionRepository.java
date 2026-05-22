@@ -92,6 +92,18 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
         }
     }
 
+    /**
+     * Optimistic-lock update keyed on {@code (id, version)}. The input {@code s}
+     * is NOT mutated by this method &mdash; in particular, its {@code version}
+     * field still reflects the pre-update value on return. Callers MUST use the
+     * returned {@link Optional} to obtain the freshly-loaded session with the
+     * bumped version; reusing {@code s} for further updates will fail the
+     * version check.
+     *
+     * @return the updated session (with incremented version) on success, or
+     *         {@link Optional#empty()} if no row matched {@code (id, version)}
+     *         (concurrent update lost the race).
+     */
     @Override
     public Optional<AgentSession> update(AgentSession s) {
         String sql = """
