@@ -50,6 +50,12 @@ public class TargetProcessManager {
     private static final int OUTPUT_BUFFER_MAX_LINES = 500;
     private static final int AUTO_PORT_START = 18080;
     private static final int READINESS_POLL_INTERVAL_MS = 500;
+    /**
+     * Threshold above which the methods-include string is offloaded to a
+     * properties file passed via {@code -Dotel.javaagent.configuration-file},
+     * to stay safely under the 32KB per-process env-block cap on Windows.
+     */
+    private static final int METHODS_INCLUDE_ENV_LIMIT = 16_000;
     private static final int PORT_CONNECT_TIMEOUT_MS = 500;
 
     private final ApmConfig apmConfig;
@@ -182,6 +188,9 @@ public class TargetProcessManager {
 
         Map<String, String> env = pb.environment();
         env.put("JAVA_TOOL_OPTIONS", "-javaagent:" + agentPath);
+        // 开启 agent 诊断日志(muzzle 判定、扩展加载、methods instrumentation 等)。
+        // 输出到目标进程 stderr,可通过前端 LogPanel 实时观察;诊断完成后可移除。
+        env.put("OTEL_JAVAAGENT_DEBUG", "true");
         env.put("OTEL_SERVICE_NAME", serviceName);
         env.put("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf");
         env.put("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:" + serverPort);
@@ -210,7 +219,28 @@ public class TargetProcessManager {
         // capture method-level spans matching the expected call chain. The OTel
         // Java agent only auto-instruments framework boundaries by default.
         if (methodsInclude != null && !methodsInclude.isBlank()) {
-            env.put("OTEL_INSTRUMENTATION_METHODS_INCLUDE", methodsInclude);
+            // Env vars on Windows are capped (~32KB across all vars); on most
+            // platforms a single var should stay under ~16KB to be safe. When
+            // the include string exceeds that threshold, drop it onto disk and
+            // pass the OTel agent a properties file via JAVA_TOOL_OPTIONS.
+            if (methodsInclude.length() > METHODS_INCLUDE_ENV_LIMIT) {
+                try {
+                    String propsPath = writeOtelPropertiesFile(sessionId, methodsInclude);
+                    String existing = env.getOrDefault("JAVA_TOOL_OPTIONS", "");
+                    env.put("JAVA_TOOL_OPTIONS",
+                            existing + " -Dotel.javaagent.configuration-file=" + propsPath);
+                    log.info("[TargetProcess] Session {} include {} chars > {} threshold; "
+                                    + "switched to properties-file fallback at {}",
+                            sessionId, methodsInclude.length(), METHODS_INCLUDE_ENV_LIMIT, propsPath);
+                } catch (IOException ioe) {
+                    log.error("[TargetProcess] Session {} failed to write OTel properties file, "
+                                    + "falling back to env var (may be truncated): {}",
+                            sessionId, ioe.getMessage());
+                    env.put("OTEL_INSTRUMENTATION_METHODS_INCLUDE", methodsInclude);
+                }
+            } else {
+                env.put("OTEL_INSTRUMENTATION_METHODS_INCLUDE", methodsInclude);
+            }
             log.info("[TargetProcess] Session {} OTEL_INSTRUMENTATION_METHODS_INCLUDE has {} chars",
                     sessionId, methodsInclude.length());
 
@@ -499,8 +529,7 @@ public class TargetProcessManager {
     private String ensureSpaceFreeAgentPath(String agentPath) throws IOException {
         if (agentPath == null || !agentPath.contains(" ")) {
             return agentPath;
-        }
-        Path source = Paths.get(agentPath);
+        }        Path source = Paths.get(agentPath);
         Path cacheDir = Paths.get(System.getProperty("user.home"), ".hisi-devtool", "otel-agent");
         if (cacheDir.toAbsolutePath().toString().contains(" ")) {
             // user.home itself has spaces (rare); fall back to system temp dir
@@ -743,5 +772,28 @@ public class TargetProcessManager {
             log.warn("[TargetProcess] Status callback failed for session {}: {}",
                     info.getSessionId(), e.getMessage());
         }
+    }
+
+    /**
+     * Write the methods-include value into a properties file the OTel agent
+     * can load via {@code -Dotel.javaagent.configuration-file}. Used when the
+     * include string is too large for a single env var (Windows env-block cap).
+     *
+     * @return absolute path to the generated properties file
+     */
+    private String writeOtelPropertiesFile(String sessionId, String methodsInclude) throws IOException {
+        Path dir = Paths.get(System.getProperty("user.home"), ".hisi-devtool", "otel-config");
+        if (dir.toAbsolutePath().toString().contains(" ")) {
+            dir = Paths.get(System.getProperty("java.io.tmpdir"), "hisi-otel-config");
+        }
+        Files.createDirectories(dir);
+        Path propsFile = dir.resolve("session-" + sessionId + ".properties");
+        // Properties format: backslashes and = need escaping; class names use dots
+        // and method lists use ',' / ';' / '[' / ']' which are all property-safe.
+        String content = "otel.instrumentation.methods.include="
+                + methodsInclude.replace("\\", "\\\\")
+                + System.lineSeparator();
+        Files.writeString(propsFile, content, StandardCharsets.UTF_8);
+        return propsFile.toAbsolutePath().toString();
     }
 }

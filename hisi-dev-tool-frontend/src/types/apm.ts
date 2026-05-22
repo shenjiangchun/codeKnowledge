@@ -74,6 +74,8 @@ export interface ApmSession {
   finishedAt: number | null
 }
 
+export type InstrumentationMode = 'PRECISE' | 'FULL_PROJECT' | 'NONE'
+
 export interface LaunchRequest {
   projectPath: string
   targetPort?: number
@@ -84,6 +86,12 @@ export interface LaunchRequest {
    * OTel Java agent captures method-level spans matching the expected chain.
    */
   entryNodeId?: string
+  /**
+   * Bytecode instrumentation strategy. Defaults (server-side):
+   * - PRECISE when entryNodeId is set
+   * - FULL_PROJECT otherwise
+   */
+  instrumentationMode?: InstrumentationMode
 }
 
 export interface LaunchResult {

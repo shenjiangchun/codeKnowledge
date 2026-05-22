@@ -15,21 +15,47 @@ public final class ApmRequest {
     }
 
     /**
+     * Bytecode instrumentation strategy for the launched target JVM.
+     *
+     * <ul>
+     *   <li>{@link #PRECISE}: build {@code OTEL_INSTRUMENTATION_METHODS_INCLUDE}
+     *       from the callee tree of {@code entryNodeId} (smallest, fastest, but
+     *       requires picking an entry method first).</li>
+     *   <li>{@link #FULL_PROJECT}: instrument every project method (filtering
+     *       framework classes and accessor-style methods). Larger include
+     *       string, broader trace, no entry pre-selection needed.</li>
+     *   <li>{@link #NONE}: do not set the env var; OTel instruments only
+     *       built-in libraries (HTTP server, JDBC, etc.).</li>
+     * </ul>
+     */
+    public enum InstrumentationMode {
+        PRECISE,
+        FULL_PROJECT,
+        NONE
+    }
+
+    /**
      * Request to launch a target JVM process with the OTel agent attached.
      *
-     * @param projectPath absolute path to the project root
-     * @param targetPort  port for the target application (0 = auto-assign)
-     * @param serviceName optional service name; auto-derived from project directory if null
-     * @param entryNodeId optional KG nodeId of the entry method; when present the
-     *                    backend builds {@code OTEL_INSTRUMENTATION_METHODS_INCLUDE}
-     *                    from the KG callee tree to capture method-level spans
+     * @param projectPath        absolute path to the project root
+     * @param targetPort         port for the target application (0 = auto-assign)
+     * @param serviceName        optional service name; auto-derived from project directory if null
+     * @param entryNodeId        optional KG nodeId of the entry method (used by {@link InstrumentationMode#PRECISE})
+     * @param instrumentationMode optional strategy; defaults to {@link InstrumentationMode#FULL_PROJECT}
+     *                            when entryNodeId is blank, otherwise {@link InstrumentationMode#PRECISE}
      */
     public record LaunchRequest(
         String projectPath,
         int targetPort,
         String serviceName,
-        String entryNodeId
-    ) {}
+        String entryNodeId,
+        InstrumentationMode instrumentationMode
+    ) {
+        /** Backward-compatible 4-arg constructor — defaults mode to null (auto-resolved later). */
+        public LaunchRequest(String projectPath, int targetPort, String serviceName, String entryNodeId) {
+            this(projectPath, targetPort, serviceName, entryNodeId, null);
+        }
+    }
 
     /**
      * Request to execute an HTTP call against the running target process.

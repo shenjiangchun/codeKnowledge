@@ -15,7 +15,9 @@ const editingId = ref<number | null>(null)
 
 const hasProject = computed(() => !!store.selectedProject)
 
-// Load test cases when project changes
+// Load test cases when project changes (immediate: true ensures cases load even
+// if selectedProject is already set when this component mounts — e.g., after
+// hot-module-replace or dynamic tab switch)
 watch(
   () => store.selectedProject,
   (project) => {
@@ -24,6 +26,7 @@ watch(
       loadTestCases(project.projectPath)
     }
   },
+  { immediate: true },
 )
 
 async function loadTestCases(projectPath: string): Promise<void> {
@@ -92,7 +95,21 @@ async function handleSave(): Promise<void> {
 }
 
 async function handleLoad(tc: ApmTestCase): Promise<void> {
-  // Restore request config from saved test case
+  // 1) Re-resolve selectedEntry from the saved entryNodeId so ParameterForm
+  //    (which watches store.selectedEntry) refreshes its PathVariable /
+  //    RequestParam / RequestBody sections.
+  //
+  //    IMPORTANT: selectEntry() also rebuilds requestConfig from parsedInfo,
+  //    so we call it FIRST, then overlay the test-case's saved values on top.
+  if (tc.entryNodeId) {
+    const matchedEntry = store.entryPoints.find(e => e.nodeId === tc.entryNodeId) ?? null
+    if (matchedEntry) {
+      store.selectEntry(matchedEntry)
+    }
+  }
+
+  // 2) Overlay saved request config on top of what selectEntry set.
+  //    This restores user-customized values (filled path vars, custom headers, body edits).
   if (tc.method) store.setMethod(tc.method)
   if (tc.url) store.setUrl(tc.url)
 

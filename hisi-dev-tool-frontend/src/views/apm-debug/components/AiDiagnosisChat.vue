@@ -20,6 +20,108 @@ interface ChatMessage {
   timestamp: number
 }
 
+// ------------------------------------------------------------------
+// Drag support — both the floating FAB and the chat panel can be dragged.
+// Offsets are stored as translate(x, y) relative to each element's default
+// (bottom-right) anchor, so we don't fight Element Plus' fixed positioning.
+// ------------------------------------------------------------------
+const DRAG_THRESHOLD_PX = 5  // distinguish drag from click
+
+const fabOffset = ref({ x: 0, y: 0 })
+const panelOffset = ref({ x: 0, y: 0 })
+
+interface DragState {
+  startX: number
+  startY: number
+  baseX: number
+  baseY: number
+  moved: boolean
+  target: 'fab' | 'panel'
+}
+let dragState: DragState | null = null
+const fabSuppressClick = ref(false)
+
+function clampToViewport(x: number, y: number, target: 'fab' | 'panel'): { x: number; y: number } {
+  // FAB anchor is bottom-right (24,24). Panel anchor is bottom-right (80,24).
+  // Translate offsets are subtracted from those anchors, so positive x moves
+  // it LEFT (away from right edge) and positive y moves it UP (away from bottom).
+  // We need to keep the visible element inside the viewport.
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  if (target === 'fab') {
+    // FAB ~120x40 with label. Anchor bottom: 24, right: 24.
+    const maxXLeft = vw - 140       // can move left up to this
+    const maxYUp = vh - 60          // can move up up to this
+    return {
+      x: Math.max(0, Math.min(x, maxXLeft)),
+      y: Math.max(0, Math.min(y, maxYUp)),
+    }
+  } else {
+    // Panel 420x520 with bottom: 80, right: 24
+    const maxXLeft = vw - 440
+    const maxYUp = vh - 540
+    return {
+      x: Math.max(0, Math.min(x, maxXLeft)),
+      y: Math.max(0, Math.min(y, maxYUp)),
+    }
+  }
+}
+
+function startDrag(e: MouseEvent, target: 'fab' | 'panel'): void {
+  // Ignore drag init when interacting with buttons inside the header.
+  if (target === 'panel') {
+    const el = e.target as HTMLElement
+    if (el.closest('button')) return
+  }
+  e.preventDefault()
+  const base = target === 'fab' ? fabOffset.value : panelOffset.value
+  dragState = {
+    startX: e.clientX,
+    startY: e.clientY,
+    baseX: base.x,
+    baseY: base.y,
+    moved: false,
+    target,
+  }
+  window.addEventListener('mousemove', onDragMove)
+  window.addEventListener('mouseup', onDragEnd)
+}
+
+function onDragMove(e: MouseEvent): void {
+  if (!dragState) return
+  // translate(x,y) — but for bottom-right anchor we want LEFT/UP positive,
+  // so we INVERT mouse delta:
+  const dx = dragState.startX - e.clientX
+  const dy = dragState.startY - e.clientY
+  if (!dragState.moved && Math.hypot(dragState.startX - e.clientX, dragState.startY - e.clientY) > DRAG_THRESHOLD_PX) {
+    dragState.moved = true
+  }
+  const next = clampToViewport(dragState.baseX + dx, dragState.baseY + dy, dragState.target)
+  if (dragState.target === 'fab') {
+    fabOffset.value = next
+  } else {
+    panelOffset.value = next
+  }
+}
+
+function onDragEnd(): void {
+  if (dragState?.target === 'fab' && dragState.moved) {
+    // Suppress the click that follows mouseup so the FAB doesn't toggle.
+    fabSuppressClick.value = true
+    setTimeout(() => { fabSuppressClick.value = false }, 0)
+  }
+  dragState = null
+  window.removeEventListener('mousemove', onDragMove)
+  window.removeEventListener('mouseup', onDragEnd)
+}
+
+const fabStyle = computed(() => ({
+  transform: `translate(-${fabOffset.value.x}px, -${fabOffset.value.y}px)`,
+}))
+const panelStyle = computed(() => ({
+  transform: `translate(-${panelOffset.value.x}px, -${panelOffset.value.y}px)`,
+}))
+
 // Quick action prompts
 const quickActions = [
   { label: '诊断错误', icon: 'Warning', prompt: 'diagnose_error' },
@@ -28,6 +130,7 @@ const quickActions = [
 ]
 
 function toggleChat(): void {
+  if (fabSuppressClick.value) return
   if (isMinimized.value) {
     isMinimized.value = false
     return
@@ -275,7 +378,8 @@ const hasErrors = computed(() =>
 )
 
 onUnmounted(() => {
-  // Cleanup if needed
+  window.removeEventListener('mousemove', onDragMove)
+  window.removeEventListener('mouseup', onDragEnd)
 })
 
 // Simple markdown rendering for chat messages
@@ -297,7 +401,12 @@ function renderMarkdown(text: string): string {
 
 <template>
   <!-- Floating action button -->
-  <div class="ai-diagnosis-fab" @click="toggleChat">
+  <div
+    class="ai-diagnosis-fab"
+    :style="fabStyle"
+    @mousedown="startDrag($event, 'fab')"
+    @click="toggleChat"
+  >
     <el-badge :is-dot="hasErrors" :hidden="!hasErrors">
       <el-button
         type="primary"
@@ -317,9 +426,10 @@ function renderMarkdown(text: string): string {
       <div
         v-if="isOpen && !isMinimized"
         class="ai-chat-panel"
+        :style="panelStyle"
       >
-        <!-- Header -->
-        <div class="chat-header">
+        <!-- Header (drag handle) -->
+        <div class="chat-header" @mousedown="startDrag($event, 'panel')">
           <div class="chat-header-left">
             <el-icon :size="16"><ChatDotRound /></el-icon>
             <span class="chat-title">AI 诊断助手</span>
@@ -407,11 +517,16 @@ function renderMarkdown(text: string): string {
   position: fixed;
   bottom: 24px;
   right: 24px;
-  z-index: 2000;
+  z-index: 9000;
   display: flex;
   align-items: center;
   gap: 8px;
-  cursor: pointer;
+  cursor: grab;
+  user-select: none;
+}
+
+.ai-diagnosis-fab:active {
+  cursor: grabbing;
 }
 
 .fab-label {
@@ -443,7 +558,7 @@ function renderMarkdown(text: string): string {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  z-index: 2001;
+  z-index: 9001;
   border: 1px solid var(--el-border-color-lighter);
 }
 
@@ -455,6 +570,8 @@ function renderMarkdown(text: string): string {
   padding: 10px 12px;
   background: var(--el-color-primary);
   color: #fff;
+  cursor: move;
+  user-select: none;
 }
 
 .chat-header-left {

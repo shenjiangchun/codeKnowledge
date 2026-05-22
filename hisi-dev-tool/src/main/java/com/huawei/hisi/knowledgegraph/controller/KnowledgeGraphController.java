@@ -15,6 +15,7 @@ import com.huawei.hisi.knowledgegraph.repository.GenerationTaskRepository;
 import com.huawei.hisi.knowledgegraph.scanner.MyBatisXmlScanner;
 import com.huawei.hisi.knowledgegraph.service.GitStatusService;
 import com.huawei.hisi.knowledgegraph.service.IncrementalUpdateService;
+import com.huawei.hisi.knowledgegraph.service.DtoSchemaResolver;
 import com.huawei.hisi.knowledgegraph.service.KnowledgeGraphBuilder;
 import com.huawei.hisi.model.ApiResponse;
 import com.huawei.hisi.model.KnowledgeGraphTask;
@@ -66,6 +67,9 @@ public class KnowledgeGraphController {
 
     // MyBatis Scanner
     private final MyBatisXmlScanner myBatisXmlScanner;
+
+    // DTO schema resolver (parameter form schema for APM debug)
+    private final DtoSchemaResolver dtoSchemaResolver;
 
     // ============================================================
     // 任务管理接口（异步生成）
@@ -732,6 +736,22 @@ public class KnowledgeGraphController {
         }
 
         return ApiResponse.success(entryPoints);
+    }
+
+    /**
+     * 解析 DTO 类的字段 schema（供 APM 调试 RequestBody 表单使用）。
+     *
+     * <p>GET /api/knowledge-graph/type/schema?className=X&projectPath=Y
+     *
+     * <p>className 可传简单名（如 "UserDto"）或全限定名（如 "com.example.UserDto"）。
+     * 返回 null 表示找不到源码、不是 POJO 或解析失败 —— 前端应回退到普通 JSON 编辑器。
+     */
+    @GetMapping("/type/schema")
+    public ApiResponse<DtoSchemaResolver.DtoSchema> getTypeSchema(
+            @RequestParam String className,
+            @RequestParam String projectPath) {
+        DtoSchemaResolver.DtoSchema schema = dtoSchemaResolver.resolve(className, projectPath);
+        return ApiResponse.success(schema);
     }
 
     // ============================================================

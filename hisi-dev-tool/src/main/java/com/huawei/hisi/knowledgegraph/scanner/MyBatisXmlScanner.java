@@ -180,8 +180,10 @@ public class MyBatisXmlScanner {
             return List.of();
         }
 
-        // 默认屏蔽目录 + 用户自定义
-        Set<String> excludedDirs = new HashSet<>(Set.of("target", "build", "node_modules", ".git", ".idea", "out", "bin", "dist"));
+        // 默认屏蔽目录（含 .worktrees）+ 用户自定义
+        Set<String> excludedDirs = new HashSet<>(
+                com.huawei.hisi.service.CodeAnalysisCoreService.EXCLUDED_SCAN_DIRS);
+        excludedDirs.add("bin");
         if (excludePaths != null) {
             for (String s : excludePaths) {
                 if (s != null && !s.isBlank()) {

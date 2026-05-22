@@ -11,6 +11,26 @@ const showBody = computed(() =>
   ['POST', 'PUT', 'PATCH'].includes(store.requestConfig.method)
 )
 
+/**
+ * Map of query-param key → KG-parsed param meta (for showing "可选" badge).
+ * Built from selectedEntry.parsedInfo so users can tell which params are
+ * optional and safely unticked.
+ */
+const paramMetaByKey = computed<Record<string, { required?: boolean; type?: string }>>(() => {
+  const map: Record<string, { required?: boolean; type?: string }> = {}
+  const params = store.selectedEntry?.parsedInfo?.parameters ?? []
+  for (const p of params) {
+    if (p.annotations.includes('PathVariable') ||
+        p.annotations.includes('RequestBody') ||
+        p.annotations.includes('RequestHeader')) {
+      continue
+    }
+    const key = p.aliasName || p.name
+    map[key] = { required: p.required, type: p.type }
+  }
+  return map
+})
+
 const methodTagType: Record<string, string> = {
   GET: 'success',
   POST: 'warning',
@@ -217,6 +237,15 @@ function formatResponseBody(body: string): string {
               class="param-value"
               @update:model-value="(val: string) => store.updateQueryParam(index, 'value', val)"
             />
+            <el-tag
+              v-if="paramMetaByKey[param.key]?.required === false"
+              size="small"
+              type="warning"
+              effect="plain"
+              class="optional-badge"
+            >
+              可选
+            </el-tag>
             <el-button
               size="small"
               text
@@ -405,6 +434,11 @@ function formatResponseBody(body: string): string {
 
 .param-value {
   flex: 2;
+}
+
+.optional-badge {
+  font-size: 10px;
+  flex-shrink: 0;
 }
 
 .body-editor {

@@ -402,8 +402,10 @@ const generatingKnowledgeGraph = ref<Set<string>>(new Set())
 // Track vector generation
 const generatingVector = ref<Set<string>>(new Set())
 
-// Knowledge graph exclude paths config (defaults: common build outputs + test directory)
-const DEFAULT_KG_EXCLUDE_PATHS = ['target', 'build', 'node_modules', '.git', '.idea', 'out', 'bin', 'dist', 'src/test/']
+// Knowledge graph exclude paths config (defaults: common build outputs + IDE/VCS + git worktrees + test directory)
+// 注意：`.worktrees` 必须排除 —— git worktree 子目录是其它分支的独立 checkout，
+// 不排除会导致 KG 出现幽灵入口点（当前分支不存在的 Controller/方法）。
+const DEFAULT_KG_EXCLUDE_PATHS = ['target', 'build', 'node_modules', '.git', '.worktrees', '.idea', '.vscode', '.claude', '.codeai', 'out', 'bin', 'dist', 'generated-sources', 'src/test/']
 const KG_EXCLUDE_STORAGE_KEY = 'hisi.kg.excludePaths'
 const kgExcludePaths = ref<string[]>(
   (() => {

@@ -1,107 +1,79 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useApmStore } from '@/stores/apmStore'
-import type { DtoField } from '@/api/knowledgeGraph'
+import type { DtoSchema } from '@/api/knowledgeGraph'
+import SchemaObjectNode from './SchemaObjectNode.vue'
 
 /**
- * Schema-driven editor for the @RequestBody DTO. Renders each DTO field as an
- * input (typed by Java type), tags required/constraint info, and writes the
- * resulting JSON back into store.requestConfig.body.
+ * Schema-driven editor for the @RequestBody DTO. Top-level wrapper:
+ *  - Reads schema + initial JSON from the store
+ *  - Delegates per-field rendering to the recursive SchemaObjectNode component
+ *  - Serializes back to store.requestConfig.body on every change
  *
- * Falls back to a hint message when no schema is resolved.
+ * Falls back to a hint when the resolver returned nothing — caller can edit raw
+ * JSON via the Body tab.
  */
 
 const store = useApmStore()
 
-const schema = computed(() => store.bodySchema)
+const schema = computed<DtoSchema | null>(() => store.bodySchema)
 const loading = computed(() => store.bodySchemaLoading)
 
-/** Local model: field name -> raw text value */
-const fieldValues = ref<Record<string, string>>({})
+/** Root object model. For collection bodies (List<DTO>), backend hint comes as `[{...}]`. */
+const rootModel = ref<Record<string, unknown> | Array<Record<string, unknown>>>({})
 
-/** Seed model from current body whenever schema or entry changes */
+/** Whether the body is wrapped in a top-level JSON array. */
+const isArrayBody = ref(false)
+
+/** Reseed model when schema or selected entry changes. */
 watch(
   [() => schema.value, () => store.selectedEntry?.nodeId],
   () => {
-    fieldValues.value = {}
-    if (!schema.value) return
+    if (!schema.value) {
+      rootModel.value = {}
+      isArrayBody.value = false
+      return
+    }
     try {
       const parsed = JSON.parse(store.requestConfig.body || '{}')
-      const seed = Array.isArray(parsed) ? (parsed[0] ?? {}) : parsed
-      const next: Record<string, string> = {}
-      for (const f of schema.value.fields) {
-        const v = (seed as Record<string, unknown>)[f.name]
-        next[f.name] = v === undefined || v === null ? '' : stringifyValue(v)
+      if (Array.isArray(parsed)) {
+        isArrayBody.value = true
+        rootModel.value = parsed.length > 0 && typeof parsed[0] === 'object'
+          ? [parsed[0] as Record<string, unknown>]
+          : [{}]
+      } else if (parsed && typeof parsed === 'object') {
+        isArrayBody.value = false
+        rootModel.value = parsed as Record<string, unknown>
+      } else {
+        isArrayBody.value = false
+        rootModel.value = {}
       }
-      fieldValues.value = next
     } catch {
-      // body is non-JSON or empty; leave empty
+      isArrayBody.value = false
+      rootModel.value = {}
     }
   },
   { immediate: true },
 )
 
-function stringifyValue(v: unknown): string {
-  if (typeof v === 'string') return v
-  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
-  return JSON.stringify(v)
+function handleRootChange(updated: Record<string, unknown>): void {
+  if (isArrayBody.value) {
+    rootModel.value = [updated]
+    store.setBody(JSON.stringify([updated], null, 2))
+  } else {
+    rootModel.value = updated
+    store.setBody(JSON.stringify(updated, null, 2))
+  }
 }
 
-function coerceForType(raw: string, type: string): unknown {
-  const t = type.toLowerCase()
-  if (raw === '') {
-    if (t === 'boolean') return false
-    if (['integer', 'int', 'long', 'short', 'byte', 'double', 'float', 'bigdecimal', 'biginteger'].includes(t)) return 0
-    if (t.startsWith('list<') || t.startsWith('set<') || t.startsWith('collection<')) return []
-    if (t.startsWith('map<')) return {}
-    if (t === 'string') return ''
-    return null
+/** Model passed down to the recursive node. Always a single object. */
+const nodeModel = computed<Record<string, unknown>>(() => {
+  if (isArrayBody.value) {
+    const arr = rootModel.value as Array<Record<string, unknown>>
+    return arr[0] ?? {}
   }
-  if (t === 'boolean') return raw === 'true' || raw === '1'
-  if (['integer', 'int', 'long', 'short', 'byte'].includes(t)) {
-    const n = parseInt(raw, 10)
-    return Number.isNaN(n) ? 0 : n
-  }
-  if (['double', 'float', 'bigdecimal'].includes(t)) {
-    const n = parseFloat(raw)
-    return Number.isNaN(n) ? 0 : n
-  }
-  if (t.startsWith('list<') || t.startsWith('set<') || t.startsWith('collection<') || t.startsWith('map<')) {
-    try { return JSON.parse(raw) } catch { return raw }
-  }
-  return raw
-}
-
-function syncBody(): void {
-  if (!schema.value) return
-  const obj: Record<string, unknown> = {}
-  for (const f of schema.value.fields) {
-    obj[f.name] = coerceForType(fieldValues.value[f.name] ?? '', f.type)
-  }
-  store.setBody(JSON.stringify(obj, null, 2))
-}
-
-function handleFieldChange(field: DtoField, value: string): void {
-  fieldValues.value = { ...fieldValues.value, [field.name]: value }
-  syncBody()
-}
-
-function inputType(type: string): 'textarea' | 'text' {
-  const t = type.toLowerCase()
-  if (t.startsWith('list<') || t.startsWith('set<') || t.startsWith('collection<') || t.startsWith('map<')) return 'textarea'
-  return 'text'
-}
-
-function placeholderForType(type: string): string {
-  const t = type.toLowerCase()
-  if (t === 'boolean') return 'true / false'
-  if (['integer', 'int', 'long', 'short', 'byte'].includes(t)) return '例: 1'
-  if (['double', 'float', 'bigdecimal'].includes(t)) return '例: 0.0'
-  if (t.startsWith('list<') || t.startsWith('set<') || t.startsWith('collection<')) return 'JSON 数组, 例: []'
-  if (t.startsWith('map<')) return 'JSON 对象, 例: {}'
-  if (t === 'string') return '输入文本'
-  return type
-}
+  return rootModel.value as Record<string, unknown>
+})
 </script>
 
 <template>
@@ -121,46 +93,16 @@ function placeholderForType(type: string): string {
         <el-icon><Document /></el-icon>
         <span class="schema-title">{{ schema.simpleName }}</span>
         <el-tag size="small" type="info" round>{{ schema.kind }}</el-tag>
+        <el-tag v-if="isArrayBody" size="small" type="warning" round>List body</el-tag>
         <el-tag size="small" type="info" round>{{ schema.fields.length }} 字段</el-tag>
       </div>
 
-      <div
-        v-for="f in schema.fields"
-        :key="f.name"
-        class="field-row"
-      >
-        <div class="field-meta">
-          <span class="field-name">{{ f.name }}</span>
-          <el-tag size="small" type="info" class="field-type">{{ f.type }}</el-tag>
-          <el-tag v-if="f.required" size="small" type="danger" effect="plain">必填</el-tag>
-          <el-tag
-            v-for="c in f.constraints"
-            :key="c"
-            size="small"
-            type="warning"
-            effect="plain"
-            class="field-constraint"
-          >
-            {{ c }}
-          </el-tag>
-        </div>
-        <el-input
-          v-if="inputType(f.type) === 'textarea'"
-          :model-value="fieldValues[f.name] || ''"
-          type="textarea"
-          :rows="2"
-          size="small"
-          :placeholder="placeholderForType(f.type)"
-          @update:model-value="(v: string) => handleFieldChange(f, v)"
-        />
-        <el-input
-          v-else
-          :model-value="fieldValues[f.name] || ''"
-          size="small"
-          :placeholder="placeholderForType(f.type)"
-          @update:model-value="(v: string) => handleFieldChange(f, v)"
-        />
-      </div>
+      <SchemaObjectNode
+        :schema="schema"
+        :model-value="nodeModel"
+        :depth="0"
+        @update:model-value="handleRootChange"
+      />
     </template>
   </div>
 </template>
@@ -188,40 +130,5 @@ function placeholderForType(type: string): string {
   font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
   font-weight: 600;
   color: var(--el-text-color-primary);
-}
-
-.field-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 4px 0 6px;
-  border-bottom: 1px dashed var(--el-border-color-lighter);
-}
-
-.field-row:last-child {
-  border-bottom: none;
-}
-
-.field-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.field-name {
-  font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--el-text-color-primary);
-}
-
-.field-type {
-  font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
-  font-size: 10px;
-}
-
-.field-constraint {
-  font-size: 10px;
 }
 </style>

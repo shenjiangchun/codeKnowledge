@@ -93,6 +93,16 @@ public final class ProjectLanguageDetector {
         try (Stream<Path> walk = Files.walk(root, 10)) {
             Set<Path> files = walk
                 .filter(Files::isRegularFile)
+                .filter(p -> {
+                    // 排除 .worktrees / target / build / .git 等目录下的文件，避免误判语言
+                    for (Path seg : p) {
+                        if (com.huawei.hisi.service.CodeAnalysisCoreService
+                                .EXCLUDED_SCAN_DIRS.contains(seg.toString())) {
+                            return false;
+                        }
+                    }
+                    return true;
+                })
                 .limit(1000)
                 .collect(Collectors.toSet());
 

@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "claude-opus-4-6-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-05-21T07:40:46.697Z",
+  "lastUpdated": "2026-05-22T05:31:00.104Z",
   "stats": {
-    "totalOperations": 283,
-    "totalFilesEdited": 140,
-    "totalAiLines": 7659,
-    "totalAiLinesDeleted": 548,
-    "totalCommits": 14
+    "totalOperations": 379,
+    "totalFilesEdited": 200,
+    "totalAiLines": 7759,
+    "totalAiLinesDeleted": 551,
+    "totalCommits": 15
   },
   "pendingFiles": [
     {
@@ -417,9 +417,10 @@
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/service/DtoSchemaResolver.java",
       "tool": "Write",
-      "operations": 1,
+      "operations": 12,
       "timestamp": "2026-05-20T07:28:38.583Z",
-      "lastModified": "2026-05-20T07:28:38.583Z"
+      "lastModified": "2026-05-21T09:29:17.830Z",
+      "lastTool": "Edit"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/controller/KnowledgeGraphController.java",
@@ -439,23 +440,26 @@
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-otel-extension/src/main/java/com/huawei/hisi/otelext/MethodArgsCaptureInstrumentationModule.java",
       "tool": "Write",
-      "operations": 1,
+      "operations": 3,
       "timestamp": "2026-05-21T00:28:16.623Z",
-      "lastModified": "2026-05-21T00:28:16.623Z"
+      "lastModified": "2026-05-22T02:43:07.120Z",
+      "lastTool": "Edit"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-otel-extension/src/main/java/com/huawei/hisi/otelext/MethodArgsCaptureInstrumentation.java",
       "tool": "Write",
-      "operations": 1,
+      "operations": 4,
       "timestamp": "2026-05-21T00:28:35.966Z",
-      "lastModified": "2026-05-21T00:28:35.966Z"
+      "lastModified": "2026-05-21T12:20:51.162Z",
+      "lastTool": "Edit"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-otel-extension/src/main/java/com/huawei/hisi/otelext/MethodArgsCaptureAdvice.java",
       "tool": "Write",
-      "operations": 1,
+      "operations": 4,
       "timestamp": "2026-05-21T00:28:58.688Z",
-      "lastModified": "2026-05-21T00:28:58.688Z"
+      "lastModified": "2026-05-21T11:50:59.620Z",
+      "lastTool": "Write"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-otel-extension/src/main/resources/META-INF/services/io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule",
@@ -493,12 +497,431 @@
       "lastModified": "2026-05-21T02:38:17.729Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/EntryList.vue",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/stores/apmStore.ts",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-05-21T08:26:01.467Z",
+      "lastModified": "2026-05-21T08:26:12.321Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/RequestEditor.vue",
       "tool": "Edit",
       "operations": 3,
-      "timestamp": "2026-05-21T07:40:27.013Z",
-      "lastModified": "2026-05-21T07:40:46.697Z",
+      "timestamp": "2026-05-21T08:26:45.652Z",
+      "lastModified": "2026-05-21T08:28:35.629Z",
       "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/EntryList.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-21T09:07:53.113Z",
+      "lastModified": "2026-05-21T09:07:53.113Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/apm/service/KgMethodIncludeBuilder.java",
+      "tool": "Edit",
+      "operations": 6,
+      "timestamp": "2026-05-21T09:36:49.214Z",
+      "lastModified": "2026-05-21T11:51:45.174Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/apm/service/TargetProcessManager.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-21T10:42:36.253Z",
+      "lastModified": "2026-05-21T10:42:36.253Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/BodySchemaForm.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-21T12:05:34.044Z",
+      "lastModified": "2026-05-21T12:05:34.044Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/SchemaPrimitiveInput.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-21T12:08:22.794Z",
+      "lastModified": "2026-05-21T12:08:22.794Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/apm/handler/ApmWebSocketHandler.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-22T00:36:30.595Z",
+      "lastModified": "2026-05-22T00:36:30.595Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/TraceView.vue",
+      "tool": "Write",
+      "operations": 3,
+      "timestamp": "2026-05-22T02:09:51.324Z",
+      "lastModified": "2026-05-22T02:10:20.780Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/AiDiagnosisChat.vue",
+      "tool": "Edit",
+      "operations": 6,
+      "timestamp": "2026-05-22T02:16:40.215Z",
+      "lastModified": "2026-05-22T02:17:48.022Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/apm/service/DebugReportService.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-22T02:27:31.996Z",
+      "lastModified": "2026-05-22T02:27:31.996Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/ApmDebugView.vue",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-05-22T02:27:48.857Z",
+      "lastModified": "2026-05-22T02:27:49.938Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/apm-debug/components/TestCaseManager.vue",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-05-22T02:35:37.566Z",
+      "lastModified": "2026-05-22T02:36:08.719Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/requirements.txt",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:35:56.708Z",
+      "lastModified": "2026-05-22T03:35:56.708Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/README.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:35:58.244Z",
+      "lastModified": "2026-05-22T03:35:58.244Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/app/__init__.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:35:59.817Z",
+      "lastModified": "2026-05-22T03:35:59.817Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/app/exceptions.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:36:01.285Z",
+      "lastModified": "2026-05-22T03:36:01.285Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/app/models/__init__.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:36:02.838Z",
+      "lastModified": "2026-05-22T03:36:02.838Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/app/models/db.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:36:04.390Z",
+      "lastModified": "2026-05-22T03:36:04.390Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/app/deps.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:36:05.869Z",
+      "lastModified": "2026-05-22T03:36:05.869Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/app/services/__init__.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:37:15.472Z",
+      "lastModified": "2026-05-22T03:37:15.472Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/app/services/user_service.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:37:17.019Z",
+      "lastModified": "2026-05-22T03:37:17.019Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/app/services/order_service.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:37:18.542Z",
+      "lastModified": "2026-05-22T03:37:18.542Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/app/tasks/__init__.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:37:20.161Z",
+      "lastModified": "2026-05-22T03:37:20.161Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/app/tasks/celery_app.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:37:21.647Z",
+      "lastModified": "2026-05-22T03:37:21.647Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/app/tasks/notify.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:37:23.222Z",
+      "lastModified": "2026-05-22T03:37:23.222Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/app/tasks/rabbitmq.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:37:24.715Z",
+      "lastModified": "2026-05-22T03:37:24.715Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/app/routers/__init__.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:37:26.243Z",
+      "lastModified": "2026-05-22T03:37:26.243Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/app/routers/users.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:37:27.789Z",
+      "lastModified": "2026-05-22T03:37:27.789Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/app/routers/orders.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:37:29.510Z",
+      "lastModified": "2026-05-22T03:37:29.510Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/app/routers/health.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:37:31.025Z",
+      "lastModified": "2026-05-22T03:37:31.025Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/app/main.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:37:32.484Z",
+      "lastModified": "2026-05-22T03:37:32.484Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/tests/test_smoke.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:37:34.011Z",
+      "lastModified": "2026-05-22T03:37:34.011Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/pytest.ini",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:37:35.554Z",
+      "lastModified": "2026-05-22T03:37:35.554Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/requirements.txt",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:06.454Z",
+      "lastModified": "2026-05-22T03:39:06.454Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/README.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:08.038Z",
+      "lastModified": "2026-05-22T03:39:08.038Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/manage.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:09.608Z",
+      "lastModified": "2026-05-22T03:39:09.608Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/demo_django/__init__.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:11.201Z",
+      "lastModified": "2026-05-22T03:39:11.201Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/demo_django/settings.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:12.733Z",
+      "lastModified": "2026-05-22T03:39:12.733Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/demo_django/urls.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:14.268Z",
+      "lastModified": "2026-05-22T03:39:14.268Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/demo_django/wsgi.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:15.786Z",
+      "lastModified": "2026-05-22T03:39:15.786Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/demo_django/asgi.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:17.348Z",
+      "lastModified": "2026-05-22T03:39:17.348Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/demo_django/celery_app.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:18.908Z",
+      "lastModified": "2026-05-22T03:39:18.908Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/api/__init__.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:20.406Z",
+      "lastModified": "2026-05-22T03:39:20.406Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/api/apps.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:21.886Z",
+      "lastModified": "2026-05-22T03:39:21.886Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/api/models.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:23.504Z",
+      "lastModified": "2026-05-22T03:39:23.504Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/api/serializers.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:25.072Z",
+      "lastModified": "2026-05-22T03:39:25.072Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/api/exceptions.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:27.619Z",
+      "lastModified": "2026-05-22T03:39:27.619Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/api/services.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:31.719Z",
+      "lastModified": "2026-05-22T03:39:31.719Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/api/tasks.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:35.784Z",
+      "lastModified": "2026-05-22T03:39:35.784Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/api/rabbitmq.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:39.876Z",
+      "lastModified": "2026-05-22T03:39:39.876Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/api/views.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:43.956Z",
+      "lastModified": "2026-05-22T03:39:43.956Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/api/urls.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:48.023Z",
+      "lastModified": "2026-05-22T03:39:48.023Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/tests/test_smoke.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:52.054Z",
+      "lastModified": "2026-05-22T03:39:52.054Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/pytest.ini",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:39:56.186Z",
+      "lastModified": "2026-05-22T03:39:56.186Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/api/migrations/__init__.py",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:40:00.298Z",
+      "lastModified": "2026-05-22T03:40:00.298Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/docs/APM-PYTHON-ADAPTATION.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T03:41:32.331Z",
+      "lastModified": "2026-05-22T03:41:32.331Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/.gitignore",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T04:51:12.728Z",
+      "lastModified": "2026-05-22T04:51:12.728Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/.gitignore",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T04:51:27.349Z",
+      "lastModified": "2026-05-22T04:51:27.349Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/docs/PYTHON-KG-GAP.md",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-05-22T05:31:00.104Z",
+      "lastModified": "2026-05-22T05:31:00.104Z"
     }
   ]
 }

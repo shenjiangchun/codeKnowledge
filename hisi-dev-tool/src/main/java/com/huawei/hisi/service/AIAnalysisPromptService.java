@@ -41,8 +41,12 @@ public class AIAnalysisPromptService {
         StringBuilder prompt = new StringBuilder();
         prompt.append("你是一个资深的 Java/Spring 架构师和代码审查专家。请基于以下知识图谱提供的**完整调用链数据**进行深度分析。\n\n");
 
-        // 1. 入口点信息
-        Optional<EntryPointNode> entryOpt = entryPointNodeRepository.findByEntryKey(entryKey);
+        // 1. 入口点信息（按 projectPath 范围查询，避免跨项目 entryKey 同名导致 IncorrectResultSizeDataAccessException）
+        List<EntryPointNode> entryList = entryPointNodeRepository.findByProjectPathAndEntryKey(projectPath, entryKey);
+        Optional<EntryPointNode> entryOpt = entryList.stream().findFirst();
+        if (entryList.size() > 1) {
+            log.warn("[AI Prompt] entryKey={} 在 project={} 下存在 {} 个匹配项，取第一个", entryKey, projectPath, entryList.size());
+        }
         if (entryOpt.isPresent()) {
             EntryPointNode entry = entryOpt.get();
             prompt.append("## 入口点信息\n");

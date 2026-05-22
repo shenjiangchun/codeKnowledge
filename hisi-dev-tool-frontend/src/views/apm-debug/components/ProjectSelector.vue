@@ -16,15 +16,17 @@ function handleProjectChange(projectPath: string | null): void {
 }
 
 /**
- * Launch with safety check: warn if no entry point was selected, since
- * without an entry node the KG-driven method-level instrumentation
- * (and the call-chain preview) will be empty.
+ * Launch with safety check.
+ *
+ * - PRECISE mode requires an entry method (we warn if missing).
+ * - FULL_PROJECT mode instruments every project method (no entry needed).
+ * - NONE mode disables method-level instrumentation.
  */
 async function handleLaunch(): Promise<void> {
-  if (!store.selectedEntry) {
+  if (store.instrumentationMode === 'PRECISE' && !store.selectedEntry) {
     try {
       await ElMessageBox.confirm(
-        '尚未选择入口方法。启动后将无法基于知识图谱进行方法级埋点,调用链将只包含框架默认 Span(HTTP/SQL 等),且无法捕获方法入参/返回值中间态。建议先在左侧选择一个 Controller 入口再启动。',
+        '已选择「精准入口模式」但未选择入口方法。启动后将无法基于知识图谱进行方法级埋点,调用链将只包含框架默认 Span(HTTP/SQL 等),且无法捕获方法入参/返回值中间态。建议先在左侧选择一个 Controller 入口,或切换到「全量项目埋点」模式。',
         '未选择入口',
         {
           confirmButtonText: '仍然启动',
@@ -127,6 +129,22 @@ onMounted(() => {
 
     <!-- Session control -->
     <div v-if="store.selectedProject" class="session-control">
+      <!-- Instrumentation mode picker (only meaningful before launch) -->
+      <div
+        v-if="store.status === 'IDLE'"
+        class="mode-picker"
+      >
+        <span class="mode-label">埋点策略</span>
+        <el-radio-group
+          :model-value="store.instrumentationMode"
+          size="small"
+          @update:model-value="(val: string | number | boolean) => (store.instrumentationMode = val as 'PRECISE' | 'FULL_PROJECT' | 'NONE')"
+        >
+          <el-radio-button value="FULL_PROJECT">全量</el-radio-button>
+          <el-radio-button value="PRECISE">精准</el-radio-button>
+          <el-radio-button value="NONE">仅框架</el-radio-button>
+        </el-radio-group>
+      </div>
       <!-- If there's a stale session from before (and we're currently IDLE), offer force-stop -->
       <div
         v-if="store.status === 'IDLE' && hasActiveSession(store.selectedProject.projectPath)"
@@ -258,6 +276,19 @@ onMounted(() => {
 
 .session-control {
   margin-top: 12px;
+}
+
+.mode-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mode-label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  flex-shrink: 0;
 }
 
 .stale-session-warning {

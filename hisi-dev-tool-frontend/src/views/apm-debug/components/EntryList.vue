@@ -354,3 +354,4 @@ function handleSuggestionSelect(item: SuggestionItem | Record<string, unknown>):
   color: var(--el-text-color-secondary);
   flex-shrink: 0;
 }
+</style>

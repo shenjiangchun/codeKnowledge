@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { useApmStore } from '@/stores/apmStore'
 import ProjectSelector from './components/ProjectSelector.vue'
 import EntryList from './components/EntryList.vue'
@@ -13,6 +14,22 @@ import AiDiagnosisChat from './components/AiDiagnosisChat.vue'
 import ProcessLogViewer from './components/ProcessLogViewer.vue'
 
 const store = useApmStore()
+
+// Collapsible state for report section (executable summary)
+const reportCollapsed = ref(false)
+
+// Auto-expand the report panel every time a NEW report arrives.
+// Without this, if the user collapsed the panel once, subsequent executions
+// would keep it collapsed — which felt like "first execution doesn't auto-expand,
+// second one does" because the very first session naturally starts expanded.
+watch(
+  () => store.report,
+  (r) => {
+    if (r) {
+      reportCollapsed.value = false
+    }
+  },
+)
 
 // WS event handling is now done inside the store (watch on wsEvents).
 // No need for a watcher here.
@@ -79,9 +96,31 @@ onUnmounted(() => {
       />
     </div>
 
-    <!-- Report section (full width below) -->
-    <div v-if="store.status === 'COMPLETE' && store.report" class="report-section">
-      <ExecutionReport :report="store.report" />
+    <!-- Report section (full width below, collapsible) -->
+    <div
+      v-if="store.status === 'COMPLETE' && store.report"
+      class="report-section"
+      :class="{ collapsed: reportCollapsed }"
+    >
+      <div class="report-toggle-bar" @click="reportCollapsed = !reportCollapsed">
+        <el-icon class="toggle-icon">
+          <ArrowDown v-if="reportCollapsed" />
+          <ArrowUp v-else />
+        </el-icon>
+        <span class="toggle-label">执行摘要</span>
+        <el-tag
+          v-if="store.report"
+          :type="store.report.success ? 'success' : 'danger'"
+          size="small"
+          effect="dark"
+        >
+          {{ store.report.success ? '成功' : '失败' }} · {{ store.report.totalDurationMs }}ms · {{ store.report.totalSpanCount }} spans
+        </el-tag>
+        <span class="toggle-hint">{{ reportCollapsed ? '展开' : '折叠' }}</span>
+      </div>
+      <div v-show="!reportCollapsed" class="report-body">
+        <ExecutionReport :report="store.report" />
+      </div>
     </div>
 
     <!-- AI Diagnosis floating chat -->
@@ -117,6 +156,22 @@ onUnmounted(() => {
   flex-direction: column;
   border-right: 1px solid var(--el-border-color-lighter);
   background-color: var(--el-bg-color);
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Ensure non-list children of left panel don't grow & push EntryList */
+.left-panel > :deep(.project-selector),
+.left-panel > :deep(.call-chain-preview),
+.left-panel > :deep(.test-case-manager) {
+  flex-shrink: 0;
+}
+
+/* EntryList takes remaining space and scrolls internally */
+.left-panel > :deep(.entry-list) {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow: hidden;
 }
 
 /* Center panel */
@@ -154,9 +209,57 @@ onUnmounted(() => {
 .report-section {
   flex-shrink: 0;
   border-top: 1px solid var(--el-border-color-lighter);
-  padding: 16px;
-  max-height: 400px;
+  background: var(--el-bg-color);
+  display: flex;
+  flex-direction: column;
+  max-height: 45vh;
+  transition: max-height 0.25s ease;
+}
+
+.report-section.collapsed {
+  max-height: 40px;
+}
+
+.report-toggle-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--el-bg-color-page);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  height: 40px;
+  box-sizing: border-box;
+}
+
+.report-toggle-bar:hover {
+  background: var(--el-fill-color-light);
+}
+
+.toggle-icon {
+  font-size: 14px;
+  color: var(--el-text-color-secondary);
+}
+
+.toggle-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.toggle-hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.report-body {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
+  padding: 12px 16px;
 }
 
 /* Process log viewer panel */

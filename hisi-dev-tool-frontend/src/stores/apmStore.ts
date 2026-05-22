@@ -55,6 +55,9 @@ export const useApmStore = defineStore('apm', () => {
   const entryPoints = ref<KgEntryPoint[]>([])
   const selectedEntry = ref<KgEntryPoint | null>(null)
   const entryPointsLoading = ref(false)
+  // Bytecode instrumentation strategy chosen at launch time.
+  // Default 'FULL_PROJECT' so users can browse all spans without picking an entry first.
+  const instrumentationMode = ref<import('@/types/apm').InstrumentationMode>('FULL_PROJECT')
 
   /** Schema of the @RequestBody DTO for selected entry (null if no body / not resolved) */
   const bodySchema = ref<DtoSchema | null>(null)
@@ -88,7 +91,14 @@ export const useApmStore = defineStore('apm', () => {
   )
 
   const canExecute = computed(() =>
-    status.value === 'READY' && requestConfig.value.url.trim().length > 0
+    // Allow re-send after errors / completion. Only block while a launch or an
+    // in-flight execute is happening, so users aren't stuck with a greyed button
+    // after a transient failure.
+    sessionId.value !== '' &&
+    requestConfig.value.url.trim().length > 0 &&
+    status.value !== 'IDLE' &&
+    status.value !== 'LAUNCHING' &&
+    status.value !== 'EXECUTING'
   )
 
   const showTracePanel = computed(() =>
@@ -243,10 +253,13 @@ export const useApmStore = defineStore('apm', () => {
               url = url.replace(new RegExp(`\\{${paramName}\\}`), `{${paramName}}`)
             }
           } else if (annSet.has('RequestParam')) {
+            // Always enable optional params by default — user can uncheck if not needed.
+            // Using `required !== false` here previously caused optional params to be
+            // silently dropped from the URL, leading to backend 400 errors.
             queryParams.push({
               key: paramName,
               value: param.defaultValue || '',
-              enabled: param.required !== false,
+              enabled: true,
             })
           } else if (annSet.has('RequestHeader')) {
             headers[paramName] = ''
@@ -273,12 +286,58 @@ export const useApmStore = defineStore('apm', () => {
   }
 
   /**
+   * Strip well-known generic wrappers (single-arg) so we can resolve the actual
+   * payload DTO. Multi-pass to handle nested wrappers like
+   * {@code ResponseEntity<Page<UserDto>>} → {@code UserDto}.
+   *
+   * NOTE: keep this in sync with backend {@code DtoSchemaResolver.unwrapCollection}
+   * — the backend already recurses into collection element types when expanding
+   * nested fields, so here we only need to peel the *outer* request body.
+   */
+  function unwrapGenericWrappers(typeName: string): { inner: string; wasCollection: boolean } {
+    const SINGLE_ARG_WRAPPERS = [
+      'List', 'Set', 'Collection', 'Iterable', 'ArrayList', 'LinkedList', 'HashSet',
+      'Optional', 'ResponseEntity', 'Mono', 'Flux', 'CompletableFuture', 'Future',
+      'Page', 'Slice', 'PageImpl', 'Result',
+    ]
+    const COLLECTION_WRAPPERS = new Set(['List', 'Set', 'Collection', 'Iterable', 'ArrayList', 'LinkedList', 'HashSet'])
+    let current = typeName.trim()
+    let wasCollection = false
+    let safetyGuard = 6 // avoid infinite loops on malformed input
+    while (safetyGuard-- > 0) {
+      const m = current.match(/^([A-Za-z_][A-Za-z0-9_]*)<(.+)>$/)
+      if (!m) break
+      const [, wrapper, arg] = m
+      if (!SINGLE_ARG_WRAPPERS.includes(wrapper)) break
+      // single-arg only — bail on Map<K,V> etc. (commas at top level)
+      if (containsTopLevelComma(arg)) break
+      if (COLLECTION_WRAPPERS.has(wrapper)) wasCollection = true
+      current = arg.trim()
+    }
+    // also strip trailing array notation
+    if (current.endsWith('[]')) {
+      wasCollection = true
+      current = current.slice(0, -2).trim()
+    }
+    return { inner: current, wasCollection }
+  }
+
+  function containsTopLevelComma(s: string): boolean {
+    let depth = 0
+    for (const c of s) {
+      if (c === '<') depth++
+      else if (c === '>') depth--
+      else if (c === ',' && depth === 0) return true
+    }
+    return false
+  }
+
+  /**
    * Fetch DTO field schema for the current @RequestBody parameter, then regenerate
    * a richer JSON body template from the field list.
    */
   async function loadBodySchema(typeName: string, projectPath: string): Promise<void> {
-    // unwrap List<X> / Set<X> / Collection<X> generics
-    const inner = typeName.replace(/^(List|Set|Collection)<(.+)>$/, '$2').trim()
+    const { inner, wasCollection } = unwrapGenericWrappers(typeName)
     if (!inner || isPrimitiveLike(inner)) return
     bodySchemaLoading.value = true
     try {
@@ -287,9 +346,7 @@ export const useApmStore = defineStore('apm', () => {
         bodySchema.value = schema
         // Regenerate body skeleton from real fields → valid JSON
         const skeleton = buildJsonSkeletonFromSchema(schema)
-        const finalBody = typeName.startsWith('List<') || typeName.startsWith('Set<') || typeName.startsWith('Collection<')
-          ? `[\n${indent(skeleton, 2)}\n]`
-          : skeleton
+        const finalBody = wasCollection ? `[\n${indent(skeleton, 2)}\n]` : skeleton
         requestConfig.value = { ...requestConfig.value, body: finalBody }
       }
     } catch {
@@ -332,11 +389,28 @@ export const useApmStore = defineStore('apm', () => {
   }
 
   function buildJsonSkeletonFromSchema(schema: DtoSchema): string {
+    return JSON.stringify(buildJsonObjectFromSchema(schema), null, 2)
+  }
+
+  /** Recursive object builder — used both for top-level body and nested DTO fields. */
+  function buildJsonObjectFromSchema(schema: DtoSchema): Record<string, unknown> {
     const obj: Record<string, unknown> = {}
     for (const f of schema.fields) {
-      obj[f.name] = defaultForType(f.type)
+      const key = f.jsonName || f.name
+      if (f.isCollection) {
+        // Collection of either nested DTO or primitive
+        if (f.itemSchema) {
+          obj[key] = [buildJsonObjectFromSchema(f.itemSchema)]
+        } else {
+          obj[key] = []
+        }
+      } else if (f.nested) {
+        obj[key] = buildJsonObjectFromSchema(f.nested)
+      } else {
+        obj[key] = defaultForType(f.type)
+      }
     }
-    return JSON.stringify(obj, null, 2)
+    return obj
   }
 
   function indent(text: string, n: number): string {
@@ -419,6 +493,7 @@ export const useApmStore = defineStore('apm', () => {
         // backend can generate OTEL_INSTRUMENTATION_METHODS_INCLUDE from the
         // KG callee tree — this captures method-level spans matching the chain.
         entryNodeId: selectedEntry.value?.nodeId,
+        instrumentationMode: instrumentationMode.value,
       })
       sessionId.value = result.sessionId
       serviceName.value = result.serviceName
@@ -553,6 +628,7 @@ export const useApmStore = defineStore('apm', () => {
     entryPoints,
     selectedEntry,
     entryPointsLoading,
+    instrumentationMode,
     bodySchema,
     bodySchemaLoading,
     requestConfig,

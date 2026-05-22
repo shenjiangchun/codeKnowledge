@@ -106,7 +106,11 @@ public class PythonKnowledgeGraphBuilder {
      * <p>Files that fail to parse are logged and skipped.
      */
     public List<MethodNode> buildProject(String projectPath, List<String> excludePaths) throws IOException {
-        List<String> effectiveExcludes = excludePaths != null ? excludePaths : Collections.emptyList();
+        List<String> effectiveExcludes = new ArrayList<>(
+                com.huawei.hisi.service.CodeAnalysisCoreService.EXCLUDED_SCAN_DIRS);
+        if (excludePaths != null) {
+            effectiveExcludes.addAll(excludePaths);
+        }
         List<MethodNode> result = new ArrayList<>();
 
         try (Stream<Path> walk = Files.walk(Paths.get(projectPath))) {

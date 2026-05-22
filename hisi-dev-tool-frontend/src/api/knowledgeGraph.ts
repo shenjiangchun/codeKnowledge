@@ -80,14 +80,23 @@ export interface EntryPoint {
 export interface DtoField {
   name: string
   type: string
+  jsonName?: string | null
   required: boolean
   constraints: string[]
+  /** Nested DTO when field type is itself a project class (single object). */
+  nested?: DtoSchema | null
+  /** Element DTO when field is a collection of project DTOs. */
+  itemSchema?: DtoSchema | null
+  /** Raw element type string when field is a collection (e.g. "UserDto" for List<UserDto>). */
+  itemType?: string | null
+  /** True when field is List/Set/Collection/array (any element type). */
+  isCollection?: boolean
 }
 
 export interface DtoSchema {
   fqn: string
   simpleName: string
-  kind: 'class' | 'record'
+  kind: 'class' | 'record' | 'enum'
   fields: DtoField[]
 }
 

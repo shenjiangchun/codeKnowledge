@@ -120,15 +120,27 @@ public class ApmDebugService {
                 "line", line
         ));
 
-        // Build OTEL_INSTRUMENTATION_METHODS_INCLUDE from the KG callee tree when
-        // the caller selected an entry method. Empty string means "don't set" so
-        // the agent keeps default auto-instrumentation only.
+        // Build OTEL_INSTRUMENTATION_METHODS_INCLUDE according to the selected
+        // instrumentation mode. Default: PRECISE when entryNodeId is provided,
+        // FULL_PROJECT otherwise (broad project-wide capture, no pre-selection).
         String methodsInclude = "";
-        try {
-            methodsInclude = kgMethodIncludeBuilder.build(request.entryNodeId());
-        } catch (Exception e) {
-            log.warn("[ApmDebug] Failed to build OTel methods include: {}", e.getMessage());
+        com.huawei.hisi.apm.model.ApmRequest.InstrumentationMode mode = request.instrumentationMode();
+        if (mode == null) {
+            mode = (request.entryNodeId() != null && !request.entryNodeId().isBlank())
+                    ? com.huawei.hisi.apm.model.ApmRequest.InstrumentationMode.PRECISE
+                    : com.huawei.hisi.apm.model.ApmRequest.InstrumentationMode.FULL_PROJECT;
         }
+        try {
+            switch (mode) {
+                case PRECISE -> methodsInclude = kgMethodIncludeBuilder.build(request.entryNodeId());
+                case FULL_PROJECT -> methodsInclude = kgMethodIncludeBuilder.buildFullProject(projectPath, false);
+                case NONE -> methodsInclude = "";
+            }
+        } catch (Exception e) {
+            log.warn("[ApmDebug] Failed to build OTel methods include (mode={}): {}", mode, e.getMessage());
+        }
+        log.info("[ApmDebug] Session {} mode={} include length={}", sessionId, mode,
+                methodsInclude == null ? 0 : methodsInclude.length());
 
         // Launch target process
         TargetProcessInfo processInfo = targetProcessManager.launch(

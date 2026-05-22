@@ -60,6 +60,16 @@ public class CodeAnalysisCoreService {
     );
 
     /**
+     * 扫描时统一排除的目录名（避免把构建产物 / IDE / VCS / git worktree 中其他分支代码扫进图谱）。
+     * 特别注意：`.worktrees` 必须排除 —— git worktree 子目录是其它分支的独立 checkout，
+     * 把它扫进来会导致幽灵入口点（不存在于当前分支但出现在 KG 中）。
+     */
+    public static final Set<String> EXCLUDED_SCAN_DIRS = Set.of(
+        ".git", ".worktrees", ".idea", ".vscode", ".claude", ".codeai",
+        "target", "build", "out", "dist", "node_modules", "generated-sources"
+    );
+
+    /**
      * 查找项目中的所有Java源文件根目录
      */
     public List<Path> findSourceRoots(Path projectPath) {
@@ -70,9 +80,8 @@ public class CodeAnalysisCoreService {
                 @Override
                 public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
                     String dirName = dir.getFileName().toString();
-                    // 跳过常见的非源码目录
-                    if (dirName.equals("target") || dirName.equals("build") ||
-                        dirName.equals("node_modules") || dirName.equals(".git")) {
+                    // 跳过常见的非源码目录（含 .worktrees / IDE / 构建产物）
+                    if (EXCLUDED_SCAN_DIRS.contains(dirName)) {
                         return FileVisitResult.SKIP_SUBTREE;
                     }
                     // 识别源码根目录
@@ -109,7 +118,7 @@ public class CodeAnalysisCoreService {
      */
     public List<File> findJavaFiles(String projectPath, List<String> excludePaths) {
         List<String> effective = (excludePaths == null || excludePaths.isEmpty())
-                ? List.of("target", "build")
+                ? new ArrayList<>(EXCLUDED_SCAN_DIRS)
                 : excludePaths;
         // 归一化：统一用正斜杠比对
         List<String> normalized = effective.stream()

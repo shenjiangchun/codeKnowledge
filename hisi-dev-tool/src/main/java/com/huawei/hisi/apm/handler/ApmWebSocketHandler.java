@@ -187,6 +187,7 @@ public class ApmWebSocketHandler extends TextWebSocketHandler {
         if (span.getAttributes() != null) {
             map.put("className", span.getAttributes().get("code.namespace"));
             map.put("methodName", span.getAttributes().get("code.function"));
+            map.put("attributes", span.getAttributes());
         }
         return map;
     }

@@ -30,7 +30,18 @@ public class DebugReportService {
 
     /**
      * Generate a debug report for a given session.
-     * Selects the trace with the most spans if multiple traces exist.
+     * <p>
+     * Trace-selection heuristic (in order):
+     * <ol>
+     *   <li>Prefer the LATEST trace whose root span is SERVER-kind (the actual
+     *       HTTP request — Spring Servlet auto-instrumentation creates SERVER
+     *       spans for controllers).</li>
+     *   <li>Otherwise, prefer the latest trace by root start time
+     *       (rules out long-lived startup / Neo4j-init traces that began at
+     *       process boot).</li>
+     * </ol>
+     * Picking by "most spans" was wrong — Neo4j vector-index initialization
+     * produces 8+ spans and would beat a clean 2-span /api/git/status request.
      */
     public DebugReport.Report generateReport(String sessionId) {
         List<ApmSpanEntity> allSpans = spanRepository.findBySessionId(sessionId);
@@ -39,16 +50,37 @@ public class DebugReportService {
             return emptyReport(sessionId, null);
         }
 
-        // Group by traceId, pick the trace with the most spans
+        // Group by traceId.
         Map<String, List<ApmSpanEntity>> byTrace = allSpans.stream()
                 .collect(Collectors.groupingBy(ApmSpanEntity::getTraceId));
 
+        // For each trace, find its root span (or earliest span as fallback).
+        // Then prefer SERVER-kind root, breaking ties by latest start time.
         List<ApmSpanEntity> selectedSpans = byTrace.values().stream()
-                .max(Comparator.comparingInt(List::size))
+                .max(Comparator
+                        .comparingInt((List<ApmSpanEntity> spans) -> isHttpEntryTrace(spans) ? 1 : 0)
+                        .thenComparingLong(this::traceStartTimeNs))
                 .orElse(List.of());
 
         String traceId = selectedSpans.isEmpty() ? null : selectedSpans.get(0).getTraceId();
+        log.info("[DebugReport] Selected trace {} ({} spans) for session {} out of {} candidate traces",
+                traceId, selectedSpans.size(), sessionId, byTrace.size());
         return buildReport(sessionId, traceId, selectedSpans);
+    }
+
+    /** A trace is "HTTP entry" if any root span has SERVER kind. */
+    private static boolean isHttpEntryTrace(List<ApmSpanEntity> spans) {
+        return spans.stream()
+                .filter(s -> isRootSpan(s, spans))
+                .anyMatch(s -> "SERVER".equalsIgnoreCase(s.getSpanKind()));
+    }
+
+    /** Trace start time = the earliest startTimeNs across its spans. */
+    private long traceStartTimeNs(List<ApmSpanEntity> spans) {
+        return spans.stream()
+                .mapToLong(ApmSpanEntity::getStartTimeNs)
+                .min()
+                .orElse(0L);
     }
 
     /**
