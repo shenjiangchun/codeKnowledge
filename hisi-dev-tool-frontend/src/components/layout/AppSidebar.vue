@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Document, Folder, Monitor, Search, Shop, DataAnalysis, Setting, Cpu } from '@element-plus/icons-vue'
+import { Document, Folder, Monitor, Search, Shop, DataAnalysis, Setting, Cpu, MagicStick } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import { computed } from 'vue'
 import type { Component } from 'vue'
@@ -60,6 +60,12 @@ const baseMenuItems: MenuItem[] = [
       { index: '/knowledge-graph', title: '图谱总览' },
       { index: '/prompt-config', title: '提示词配置' }
     ]
+  },
+  {
+    index: '/ram',
+    title: '需求分析大师',
+    icon: MagicStick,
+    menuKey: 'claude-terminal' as MenuKey
   },
   {
     index: '/project',
