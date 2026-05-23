@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "claude-opus-4-6-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-05-23T04:54:41.112Z",
+  "lastUpdated": "2026-05-23T05:23:02.303Z",
   "stats": {
-    "totalOperations": 623,
-    "totalFilesEdited": 351,
-    "totalAiLines": 18096,
-    "totalAiLinesDeleted": 997,
-    "totalCommits": 35
+    "totalOperations": 626,
+    "totalFilesEdited": 354,
+    "totalAiLines": 18202,
+    "totalAiLinesDeleted": 1063,
+    "totalCommits": 36
   },
   "pendingFiles": [
     {
@@ -845,34 +845,25 @@
       "lastTool": "Edit"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/controller/RamController.java",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/registry/AgentRegistry.java",
       "tool": "Edit",
       "operations": 1,
-      "timestamp": "2026-05-23T04:52:11.886Z",
-      "lastModified": "2026-05-23T04:52:11.886Z"
+      "timestamp": "2026-05-23T05:19:53.032Z",
+      "lastModified": "2026-05-23T05:19:53.032Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/composables/useRamSession.ts",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/kg/impl/HttpKgMcpClient.java",
       "tool": "Edit",
-      "operations": 4,
-      "timestamp": "2026-05-23T04:52:30.438Z",
-      "lastModified": "2026-05-23T04:52:56.145Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/ram/DraftPage.vue",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-05-23T04:53:12.725Z",
-      "lastModified": "2026-05-23T04:53:33.078Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/safety/CircuitPolicy.java",
-      "tool": "Write",
       "operations": 1,
-      "timestamp": "2026-05-23T04:54:41.112Z",
-      "lastModified": "2026-05-23T04:54:41.112Z"
+      "timestamp": "2026-05-23T05:22:51.700Z",
+      "lastModified": "2026-05-23T05:22:51.700Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/mcp/RamDagNodes.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-23T05:23:02.303Z",
+      "lastModified": "2026-05-23T05:23:02.303Z"
     }
   ]
 }

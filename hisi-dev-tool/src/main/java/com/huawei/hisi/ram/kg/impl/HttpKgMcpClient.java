@@ -47,6 +47,7 @@ public class HttpKgMcpClient implements KgMcpClient {
     private final OkHttpClient http;
     private final ObjectMapper mapper = new ObjectMapper();
 
+    @org.springframework.beans.factory.annotation.Autowired
     public HttpKgMcpClient(@Value("${ram.kg.base-url:http://localhost:8765/mcp}") String baseUrl) {
         this(baseUrl, defaultClient());
     }

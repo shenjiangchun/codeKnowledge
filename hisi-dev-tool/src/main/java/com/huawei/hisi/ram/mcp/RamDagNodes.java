@@ -18,6 +18,7 @@ public class RamDagNodes {
 
     private final List<DagNode> phaseOne;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public RamDagNodes(ClarifyNode clarifyNode,
                        ImpactNode impactNode,
                        ImplementNode implementNode,

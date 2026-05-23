@@ -22,6 +22,7 @@ public class AgentRegistry {
     private final String classpathResource;
     private Map<String, AgentManifest> manifests = Collections.emptyMap();
 
+    @org.springframework.beans.factory.annotation.Autowired
     public AgentRegistry(@Value("${ram.registry.path:ram/agents.yaml}") String classpathResource) {
         this.classpathResource = classpathResource;
     }
