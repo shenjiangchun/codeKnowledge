@@ -46,6 +46,29 @@ public class AnalyzeRequirementTool implements McpTool {
         input.put("userRequirement", rawInputObj.toString());
         input.put("mode", mode);
 
+        // Carry the project path(s) through to the clarify/impact stages.
+        // The REST controller sends 'project_path' (single, from the UI dropdown);
+        // the orchestrator also accepts an explicit 'project_paths' list. Both are
+        // normalized into 'projectHints' which StubClarifyLlmClient reads, and into
+        // 'project_paths' which ImpactNode requires.
+        java.util.List<String> projectPaths = new java.util.ArrayList<>();
+        Object singlePath = args.get("project_path");
+        if (singlePath instanceof String s && !s.isBlank()) {
+            projectPaths.add(s);
+        }
+        Object multiPaths = args.get("project_paths");
+        if (multiPaths instanceof java.util.List<?> list) {
+            for (Object o : list) {
+                if (o instanceof String s && !s.isBlank() && !projectPaths.contains(s)) {
+                    projectPaths.add(s);
+                }
+            }
+        }
+        if (!projectPaths.isEmpty()) {
+            input.put("projectHints", projectPaths);
+            input.put("project_paths", projectPaths);
+        }
+
         // Optional pre-allocated session id (REST controller pre-creates the row so
         // it can register the UUID->id mapping synchronously). When absent, the
         // orchestrator allocates a new session.
