@@ -1,20 +1,32 @@
 <script setup lang="ts">
 /**
- * RAM DraftPage — subscribes (rejoin) to an existing RAM session via the
- * {@code sid} route param, streams events through {@code useRamSession}, and
- * surfaces three side tabs (Clarify / Impact / Implement) plus a top-bar
- * {@code CostMeter} and an event timeline.
+ * RAM DraftPage (Wave-A refactor) — top-bar cost/status + DAG主视图 + 节点详情侧栏。
  *
- * When status === 'clarify', a {@code ClarifyModal} pops up to collect answers.
- * When the orchestrator reports an Impact result, an action surfaces to
- * navigate to {@code GraphPreviewPage} after stashing the payload in the
- * Pinia store.
+ * Layout:
+ *   ┌─ top bar ───────────────────────────────────────────┐
+ *   │ CostMeter | status tag |   spacer  | actions        │
+ *   ├─ DAG (horizontal 4-card) ───────────────────────────┤
+ *   │  Clarify → Impact → Implement → Verify              │
+ *   ├─ detail body (2-col) ───────────────────────────────┤
+ *   │  Node detail (markdown + ring graph + …)  │ Events  │
+ *   └─────────────────────────────────────────────────────┘
+ *
+ * The DAG card a user clicks drives which "node detail" view is rendered on
+ * the left of the body row. The right column always shows the live event feed.
+ *
+ * Behavior preserved from the prior version:
+ *   - Rejoins SSE on mount via {@code useRamSession.rejoin}
+ *   - Pops ClarifyModal when status === 'clarify'
+ *   - Pushes impact payload to the Pinia store + offers a graph navigation
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import CostMeter from '@/components/ram/CostMeter.vue'
 import ClarifyModal from '@/components/ram/ClarifyModal.vue'
+import DagFlow from '@/components/ram/DagFlow.vue'
+import ThreeRingGraph from '@/components/ram/ThreeRingGraph.vue'
+import { deriveDagSnapshot, type DagNodeKey } from '@/components/ram/dagModel'
 import { useRamSession } from '@/composables/useRamSession'
 import { getRamSession } from '@/api/ram'
 import { useRamStore, type ImpactPayload } from '@/stores/ram'
@@ -25,18 +37,16 @@ const ramStore = useRamStore()
 const session = useRamSession()
 
 const sid = computed<string>(() => String(route.params.sid ?? ''))
-const activeTab = ref<'clarify' | 'impact' | 'implement'>('clarify')
+const activeNode = ref<DagNodeKey>('clarify')
 const showClarify = ref<boolean>(false)
 const draftMd = ref<string>('')
 const impactMd = ref<string>('')
 const implementMd = ref<string>('')
+const verifyMd = ref<string>('')
 const impactPayload = ref<ImpactPayload | null>(null)
 
-/**
- * Best-effort extraction of structured payloads from a streamed event.
- * The backend may emit either {payload: {markdown: "..."}} or
- * {payload: {phase: "draft", text: "..."}} — handle both.
- */
+const dagNodes = computed(() => deriveDagSnapshot(session.events.value, session.status.value))
+
 function asString(value: unknown): string | null {
   return typeof value === 'string' ? value : null
 }
@@ -67,7 +77,6 @@ function extractImpact(payload: Readonly<Record<string, unknown>>): ImpactPayloa
   return { involved, modified, impacted, riskScores }
 }
 
-// Watch incoming events and route them to the right tab.
 watch(
   () => session.events.value,
   (list) => {
@@ -83,21 +92,25 @@ watch(
         if (md) impactMd.value = md
       } else if (phase === 'implement' || evt.type === 'IMPLEMENT_DONE') {
         if (md) implementMd.value = md
+      } else if (phase === 'verify' || evt.type === 'VERIFY_DONE') {
+        if (md) verifyMd.value = md
       } else if (phase === 'draft' || evt.type === 'DRAFT_UPDATE') {
         if (md) draftMd.value = md
       }
     }
+    // Auto-advance the active card focus to the latest running stage so the
+    // user's eyes naturally follow the orchestrator without manual clicks.
+    const running = dagNodes.value.find((n) => n.status === 'running' || n.status === 'awaiting-hitl')
+    if (running) activeNode.value = running.key
   },
   { deep: true }
 )
 
-// Sync the clarify modal with the composable status.
 watch(
   () => session.status.value,
   (s) => {
     showClarify.value = s === 'clarify'
     if (s === 'completed' || s === 'error' || s === 'aborted') {
-      // ensure we are off the clarify view
       showClarify.value = false
     }
   }
@@ -134,13 +147,33 @@ async function onAbort(): Promise<void> {
   }
 }
 
-/**
- * Rejoin an existing session: ask the backend for {@code currentSeq} and
- * {@code clarifyPending}, then route everything through the composable's
- * public {@link useRamSession.rejoin} method so dedup, cumulative-cost guard,
- * terminal-state transitions, and EventSource teardown all stay encapsulated
- * inside the composable.
- */
+function onDagClick(key: DagNodeKey): void {
+  activeNode.value = key
+}
+
+const detailMarkdown = computed(() => {
+  switch (activeNode.value) {
+    case 'clarify':
+      return draftMd.value
+    case 'impact':
+      return impactMd.value
+    case 'implement':
+      return implementMd.value
+    case 'verify':
+      return verifyMd.value
+  }
+})
+
+const detailTitle = computed(() => {
+  const labels: Record<DagNodeKey, string> = {
+    clarify: '澄清草稿',
+    impact: '影响分析报告',
+    implement: '实现三联草案',
+    verify: '验证清单'
+  }
+  return labels[activeNode.value]
+})
+
 onMounted(async () => {
   const id = sid.value
   if (!id) {
@@ -151,12 +184,9 @@ onMounted(async () => {
   try {
     const info = await getRamSession(id)
     if (info.clarifyPending) {
-      // We still rejoin the stream so future events keep flowing, but the
-      // modal is shown immediately based on the synchronous REST status.
       session.rejoin(id, info.currentSeq ?? 0)
       showClarify.value = true
     } else if (info.status === 'completed' || info.status === 'aborted') {
-      // Terminal: register the sid for downstream actions, no SSE needed.
       session.sessionId.value = id
       session.status.value = info.status
     } else {
@@ -175,9 +205,16 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="ram-draft-view">
-    <div class="topbar">
+    <header class="topbar">
+      <div class="topbar-title">
+        <span class="dot" />
+        <span class="title-text">需求分析大师</span>
+        <el-tag size="small" effect="plain" class="sid-tag">#{{ sid.slice(0, 8) }}</el-tag>
+      </div>
       <CostMeter :tokens="session.cost.value.tokens" :usd="session.cost.value.usd" />
-      <el-tag size="small">状态: {{ session.status.value }}</el-tag>
+      <el-tag size="small" :type="session.status.value === 'error' ? 'danger' : 'info'">
+        {{ session.status.value }}
+      </el-tag>
       <div class="topbar-spacer" />
       <el-button
         v-if="impactPayload"
@@ -195,33 +232,46 @@ onBeforeUnmount(() => {
       >
         中止
       </el-button>
-    </div>
+    </header>
 
-    <div class="body">
-      <el-card class="timeline" shadow="never">
-        <template #header>事件流</template>
+    <section class="dag-section">
+      <DagFlow :nodes="dagNodes" :active-key="activeNode" @node-click="onDagClick" />
+    </section>
+
+    <section class="body">
+      <article class="detail">
+        <header class="detail-header">
+          <h2>{{ detailTitle }}</h2>
+        </header>
+        <div class="detail-body">
+          <div v-if="activeNode === 'impact' && impactPayload" class="detail-impact">
+            <ThreeRingGraph
+              :involved="impactPayload.involved"
+              :modified="impactPayload.modified"
+              :impacted="impactPayload.impacted"
+              :risk-scores="impactPayload.riskScores ?? {}"
+              :width="520"
+              :height="520"
+            />
+            <pre class="md">{{ impactMd || '— 暂无详细 Markdown —' }}</pre>
+          </div>
+          <pre v-else class="md">{{ detailMarkdown || '— 暂无内容 —' }}</pre>
+        </div>
+      </article>
+
+      <aside class="events">
+        <header class="events-header">
+          <span>事件流</span>
+          <el-tag size="small" type="info" effect="plain">{{ session.events.value.length }}</el-tag>
+        </header>
         <ul class="event-list">
           <li v-for="evt in session.events.value" :key="evt.seq" class="event-item">
             <span class="seq">#{{ evt.seq }}</span>
             <span class="type">{{ evt.type }}</span>
           </li>
         </ul>
-      </el-card>
-
-      <el-card class="panel" shadow="never">
-        <el-tabs v-model="activeTab">
-          <el-tab-pane label="Clarify 草稿" name="clarify">
-            <pre class="md">{{ draftMd || '— 暂无 —' }}</pre>
-          </el-tab-pane>
-          <el-tab-pane label="Impact 报告" name="impact">
-            <pre class="md">{{ impactMd || '— 暂无 —' }}</pre>
-          </el-tab-pane>
-          <el-tab-pane label="Implement 三联" name="implement">
-            <pre class="md">{{ implementMd || '— 暂无 —' }}</pre>
-          </el-tab-pane>
-        </el-tabs>
-      </el-card>
-    </div>
+      </aside>
+    </section>
 
     <ClarifyModal
       :schema="session.clarifyQuestions.value"
@@ -235,52 +285,131 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .ram-draft-view {
-  padding: 12px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   height: 100%;
+  background: #f6f8fb;
 }
+
 .topbar {
   display: flex;
   align-items: center;
   gap: 12px;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 10px 16px;
+  border: 1px solid #ebeef5;
+}
+.topbar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #303133;
+}
+.topbar-title .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #409EFF, #67C23A);
+}
+.title-text {
+  font-size: 14px;
+}
+.sid-tag {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 .topbar-spacer {
   flex: 1;
 }
+
+.dag-section {
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #ebeef5;
+  padding: 16px;
+  overflow-x: auto;
+}
+
 .body {
   display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 12px;
+  grid-template-columns: 1fr 320px;
+  gap: 16px;
   flex: 1;
   min-height: 0;
 }
-.timeline {
-  overflow: auto;
+
+.detail,
+.events {
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #ebeef5;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
+
+.detail-header,
+.events-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f2f5;
+  font-weight: 600;
+  color: #303133;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.detail-header h2 {
+  font-size: 15px;
+  margin: 0;
+}
+.detail-body {
+  padding: 16px;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+.detail-impact {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
 .event-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 8px 0;
+  overflow: auto;
+  flex: 1;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
 }
 .event-item {
-  padding: 4px 0;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 6px 16px;
+  border-bottom: 1px solid #f5f7fa;
+  display: flex;
+  gap: 10px;
+}
+.event-item:hover {
+  background: #fafbfc;
 }
 .event-item .seq {
   color: #909399;
-  margin-right: 8px;
+  min-width: 36px;
 }
-.panel {
-  overflow: auto;
+.event-item .type {
+  color: #606266;
+  word-break: break-all;
 }
+
 .md {
   white-space: pre-wrap;
   margin: 0;
   font-size: 13px;
   color: #303133;
+  line-height: 1.55;
 }
 </style>
