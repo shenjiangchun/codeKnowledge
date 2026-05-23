@@ -289,8 +289,9 @@ public class RamController {
                                 "RUN_COMPLETED", Map.of()));
                         emitter.complete();
                     } else if (status == SessionStatus.FAILED) {
+                        Map<String, Object> errPayload = lastErrorPayload(backendId);
                         sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
-                                "RUN_FAILED", Map.of()));
+                                "RUN_FAILED", errPayload));
                         emitter.complete();
                     } else if (status == SessionStatus.ABORTED) {
                         sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
@@ -298,6 +299,10 @@ public class RamController {
                         emitter.complete();
                     }
                 }
+            } catch (ClientGoneException e) {
+                // Client disconnected — drop quietly and stop polling.
+                log.debug("SSE client gone for handle {}: {}", handle, e.getCause().getMessage());
+                try { emitter.complete(); } catch (Exception ignored) { /* already done */ }
             } catch (Exception e) {
                 log.warn("SSE tick failed for handle {}", handle, e);
                 emitter.completeWithError(e);
@@ -315,7 +320,20 @@ public class RamController {
         try {
             emitter.send(SseEmitter.event().data(payload));
         } catch (IOException e) {
-            throw new IllegalStateException("SSE send failed", e);
+            // ClientAbortException ("Connection reset by peer", "Broken pipe") means the
+            // browser/tab went away. Not a server fault — emitter is already dead, log
+            // at DEBUG and bail out silently so the scheduler stops re-firing.
+            throw new ClientGoneException(e);
+        } catch (IllegalStateException e) {
+            // emitter.send after complete() — same as client gone.
+            throw new ClientGoneException(e);
+        }
+    }
+
+    /** Marker exception for "client already disconnected"; suppresses WARN noise. */
+    private static final class ClientGoneException extends RuntimeException {
+        ClientGoneException(Throwable cause) {
+            super(cause);
         }
     }
 
@@ -325,6 +343,25 @@ public class RamController {
         out.put("type", ev.getType() == null ? null : ev.getType().name());
         out.put("payload", parseJsonPayload(ev.getPayload()));
         return out;
+    }
+
+    /** Find the most recent ERROR payload for a session so RUN_FAILED carries the cause. */
+    private Map<String, Object> lastErrorPayload(long backendId) {
+        try {
+            List<AgentEvent> events = eventRepository.findBySessionId(backendId);
+            for (int i = events.size() - 1; i >= 0; i--) {
+                AgentEvent ev = events.get(i);
+                if (ev.getType() == EventType.ERROR) {
+                    Map<String, Object> payload = parseJsonPayload(ev.getPayload());
+                    Map<String, Object> out = new LinkedHashMap<>(payload);
+                    out.putIfAbsent("sourceSeq", ev.getSeq());
+                    return out;
+                }
+            }
+        } catch (RuntimeException e) {
+            log.warn("lastErrorPayload lookup failed for sid={}", backendId, e);
+        }
+        return Map.of("message", "session marked FAILED but no ERROR event recorded");
     }
 
     private Map<String, Object> syntheticEvent(long seq, String type, Map<String, Object> payload) {
