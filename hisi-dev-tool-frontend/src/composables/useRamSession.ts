@@ -40,6 +40,15 @@ function asNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
+// Diagnostic logger for the RAM session lifecycle. Intentionally uses
+// console.debug so it stays out of the default browser console filter, but
+// can be enabled by switching the level to "Verbose". Added per request to
+// trace RUN_FAILED root cause end-to-end.
+const dbg = (...args: unknown[]): void => {
+  // eslint-disable-next-line no-console
+  console.debug('[RAM]', ...args)
+}
+
 export function useRamSession(): UseRamSessionReturn {
   const sessionId: Ref<string | null> = ref(null)
   const events: Ref<RamEvent[]> = ref([])
@@ -76,15 +85,19 @@ export function useRamSession(): UseRamSessionReturn {
           payload: (data.payload ?? {}) as Record<string, unknown>
         }
       }
-    } catch {
+    } catch (err) {
+      dbg('handleEvent JSON.parse failed', err, raw.data)
       // ignore malformed event
     }
     if (!parsed) {
+      dbg('handleEvent dropped event (unparsed or missing seq/type)')
       return
     }
+    dbg('event', { seq: parsed.seq, type: parsed.type, payload: parsed.payload })
     // Dedup: skip seqs we've already processed (re-opens after clarify/resume
     // will start the SSE poll at lastSeq via ?afterSeq=, but defend in depth).
     if (parsed.seq <= lastSeq.value) {
+      dbg('event dedup-skip', { seq: parsed.seq, lastSeq: lastSeq.value })
       return
     }
     lastSeq.value = parsed.seq
@@ -119,34 +132,43 @@ export function useRamSession(): UseRamSessionReturn {
           questions
         }
         status.value = 'clarify'
+        dbg('status -> clarify', clarifyQuestions.value)
         tearDown()
         break
       }
       case 'RUN_COMPLETED':
         status.value = 'completed'
+        dbg('status -> completed')
         tearDown()
         break
       case 'RUN_ABORTED':
         status.value = 'aborted'
+        dbg('status -> aborted')
         tearDown()
         break
       case 'RUN_FAILED':
       case 'ERROR':
         status.value = 'error'
+        dbg('status -> error type=' + parsed.type + ' payload=', parsed.payload)
         tearDown()
         break
       default:
         if (status.value === 'idle') {
           status.value = 'running'
+          dbg('status -> running (first non-terminal event)')
         }
     }
   }
 
   const openStream = (sid: string): void => {
     tearDown()
-    const es = new EventSource(ramStreamUrl(sid, lastSeq.value))
+    const url = ramStreamUrl(sid, lastSeq.value)
+    dbg('openStream', { sid, afterSeq: lastSeq.value, url })
+    const es = new EventSource(url)
+    es.onopen = () => dbg('SSE onopen', { sid, readyState: es.readyState })
     es.onmessage = handleEvent
     es.onerror = () => {
+      dbg('SSE onerror', { sid, readyState: es.readyState, status: status.value })
       // EventSource auto-retries while readyState !== CLOSED. Surface a failure
       // only when the connection is permanently closed by the browser.
       if (es.readyState === EventSource.CLOSED && status.value === 'running') {
@@ -158,6 +180,7 @@ export function useRamSession(): UseRamSessionReturn {
   }
 
   const start = async (rawInput: string, projectPath: string): Promise<string> => {
+    dbg('start() called', { rawInput, projectPath })
     events.value = []
     clarifyQuestions.value = null
     tokens.value = 0
@@ -166,10 +189,12 @@ export function useRamSession(): UseRamSessionReturn {
     status.value = 'running'
     try {
       const resp = await startRamSession({ rawInput, projectPath })
+      dbg('start() POST /sessions OK', resp)
       sessionId.value = resp.sessionId
       openStream(resp.sessionId)
       return resp.sessionId
     } catch (err: unknown) {
+      dbg('start() POST /sessions FAILED', err)
       status.value = 'error'
       throw err
     }

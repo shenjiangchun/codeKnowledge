@@ -52,6 +52,7 @@ public class ClarifyNode implements DagNode {
 
     @Override
     public Map<String, Object> execute(Map<String, Object> input) throws ClarifyRequiredException {
+        log.info("[RAM][ClarifyNode] execute input.keys={}", input == null ? "null" : input.keySet());
         if (input == null) {
             throw new IllegalArgumentException("ClarifyNode input must not be null");
         }
@@ -62,14 +63,20 @@ public class ClarifyNode implements DagNode {
         }
 
         Map<String, Object> extracted = clarifyLlmClient.extractRequirements(userRequirement, input);
-        log.debug("clarify llm extracted keys={}", extracted == null ? List.of() : extracted.keySet());
+        log.info("[RAM][ClarifyNode] llm extracted keys={} intent.len={} project_paths={} acceptance_criteria.size={}",
+                extracted == null ? List.of() : extracted.keySet(),
+                extracted == null ? 0 : String.valueOf(extracted.getOrDefault("intent", "")).length(),
+                extracted == null ? null : extracted.get("project_paths"),
+                extracted == null || !(extracted.get("acceptance_criteria") instanceof List<?> ac) ? 0 : ac.size());
 
         ValidationResult result = schemaValidator.validate(SCHEMA_NAME, extracted);
         if (!result.passed()) {
             List<String> questions = buildQuestions(result);
-            log.info("clarify validation failed, raising clarify-required questions={}", questions);
+            log.info("[RAM][ClarifyNode] schema validation FAILED missing={} violations={} questions={}",
+                    result.missingFields(), result.violations(), questions);
             throw new ClarifyRequiredException(questions);
         }
+        log.info("[RAM][ClarifyNode] OK schema passed");
         return extracted;
     }
 

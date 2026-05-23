@@ -1,6 +1,8 @@
 package com.huawei.hisi.ram.nodes.impl;
 
 import com.huawei.hisi.ram.nodes.ClarifyLlmClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
@@ -20,11 +22,18 @@ import java.util.Map;
 @Component
 public class StubClarifyLlmClient implements ClarifyLlmClient {
 
+    private static final Logger log = LoggerFactory.getLogger(StubClarifyLlmClient.class);
+
     @Override
     public Map<String, Object> extractRequirements(String userRequest, Map<String, Object> hints) {
+        List<String> paths = extractProjectPaths(hints);
+        log.info("[RAM][StubClarifyLlmClient] extractRequirements userRequest.len={} hints.keys={} projectPaths={}",
+                userRequest == null ? 0 : userRequest.length(),
+                hints == null ? "null" : hints.keySet(),
+                paths);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("intent", userRequest == null ? "" : userRequest);
-        out.put("project_paths", extractProjectPaths(hints));
+        out.put("project_paths", paths);
         out.put("acceptance_criteria", List.of());
         return out;
     }

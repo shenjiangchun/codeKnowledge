@@ -168,7 +168,9 @@ public class RamController {
 
     @PostMapping("/sessions")
     public ApiResponse<StartSessionResponse> startSession(@RequestBody StartSessionRequest request) {
+        log.info("[RAM][POST /sessions] entry request={}", request);
         if (request == null || request.rawInput() == null || request.rawInput().isBlank()) {
+            log.warn("[RAM][POST /sessions] rejecting: rawInput is blank");
             return ApiResponse.error(400, "rawInput is required");
         }
         String handle = UUID.randomUUID().toString();
@@ -181,6 +183,8 @@ public class RamController {
         AgentSession seeded = sessionRepository.save(AgentSession.newRunning(userId));
         long backendId = seeded.getId();
         sessionIdMap.put(handle, backendId);
+        log.info("[RAM][POST /sessions] seeded session handle={} backendId={} userId={} projectPath={}",
+                handle, backendId, userId, request.projectPath());
 
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("raw_input", request.rawInput());
@@ -197,13 +201,22 @@ public class RamController {
     }
 
     private void dispatchAnalyze(String handle, Map<String, Object> args) {
+        log.info("[RAM][dispatchAnalyze] start handle={} args.keys={} sid={}",
+                handle, args.keySet(), args.get("session_id"));
         try {
             McpResponse resp = ramMcpServer.invoke("analyze_requirement", args);
-            if (resp != null && !resp.ok()) {
-                log.warn("analyze_requirement failed for handle {}: {}", handle, resp.error());
+            if (resp == null) {
+                log.error("[RAM][dispatchAnalyze] handle={} got null McpResponse", handle);
+            } else if (!resp.ok()) {
+                log.warn("[RAM][dispatchAnalyze] handle={} analyze_requirement returned NOT OK error={}",
+                        handle, resp.error());
+            } else {
+                log.info("[RAM][dispatchAnalyze] handle={} analyze_requirement OK result.keys={}",
+                        handle, resp.result() == null ? "null" : resp.result().keySet());
             }
         } catch (Exception e) {
-            log.error("analyze_requirement threw for handle {}", handle, e);
+            log.error("[RAM][dispatchAnalyze] handle={} threw {}: {}",
+                    handle, e.getClass().getName(), e.getMessage(), e);
         }
     }
 

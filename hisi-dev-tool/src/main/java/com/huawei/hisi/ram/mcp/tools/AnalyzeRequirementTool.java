@@ -4,6 +4,8 @@ import com.huawei.hisi.ram.mcp.McpTool;
 import com.huawei.hisi.ram.mcp.RamDagNodes;
 import com.huawei.hisi.ram.orchestrator.ExecutionResult;
 import com.huawei.hisi.ram.orchestrator.RequirementAnalysisOrchestrator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -15,6 +17,8 @@ import java.util.Map;
  */
 @Component
 public class AnalyzeRequirementTool implements McpTool {
+
+    private static final Logger log = LoggerFactory.getLogger(AnalyzeRequirementTool.class);
 
     private final RequirementAnalysisOrchestrator orchestrator;
     private final RamDagNodes nodes;
@@ -32,6 +36,11 @@ public class AnalyzeRequirementTool implements McpTool {
 
     @Override
     public Map<String, Object> execute(Map<String, Object> args) {
+        log.info("[RAM][analyze_requirement] entry args.keys={} session_id={} project_path={} mode={}",
+                args == null ? "null" : args.keySet(),
+                args == null ? null : args.get("session_id"),
+                args == null ? null : args.get("project_path"),
+                args == null ? null : args.get("mode"));
         if (args == null) {
             throw new IllegalArgumentException("args is required");
         }
@@ -73,12 +82,22 @@ public class AnalyzeRequirementTool implements McpTool {
         // it can register the UUID->id mapping synchronously). When absent, the
         // orchestrator allocates a new session.
         Object sidObj = args.get("session_id");
+        log.info("[RAM][analyze_requirement] dispatching DAG input.keys={} projectPaths={} preAllocSessionId={} nodeCount={}",
+                input.keySet(), projectPaths, sidObj, nodes.phaseOne().size());
         ExecutionResult result;
-        if (sidObj instanceof Number n) {
-            result = orchestrator.start(n.longValue(), input, nodes.phaseOne());
-        } else {
-            result = orchestrator.start(userId, input, nodes.phaseOne());
+        try {
+            if (sidObj instanceof Number n) {
+                result = orchestrator.start(n.longValue(), input, nodes.phaseOne());
+            } else {
+                result = orchestrator.start(userId, input, nodes.phaseOne());
+            }
+        } catch (RuntimeException ex) {
+            log.error("[RAM][analyze_requirement] orchestrator.start threw sessionId={} message={}",
+                    sidObj, ex.getMessage(), ex);
+            throw ex;
         }
+        log.info("[RAM][analyze_requirement] done sessionId={} status={} executed={} skipped={}",
+                result.sessionId(), result.status(), result.executedNodes(), result.skippedNodes());
         return ExecutionResultMapper.toMap(result);
     }
 }

@@ -59,6 +59,9 @@ public class ImpactNode implements DagNode {
 
     @Override
     public Map<String, Object> execute(Map<String, Object> input) throws ClarifyRequiredException {
+        log.info("[RAM][ImpactNode] execute input.keys={} project_paths={}",
+                input == null ? "null" : input.keySet(),
+                input == null ? null : input.get(INPUT_PROJECT_PATHS));
         if (input == null) {
             throw new IllegalArgumentException("ImpactNode input must not be null");
         }
@@ -70,14 +73,33 @@ public class ImpactNode implements DagNode {
         }
         // Phase 1: single-project execution against the first path.
         String projectPath = projectPaths.get(0);
-        log.debug("impact node executing intent='{}' projectPath='{}'", intent, projectPath);
+        log.info("[RAM][ImpactNode] resolving intent='{}' projectPath='{}'", intent, projectPath);
 
-        InvolvedRing involved = involvedRingResolver.resolve(intent, projectPath);
-        ModifiedRing modified = modifiedRingResolver.resolve(involved, projectPath, DEFAULT_TREE_DEPTH);
-        ImpactRing impact = impactRingResolver.resolve(modified, projectPath);
-        RiskScore risk = riskScorer.score(involved, modified, impact);
-        DeterministicValidator.ValidationOutcome validation =
-                deterministicValidator.validate(involved, modified, impact, projectPath);
+        InvolvedRing involved;
+        ModifiedRing modified;
+        ImpactRing impact;
+        RiskScore risk;
+        DeterministicValidator.ValidationOutcome validation;
+        try {
+            involved = involvedRingResolver.resolve(intent, projectPath);
+            log.info("[RAM][ImpactNode] involved seeds={} entries={} impls={}",
+                    involved.seeds().size(), involved.entries().size(), involved.impls().size());
+            modified = modifiedRingResolver.resolve(involved, projectPath, DEFAULT_TREE_DEPTH);
+            log.info("[RAM][ImpactNode] modified tree.size={}", modified.tree().size());
+            impact = impactRingResolver.resolve(modified, projectPath);
+            log.info("[RAM][ImpactNode] impacted upstream={} downstream={} crossService={} bridges={}",
+                    impact.upstream().size(), impact.downstream().size(),
+                    impact.crossService().size(), impact.bridges().size());
+            risk = riskScorer.score(involved, modified, impact);
+            log.info("[RAM][ImpactNode] risk score={} level={}", risk.score(), risk.level());
+            validation = deterministicValidator.validate(involved, modified, impact, projectPath);
+            log.info("[RAM][ImpactNode] validation passed={} violations={}",
+                    validation.passed(), validation.violations());
+        } catch (RuntimeException ex) {
+            log.error("[RAM][ImpactNode] resolver chain threw {}: {}",
+                    ex.getClass().getName(), ex.getMessage(), ex);
+            throw ex;
+        }
 
         Map<String, Object> output = new LinkedHashMap<>();
         output.put("involved", Map.of(

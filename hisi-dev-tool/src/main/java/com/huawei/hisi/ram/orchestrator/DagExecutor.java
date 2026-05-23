@@ -7,6 +7,8 @@ import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.model.SessionStatus;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -32,6 +34,8 @@ import java.util.Map;
 @Component
 public class DagExecutor {
 
+    private static final Logger log = LoggerFactory.getLogger(DagExecutor.class);
+
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private final AgentEventRepository eventRepo;
@@ -54,6 +58,11 @@ public class DagExecutor {
         Map<String, Object> previousOutput = initialInput == null ? Map.of() : initialInput;
 
         List<AgentEvent> sessionEvents = eventRepo.findBySessionId(sessionId);
+        log.info("[RAM][DagExecutor] run start sid={} nodes={} initialInput.keys={} priorEvents={}",
+                sessionId,
+                orderedNodes.stream().map(DagNode::name).toList(),
+                previousOutput.keySet(),
+                sessionEvents.size());
 
         for (DagNode node : orderedNodes) {
             Map<String, Object> input = previousOutput;
@@ -61,20 +70,28 @@ public class DagExecutor {
 
             Map<String, Object> cached = findCachedOutput(sessionEvents, node.name(), inputsHash);
             if (cached != null) {
+                log.info("[RAM][DagExecutor] sid={} node={} CACHE HIT inputsHash={} cachedOutput.keys={}",
+                        sessionId, node.name(), inputsHash, cached.keySet());
                 skipped.add(node.name());
                 previousOutput = cached;
                 continue;
             }
 
+            log.info("[RAM][DagExecutor] sid={} node={} EXECUTE inputsHash={} input.keys={}",
+                    sessionId, node.name(), inputsHash, input.keySet());
             Map<String, Object> output;
             try {
                 output = node.execute(input);
             } catch (ClarifyRequiredException ce) {
+                log.info("[RAM][DagExecutor] sid={} node={} CLARIFY_REQ questions={}",
+                        sessionId, node.name(), ce.getClarifyQuestions());
                 appendClarifyReq(sessionId, node.name(), ce.getClarifyQuestions());
                 sessionRepo.updateStatus(sessionId, SessionStatus.WAITING_CLARIFY);
                 return new ExecutionResult(
                         sessionId, SessionStatus.WAITING_CLARIFY, executed, skipped, previousOutput);
             } catch (RuntimeException ex) {
+                log.error("[RAM][DagExecutor] sid={} node={} FAILED message={} type={}",
+                        sessionId, node.name(), ex.getMessage(), ex.getClass().getName(), ex);
                 appendError(sessionId, node.name(), ex);
                 sessionRepo.updateStatus(sessionId, SessionStatus.FAILED);
                 return new ExecutionResult(
@@ -82,11 +99,15 @@ public class DagExecutor {
             }
 
             Map<String, Object> safeOutput = output == null ? Map.of() : output;
+            log.info("[RAM][DagExecutor] sid={} node={} OK output.keys={}",
+                    sessionId, node.name(), safeOutput.keySet());
             appendCheckpoint(sessionId, node.name(), inputsHash, safeOutput);
             executed.add(node.name());
             previousOutput = safeOutput;
         }
 
+        log.info("[RAM][DagExecutor] sid={} DONE executed={} skipped={}",
+                sessionId, executed, skipped);
         sessionRepo.updateStatus(sessionId, SessionStatus.DONE);
         return new ExecutionResult(sessionId, SessionStatus.DONE, executed, skipped, previousOutput);
     }
