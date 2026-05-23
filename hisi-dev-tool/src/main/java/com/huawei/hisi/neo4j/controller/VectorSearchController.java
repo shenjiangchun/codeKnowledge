@@ -57,8 +57,24 @@ public class VectorSearchController {
      */
     @PostMapping
     public ResponseEntity<ApiResponse<SearchResult>> search(@Valid @RequestBody SearchRequest request) {
+        // 路径规范化：统一转为正斜杠形式（项目约定）。
+        // 防止 Windows 反斜杠路径与正斜杠路径在 Neo4j 中作为两份独立数据匹配。
+        String normalizedProjectPath = PathUtils.normalize(request.getProjectPath());
+        List<String> normalizedProjectPaths;
+        if (request.getProjectPaths() != null && !request.getProjectPaths().isEmpty()) {
+            normalizedProjectPaths = new ArrayList<>(request.getProjectPaths().size());
+            for (String p : request.getProjectPaths()) {
+                String n = PathUtils.normalize(p);
+                if (n != null && !n.isBlank()) {
+                    normalizedProjectPaths.add(n);
+                }
+            }
+        } else {
+            normalizedProjectPaths = null;
+        }
+
         log.info("收到搜索请求: query={}, projectPath={}, projectPaths={}, language={}, limit={}, graphDepth={}",
-                request.getQuery(), request.getProjectPath(), request.getProjectPaths(), request.getLanguage(),
+                request.getQuery(), normalizedProjectPath, normalizedProjectPaths, request.getLanguage(),
                 request.getLimit(), request.getGraphDepth());
 
         // 1. 查询长度校验
@@ -67,15 +83,17 @@ public class VectorSearchController {
         }
 
         try {
-            // 2. 解析项目路径列表
-            List<String> paths = request.getProjectPaths() != null && !request.getProjectPaths().isEmpty()
-                    ? request.getProjectPaths()
-                    : request.getProjectPath() != null ? List.of(request.getProjectPath()) : List.of();
+            // 2. 解析项目路径列表（已规范化）
+            List<String> paths = normalizedProjectPaths != null && !normalizedProjectPaths.isEmpty()
+                    ? normalizedProjectPaths
+                    : normalizedProjectPath != null && !normalizedProjectPath.isBlank()
+                            ? List.of(normalizedProjectPath)
+                            : List.of();
 
             // 3. 执行搜索
             SearchResult result = hybridSearchService.hybridSearch(
                     request.getQuery(),
-                    request.getProjectPath(),
+                    normalizedProjectPath,
                     paths,
                     request.getLanguage(),
                     request.getLimit(),
@@ -121,6 +139,8 @@ public class VectorSearchController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> diagnose(
             @PathVariable String projectPath,
             @RequestParam(required = false) String testQuery) {
+        // 路径规范化：统一为正斜杠形式（项目约定）
+        projectPath = PathUtils.normalize(projectPath);
         try {
             Map<String, Object> diagnosis = new HashMap<>();
 

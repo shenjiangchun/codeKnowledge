@@ -10,6 +10,7 @@ import com.huawei.hisi.neo4j.repository.Neo4jSqlNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jSqlNodeRepository.MethodBySqlNode;
 import com.huawei.hisi.neo4j.repository.Neo4jSqlNodeRepository.SqlNodeByMethod;
 import com.huawei.hisi.neo4j.repository.Neo4jSqlNodeRepository.SqlWithScore;
+import com.huawei.hisi.utils.PathUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -843,8 +844,23 @@ public class HybridSearchService {
      * 解析 projectPaths：未传入时退化为 projectPath（单项目模式）。
      */
     private List<String> resolveProjectPaths(String projectPath, List<String> projectPaths) {
-        if (projectPaths != null && !projectPaths.isEmpty()) return projectPaths;
-        if (projectPath != null && !projectPath.isBlank()) return List.of(projectPath);
+        // 路径规范化：统一转为正斜杠形式，防止 Windows 反斜杠路径与正斜杠路径
+        // 在 Neo4j 中作为两份独立数据匹配（导致维度不一致 / 0 结果）。
+        // 项目约定：所有传入的路径在边界处必须经过 PathUtils.normalize() 归一。
+        if (projectPaths != null && !projectPaths.isEmpty()) {
+            List<String> normalized = new ArrayList<>(projectPaths.size());
+            for (String p : projectPaths) {
+                String n = PathUtils.normalize(p);
+                if (n != null && !n.isBlank()) {
+                    normalized.add(n);
+                }
+            }
+            if (!normalized.isEmpty()) return normalized;
+        }
+        String normalizedSingle = PathUtils.normalize(projectPath);
+        if (normalizedSingle != null && !normalizedSingle.isBlank()) {
+            return List.of(normalizedSingle);
+        }
         return List.of();
     }
 
