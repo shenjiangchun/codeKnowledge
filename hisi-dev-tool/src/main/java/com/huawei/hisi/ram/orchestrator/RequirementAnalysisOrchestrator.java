@@ -54,6 +54,17 @@ public class RequirementAnalysisOrchestrator {
         return executor.run(nodes, session.getId(), userInput);
     }
 
+    /**
+     * Variant that runs the DAG against a session that was pre-created by the
+     * caller (e.g. the REST controller, which needs the long id available
+     * synchronously to set up its UUID->id mapping before the async dispatch).
+     */
+    public ExecutionResult start(long existingSessionId,
+                                 Map<String, Object> userInput,
+                                 List<DagNode> nodes) {
+        return executor.run(nodes, existingSessionId, userInput);
+    }
+
     public ExecutionResult resume(long sessionId,
                                   Map<String, Object> clarifyAnswers,
                                   List<DagNode> nodes) {

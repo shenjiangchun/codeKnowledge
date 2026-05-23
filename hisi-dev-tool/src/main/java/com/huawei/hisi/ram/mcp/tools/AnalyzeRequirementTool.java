@@ -46,7 +46,16 @@ public class AnalyzeRequirementTool implements McpTool {
         input.put("userRequirement", rawInputObj.toString());
         input.put("mode", mode);
 
-        ExecutionResult result = orchestrator.start(userId, input, nodes.phaseOne());
+        // Optional pre-allocated session id (REST controller pre-creates the row so
+        // it can register the UUID->id mapping synchronously). When absent, the
+        // orchestrator allocates a new session.
+        Object sidObj = args.get("session_id");
+        ExecutionResult result;
+        if (sidObj instanceof Number n) {
+            result = orchestrator.start(n.longValue(), input, nodes.phaseOne());
+        } else {
+            result = orchestrator.start(userId, input, nodes.phaseOne());
+        }
         return ExecutionResultMapper.toMap(result);
     }
 }

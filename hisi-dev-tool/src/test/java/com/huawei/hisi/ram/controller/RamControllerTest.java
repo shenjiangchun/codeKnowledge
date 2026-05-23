@@ -33,6 +33,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
@@ -72,6 +73,11 @@ class RamControllerTest {
     @Test
     @DisplayName("POST /sessions returns a UUID handle and triggers analyze_requirement")
     void startSession_dispatchesAnalyze() throws Exception {
+        // Pre-create returns a session row with a long id so the controller can
+        // register the UUID->id mapping synchronously, BEFORE the async dispatch.
+        AgentSession seeded = AgentSession.builder().id(42L).userId("alice")
+                .status(SessionStatus.RUNNING).build();
+        when(sessionRepository.save(any(AgentSession.class))).thenReturn(seeded);
         when(ramMcpServer.invoke(eq("analyze_requirement"), anyMap()))
                 .thenReturn(McpResponse.ok(Map.of("session_id", 42L, "status", "DONE")));
 
@@ -84,7 +90,7 @@ class RamControllerTest {
                 .andExpect(jsonPath("$.data.sessionId").exists())
                 .andReturn();
 
-        // Async dispatch should have called analyze_requirement.
+        // Async dispatch should have called analyze_requirement with the pre-allocated id.
         ArgumentCaptor<Map<String, Object>> argsCap = ArgumentCaptor.forClass(Map.class);
         verify(ramMcpServer, timeout(2000).times(1))
                 .invoke(eq("analyze_requirement"), argsCap.capture());
@@ -92,7 +98,8 @@ class RamControllerTest {
                 .containsEntry("raw_input", "add login")
                 .containsEntry("user_id", "alice")
                 .containsEntry("mode", "interactive")
-                .containsEntry("project_path", "/tmp/proj");
+                .containsEntry("project_path", "/tmp/proj")
+                .containsEntry("session_id", 42L);
 
         String json = result.getResponse().getContentAsString();
         assertThat(json).contains("sessionId");
@@ -167,5 +174,49 @@ class RamControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(404))
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("session not found")));
+    }
+
+    @Test
+    @DisplayName("GET /sessions/{sid} returns rejoin info with status, currentSeq, clarifyPending")
+    void sessionInfo_returnsRejoinInfo() throws Exception {
+        String handle = UUID.randomUUID().toString();
+        controller.registerSessionMapping(handle, 21L);
+        AgentSession session = AgentSession.builder().id(21L)
+                .status(SessionStatus.RUNNING).build();
+        when(sessionRepository.findById(21L)).thenReturn(Optional.of(session));
+        when(eventRepository.findMaxSeq(21L)).thenReturn(7L);
+        AgentEvent clarifyReq = AgentEvent.builder().id(1L).sessionId(21L).seq(7L)
+                .type(EventType.CLARIFY_REQ).payload("{}").build();
+        when(eventRepository.findBySessionId(21L)).thenReturn(List.of(clarifyReq));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/ram/sessions/" + handle))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("RUNNING"))
+                .andExpect(jsonPath("$.data.currentSeq").value(7))
+                .andExpect(jsonPath("$.data.clarifyPending").value(true));
+    }
+
+    @Test
+    @DisplayName("GET /sessions/{sid}/stream emits stored events live via SseEmitter")
+    void stream_emitsStoredEventsLive() throws Exception {
+        String handle = UUID.randomUUID().toString();
+        long sid = 88L;
+        controller.registerSessionMapping(handle, sid);
+
+        AgentEvent ev1 = AgentEvent.builder().id(1L).sessionId(sid).seq(1L)
+                .type(EventType.ASSISTANT_DELTA).payload("{\"text\":\"hello\"}").build();
+        AgentEvent ev2 = AgentEvent.builder().id(2L).sessionId(sid).seq(2L)
+                .type(EventType.CHECKPOINT).payload("{\"nodeName\":\"clarify\"}").build();
+        when(eventRepository.findBySessionId(sid)).thenReturn(List.of(ev1, ev2));
+        when(sessionRepository.findById(sid)).thenReturn(Optional.of(
+                AgentSession.builder().id(sid).status(SessionStatus.DONE).build()));
+
+        controller.stream(handle, null);
+
+        // Wait for the SSE poll loop to read from the repository at least once,
+        // which proves the live-poll path runs (not a one-shot post-completion drain).
+        verify(eventRepository, timeout(3000).atLeast(1)).findBySessionId(sid);
+        verify(sessionRepository, timeout(3000).atLeast(1)).findById(sid);
     }
 }

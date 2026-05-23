@@ -38,6 +38,17 @@ export function abortRamSession(sessionId: string): Promise<AbortResponse> {
 }
 
 /** Absolute (proxied) URL for the SSE endpoint. */
-export function ramStreamUrl(sessionId: string): string {
-  return `/api/ram/sessions/${sessionId}/stream`
+export function ramStreamUrl(sessionId: string, afterSeq?: number): string {
+  const base = `/api/ram/sessions/${sessionId}/stream`
+  return typeof afterSeq === 'number' && afterSeq > 0 ? `${base}?afterSeq=${afterSeq}` : base
+}
+
+export interface SessionInfoResponse {
+  status: string
+  currentSeq: number
+  clarifyPending: boolean
+}
+
+export function getRamSession(sessionId: string): Promise<SessionInfoResponse> {
+  return request.get(`/ram/sessions/${sessionId}`)
 }

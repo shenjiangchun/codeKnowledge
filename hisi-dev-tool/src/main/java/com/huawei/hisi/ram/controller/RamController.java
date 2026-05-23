@@ -11,20 +11,23 @@ import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.model.SessionStatus;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -35,20 +38,24 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * <p>Endpoints (all under {@code /api/ram}):
  * <ul>
- *   <li>{@code POST /sessions} – kicks off an {@code analyze_requirement} run
- *       asynchronously and returns a UUID handle.</li>
+ *   <li>{@code POST /sessions} – pre-creates a session row, returns the UUID
+ *       handle, then runs {@code analyze_requirement} asynchronously against
+ *       the pre-allocated id.</li>
+ *   <li>{@code GET /sessions/{sid}} – rejoin info: status / current seq /
+ *       clarifyPending flag.</li>
  *   <li>{@code GET /sessions/{sid}/stream} – Server-Sent-Events tail of
- *       {@code agent_event} rows for that session.</li>
+ *       {@code agent_event} rows for that session. Accepts an optional
+ *       {@code ?afterSeq=N} query param to start polling beyond a seq.</li>
  *   <li>{@code POST /sessions/{sid}/clarify} – submits clarification answers.</li>
  *   <li>{@code POST /sessions/{sid}/resume} – resumes a parked session.</li>
  *   <li>{@code POST /sessions/{sid}/abort} – signals abort, appends an
  *       {@code ERROR} event tagged {@code RUN_ABORTED}.</li>
  * </ul>
  *
- * <p>The frontend-facing {@code sessionId} is a UUID. Once
- * {@code analyze_requirement} completes its first orchestrator call the
- * backend long {@link AgentSession#getId()} is recorded in
- * {@link #sessionIdMap} so subsequent endpoints can resolve the handle.
+ * <p>The frontend-facing {@code sessionId} is a UUID. The backend long
+ * {@link AgentSession#getId()} is allocated synchronously in
+ * {@link #startSession} so the UUID->id mapping in {@link #sessionIdMap} is
+ * always populated <em>before</em> the async DAG dispatch starts.
  */
 @RestController
 @RequestMapping("/api/ram")
@@ -58,35 +65,57 @@ public class RamController {
 
     private static final long SSE_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(30);
     private static final long POLL_INTERVAL_MS = 500L;
+    private static final int MAX_SESSION_MAPPINGS = 10_000;
 
     private final RamMcpServer ramMcpServer;
     private final AgentEventRepository eventRepository;
     private final AgentSessionRepository sessionRepository;
     private final ObjectMapper objectMapper;
 
-    private final Executor asyncExecutor;
+    private final java.util.concurrent.Executor asyncExecutor;
     private final ScheduledExecutorService streamScheduler;
+    private final ExecutorService ownedAsyncExecutor;
+    private final ScheduledExecutorService ownedScheduler;
 
-    /** Maps the frontend UUID handle to the backend long session id. */
-    private final Map<String, Long> sessionIdMap = new ConcurrentHashMap<>();
-    /** Aborted UUID handles. */
-    private final Map<String, Boolean> abortedSessions = new ConcurrentHashMap<>();
+    /** Maps the frontend UUID handle to the backend long session id (LRU, capped). */
+    private final Map<String, Long> sessionIdMap = Collections.synchronizedMap(
+            new LinkedHashMap<String, Long>(256, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Long> eldest) {
+                    return size() > MAX_SESSION_MAPPINGS;
+                }
+            });
+    /** Aborted UUID handles (bounded LRU set). */
+    private final Set<String> abortedSessions = Collections.synchronizedSet(
+            Collections.newSetFromMap(new LinkedHashMap<String, Boolean>(256, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+                    return size() > MAX_SESSION_MAPPINGS;
+                }
+            }));
 
     public RamController(RamMcpServer ramMcpServer,
                          AgentEventRepository eventRepository,
                          AgentSessionRepository sessionRepository,
                          ObjectMapper objectMapper) {
-        this(ramMcpServer, eventRepository, sessionRepository, objectMapper,
-                Executors.newCachedThreadPool(r -> {
-                    Thread t = new Thread(r, "ram-controller-async");
-                    t.setDaemon(true);
-                    return t;
-                }),
-                Executors.newScheduledThreadPool(2, r -> {
-                    Thread t = new Thread(r, "ram-sse-poll");
-                    t.setDaemon(true);
-                    return t;
-                }));
+        ExecutorService async = Executors.newCachedThreadPool(r -> {
+            Thread t = new Thread(r, "ram-controller-async");
+            t.setDaemon(true);
+            return t;
+        });
+        ScheduledExecutorService sched = Executors.newScheduledThreadPool(2, r -> {
+            Thread t = new Thread(r, "ram-sse-poll");
+            t.setDaemon(true);
+            return t;
+        });
+        this.ramMcpServer = ramMcpServer;
+        this.eventRepository = eventRepository;
+        this.sessionRepository = sessionRepository;
+        this.objectMapper = objectMapper;
+        this.asyncExecutor = async;
+        this.streamScheduler = sched;
+        this.ownedAsyncExecutor = async;
+        this.ownedScheduler = sched;
     }
 
     /** Constructor for tests so executors can be swapped for synchronous variants. */
@@ -94,7 +123,7 @@ public class RamController {
                   AgentEventRepository eventRepository,
                   AgentSessionRepository sessionRepository,
                   ObjectMapper objectMapper,
-                  Executor asyncExecutor,
+                  java.util.concurrent.Executor asyncExecutor,
                   ScheduledExecutorService streamScheduler) {
         this.ramMcpServer = ramMcpServer;
         this.eventRepository = eventRepository;
@@ -102,6 +131,30 @@ public class RamController {
         this.objectMapper = objectMapper;
         this.asyncExecutor = asyncExecutor;
         this.streamScheduler = streamScheduler;
+        this.ownedAsyncExecutor = null;
+        this.ownedScheduler = null;
+    }
+
+    @PreDestroy
+    void shutdownExecutors() {
+        shutdownGracefully(ownedAsyncExecutor, "ram-controller-async");
+        shutdownGracefully(ownedScheduler, "ram-sse-poll");
+    }
+
+    private static void shutdownGracefully(ExecutorService exec, String name) {
+        if (exec == null) {
+            return;
+        }
+        exec.shutdown();
+        try {
+            if (!exec.awaitTermination(5, TimeUnit.SECONDS)) {
+                exec.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            exec.shutdownNow();
+            log.warn("Interrupted while shutting down {} executor", name);
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -121,10 +174,18 @@ public class RamController {
         String userId = (request.userId() == null || request.userId().isBlank())
                 ? "anonymous" : request.userId();
 
+        // Pre-create the agent_session row so the UUID->id mapping is in place
+        // BEFORE the async analyze_requirement runs. This lets the SSE stream
+        // attach immediately and emit events live instead of all at the end.
+        AgentSession seeded = sessionRepository.save(AgentSession.newRunning(userId));
+        long backendId = seeded.getId();
+        sessionIdMap.put(handle, backendId);
+
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("raw_input", request.rawInput());
         args.put("user_id", userId);
         args.put("mode", "interactive");
+        args.put("session_id", backendId);
         if (request.projectPath() != null) {
             args.put("project_path", request.projectPath());
         }
@@ -137,14 +198,8 @@ public class RamController {
     private void dispatchAnalyze(String handle, Map<String, Object> args) {
         try {
             McpResponse resp = ramMcpServer.invoke("analyze_requirement", args);
-            if (resp != null && resp.ok()) {
-                Object sid = resp.result().get("session_id");
-                if (sid instanceof Number n) {
-                    sessionIdMap.put(handle, n.longValue());
-                }
-            } else {
-                log.warn("analyze_requirement failed for handle {}: {}", handle,
-                        resp == null ? "null response" : resp.error());
+            if (resp != null && !resp.ok()) {
+                log.warn("analyze_requirement failed for handle {}: {}", handle, resp.error());
             }
         } catch (Exception e) {
             log.error("analyze_requirement threw for handle {}", handle, e);
@@ -152,18 +207,49 @@ public class RamController {
     }
 
     // ---------------------------------------------------------------------
+    // GET /sessions/{sid} — rejoin
+    // ---------------------------------------------------------------------
+
+    public record SessionInfoResponse(String status, long currentSeq, boolean clarifyPending) {}
+
+    @GetMapping("/sessions/{sid}")
+    public ApiResponse<SessionInfoResponse> sessionInfo(@PathVariable("sid") String handle) {
+        Long backendId = sessionIdMap.get(handle);
+        if (backendId == null) {
+            return ApiResponse.error(404, "session not found: " + handle);
+        }
+        Optional<AgentSession> session = sessionRepository.findById(backendId);
+        if (session.isEmpty()) {
+            return ApiResponse.error(404, "session row missing: " + backendId);
+        }
+        SessionStatus status = session.get().getStatus();
+        long currentSeq = eventRepository.findMaxSeq(backendId);
+        boolean clarifyPending = false;
+        for (AgentEvent ev : eventRepository.findBySessionId(backendId)) {
+            if (ev.getType() == EventType.CLARIFY_REQ) {
+                clarifyPending = true;
+            } else if (ev.getType() == EventType.CLARIFY_RES) {
+                clarifyPending = false;
+            }
+        }
+        return ApiResponse.success(new SessionInfoResponse(
+                status == null ? null : status.name(), currentSeq, clarifyPending));
+    }
+
+    // ---------------------------------------------------------------------
     // GET /sessions/{sid}/stream
     // ---------------------------------------------------------------------
 
     @GetMapping("/sessions/{sid}/stream")
-    public SseEmitter stream(@PathVariable("sid") String handle) {
+    public SseEmitter stream(@PathVariable("sid") String handle,
+                             @RequestParam(value = "afterSeq", required = false) Long afterSeq) {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
-        AtomicLong lastSeq = new AtomicLong(0L);
+        AtomicLong lastSeq = new AtomicLong(afterSeq == null ? 0L : Math.max(0L, afterSeq));
         AtomicLong waitTicks = new AtomicLong(0L);
 
         Runnable tick = () -> {
             try {
-                if (Boolean.TRUE.equals(abortedSessions.get(handle))) {
+                if (abortedSessions.contains(handle)) {
                     sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
                             "RUN_ABORTED", Map.of("reason", "user_requested")));
                     emitter.complete();
@@ -171,7 +257,6 @@ public class RamController {
                 }
                 Long backendId = sessionIdMap.get(handle);
                 if (backendId == null) {
-                    // backend session not yet allocated; keep waiting up to ~60s
                     if (waitTicks.incrementAndGet() > 120L) {
                         emitter.completeWithError(
                                 new IllegalStateException("session not started: " + handle));
@@ -261,6 +346,8 @@ public class RamController {
             }
             return Map.of("value", parsed);
         } catch (JsonProcessingException e) {
+            log.warn("Failed to parse stored event payload as JSON; returning raw. detail={}",
+                    e.getOriginalMessage());
             return Map.of("raw", json);
         }
     }
@@ -288,6 +375,8 @@ public class RamController {
             return ApiResponse.error(500, resp == null ? "no response" : resp.error());
         }
         long nextSeq = eventRepository.findMaxSeq(backendId);
+        // accepted=true reflects the success branch only — the error branch above
+        // short-circuits with ApiResponse.error so the caller never sees accepted=false.
         return ApiResponse.success(new ClarifyResponse(true, nextSeq));
     }
 
@@ -321,10 +410,10 @@ public class RamController {
         Long backendId = sessionIdMap.get(handle);
         if (backendId == null) {
             // mark abort flag anyway so a streaming client gets the signal
-            abortedSessions.put(handle, Boolean.TRUE);
+            abortedSessions.add(handle);
             return ApiResponse.success(new AbortResponse(true));
         }
-        abortedSessions.put(handle, Boolean.TRUE);
+        abortedSessions.add(handle);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("reason", "user_requested");
         payload.put("type", "RUN_ABORTED");
@@ -332,7 +421,7 @@ public class RamController {
         AgentEvent ev = AgentEvent.builder()
                 .sessionId(backendId)
                 .type(EventType.ERROR)
-                .payload(toJson(payload))
+                .payload(toJson(payload, handle))
                 .idempotencyKey(key)
                 .circuitState("OK")
                 .validatorStatus("OK")
@@ -340,17 +429,19 @@ public class RamController {
                 .build();
         try {
             eventRepository.append(ev);
-        } catch (Exception e) {
-            log.warn("append RUN_ABORTED event failed for {}", backendId, e);
+        } catch (RuntimeException e) {
+            log.warn("append RUN_ABORTED event failed for sid={} handle={}", backendId, handle, e);
         }
         sessionRepository.updateStatus(backendId, SessionStatus.ABORTED);
         return ApiResponse.success(new AbortResponse(true));
     }
 
-    private String toJson(Map<String, Object> payload) {
+    private String toJson(Map<String, Object> payload, String handle) {
         try {
             return objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException e) {
+            log.warn("Failed to serialize abort payload to JSON for handle={} detail={}",
+                    handle, e.getOriginalMessage());
             return "{}";
         }
     }
@@ -358,5 +449,10 @@ public class RamController {
     /** Test-only seam to pre-populate the UUID-to-backend mapping. */
     void registerSessionMapping(String handle, long backendId) {
         sessionIdMap.put(handle, backendId);
+    }
+
+    /** Test-only seam: visible to unit tests for invoking the SSE polling Runnable. */
+    Set<String> abortedSessionsForTest() {
+        return new LinkedHashSet<>(abortedSessions);
     }
 }

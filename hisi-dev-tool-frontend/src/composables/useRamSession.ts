@@ -46,6 +46,9 @@ export function useRamSession(): UseRamSessionReturn {
   const clarifyQuestions: Ref<ClarifySchema | null> = ref(null)
   const tokens = ref(0)
   const usd = ref(0)
+  // Highest seq we have already processed. Survives stream re-opens (clarify /
+  // resume) so we never double-count events that the backend re-emits.
+  const lastSeq = ref(0)
 
   let source: EventSource | null = null
 
@@ -78,13 +81,29 @@ export function useRamSession(): UseRamSessionReturn {
     if (!parsed) {
       return
     }
+    // Dedup: skip seqs we've already processed (re-opens after clarify/resume
+    // will start the SSE poll at lastSeq via ?afterSeq=, but defend in depth).
+    if (parsed.seq <= lastSeq.value) {
+      return
+    }
+    lastSeq.value = parsed.seq
     events.value = [...events.value, parsed]
 
     const usage = parsed.payload['usage']
     if (usage && typeof usage === 'object') {
       const u = usage as Record<string, unknown>
-      tokens.value += asNumber(u['tokens'])
-      usd.value += asNumber(u['cost_usd'])
+      // When the backend reports a cumulative snapshot, replace the accumulator
+      // instead of adding; otherwise treat the values as deltas.
+      const cumulative = u['cumulative'] === true
+      const tokensVal = asNumber(u['tokens'])
+      const usdVal = asNumber(u['cost_usd'])
+      if (cumulative) {
+        tokens.value = tokensVal
+        usd.value = usdVal
+      } else {
+        tokens.value += tokensVal
+        usd.value += usdVal
+      }
     }
 
     switch (parsed.type) {
@@ -124,7 +143,7 @@ export function useRamSession(): UseRamSessionReturn {
 
   const openStream = (sid: string): void => {
     tearDown()
-    const es = new EventSource(ramStreamUrl(sid))
+    const es = new EventSource(ramStreamUrl(sid, lastSeq.value))
     es.onmessage = handleEvent
     es.onerror = () => {
       // EventSource auto-retries while readyState !== CLOSED. Surface a failure
@@ -142,6 +161,7 @@ export function useRamSession(): UseRamSessionReturn {
     clarifyQuestions.value = null
     tokens.value = 0
     usd.value = 0
+    lastSeq.value = 0
     status.value = 'running'
     const resp = await startRamSession({ rawInput, projectPath })
     sessionId.value = resp.sessionId
