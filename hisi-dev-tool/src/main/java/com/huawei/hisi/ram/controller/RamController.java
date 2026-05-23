@@ -94,6 +94,7 @@ public class RamController {
                 }
             }));
 
+    @org.springframework.beans.factory.annotation.Autowired
     public RamController(RamMcpServer ramMcpServer,
                          AgentEventRepository eventRepository,
                          AgentSessionRepository sessionRepository,

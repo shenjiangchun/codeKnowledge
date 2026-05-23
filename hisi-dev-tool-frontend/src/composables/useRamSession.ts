@@ -12,7 +12,7 @@
  * The composable owns at most one {@code EventSource} at a time and tears it
  * down on terminal events, {@code disconnect()}, or replacement subscription.
  */
-import { computed, ref, type ComputedRef, type Ref } from 'vue'
+import { computed, getCurrentInstance, onUnmounted, ref, type ComputedRef, type Ref } from 'vue'
 import {
   abortRamSession,
   ramStreamUrl,
@@ -32,6 +32,7 @@ export interface UseRamSessionReturn {
   submitClarify: (answers: Record<string, unknown>) => Promise<void>
   resume: () => Promise<void>
   abort: () => Promise<void>
+  rejoin: (sid: string, afterSeq?: number) => void
   disconnect: () => void
 }
 
@@ -163,10 +164,15 @@ export function useRamSession(): UseRamSessionReturn {
     usd.value = 0
     lastSeq.value = 0
     status.value = 'running'
-    const resp = await startRamSession({ rawInput, projectPath })
-    sessionId.value = resp.sessionId
-    openStream(resp.sessionId)
-    return resp.sessionId
+    try {
+      const resp = await startRamSession({ rawInput, projectPath })
+      sessionId.value = resp.sessionId
+      openStream(resp.sessionId)
+      return resp.sessionId
+    } catch (err: unknown) {
+      status.value = 'error'
+      throw err
+    }
   }
 
   const submitClarify = async (answers: Record<string, unknown>): Promise<void> => {
@@ -201,6 +207,32 @@ export function useRamSession(): UseRamSessionReturn {
     tearDown()
   }
 
+  /**
+   * Re-attach to an in-flight session (e.g. after a page refresh). Unlike
+   * {@link start}, this does not POST anywhere and does not reset accumulated
+   * events/cost — it just opens the SSE stream against an existing session id,
+   * routing every event through {@link handleEvent} so dedup, cumulative-cost
+   * guard, and terminal-state transitions all apply consistently.
+   */
+  const rejoin = (sid: string, afterSeq = 0): void => {
+    sessionId.value = sid
+    if (afterSeq > lastSeq.value) {
+      lastSeq.value = afterSeq
+    }
+    if (status.value === 'idle') {
+      status.value = 'running'
+    }
+    openStream(sid)
+  }
+
+  // Best-effort auto-cleanup when used inside a component instance. Callers
+  // outside a setup() context (e.g. tests) just don't get this hook.
+  if (getCurrentInstance()) {
+    onUnmounted(() => {
+      tearDown()
+    })
+  }
+
   return {
     sessionId,
     events,
@@ -211,6 +243,7 @@ export function useRamSession(): UseRamSessionReturn {
     submitClarify,
     resume,
     abort,
+    rejoin,
     disconnect
   }
 }

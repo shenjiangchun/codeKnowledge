@@ -16,7 +16,7 @@ import { ElMessage } from 'element-plus'
 import CostMeter from '@/components/ram/CostMeter.vue'
 import ClarifyModal from '@/components/ram/ClarifyModal.vue'
 import { useRamSession } from '@/composables/useRamSession'
-import { getRamSession, ramStreamUrl } from '@/api/ram'
+import { getRamSession } from '@/api/ram'
 import { useRamStore, type ImpactPayload } from '@/stores/ram'
 
 const route = useRoute()
@@ -135,53 +135,12 @@ async function onAbort(): Promise<void> {
 }
 
 /**
- * Rejoin an existing session: fetch its current seq via REST, seed the
- * composable, then open the SSE stream from {@code afterSeq=currentSeq}.
- * We bypass the public {@code start()} (which would create a new run) and
- * wire the EventSource directly.
+ * Rejoin an existing session: ask the backend for {@code currentSeq} and
+ * {@code clarifyPending}, then route everything through the composable's
+ * public {@link useRamSession.rejoin} method so dedup, cumulative-cost guard,
+ * terminal-state transitions, and EventSource teardown all stay encapsulated
+ * inside the composable.
  */
-let rejoinSource: EventSource | null = null
-
-function rejoinStream(sessionId: string, afterSeq: number): void {
-  if (rejoinSource) {
-    rejoinSource.close()
-    rejoinSource = null
-  }
-  const es = new EventSource(ramStreamUrl(sessionId, afterSeq))
-  // Drive the same composable state by feeding events through its public
-  // surface — we manually push synthesized events via a helper exposed by
-  // the composable. Since useRamSession owns its own EventSource lifecycle,
-  // the cleanest rejoin is to call submitClarify/resume which both reopen
-  // the stream. Here we use {@code resume()} when the backend says the
-  // session is currently waiting, else we open our own listener.
-  es.onmessage = (raw) => {
-    try {
-      const data = JSON.parse(raw.data as string) as { seq?: number; type?: string }
-      if (typeof data.seq === 'number' && typeof data.type === 'string') {
-        session.events.value = [
-          ...session.events.value,
-          {
-            seq: data.seq,
-            type: data.type,
-            payload: ((data as { payload?: Record<string, unknown> }).payload ?? {}) as Record<
-              string,
-              unknown
-            >
-          }
-        ]
-      }
-    } catch {
-      // ignore malformed
-    }
-  }
-  es.onerror = () => {
-    if (es.readyState === EventSource.CLOSED) {
-      es.close()
-    }
-  }
-  rejoinSource = es
-}
-
 onMounted(async () => {
   const id = sid.value
   if (!id) {
@@ -189,19 +148,19 @@ onMounted(async () => {
     router.replace({ name: 'RamInput' })
     return
   }
-  session.sessionId.value = id
   try {
     const info = await getRamSession(id)
     if (info.clarifyPending) {
-      session.status.value = 'clarify'
+      // We still rejoin the stream so future events keep flowing, but the
+      // modal is shown immediately based on the synchronous REST status.
+      session.rejoin(id, info.currentSeq ?? 0)
       showClarify.value = true
-    } else if (info.status === 'completed') {
-      session.status.value = 'completed'
-    } else if (info.status === 'aborted') {
-      session.status.value = 'aborted'
+    } else if (info.status === 'completed' || info.status === 'aborted') {
+      // Terminal: register the sid for downstream actions, no SSE needed.
+      session.sessionId.value = id
+      session.status.value = info.status
     } else {
-      session.status.value = 'running'
-      rejoinStream(id, info.currentSeq ?? 0)
+      session.rejoin(id, info.currentSeq ?? 0)
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : '加载会话失败'
@@ -210,10 +169,6 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  if (rejoinSource) {
-    rejoinSource.close()
-    rejoinSource = null
-  }
   session.disconnect()
 })
 </script>

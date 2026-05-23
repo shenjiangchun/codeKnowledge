@@ -5,10 +5,26 @@ package com.huawei.hisi.ram.safety;
  * RAM spec dimensions plus a warning threshold ratio used to flag
  * approaching-cap conditions before tripping the breaker.
  *
+ * <h2>Cost unit</h2>
+ *
+ * Anthropic's billing surface returns cost in USD, so the runtime accumulator
+ * ({@code SessionStats.costUsd}) is denominated in USD. The Phase 1 acceptance
+ * checklist however specifies the cap in CNY (¥6 per session). We expose both
+ * surfaces:
+ *
+ * <ul>
+ *   <li>{@link #maxCostUsd} — the value consulted by the breaker at runtime.</li>
+ *   <li>{@link #maxCostYuan()} — derived from {@link #maxCostUsd} via
+ *       {@link #USD_TO_CNY_RATE}; this is the surface acceptance reviewers look at.</li>
+ *   <li>{@link #defaultsForYuanCap(double)} — construct a policy anchored to a CNY budget.</li>
+ * </ul>
+ *
+ * Update {@link #USD_TO_CNY_RATE} when the operating rate changes meaningfully.
+ *
  * @param maxTokensGlobal      global cumulative token cap per session
  * @param maxDurationMinutes   wall-clock duration cap per session, minutes
  * @param maxClarifyRounds     maximum clarify rounds per session
- * @param maxCostUsd           cumulative USD cost cap per session
+ * @param maxCostUsd           cumulative USD cost cap per session (see class javadoc for CNY mapping)
  * @param maxParallelSessions  global concurrent session cap
  * @param maxRetriesPerNode    retries allowed for a single node before fallback
  * @param warnThresholdRatio   ratio of a cap at which a warning is raised (e.g. 0.8 = 80%)
@@ -21,6 +37,16 @@ public record CircuitPolicy(
         int maxParallelSessions,
         int maxRetriesPerNode,
         double warnThresholdRatio) {
+
+    /**
+     * Indicative USD→CNY conversion rate. Used only to translate the
+     * runtime USD accumulator into the CNY surface that acceptance
+     * reviewers compare against. Update if the operating rate shifts.
+     */
+    public static final double USD_TO_CNY_RATE = 7.2;
+
+    /** Phase 1 acceptance cap: ¥6 per requirement session. */
+    public static final double PHASE1_YUAN_CAP = 6.0;
 
     public CircuitPolicy {
         if (maxTokensGlobal <= 0) {
@@ -46,7 +72,32 @@ public record CircuitPolicy(
         }
     }
 
+    /**
+     * The CNY-denominated view of {@link #maxCostUsd}, computed via
+     * {@link #USD_TO_CNY_RATE}. Surface used by acceptance reviewers.
+     */
+    public double maxCostYuan() {
+        return maxCostUsd * USD_TO_CNY_RATE;
+    }
+
+    /**
+     * Convenience factory for the Phase 1 acceptance scenario: anchor the
+     * cost cap to a CNY budget (e.g. {@code 6.0} for the ¥6 acceptance
+     * limit) and derive the underlying USD cap.
+     */
+    public static CircuitPolicy defaultsForYuanCap(double yuanCap) {
+        if (yuanCap <= 0) {
+            throw new IllegalArgumentException("yuanCap must be > 0");
+        }
+        double usdCap = yuanCap / USD_TO_CNY_RATE;
+        return new CircuitPolicy(200_000L, 30L, 5, usdCap, 20, 3, 0.8);
+    }
+
+    /**
+     * Default policy anchored to the Phase 1 acceptance criterion of
+     * {@value #PHASE1_YUAN_CAP} CNY per session.
+     */
     public static CircuitPolicy defaults() {
-        return new CircuitPolicy(200_000L, 30L, 5, 3.0, 20, 3, 0.8);
+        return defaultsForYuanCap(PHASE1_YUAN_CAP);
     }
 }
