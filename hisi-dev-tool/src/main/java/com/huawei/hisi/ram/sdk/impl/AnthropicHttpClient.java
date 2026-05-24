@@ -34,17 +34,24 @@ import java.util.concurrent.TimeUnit;
 public class AnthropicHttpClient {
 
     private static final MediaType JSON = MediaType.parse("application/json");
-    private static final String API_URL = "https://api.anthropic.com/v1/messages";
+    private static final String DEFAULT_BASE_URL = "https://api.anthropic.com";
     private static final String API_VERSION = "2023-06-01";
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final ProxyConfig proxyConfig;
     private final String apiKey;
+    private final String apiUrl;
 
     public AnthropicHttpClient(ProxyConfig proxyConfig,
-                               @Value("${anthropic.api-key:}") String apiKey) {
+                               @Value("${anthropic.api-key:}") String apiKey,
+                               @Value("${anthropic.base-url:}") String baseUrl) {
         this.proxyConfig = proxyConfig;
         this.apiKey = apiKey;
+        String effective = (baseUrl != null && !baseUrl.isBlank()) ? baseUrl : DEFAULT_BASE_URL;
+        // Strip trailing slash, then append /v1/messages
+        if (effective.endsWith("/")) effective = effective.substring(0, effective.length() - 1);
+        this.apiUrl = effective + "/v1/messages";
+        log.info("[AnthropicHttpClient] apiUrl={}", this.apiUrl);
     }
 
     /**
@@ -61,7 +68,7 @@ public class AnthropicHttpClient {
                 String json = mapper.writeValueAsString(body);
 
                 Request req = new Request.Builder()
-                        .url(API_URL)
+                        .url(apiUrl)
                         .header("x-api-key", apiKey == null ? "" : apiKey)
                         .header("anthropic-version", API_VERSION)
                         .header("content-type", "application/json")
