@@ -29,8 +29,10 @@ public class DataSourceConfig {
 
     @PostConstruct
     public void ensureDirectory() throws IOException {
-        // Extract file path from jdbc:sqlite: URL
+        // Extract file path from jdbc:sqlite: URL, stripping query params (?foreign_keys=on etc.)
         String path = dbUrl.replace("jdbc:sqlite:", "");
+        int qIdx = path.indexOf('?');
+        if (qIdx >= 0) path = path.substring(0, qIdx);
         if (!path.startsWith(":")) { // skip :memory:
             Path dbPath = Paths.get(path);
             Files.createDirectories(dbPath.getParent());
