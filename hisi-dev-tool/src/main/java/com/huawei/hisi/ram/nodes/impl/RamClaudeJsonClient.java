@@ -24,16 +24,20 @@ import java.util.Map;
 @Component
 public class RamClaudeJsonClient {
 
-    private static final String DEFAULT_MODEL = "claude-sonnet-4-20250514";
+    private static final String FALLBACK_MODEL = "claude-sonnet-4-20250514";
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final AnthropicHttpClient http;
     private final String apiKey;
+    private final String defaultModel;
 
     public RamClaudeJsonClient(AnthropicHttpClient http,
-                               @Value("${anthropic.api-key:}") String apiKey) {
+                               @Value("${anthropic.api-key:}") String apiKey,
+                               @Value("${anthropic.model:}") String configModel) {
         this.http = http;
         this.apiKey = apiKey;
+        this.defaultModel = (configModel != null && !configModel.isBlank())
+                ? configModel : FALLBACK_MODEL;
     }
 
     /** Returns {@code true} when an Anthropic API key is configured. */
@@ -43,7 +47,7 @@ public class RamClaudeJsonClient {
 
     /** Default model used when the caller does not specify one. */
     public String defaultModel() {
-        return DEFAULT_MODEL;
+        return defaultModel;
     }
 
     /**
