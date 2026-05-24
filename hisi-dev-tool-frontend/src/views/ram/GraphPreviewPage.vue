@@ -13,7 +13,7 @@
  * Bi-directional linkage runs through useRamStore (selectedFile,
  * hoveredFile, highlightPath).
  */
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import DagGraph from '@/components/ram/DagGraph.vue'
@@ -29,8 +29,11 @@ const sid = computed<string>(() => String(route.params.sid ?? ''))
 const empty: ImpactPayload = { involved: [], modified: [], impacted: [] }
 const impact = computed<ImpactPayload>(() => store.impact ?? empty)
 
+const riskScores = computed<Record<string, number>>(() => impact.value.riskScores ?? {})
+
 // Build DAG edges from impact: seeds=involved → modified → impacted.
 const dagSeeds = computed<string[]>(() => [...impact.value.involved])
+// NOTE: O(involved×modified + modified×impacted). Acceptable for typical (<100) impact sets; revisit if payloads grow.
 const dagEdges = computed(() => {
   const edges: { from: string; to: string; kind: 'call' }[] = []
   for (const seed of impact.value.involved)
@@ -52,6 +55,13 @@ function backToDraft(): void {
 onMounted(() => {
   if (!store.impact) ElMessage.warning('未发现影响数据，请先返回 Draft 页等待 Impact 完成')
 })
+
+onUnmounted(() => {
+  // Prevent cross-page state leak: clear the linkage state when leaving this view.
+  store.selectFile(null)
+  store.hoverFile(null)
+  store.clearHighlight()
+})
 </script>
 
 <template>
@@ -66,7 +76,7 @@ onMounted(() => {
         <DagGraph
           :seeds="dagSeeds"
           :edges="dagEdges"
-          :risk-scores="impact.riskScores ?? {}"
+          :risk-scores="riskScores"
           :in-degree="inDegree"
         />
         <div class="minimap-overlay">
@@ -74,7 +84,7 @@ onMounted(() => {
             :involved="impact.involved"
             :modified="impact.modified"
             :impacted="impact.impacted"
-            :risk-scores="impact.riskScores ?? {}"
+            :risk-scores="riskScores"
           />
         </div>
       </div>
@@ -83,7 +93,7 @@ onMounted(() => {
           :involved="impact.involved"
           :modified="impact.modified"
           :impacted="impact.impacted"
-          :risk-scores="impact.riskScores ?? {}"
+          :risk-scores="riskScores"
           group-by="ring"
         />
       </aside>

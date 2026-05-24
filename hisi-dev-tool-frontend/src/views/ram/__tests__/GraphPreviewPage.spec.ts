@@ -42,4 +42,16 @@ describe('GraphPreviewPage', () => {
     const w = await mountPage()
     expect(w.find('.minimap').exists()).toBe(true)
   })
+
+  it('clears store linkage state on unmount', async () => {
+    const w = await mountPage()
+    const store = useRamStore()
+    store.selectFile('A.java')
+    store.hoverFile('A.java')
+    store.setHighlightPath(['A.java', 'B.java'])
+    w.unmount()
+    expect(store.selectedFile).toBeNull()
+    expect(store.hoveredFile).toBeNull()
+    expect(store.highlightPath.size).toBe(0)
+  })
 })
