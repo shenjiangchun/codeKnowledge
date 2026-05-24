@@ -3,7 +3,6 @@ package com.huawei.hisi.ram.nodes.impl;
 import com.huawei.hisi.ram.nodes.ClarifyLlmClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -11,14 +10,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Stub {@link ClarifyLlmClient} used until the real Claude wiring lands in Task 11.
+ * Stub {@link ClarifyLlmClient} — fallback used when Claude API key is absent.
  *
- * <p>It deliberately returns a minimal extraction echoing the user request and
- * any {@code projectHints} found in the caller-supplied hints map. Acceptance
- * criteria are intentionally left empty so that the clarify schema will fail
- * fast and the orchestrator can demonstrate the HITL clarify loop.</p>
+ * <p>{@link ClaudeClarifyLlmClient} is {@code @Primary} and delegates to this
+ * stub internally when the API key is not configured. This bean must NOT be
+ * {@code @Primary} to avoid ambiguity.</p>
  */
-@Primary
 @Component
 public class StubClarifyLlmClient implements ClarifyLlmClient {
 
