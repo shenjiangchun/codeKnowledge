@@ -17,7 +17,6 @@ import { computed, ref } from 'vue'
 import {
   computeLayout,
   RING_COLORS,
-  truncate,
   type RingKey
 } from './threeRingLayout'
 
@@ -149,7 +148,7 @@ const LEGEND: { key: RingKey; label: string; desc: string }[] = [
         stroke-dasharray="6 6"
       />
 
-      <!-- Ring labels -->
+      <!-- Ring labels (with total / hidden count badge) -->
       <text
         v-for="ring in layout.rings"
         :key="`label-${ring.key}`"
@@ -161,8 +160,35 @@ const LEGEND: { key: RingKey; label: string; desc: string }[] = [
         font-size="12"
         font-weight="600"
       >
-        {{ ring.label }}
+        {{ ring.label }} ({{ ring.totalCount }})
       </text>
+
+      <!-- Overflow badge: "+N 个" for rings that exceeded the per-ring cap -->
+      <g
+        v-for="ov in layout.overflow"
+        :key="`ov-${ov.ring}`"
+        class="ring-overflow"
+      >
+        <rect
+          :x="ov.cx - 22"
+          :y="ov.cy - 10"
+          width="44"
+          height="20"
+          rx="10"
+          fill="#ffffff"
+          stroke="#909399"
+          stroke-width="1"
+        />
+        <text
+          :x="ov.cx"
+          :y="ov.cy + 4"
+          text-anchor="middle"
+          font-size="11"
+          fill="#606266"
+        >
+          +{{ ov.hiddenCount }} 个
+        </text>
+      </g>
 
       <!-- Inter-ring propagation edges -->
       <line
@@ -202,6 +228,7 @@ const LEGEND: { key: RingKey; label: string; desc: string }[] = [
           <title>{{ node.file }}{{ node.risk ? ` · risk ${node.risk.toFixed(2)}` : '' }}</title>
         </circle>
         <text
+          v-if="node.showLabel"
           class="ring-node-label"
           :x="node.cx"
           :y="node.cy + node.radius + 12"
@@ -209,7 +236,7 @@ const LEGEND: { key: RingKey; label: string; desc: string }[] = [
           font-size="10"
           fill="#555"
         >
-          {{ truncate(node.file) }}
+          {{ node.shortLabel }}
         </text>
       </g>
     </svg>
