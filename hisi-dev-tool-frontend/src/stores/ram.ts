@@ -30,5 +30,34 @@ export const useRamStore = defineStore('ram', () => {
     lastSessionId.value = null
   }
 
-  return { impact, lastSessionId, setImpact, clear }
+  const selectedFile = ref<string | null>(null)
+  const hoveredFile = ref<string | null>(null)
+  const highlightPath = ref<Set<string>>(new Set())
+
+  function selectFile(file: string | null): void {
+    selectedFile.value = file
+  }
+  function hoverFile(file: string | null): void {
+    hoveredFile.value = file
+  }
+  function setHighlightPath(files: readonly string[]): void {
+    highlightPath.value = new Set(files)
+  }
+  function clearHighlight(): void {
+    highlightPath.value = new Set()
+  }
+
+  return {
+    impact,
+    lastSessionId,
+    setImpact,
+    clear,
+    selectedFile,
+    hoveredFile,
+    highlightPath,
+    selectFile,
+    hoverFile,
+    setHighlightPath,
+    clearHighlight
+  }
 })
