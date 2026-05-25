@@ -11,7 +11,7 @@
  * we synthesize a list of string fields named {@code q0..qN}. This keeps
  * compatibility with the Phase-1 backend that emits open-ended questions.
  */
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import {
   initialAnswers,
   normalizeClarifyFields,
@@ -55,7 +55,19 @@ const dialogVisible = computed({
   set: (v: boolean) => emit('update:visible', v)
 })
 
+/** Prevents repeated submit clicks while the parent processes the answers. */
+const submitting = ref(false)
+
+watch(
+  () => props.visible,
+  (v) => {
+    if (v) submitting.value = false
+  }
+)
+
 function onSubmit(): void {
+  if (submitting.value) return
+  submitting.value = true
   emit('submit', { ...answers })
 }
 
@@ -66,7 +78,7 @@ function onCancel(): void {
 
 // Expose handlers for testing — happy-dom does not render the teleported
 // dialog body reliably, so unit tests reach into onSubmit directly.
-defineExpose({ onSubmit, onCancel, answers })
+defineExpose({ onSubmit, onCancel, answers, submitting })
 </script>
 
 <template>
@@ -120,8 +132,8 @@ defineExpose({ onSubmit, onCancel, answers })
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="onCancel">取消</el-button>
-      <el-button type="primary" data-test="clarify-submit" @click="onSubmit">
+      <el-button @click="onCancel" :disabled="submitting">取消</el-button>
+      <el-button type="primary" data-test="clarify-submit" :loading="submitting" @click="onSubmit">
         提交
       </el-button>
     </template>

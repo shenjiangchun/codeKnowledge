@@ -52,6 +52,7 @@ public class RequirementAnalysisOrchestrator {
                                  Map<String, Object> userInput,
                                  List<DagNode> nodes) {
         AgentSession session = sessionRepo.save(AgentSession.newRunning(userId));
+        storeInitialInput(session.getId(), userInput);
         return executor.run(nodes, session.getId(), userInput);
     }
 
@@ -63,6 +64,7 @@ public class RequirementAnalysisOrchestrator {
     public ExecutionResult start(long existingSessionId,
                                  Map<String, Object> userInput,
                                  List<DagNode> nodes) {
+        storeInitialInput(existingSessionId, userInput);
         return executor.run(nodes, existingSessionId, userInput);
     }
 
@@ -74,8 +76,7 @@ public class RequirementAnalysisOrchestrator {
         // Reconstruct the original input (userRequirement, projectHints, etc.)
         // from the event log, then accumulate ALL clarify answers from ALL rounds
         // so the LLM sees the full Q&A history on re-run.
-        Map<String, Object> originalInput = findOriginalInput(sessionId);
-        Map<String, Object> merged = new LinkedHashMap<>(originalInput);
+        Map<String, Object> merged = new LinkedHashMap<>(findSessionInitialInput(sessionId));
         List<Map<String, Object>> allRounds = collectAllClarifyRounds(sessionId);
         if (!allRounds.isEmpty()) {
             merged.put("clarify_history", allRounds);
@@ -84,14 +85,48 @@ public class RequirementAnalysisOrchestrator {
     }
 
     /**
-     * Scan the event log to reconstruct the original input that was used to
-     * start the session. The CLARIFY_REQ event payload now includes the
-     * {@code originalInput} map that was active when the clarify exception fired.
+     * Persists the initial user input as a {@code USER_MSG} event so that
+     * any later resume (clarify or HITL confirm) can reconstruct it.
+     */
+    private void storeInitialInput(long sessionId, Map<String, Object> userInput) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("initialInput", userInput == null ? Map.of() : userInput);
+        String key = "initial-input-" + sessionId;
+        AgentEvent ev = AgentEvent.builder()
+                .sessionId(sessionId)
+                .type(EventType.USER_MSG)
+                .payload(toJson(payload))
+                .idempotencyKey(key)
+                .circuitState("OK")
+                .validatorStatus("OK")
+                .createdAt(System.currentTimeMillis() / 1000L)
+                .build();
+        eventRepo.append(ev);
+    }
+
+    /**
+     * Reconstructs the initial input for a session. Checks three sources
+     * in priority order:
+     * <ol>
+     *   <li>{@code USER_MSG} with {@code initialInput} — new sessions</li>
+     *   <li>{@code CLARIFY_REQ} with {@code originalInput} — legacy sessions</li>
+     * </ol>
      */
     @SuppressWarnings("unchecked")
-    private Map<String, Object> findOriginalInput(long sessionId) {
+    private Map<String, Object> findSessionInitialInput(long sessionId) {
         List<AgentEvent> events = eventRepo.findBySessionId(sessionId);
-        // Scan backwards — the most recent CLARIFY_REQ has the right input
+
+        // Forward scan: USER_MSG with initialInput is typically the first event
+        for (AgentEvent ev : events) {
+            if (ev.getType() == EventType.USER_MSG) {
+                Map<String, Object> payload = parsePayload(ev.getPayload());
+                if (payload != null && payload.get("initialInput") instanceof Map<?, ?> init) {
+                    return new LinkedHashMap<>((Map<String, Object>) init);
+                }
+            }
+        }
+
+        // Fallback: legacy sessions stored input in CLARIFY_REQ.originalInput
         for (int i = events.size() - 1; i >= 0; i--) {
             AgentEvent ev = events.get(i);
             if (ev.getType() != EventType.CLARIFY_REQ) continue;
@@ -100,6 +135,7 @@ public class RequirementAnalysisOrchestrator {
                 return new LinkedHashMap<>((Map<String, Object>) orig);
             }
         }
+
         return Map.of();
     }
 
@@ -186,7 +222,14 @@ public class RequirementAnalysisOrchestrator {
             overwriteCheckpoint(sessionId, nodeName, editedOutput);
         }
 
-        return executor.run(nodes, sessionId, Map.of());
+        // Reconstruct the SAME input that was used in the last successful DAG
+        // run so that already-completed nodes cache-hit on their inputsHash.
+        Map<String, Object> fullInput = new LinkedHashMap<>(findSessionInitialInput(sessionId));
+        List<Map<String, Object>> allRounds = collectAllClarifyRounds(sessionId);
+        if (!allRounds.isEmpty()) {
+            fullInput.put("clarify_history", allRounds);
+        }
+        return executor.run(nodes, sessionId, fullInput);
     }
 
     public AgentRegistry getAgentRegistry() {

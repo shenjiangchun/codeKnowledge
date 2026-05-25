@@ -32,6 +32,9 @@ const feedback = ref('')
 const editJson = ref('')
 const editError = ref('')
 
+/** Prevents repeated action clicks while the parent processes the confirmation. */
+const submitting = ref(false)
+
 const dialogTitle = computed(() => {
   if (props.title) return props.title
   const nodeLabels: Record<string, string> = {
@@ -169,11 +172,14 @@ watch(
       feedback.value = ''
       editJson.value = JSON.stringify(props.schema?.output ?? {}, null, 2)
       editError.value = ''
+      submitting.value = false
     }
   }
 )
 
 function onApprove(): void {
+  if (submitting.value) return
+  submitting.value = true
   emit('confirm', 'approve')
 }
 
@@ -182,6 +188,8 @@ function onReject(): void {
     mode.value = 'reject'
     return
   }
+  if (submitting.value) return
+  submitting.value = true
   emit('confirm', 'reject', feedback.value || undefined)
 }
 
@@ -193,6 +201,8 @@ function onEdit(): void {
   try {
     const parsed = JSON.parse(editJson.value) as Record<string, unknown>
     editError.value = ''
+    if (submitting.value) return
+    submitting.value = true
     emit('confirm', 'edit', undefined, parsed)
   } catch (e) {
     editError.value = e instanceof Error ? e.message : 'JSON 解析失败'
@@ -301,20 +311,29 @@ function onCancel(): void {
 
     <template #footer>
       <div class="confirm-footer">
-        <el-button @click="onCancel">取消</el-button>
+        <el-button :disabled="submitting" @click="onCancel">取消</el-button>
         <el-button
           :type="mode === 'reject' ? 'danger' : 'default'"
+          :disabled="submitting && mode !== 'reject'"
+          :loading="submitting && mode === 'reject'"
           @click="onReject"
         >
           {{ mode === 'reject' ? '确认驳回' : '驳回' }}
         </el-button>
         <el-button
           :type="mode === 'edit' ? 'warning' : 'default'"
+          :disabled="submitting && mode !== 'edit'"
+          :loading="submitting && mode === 'edit'"
           @click="onEdit"
         >
           {{ mode === 'edit' ? '确认编辑' : '编辑' }}
         </el-button>
-        <el-button type="primary" @click="onApprove">
+        <el-button
+          type="primary"
+          :disabled="submitting && mode !== 'view'"
+          :loading="submitting && mode === 'view'"
+          @click="onApprove"
+        >
           批准并继续
         </el-button>
       </div>
