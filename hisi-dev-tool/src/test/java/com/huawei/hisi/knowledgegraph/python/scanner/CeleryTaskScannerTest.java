@@ -2,6 +2,7 @@ package com.huawei.hisi.knowledgegraph.python.scanner;
 
 import java.util.List;
 
+import com.huawei.hisi.knowledgegraph.python.PythonKnowledgeGraphBuilder;
 import com.huawei.hisi.knowledgegraph.python.model.PyFunction;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
@@ -140,5 +141,26 @@ class CeleryTaskScannerTest {
 
         assertThat(entries).hasSize(1);
         assertThat(entries.get(0).getEntryKey()).isEqualTo("tasks.ping");
+    }
+
+    @Test
+    @DisplayName("methodNodeId computed from task function qualName + params")
+    void scanModule_setsMethodNodeId() {
+        PyFunction fn = PyFunction.builder()
+                .name("send_email")
+                .qualName("send_email")
+                .paramNames(List.of("user_id", "order_id"))
+                .decorators(List.of("shared_task(name=\"api.tasks.send_email\")"))
+                .lineStart(7).lineEnd(9).build();
+        PyModule module = PyModule.builder()
+                .filePath("api/tasks.py").modulePath("api.tasks")
+                .topLevelFunctions(List.of(fn)).build();
+
+        List<EntryPointNode> entries = scanner.scanModule(module, PROJECT_PATH);
+
+        assertThat(entries).hasSize(1);
+        String expected = PythonKnowledgeGraphBuilder.computeMethodNodeId(
+                "api.tasks", "send_email", List.of("user_id", "order_id"));
+        assertThat(entries.get(0).getMethodNodeId()).isEqualTo(expected);
     }
 }

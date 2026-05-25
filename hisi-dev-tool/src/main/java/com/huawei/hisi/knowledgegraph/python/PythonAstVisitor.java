@@ -200,6 +200,7 @@ public class PythonAstVisitor extends Python3ParserBaseVisitor<Void> {
     public Void visitImport_from(Import_fromContext ctx) {
         String moduleName = ctx.dotted_name() != null ? ctx.dotted_name().getText() : "";
         int line = ctx.getStart().getLine();
+        int relativeLevel = countLeadingDots(ctx);
         if (ctx.import_as_names() != null) {
             ctx.import_as_names().import_as_name().forEach(ian -> {
                 List<NameContext> names = ian.name();
@@ -214,6 +215,7 @@ public class PythonAstVisitor extends Python3ParserBaseVisitor<Void> {
                         .alias(alias)
                         .fromImport(true)
                         .lineNumber(line)
+                        .relativeLevel(relativeLevel)
                         .build());
             });
         } else {
@@ -224,9 +226,31 @@ public class PythonAstVisitor extends Python3ParserBaseVisitor<Void> {
                     .alias(null)
                     .fromImport(true)
                     .lineNumber(line)
+                    .relativeLevel(relativeLevel)
                     .build());
         }
         return null;
+    }
+
+    /**
+     * Count the leading {@code .} / {@code ...} tokens in a {@code from ...} import.
+     * Each {@code .} contributes 1; each {@code ...} (ELLIPSIS) contributes 3.
+     */
+    private static int countLeadingDots(Import_fromContext ctx) {
+        int count = 0;
+        for (int i = 0; i < ctx.getChildCount(); i++) {
+            String text = ctx.getChild(i).getText();
+            if (".".equals(text)) {
+                count++;
+            } else if ("...".equals(text)) {
+                count += 3;
+            } else if ("from".equals(text)) {
+                continue;
+            } else if ("import".equals(text)) {
+                break;
+            }
+        }
+        return count;
     }
 
     @Override
@@ -241,6 +265,7 @@ public class PythonAstVisitor extends Python3ParserBaseVisitor<Void> {
                             .lineNumber(trailer.getStart().getLine())
                             .enclosingFunction(functionQualNameStack.peek())
                             .firstStringArg(extractFirstStringArg(trailer))
+                            .secondPositionalArg(extractSecondPositionalArg(trailer))
                             .build());
                 }
                 running.append(trailer.getText());
@@ -271,6 +296,39 @@ public class PythonAstVisitor extends Python3ParserBaseVisitor<Void> {
         }
         String text = first.test(0).getText();
         return parseStringLiteral(text);
+    }
+
+    /**
+     * Extract the raw textual form of the SECOND positional argument from a call
+     * trailer, skipping keyword arguments (a=...) and *args/**kwargs forms.
+     *
+     * <p>Used by Django URL scanning to extract the view callable from
+     * {@code path('users/', views.user_list)} or
+     * {@code path('users/', UserView.as_view())}. Returns the raw expression
+     * text (e.g. {@code "views.user_list"} or {@code "UserView.as_view()"}),
+     * NOT a string-literal value. Returns {@code null} when fewer than two
+     * positional arguments exist.
+     */
+    private static String extractSecondPositionalArg(TrailerContext trailer) {
+        if (trailer.arglist() == null || trailer.arglist().argument() == null) {
+            return null;
+        }
+        List<Python3Parser.ArgumentContext> args = trailer.arglist().argument();
+        int positionalCount = 0;
+        for (Python3Parser.ArgumentContext arg : args) {
+            if (arg.ASSIGN() != null || arg.STAR() != null || arg.POWER() != null) {
+                // Skip kwargs / *args / **kwargs — they break positional ordering.
+                continue;
+            }
+            positionalCount++;
+            if (positionalCount == 2) {
+                if (arg.test() == null || arg.test().isEmpty()) {
+                    return null;
+                }
+                return arg.test(0).getText();
+            }
+        }
+        return null;
     }
 
     /**

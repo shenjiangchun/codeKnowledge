@@ -14,6 +14,13 @@ import lombok.Value;
  * if any, with surrounding quotes stripped. This is used by downstream scanners
  * (e.g. {@code PythonHttpCallScanner}) to extract URL targets without re-parsing
  * the source. Null when the first argument is missing or is not a string literal.
+ *
+ * <p>{@code secondPositionalArg} captures the raw textual form of the SECOND
+ * positional argument (NOT kwargs). Used to extract the view callable from
+ * Django {@code path('users/', views.user_list)} URL registrations, where the
+ * first positional arg is the URL pattern and the second is the view function
+ * / class-based-view expression (possibly {@code .as_view()}). Null when no
+ * second positional arg exists.
  */
 @Value
 @Builder
@@ -22,4 +29,5 @@ public class PyCall {
     int lineNumber;
     String enclosingFunction;
     String firstStringArg;
+    String secondPositionalArg;
 }

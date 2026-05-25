@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.huawei.hisi.knowledgegraph.python.PythonKnowledgeGraphBuilder;
 import com.huawei.hisi.knowledgegraph.python.model.PyClass;
 import com.huawei.hisi.knowledgegraph.python.model.PyFunction;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
@@ -135,11 +136,17 @@ public class FlaskRouteScanner {
         String entryKey = httpMethod + " " + url;
         String entryInfo = buildEntryInfoJson(httpMethod, url, handlerClass, handlerMethod, filePath, lineNumber);
 
+        // Compute methodNodeId: the handler function is directly decorated,
+        // so we can resolve it from the same module without cross-module lookup.
+        String methodNodeId = PythonKnowledgeGraphBuilder.computeMethodNodeId(
+                module.getModulePath(), function.getQualName(), function.getParamNames());
+
         return EntryPointNode.builder()
                 .entryId(entryId)
                 .entryType(EntryPointNode.TYPE_HTTP)
                 .entryKey(entryKey)
                 .entryInfo(entryInfo)
+                .methodNodeId(methodNodeId)
                 .projectPath(projectPath)
                 .language(LANGUAGE_PYTHON)
                 .framework(FRAMEWORK_FLASK)

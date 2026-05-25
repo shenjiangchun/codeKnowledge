@@ -2,6 +2,7 @@ package com.huawei.hisi.knowledgegraph.python.scanner;
 
 import java.util.List;
 
+import com.huawei.hisi.knowledgegraph.python.PythonKnowledgeGraphBuilder;
 import com.huawei.hisi.knowledgegraph.python.model.PyClass;
 import com.huawei.hisi.knowledgegraph.python.model.PyFunction;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
@@ -188,5 +189,30 @@ class FastApiRouteScannerTest {
 
         assertThat(entries).hasSize(1);
         assertThat(entries.get(0).getProjectPath()).isEqualTo(PROJECT_PATH);
+    }
+
+    @Test
+    @DisplayName("methodNodeId computed from handler function qualName + params")
+    void scanModule_setsMethodNodeId() {
+        PyFunction fn = PyFunction.builder()
+                .name("list_users")
+                .qualName("list_users")
+                .paramNames(List.of("skip", "limit"))
+                .decorators(List.of("app.get(\"/users\")"))
+                .lineStart(10)
+                .lineEnd(15)
+                .build();
+        PyModule module = PyModule.builder()
+                .filePath("main.py")
+                .modulePath("main")
+                .topLevelFunctions(List.of(fn))
+                .build();
+
+        List<EntryPointNode> entries = scanner.scanModule(module, PROJECT_PATH);
+
+        assertThat(entries).hasSize(1);
+        String expected = PythonKnowledgeGraphBuilder.computeMethodNodeId(
+                "main", "list_users", List.of("skip", "limit"));
+        assertThat(entries.get(0).getMethodNodeId()).isEqualTo(expected);
     }
 }
