@@ -45,13 +45,118 @@ const dialogTitle = computed(() => {
   return `节点「${label}」执行完成 — 请确认`
 })
 
+/**
+ * Known field labels for structured node outputs. Covers the clarify node
+ * (intent, acceptance_criteria, constraints, ...) and other common shapes.
+ */
+const FIELD_LABELS: Record<string, string> = {
+  intent: '需求意图',
+  project_paths: '项目路径',
+  acceptance_criteria: '验收标准',
+  target_modules: '目标模块',
+  constraints: '约束条件',
+  must: '必须',
+  must_not: '禁止',
+  risk_level: '风险等级',
+  riskLevel: '风险等级',
+  affected_files: '影响文件',
+  impacted_files: '影响文件',
+  involved_files: '涉及文件',
+  modified_files: '修改文件',
+  implementation_plan: '实现方案',
+  steps: '实施步骤',
+  verification: '验证项',
+  notes: '备注',
+  description: '描述',
+  summary: '摘要'
+}
+
+/** Check if the output is a "structured" object (not a simple string wrapper). */
+function isStructuredOutput(out: Record<string, unknown>): boolean {
+  // If it has a known text field, it's meant for direct display
+  if (typeof out['markdown'] === 'string') return false
+  if (typeof out['content'] === 'string') return false
+  if (typeof out['summary'] === 'string' && Object.keys(out).length <= 2) return false
+  // Has multiple keys or known structured keys → structured
+  return Object.keys(out).length > 1 || Object.keys(out).some((k) => k in FIELD_LABELS)
+}
+
+/** Structured output sections for template rendering */
+interface OutputSection {
+  label: string
+  type: 'text' | 'list' | 'object' | 'constraint-pair'
+  value: string | string[] | Record<string, string[]>
+}
+
+const structuredSections = computed<OutputSection[]>(() => {
+  if (!props.schema?.output) return []
+  const out = props.schema.output
+  if (!isStructuredOutput(out)) return []
+
+  const sections: OutputSection[] = []
+
+  for (const [key, val] of Object.entries(out)) {
+    const label = FIELD_LABELS[key] ?? key
+
+    if (val === null || val === undefined || val === '') continue
+
+    // constraints: { must: [...], must_not: [...] }
+    if (key === 'constraints' && typeof val === 'object' && !Array.isArray(val)) {
+      const cObj = val as Record<string, unknown>
+      const pairs: Record<string, string[]> = {}
+      for (const [ck, cv] of Object.entries(cObj)) {
+        const cLabel = FIELD_LABELS[ck] ?? ck
+        if (Array.isArray(cv)) {
+          pairs[cLabel] = cv.map((item) => String(item))
+        } else if (typeof cv === 'string') {
+          pairs[cLabel] = [cv]
+        }
+      }
+      if (Object.keys(pairs).length > 0) {
+        sections.push({ label, type: 'constraint-pair', value: pairs })
+      }
+      continue
+    }
+
+    if (Array.isArray(val)) {
+      const items = val.map((item) => (typeof item === 'string' ? item : JSON.stringify(item)))
+      if (items.length > 0) {
+        sections.push({ label, type: 'list', value: items })
+      }
+      continue
+    }
+
+    if (typeof val === 'string') {
+      sections.push({ label, type: 'text', value: val })
+      continue
+    }
+
+    if (typeof val === 'object') {
+      // Nested object — render as sub-list
+      const entries = Object.entries(val as Record<string, unknown>)
+      const items = entries.map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+      sections.push({ label, type: 'list', value: items })
+      continue
+    }
+
+    // Primitive fallback
+    sections.push({ label, type: 'text', value: String(val) })
+  }
+
+  return sections
+})
+
+const isStructured = computed(() => structuredSections.value.length > 0)
+
 const outputMarkdown = computed(() => {
   if (!props.schema?.output) return '(无输出)'
   const out = props.schema.output
   // Try to extract markdown from common output shapes
   if (typeof out['markdown'] === 'string') return out['markdown'] as string
   if (typeof out['content'] === 'string') return out['content'] as string
-  if (typeof out['summary'] === 'string') return out['summary'] as string
+  if (typeof out['summary'] === 'string' && Object.keys(out).length <= 2) return out['summary'] as string
+  // If structured, template handles rendering; this is only for non-structured fallback
+  if (isStructured.value) return ''
   // Fallback: pretty-print JSON
   return JSON.stringify(out, null, 2)
 })
@@ -113,7 +218,57 @@ function onCancel(): void {
     <div class="confirm-body">
       <!-- Node output preview -->
       <div v-if="mode === 'view' || mode === 'reject'" class="output-preview">
-        <pre class="output-text">{{ outputMarkdown }}</pre>
+        <!-- Structured output: render as labeled sections -->
+        <div v-if="isStructured" class="structured-output">
+          <div
+            v-for="(section, idx) in structuredSections"
+            :key="idx"
+            class="output-section"
+          >
+            <div class="section-label">{{ section.label }}</div>
+
+            <!-- Text field -->
+            <div v-if="section.type === 'text'" class="section-text">
+              {{ section.value }}
+            </div>
+
+            <!-- List field -->
+            <ul v-else-if="section.type === 'list'" class="section-list">
+              <li
+                v-for="(item, i) in (section.value as string[])"
+                :key="i"
+              >
+                {{ item }}
+              </li>
+            </ul>
+
+            <!-- Constraint pair: { must: [...], must_not: [...] } -->
+            <div
+              v-else-if="section.type === 'constraint-pair'"
+              class="constraint-pairs"
+            >
+              <div
+                v-for="(items, subLabel) in (section.value as Record<string, string[]>)"
+                :key="subLabel"
+                class="constraint-group"
+              >
+                <el-tag
+                  :type="subLabel === '禁止' ? 'danger' : 'success'"
+                  size="small"
+                  class="constraint-tag"
+                >
+                  {{ subLabel }}
+                </el-tag>
+                <ul class="section-list constraint-list">
+                  <li v-for="(item, i) in items" :key="i">{{ item }}</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fallback: plain text / JSON -->
+        <pre v-else class="output-text">{{ outputMarkdown }}</pre>
       </div>
 
       <!-- Reject: feedback input -->
@@ -213,5 +368,70 @@ function onCancel(): void {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+
+/* ---- Structured output sections ---- */
+
+.structured-output {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.output-section {
+  border-bottom: 1px solid #ebeef5;
+  padding-bottom: 12px;
+}
+
+.output-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.section-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #606266;
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+}
+
+.section-text {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #303133;
+  padding: 4px 0;
+}
+
+.section-list {
+  margin: 0;
+  padding-left: 20px;
+  list-style: disc;
+}
+
+.section-list li {
+  font-size: 13px;
+  line-height: 1.8;
+  color: #303133;
+}
+
+.constraint-pairs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.constraint-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.constraint-tag {
+  align-self: flex-start;
+}
+
+.constraint-list {
+  margin-top: 2px;
 }
 </style>
