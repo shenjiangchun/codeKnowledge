@@ -2,9 +2,13 @@ package com.huawei.hisi.ram.nodes;
 
 import com.huawei.hisi.ram.contract.SchemaValidator;
 import com.huawei.hisi.ram.contract.ValidationResult;
+import com.huawei.hisi.ram.kg.KgMcpClient;
+import com.huawei.hisi.ram.kg.dto.MethodBodyInfo;
+import com.huawei.hisi.ram.kg.dto.Seed;
 import com.huawei.hisi.ram.orchestrator.ClarifyRequiredException;
 import com.huawei.hisi.ram.orchestrator.DagNode;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -17,7 +21,12 @@ import java.util.Map;
  * <p>Pipeline:
  * <ol>
  *     <li>Read {@code userRequirement} from the input map (required).</li>
- *     <li>Ask {@link ClarifyLlmClient} to extract structured requirements.</li>
+ *     <li><strong>NEW</strong>: Perform semantic search via {@link KgMcpClient}
+ *         to gather project code context (classes, methods, signatures) related
+ *         to the user's request.</li>
+ *     <li>Ask {@link ClarifyLlmClient} to extract structured requirements,
+ *         supplying the code context so the LLM can answer technical questions
+ *         itself rather than asking the user.</li>
  *     <li>Validate the result against the {@code clarify.output} JSON schema.</li>
  *     <li>If validation fails, throw {@link ClarifyRequiredException} with
  *         one human-readable question per missing field — the orchestrator
@@ -32,12 +41,22 @@ public class ClarifyNode implements DagNode {
     static final String INPUT_USER_REQUIREMENT = "userRequirement";
     private static final String SCHEMA_NAME = "clarify.output";
 
+    /** Max number of search results to feed into the LLM prompt. */
+    private static final int SEARCH_LIMIT = 10;
+
+    /** Truncate method bodies to prevent prompt overflow. */
+    private static final int MAX_BODY_CHARS = 1500;
+
     private final SchemaValidator schemaValidator;
     private final ClarifyLlmClient clarifyLlmClient;
+    private final KgMcpClient kgClient; // nullable — graceful when Neo4j unavailable
 
-    public ClarifyNode(SchemaValidator schemaValidator, ClarifyLlmClient clarifyLlmClient) {
+    public ClarifyNode(SchemaValidator schemaValidator,
+                       ClarifyLlmClient clarifyLlmClient,
+                       @Autowired(required = false) KgMcpClient kgClient) {
         this.schemaValidator = schemaValidator;
         this.clarifyLlmClient = clarifyLlmClient;
+        this.kgClient = kgClient;
     }
 
     @Override
@@ -62,7 +81,12 @@ public class ClarifyNode implements DagNode {
                     "ClarifyNode requires non-blank '" + INPUT_USER_REQUIREMENT + "' in input");
         }
 
-        Map<String, Object> extracted = clarifyLlmClient.extractRequirements(userRequirement, input);
+        // ★ Semantic search: gather project code context before asking the LLM
+        List<CodeContextItem> codeContext = searchProjectContext(userRequirement, input);
+        log.info("[RAM][ClarifyNode] code context: {} items from semantic search", codeContext.size());
+
+        Map<String, Object> extracted = clarifyLlmClient.extractRequirements(
+                userRequirement, input, codeContext);
         log.info("[RAM][ClarifyNode] llm extracted keys={} intent.len={} project_paths={} acceptance_criteria.size={} needs_clarification={}",
                 extracted == null ? List.of() : extracted.keySet(),
                 extracted == null ? 0 : String.valueOf(extracted.getOrDefault("intent", "")).length(),
@@ -103,6 +127,93 @@ public class ClarifyNode implements DagNode {
 
         log.info("[RAM][ClarifyNode] OK schema passed");
         return output;
+    }
+
+    // ────────────────────── Semantic search ──────────────────────
+
+    /**
+     * Search the project's knowledge graph for code relevant to the user's
+     * requirement. Returns an empty list (graceful degradation) when:
+     * <ul>
+     *   <li>Neo4j / KgMcpClient is not configured</li>
+     *   <li>No projectHints are provided in the input</li>
+     *   <li>The search fails for any reason</li>
+     * </ul>
+     */
+    private List<CodeContextItem> searchProjectContext(String userRequirement,
+                                                       Map<String, Object> input) {
+        if (kgClient == null) {
+            log.info("[RAM][ClarifyNode] KgMcpClient unavailable (Neo4j not configured) — skipping code search");
+            return List.of();
+        }
+
+        List<String> projectPaths = extractProjectPaths(input);
+        if (projectPaths.isEmpty()) {
+            log.warn("[RAM][ClarifyNode] No projectHints in input — cannot perform code search");
+            return List.of();
+        }
+        String projectPath = projectPaths.get(0);
+
+        try {
+            // Step 1: semantic search
+            List<Seed> seeds = kgClient.hybridSearch(userRequirement, projectPath, SEARCH_LIMIT);
+            if (seeds.isEmpty()) {
+                log.info("[RAM][ClarifyNode] semantic search returned 0 results for projectPath={}",
+                        projectPath);
+                return List.of();
+            }
+            log.info("[RAM][ClarifyNode] semantic search returned {} seeds", seeds.size());
+
+            // Step 2: load method bodies for richer context
+            List<String> nodeIds = seeds.stream().map(Seed::nodeId).toList();
+            List<MethodBodyInfo> bodies = kgClient.loadMethodBodies(nodeIds, projectPath);
+
+            // Step 3: assemble CodeContextItem list
+            return bodies.stream()
+                    .map(b -> new CodeContextItem(
+                            b.className(),
+                            b.methodName(),
+                            "",   // MethodBodyInfo doesn't carry signature
+                            b.filePath(),
+                            b.description(),
+                            truncate(b.methodBody(), MAX_BODY_CHARS),
+                            seeds.stream()
+                                    .filter(s -> s.nodeId().equals(b.nodeId()))
+                                    .mapToDouble(Seed::score)
+                                    .findFirst().orElse(0.0)))
+                    .toList();
+        } catch (Exception e) {
+            log.warn("[RAM][ClarifyNode] code search failed — proceeding without context: {}",
+                    e.getMessage());
+            return List.of();
+        }
+    }
+
+    // ────────────────────── Helpers ──────────────────────
+
+    private List<String> extractProjectPaths(Map<String, Object> input) {
+        // Try projectHints first (set by AnalyzeRequirementTool)
+        Object hints = input.get("projectHints");
+        if (hints instanceof List<?> list && !list.isEmpty()) {
+            return list.stream()
+                    .filter(o -> o instanceof String)
+                    .map(o -> (String) o)
+                    .toList();
+        }
+        // Fallback to project_paths (may be set by earlier runs)
+        Object paths = input.get("project_paths");
+        if (paths instanceof List<?> list && !list.isEmpty()) {
+            return list.stream()
+                    .filter(o -> o instanceof String)
+                    .map(o -> (String) o)
+                    .toList();
+        }
+        return List.of();
+    }
+
+    private static String truncate(String s, int max) {
+        if (s == null) return "";
+        return s.length() <= max ? s : s.substring(0, max) + "\n// ... truncated";
     }
 
     private List<String> buildQuestions(ValidationResult result) {

@@ -1,5 +1,6 @@
 package com.huawei.hisi.ram.nodes;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -21,4 +22,23 @@ public interface ClarifyLlmClient {
      * @return map shaped to satisfy the {@code clarify.output} schema
      */
     Map<String, Object> extractRequirements(String userRequest, Map<String, Object> hints);
+
+    /**
+     * Extract structured requirements with code context from semantic search.
+     *
+     * <p>When the knowledge graph is available, {@link ClarifyNode} performs a
+     * semantic search before calling this method, providing relevant code snippets
+     * so the LLM can answer technical questions itself (which module, which class,
+     * etc.) rather than asking the user.</p>
+     *
+     * @param userRequest  free-form user request
+     * @param hints        additional context (projectHints, clarify_history, etc.)
+     * @param codeContext  code snippets from semantic search; may be empty, never null
+     * @return map shaped to satisfy the {@code clarify.output} schema
+     */
+    default Map<String, Object> extractRequirements(String userRequest,
+                                                     Map<String, Object> hints,
+                                                     List<CodeContextItem> codeContext) {
+        return extractRequirements(userRequest, hints);
+    }
 }

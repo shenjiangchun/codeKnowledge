@@ -1,6 +1,7 @@
 package com.huawei.hisi.ram.nodes.impl;
 
 import com.huawei.hisi.ram.nodes.ClarifyLlmClient;
+import com.huawei.hisi.ram.nodes.CodeContextItem;
 import com.huawei.hisi.ram.sdk.SendOptions;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Primary;
@@ -20,6 +21,9 @@ import java.util.Map;
 @Component
 public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
 
+    // ──────────────── System prompts ────────────────
+
+    /** Original prompt: used when NO code context is available. */
     private static final String SYSTEM_PROMPT = """
             You are a senior product analyst. Your job is to decide whether a
             developer's request is CLEAR ENOUGH to proceed, or whether you
@@ -97,6 +101,120 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
               in their original form (do NOT translate code identifiers).
             """;
 
+    /**
+     * Enhanced prompt: used when code context IS available from semantic search.
+     * Key addition: Step 0 instructs the LLM to read code context FIRST and
+     * answer technical questions itself, only asking the user about genuinely
+     * ambiguous business intent.
+     */
+    private static final String SYSTEM_PROMPT_WITH_CODE_CONTEXT = """
+            You are a senior product analyst with access to the project's actual
+            codebase. Semantic search results from the project's knowledge graph
+            are provided below the user's request.
+
+            ## Step 0 — Code-aware analysis (MANDATORY when code context is provided)
+
+            Before deciding whether to ask the user any questions, you MUST:
+            1. READ the provided code snippets carefully — class names, method
+               signatures, file paths, and descriptions.
+            2. ANSWER YOURSELF any technical questions that the code makes obvious:
+               - Which module/package handles this feature? → Look at the code paths.
+               - What is the current implementation? → Read the method bodies.
+               - What interfaces/classes are involved? → Check class names and
+                 signatures.
+               - What is the technology stack for this area? → Infer from imports
+                 and patterns.
+            3. Use the code context to fill in target_modules and project_paths
+               PRECISELY — reference actual packages and classes found in the code.
+            4. ONLY ask the user questions about things that CANNOT be determined
+               from the code:
+               - Ambiguous business intent (the user wants X, but X could mean
+                 two different things)
+               - Non-functional requirements (performance targets, compatibility)
+               - Priority or scope decisions (do all cases or just the main one?)
+               - Design preferences when multiple valid approaches exist
+
+            ## Step 1 — Vagueness check (STRICT — but code-informed)
+
+            A request needs clarification ONLY when:
+            - The user's BUSINESS INTENT is ambiguous (not just technically
+              underspecified — technical details are answerable from the code)
+            - No acceptance criteria can be inferred even with code context
+            - The user's request could affect multiple unrelated systems and
+              scope is unclear
+            - Non-functional requirements matter but are unspecified
+
+            A request does NOT need clarification when:
+            - Technical details (which class, which method, which module) are
+              answerable from the code context
+            - The modification scope is clear from the code structure
+            - The "how" is a straightforward engineering decision
+
+            If clarification IS needed, set "needs_clarification": true and
+            provide 2-5 targeted questions. Each question must:
+            - Be about something the CODE CANNOT answer
+            - Be specific and actionable
+            - Be in 简体中文
+
+            ## Step 1b — Multi-round evaluation (when prior Q&A rounds exist)
+
+            When previous clarification rounds are provided, you MUST:
+            1. Read ALL prior Q&A carefully — incorporate every answer.
+            2. Re-evaluate from scratch whether the requirement NOW meets ALL
+               clarity criteria above.
+            3. If STILL unclear: set needs_clarification=true and ask NEW
+               questions only — never repeat already-answered questions.
+            4. If NOW clear: set needs_clarification=false and fill ALL
+               structured fields completely.
+
+            ## Step 2 — Structured extraction (code-grounded)
+
+            Fill structured fields using BOTH the user's words AND the code
+            context:
+            - intent: precise summary grounded in actual code structure
+            - project_paths: from projectHints or code context file paths
+            - target_modules: MUST reference actual packages/classes found in
+              the code context
+            - acceptance_criteria: concrete, testable, informed by current
+              implementation
+            - constraints: infer from code patterns (e.g. if code uses
+              transactions, note atomicity constraint)
+
+            ## Output schema (JSON only, no prose, no markdown fences):
+
+            {
+              "needs_clarification": true | false,
+              "clarify_questions": ["<question in 简体中文>", ...],
+              "intent": "<one short sentence summarising the request>",
+              "project_paths": ["<path>", ...],
+              "acceptance_criteria": ["<testable AC>", ...],
+              "target_modules": ["<actual package/class from code context>", ...],
+              "constraints": { "must": [...], "must_not": [...] },
+              "code_analysis_summary": "<2-3 sentences in 简体中文: what you learned from the code>"
+            }
+
+            Rules:
+            - needs_clarification: MUST be true only when BUSINESS INTENT is
+              genuinely ambiguous.
+            - clarify_questions: only questions the code CANNOT answer; 2-5
+              when needed, empty array when false.
+            - intent: 1 short sentence, never empty.
+            - project_paths: from projectHints or code context file paths; do
+              NOT invent paths.
+            - target_modules: MUST reference real classes/packages from the
+              provided code context — do NOT guess.
+            - acceptance_criteria: only criteria you can CONFIDENTLY derive.
+            - constraints: optional must/must_not lists.
+            - code_analysis_summary: a brief summary of what you determined
+              from reading the code. In 简体中文.
+
+            Language requirement (MANDATORY):
+            - All natural-language string values MUST be in 简体中文.
+            - Keep JSON keys, file paths, package names in original form.
+            """;
+
+    // ──────────────── Dependencies ────────────────
+
     private final RamClaudeJsonClient claude;
     private final StubClarifyLlmClient fallback;
 
@@ -105,25 +223,41 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
         this.fallback = fallback;
     }
 
+    // ──────────────── Public API ────────────────
+
     @Override
     @SuppressWarnings("unchecked")
     public Map<String, Object> extractRequirements(String userRequest, Map<String, Object> hints) {
+        return extractRequirements(userRequest, hints, List.of());
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> extractRequirements(String userRequest,
+                                                    Map<String, Object> hints,
+                                                    List<CodeContextItem> codeContext) {
         List<String> hintPaths = extractProjectPaths(hints);
-        log.info("[RAM][ClaudeClarifyLlmClient] extractRequirements userRequest.len={} hintPaths={}",
-                userRequest == null ? 0 : userRequest.length(), hintPaths);
+        boolean hasCodeContext = codeContext != null && !codeContext.isEmpty();
+        log.info("[RAM][ClaudeClarifyLlmClient] extractRequirements userRequest.len={} hintPaths={} codeContext.size={}",
+                userRequest == null ? 0 : userRequest.length(), hintPaths,
+                hasCodeContext ? codeContext.size() : 0);
 
         if (!claude.isAvailable()) {
             log.error("[RAM][ClaudeClarifyLlmClient] Claude UNAVAILABLE (anthropic.api-key empty) — falling back to Stub. THIS IS WHY OUTPUT IS POOR.");
             return fallback.extractRequirements(userRequest, hints);
         }
 
-        // If the user has already answered clarifying questions, include those
-        // answers in the prompt so Claude can produce a complete output.
-        String userPrompt = buildUserPrompt(userRequest, hintPaths, hints);
+        String systemPrompt = hasCodeContext
+                ? SYSTEM_PROMPT_WITH_CODE_CONTEXT
+                : SYSTEM_PROMPT;
+
+        String userPrompt = buildUserPrompt(userRequest, hintPaths, hints, codeContext);
         try {
+            // Use 4096 maxTokens when code context is present (larger prompt + richer output)
+            int maxTokens = hasCodeContext ? 4096 : 2048;
             Map<String, Object> raw = claude.callJson(
-                    SYSTEM_PROMPT, userPrompt,
-                    new SendOptions(claude.defaultModel(), 2048, 0.2, null));
+                    systemPrompt, userPrompt,
+                    new SendOptions(claude.defaultModel(), maxTokens, 0.2, null));
             log.info("[RAM][ClaudeClarifyLlmClient] Claude returned keys={} needs_clarification={} questions={} acs={} intent.len={}",
                     raw == null ? "null" : raw.keySet(),
                     raw == null ? null : raw.get("needs_clarification"),
@@ -137,13 +271,44 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
         }
     }
 
-    private String buildUserPrompt(String userRequest, List<String> hintPaths, Map<String, Object> hints) {
+    // ──────────────── Prompt building ────────────────
+
+    private String buildUserPrompt(String userRequest, List<String> hintPaths,
+                                    Map<String, Object> hints,
+                                    List<CodeContextItem> codeContext) {
         StringBuilder sb = new StringBuilder();
         sb.append("User request:\n").append(userRequest == null ? "" : userRequest).append("\n\n");
+
         if (!hintPaths.isEmpty()) {
             sb.append("Caller-provided projectHints:\n");
             for (String p : hintPaths) sb.append("- ").append(p).append("\n");
             sb.append("\n");
+        }
+
+        // ★ Code context from semantic search
+        if (codeContext != null && !codeContext.isEmpty()) {
+            sb.append("=== Project code context (from semantic search) ===\n\n");
+            int idx = 0;
+            for (CodeContextItem item : codeContext) {
+                idx++;
+                sb.append("### Code snippet ").append(idx).append("\n");
+                sb.append("- Class: ").append(item.className()).append("\n");
+                sb.append("- Method: ").append(item.methodName()).append("\n");
+                if (item.filePath() != null && !item.filePath().isBlank()) {
+                    sb.append("- File: ").append(item.filePath()).append("\n");
+                }
+                if (item.description() != null && !item.description().isBlank()) {
+                    sb.append("- Description: ").append(item.description()).append("\n");
+                }
+                if (item.methodBody() != null && !item.methodBody().isBlank()) {
+                    sb.append("```java\n").append(item.methodBody()).append("\n```\n");
+                }
+                sb.append("\n");
+            }
+            sb.append("=== End of code context ===\n\n");
+            sb.append("IMPORTANT: Use the above code snippets to understand the project's ")
+              .append("current structure. Do NOT ask the user about things you can determine ")
+              .append("from this code. Only ask about genuinely ambiguous business intent.\n\n");
         }
 
         // Multi-round clarify history: list of {questions: [...], answers: {...}} rounds
@@ -199,6 +364,8 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
         return sb.toString();
     }
 
+    // ──────────────── Normalization ────────────────
+
     @SuppressWarnings("unchecked")
     private Map<String, Object> normalize(Map<String, Object> raw, String userRequest, List<String> hintPaths) {
         Map<String, Object> out = new LinkedHashMap<>();
@@ -227,8 +394,15 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
         if (raw != null && raw.get("constraints") instanceof Map<?, ?> c) {
             out.put("constraints", c);
         }
+        // Preserve code_analysis_summary if present (new field from enhanced prompt)
+        if (raw != null && raw.get("code_analysis_summary") instanceof String summary
+                && !summary.isBlank()) {
+            out.put("code_analysis_summary", summary);
+        }
         return out;
     }
+
+    // ──────────────── Utilities ────────────────
 
     private List<String> asStringList(Object o) {
         if (o instanceof List<?> list) {
