@@ -21,37 +21,64 @@ import java.util.Map;
 public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
 
     private static final String SYSTEM_PROMPT = """
-            You are a senior product analyst helping translate a developer's
-            natural-language request into a structured requirement record.
+            You are a senior product analyst. Your job is to decide whether a
+            developer's request is CLEAR ENOUGH to proceed, or whether you
+            need to ask clarifying questions first.
 
-            You MUST respond with a single JSON object — no prose, no markdown
-            fences — that matches this schema exactly:
+            ## Step 1 — Vagueness check
+
+            A request is UNCLEAR and needs clarification when ANY of these apply:
+            - The user's intent could be interpreted in 2+ materially different ways
+            - No acceptance criteria can be inferred (what does "done" look like?)
+            - Critical scope is missing (which module? which behaviour? which users?)
+            - Technical approach is ambiguous (frontend vs backend? API vs batch?)
+            - Non-functional requirements are unspecified when they clearly matter
+              (performance? concurrency? backwards compatibility?)
+
+            If the request IS vague, set "needs_clarification": true and provide
+            2-5 targeted questions in "clarify_questions". Each question must be:
+            - Specific (not "请提供更多细节")
+            - Actionable (the answer directly fills a gap in the requirement)
+            - In 简体中文
+
+            ## Step 2 — Structured extraction
+
+            Regardless of whether clarification is needed, ALSO fill in the
+            structured fields below with whatever you CAN confidently extract.
+            For fields you genuinely cannot determine, use empty arrays / empty
+            strings — do NOT invent or guess.
+
+            ## Output schema (JSON only, no prose, no markdown fences):
 
             {
+              "needs_clarification": true | false,
+              "clarify_questions": ["<question in 简体中文>", ...],
               "intent": "<one short sentence summarising the request>",
-              "project_paths": ["<repo-relative path hint>", ...],
+              "project_paths": ["<path hint>", ...],
               "acceptance_criteria": ["<testable AC>", ...],
               "target_modules": ["<module/package name>", ...],
               "constraints": { "must": [...], "must_not": [...] }
             }
 
             Rules:
-            - intent: 1 short sentence, never empty.
-            - project_paths: include any explicit paths the user mentioned plus
-              the caller-provided projectHints; deduplicate.
-            - acceptance_criteria: 2-5 concise, testable bullets. Always provide
-              at least 2 — derive them from the intent if the user did not list any.
+            - needs_clarification: MUST be true when the request is vague.
+            - clarify_questions: 2-5 questions when needs_clarification is true;
+              empty array when false.
+            - intent: 1 short sentence, never empty. Summarise what you understood.
+            - project_paths: only paths the user explicitly mentioned or from
+              caller-provided projectHints; do NOT invent paths.
+            - acceptance_criteria: only criteria you can CONFIDENTLY derive from
+              the user's words. If the user was vague, this may be empty — that's
+              fine, the user will fill it in after answering your questions.
             - target_modules: package or feature module names, may be empty.
             - constraints: optional must/must_not lists, may be empty arrays.
-            - Output JSON only.
 
             Language requirement (MANDATORY):
-            - All natural-language string values (intent, every entry in
-              acceptance_criteria, constraints.must / constraints.must_not text)
+            - All natural-language string values (intent, clarify_questions,
+              acceptance_criteria, constraints.must / constraints.must_not)
               MUST be written in 简体中文 (Simplified Chinese).
             - Keep JSON keys, file paths, package names, and module identifiers
               in their original form (do NOT translate code identifiers).
-            - target_modules entries: keep package/module identifiers as-is.
             """;
 
     private final RamClaudeJsonClient claude;
@@ -74,13 +101,17 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
             return fallback.extractRequirements(userRequest, hints);
         }
 
-        String userPrompt = buildUserPrompt(userRequest, hintPaths);
+        // If the user has already answered clarifying questions, include those
+        // answers in the prompt so Claude can produce a complete output.
+        String userPrompt = buildUserPrompt(userRequest, hintPaths, hints);
         try {
             Map<String, Object> raw = claude.callJson(
                     SYSTEM_PROMPT, userPrompt,
                     new SendOptions(claude.defaultModel(), 2048, 0.2, null));
-            log.info("[RAM][ClaudeClarifyLlmClient] Claude returned keys={} acs={} intent.len={}",
+            log.info("[RAM][ClaudeClarifyLlmClient] Claude returned keys={} needs_clarification={} questions={} acs={} intent.len={}",
                     raw == null ? "null" : raw.keySet(),
+                    raw == null ? null : raw.get("needs_clarification"),
+                    raw == null ? 0 : asStringList(raw.get("clarify_questions")).size(),
                     raw == null ? 0 : asStringList(raw.get("acceptance_criteria")).size(),
                     raw == null || !(raw.get("intent") instanceof String s) ? 0 : s.length());
             return normalize(raw, userRequest, hintPaths);
@@ -90,13 +121,25 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
         }
     }
 
-    private String buildUserPrompt(String userRequest, List<String> hintPaths) {
+    private String buildUserPrompt(String userRequest, List<String> hintPaths, Map<String, Object> hints) {
         StringBuilder sb = new StringBuilder();
         sb.append("User request:\n").append(userRequest == null ? "" : userRequest).append("\n\n");
         if (!hintPaths.isEmpty()) {
             sb.append("Caller-provided projectHints:\n");
             for (String p : hintPaths) sb.append("- ").append(p).append("\n");
             sb.append("\n");
+        }
+        // If user has already answered clarifying questions, include them
+        Object answers = hints == null ? null : hints.get("answers");
+        if (answers instanceof Map<?, ?> ansMap && !ansMap.isEmpty()) {
+            sb.append("The user has already answered previous clarifying questions:\n");
+            for (var entry : ansMap.entrySet()) {
+                sb.append("Q: ").append(entry.getKey()).append("\n");
+                sb.append("A: ").append(entry.getValue()).append("\n\n");
+            }
+            sb.append("Use these answers to fill in the structured fields. ")
+              .append("Set needs_clarification to false unless there are STILL ")
+              .append("remaining ambiguities after incorporating the answers.\n\n");
         }
         sb.append("Return the JSON object now.");
         return sb.toString();
@@ -105,6 +148,14 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
     @SuppressWarnings("unchecked")
     private Map<String, Object> normalize(Map<String, Object> raw, String userRequest, List<String> hintPaths) {
         Map<String, Object> out = new LinkedHashMap<>();
+
+        // Preserve clarification flag and questions for ClarifyNode to act on
+        boolean needsClarification = raw != null
+                && Boolean.TRUE.equals(raw.get("needs_clarification"));
+        List<String> clarifyQuestions = asStringList(raw == null ? null : raw.get("clarify_questions"));
+        out.put("needs_clarification", needsClarification && !clarifyQuestions.isEmpty());
+        out.put("clarify_questions", clarifyQuestions);
+
         Object intent = raw == null ? null : raw.get("intent");
         out.put("intent", (intent instanceof String s && !s.isBlank())
                 ? s : (userRequest == null ? "" : userRequest));

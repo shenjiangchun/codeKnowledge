@@ -97,7 +97,7 @@ public class DagExecutor {
             } catch (ClarifyRequiredException ce) {
                 log.info("[RAM][DagExecutor] sid={} node={} CLARIFY_REQ questions={}",
                         sessionId, node.name(), ce.getClarifyQuestions());
-                appendClarifyReq(sessionId, node.name(), ce.getClarifyQuestions());
+                appendClarifyReq(sessionId, node.name(), ce.getClarifyQuestions(), input);
                 sessionRepo.updateStatus(sessionId, SessionStatus.WAITING_CLARIFY);
                 return new ExecutionResult(
                         sessionId, SessionStatus.WAITING_CLARIFY, executed, skipped, previousOutput);
@@ -188,10 +188,12 @@ public class DagExecutor {
         eventRepo.append(ev);
     }
 
-    private void appendClarifyReq(long sessionId, String nodeName, List<String> questions) {
+    private void appendClarifyReq(long sessionId, String nodeName, List<String> questions,
+                                   Map<String, Object> originalInput) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("nodeName", nodeName);
         payload.put("questions", questions);
+        payload.put("originalInput", originalInput);
         String key = "clarify-req-" + sessionId + "-" + nodeName + "-" + System.nanoTime();
         AgentEvent ev = AgentEvent.builder()
                 .sessionId(sessionId)

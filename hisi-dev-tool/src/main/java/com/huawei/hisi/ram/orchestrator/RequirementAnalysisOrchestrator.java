@@ -70,11 +70,45 @@ public class RequirementAnalysisOrchestrator {
                                   List<DagNode> nodes) {
         appendClarifyRes(sessionId, clarifyAnswers);
         sessionRepo.updateStatus(sessionId, SessionStatus.RUNNING);
-        Map<String, Object> merged = new LinkedHashMap<>();
-        if (clarifyAnswers != null) {
-            merged.putAll(clarifyAnswers);
+        // Reconstruct the original input (userRequirement, projectHints, etc.)
+        // from the event log, then merge clarify answers under the "answers" key
+        // so ClarifyNode can pass them to the LLM on re-run.
+        Map<String, Object> originalInput = findOriginalInput(sessionId);
+        Map<String, Object> merged = new LinkedHashMap<>(originalInput);
+        if (clarifyAnswers != null && !clarifyAnswers.isEmpty()) {
+            merged.put("answers", clarifyAnswers);
         }
         return executor.run(nodes, sessionId, merged);
+    }
+
+    /**
+     * Scan the event log to reconstruct the original input that was used to
+     * start the session. The CLARIFY_REQ event payload now includes the
+     * {@code originalInput} map that was active when the clarify exception fired.
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> findOriginalInput(long sessionId) {
+        List<AgentEvent> events = eventRepo.findBySessionId(sessionId);
+        // Scan backwards — the most recent CLARIFY_REQ has the right input
+        for (int i = events.size() - 1; i >= 0; i--) {
+            AgentEvent ev = events.get(i);
+            if (ev.getType() != EventType.CLARIFY_REQ) continue;
+            Map<String, Object> payload = parsePayload(ev.getPayload());
+            if (payload != null && payload.get("originalInput") instanceof Map<?, ?> orig) {
+                return new LinkedHashMap<>((Map<String, Object>) orig);
+            }
+        }
+        return Map.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parsePayload(String json) {
+        if (json == null || json.isBlank()) return null;
+        try {
+            return objectMapper.readValue(json, LinkedHashMap.class);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**

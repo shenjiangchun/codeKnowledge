@@ -63,11 +63,30 @@ public class ClarifyNode implements DagNode {
         }
 
         Map<String, Object> extracted = clarifyLlmClient.extractRequirements(userRequirement, input);
-        log.info("[RAM][ClarifyNode] llm extracted keys={} intent.len={} project_paths={} acceptance_criteria.size={}",
+        log.info("[RAM][ClarifyNode] llm extracted keys={} intent.len={} project_paths={} acceptance_criteria.size={} needs_clarification={}",
                 extracted == null ? List.of() : extracted.keySet(),
                 extracted == null ? 0 : String.valueOf(extracted.getOrDefault("intent", "")).length(),
                 extracted == null ? null : extracted.get("project_paths"),
-                extracted == null || !(extracted.get("acceptance_criteria") instanceof List<?> ac) ? 0 : ac.size());
+                extracted == null || !(extracted.get("acceptance_criteria") instanceof List<?> ac) ? 0 : ac.size(),
+                extracted == null ? null : extracted.get("needs_clarification"));
+
+        // ★ Check if LLM flagged the request as needing clarification
+        if (Boolean.TRUE.equals(extracted.get("needs_clarification"))) {
+            Object rawQuestions = extracted.get("clarify_questions");
+            List<String> questions = new ArrayList<>();
+            if (rawQuestions instanceof List<?> qList) {
+                for (Object q : qList) {
+                    if (q instanceof String s && !s.isBlank()) {
+                        questions.add(s);
+                    }
+                }
+            }
+            if (!questions.isEmpty()) {
+                log.info("[RAM][ClarifyNode] LLM says needs_clarification=true questions={}", questions);
+                throw new ClarifyRequiredException(questions);
+            }
+            log.warn("[RAM][ClarifyNode] needs_clarification=true but no valid questions — proceeding to schema validation");
+        }
 
         ValidationResult result = schemaValidator.validate(SCHEMA_NAME, extracted);
         if (!result.passed()) {
@@ -76,8 +95,14 @@ public class ClarifyNode implements DagNode {
                     result.missingFields(), result.violations(), questions);
             throw new ClarifyRequiredException(questions);
         }
+
+        // Strip internal fields before passing output downstream
+        Map<String, Object> output = new java.util.LinkedHashMap<>(extracted);
+        output.remove("needs_clarification");
+        output.remove("clarify_questions");
+
         log.info("[RAM][ClarifyNode] OK schema passed");
-        return extracted;
+        return output;
     }
 
     private List<String> buildQuestions(ValidationResult result) {
