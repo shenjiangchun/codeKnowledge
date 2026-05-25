@@ -224,7 +224,9 @@ public class RamController {
     // GET /sessions/{sid} — rejoin
     // ---------------------------------------------------------------------
 
-    public record SessionInfoResponse(String status, long currentSeq, boolean clarifyPending) {}
+    public record SessionInfoResponse(String status, long currentSeq,
+                                       boolean clarifyPending, boolean hitlPending,
+                                       String hitlNodeName) {}
 
     @GetMapping("/sessions/{sid}")
     public ApiResponse<SessionInfoResponse> sessionInfo(@PathVariable("sid") String handle) {
@@ -239,15 +241,26 @@ public class RamController {
         SessionStatus status = session.get().getStatus();
         long currentSeq = eventRepository.findMaxSeq(backendId);
         boolean clarifyPending = false;
+        boolean hitlPending = false;
+        String hitlNodeName = null;
         for (AgentEvent ev : eventRepository.findBySessionId(backendId)) {
             if (ev.getType() == EventType.CLARIFY_REQ) {
                 clarifyPending = true;
             } else if (ev.getType() == EventType.CLARIFY_RES) {
                 clarifyPending = false;
+            } else if (ev.getType() == EventType.HITL_REQ) {
+                hitlPending = true;
+                Map<String, Object> payload = parseJsonPayload(
+                        ev.getPayload() == null ? "" : ev.getPayload());
+                hitlNodeName = payload.get("nodeName") instanceof String s ? s : null;
+            } else if (ev.getType() == EventType.HITL_RES) {
+                hitlPending = false;
+                hitlNodeName = null;
             }
         }
         return ApiResponse.success(new SessionInfoResponse(
-                status == null ? null : status.name(), currentSeq, clarifyPending));
+                status == null ? null : status.name(), currentSeq,
+                clarifyPending, hitlPending, hitlNodeName));
     }
 
     // ---------------------------------------------------------------------
@@ -289,6 +302,12 @@ public class RamController {
                     if (ev.getType() == EventType.CLARIFY_REQ) {
                         sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
                                 "CLARIFY_REQUIRED", parseJsonPayload(ev.getPayload())));
+                        emitter.complete();
+                        return;
+                    }
+                    if (ev.getType() == EventType.HITL_REQ) {
+                        sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
+                                "HITL_REQUIRED", parseJsonPayload(ev.getPayload())));
                         emitter.complete();
                         return;
                     }
@@ -448,6 +467,49 @@ public class RamController {
             return ApiResponse.error(500, resp == null ? "no response" : resp.error());
         }
         return ApiResponse.success(new ResumeResponse(true));
+    }
+
+    // ---------------------------------------------------------------------
+    // POST /sessions/{sid}/confirm — inter-node HITL confirmation
+    // ---------------------------------------------------------------------
+
+    public record ConfirmRequest(String nodeName, String action, String feedback,
+                                  Map<String, Object> editedOutput) {}
+
+    public record ConfirmResponse(boolean accepted, long nextSeq) {}
+
+    @PostMapping("/sessions/{sid}/confirm")
+    public ApiResponse<ConfirmResponse> confirm(@PathVariable("sid") String handle,
+                                                 @RequestBody ConfirmRequest request) {
+        Long backendId = sessionIdMap.get(handle);
+        if (backendId == null) {
+            return ApiResponse.error(404, "session not found: " + handle);
+        }
+        String action = request.action() == null ? "approve" : request.action();
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("session_id", backendId);
+        args.put("node_name", request.nodeName());
+        args.put("action", action);
+        if (request.feedback() != null) {
+            args.put("feedback", request.feedback());
+        }
+        if (request.editedOutput() != null) {
+            args.put("edited_output", request.editedOutput());
+        }
+
+        // Async dispatch: the DAG continues to the next node (LLM call) after
+        // confirmation, so we cannot block the HTTP response on it.
+        CompletableFuture.runAsync(() -> {
+            try {
+                ramMcpServer.invoke("submit_confirmation", args);
+            } catch (Exception e) {
+                log.error("[RAM][confirm] async dispatch failed handle={} nodeName={} error={}",
+                        handle, request.nodeName(), e.getMessage(), e);
+            }
+        }, asyncExecutor);
+
+        long nextSeq = eventRepository.findMaxSeq(backendId);
+        return ApiResponse.success(new ConfirmResponse(true, nextSeq));
     }
 
     // ---------------------------------------------------------------------

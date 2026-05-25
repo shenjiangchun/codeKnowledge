@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 检索结果模型
@@ -61,4 +62,10 @@ public class SearchResult {
      * 搜索建议列表（无结果时的替代查询建议）
      */
     private List<String> suggestions;
+
+    /** 分词后的子查询列表（多路召回时由 QueryDecomposer 生成） */
+    private List<String> subQueries;
+
+    /** RRF 融合得分（nodeId → score），仅多路召回时存在 */
+    private Map<String, Double> rrfScores;
 }

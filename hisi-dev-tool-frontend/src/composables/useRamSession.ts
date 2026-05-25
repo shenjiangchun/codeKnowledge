@@ -15,12 +15,13 @@
 import { computed, getCurrentInstance, onUnmounted, ref, type ComputedRef, type Ref } from 'vue'
 import {
   abortRamSession,
+  confirmRamNode,
   ramStreamUrl,
   resumeRamSession,
   startRamSession,
   submitRamClarify
 } from '@/api/ram'
-import type { ClarifySchema, RamCostSnapshot, RamEvent, RamStatus } from '@/types/ram'
+import type { ClarifySchema, HitlSchema, RamCostSnapshot, RamEvent, RamStatus } from '@/types/ram'
 
 export interface UseRamSessionReturn {
   sessionId: Ref<string | null>
@@ -28,8 +29,14 @@ export interface UseRamSessionReturn {
   status: Ref<RamStatus>
   cost: ComputedRef<RamCostSnapshot>
   clarifyQuestions: Ref<ClarifySchema | null>
+  hitlSchema: Ref<HitlSchema | null>
   start: (rawInput: string, projectPath: string) => Promise<string>
   submitClarify: (answers: Record<string, unknown>) => Promise<void>
+  submitConfirm: (
+    action: 'approve' | 'reject' | 'edit',
+    feedback?: string,
+    editedOutput?: Record<string, unknown>
+  ) => Promise<void>
   resume: () => Promise<void>
   abort: () => Promise<void>
   rejoin: (sid: string, afterSeq?: number) => void
@@ -54,6 +61,7 @@ export function useRamSession(): UseRamSessionReturn {
   const events: Ref<RamEvent[]> = ref([])
   const status: Ref<RamStatus> = ref('idle')
   const clarifyQuestions: Ref<ClarifySchema | null> = ref(null)
+  const hitlSchema: Ref<HitlSchema | null> = ref(null)
   const tokens = ref(0)
   const usd = ref(0)
   // Highest seq we have already processed. Survives stream re-opens (clarify /
@@ -136,6 +144,18 @@ export function useRamSession(): UseRamSessionReturn {
         tearDown()
         break
       }
+      case 'HITL_REQUIRED':
+      case 'HITL_REQ': {
+        const payload = parsed.payload
+        hitlSchema.value = {
+          nodeName: typeof payload['nodeName'] === 'string' ? (payload['nodeName'] as string) : '',
+          output: (payload['output'] ?? {}) as Record<string, unknown>
+        }
+        status.value = 'confirm'
+        dbg('status -> confirm', hitlSchema.value)
+        tearDown()
+        break
+      }
       case 'RUN_COMPLETED':
         status.value = 'completed'
         dbg('status -> completed')
@@ -183,6 +203,7 @@ export function useRamSession(): UseRamSessionReturn {
     dbg('start() called', { rawInput, projectPath })
     events.value = []
     clarifyQuestions.value = null
+    hitlSchema.value = null
     tokens.value = 0
     usd.value = 0
     lastSeq.value = 0
@@ -206,6 +227,25 @@ export function useRamSession(): UseRamSessionReturn {
     }
     await submitRamClarify(sessionId.value, answers)
     clarifyQuestions.value = null
+    status.value = 'running'
+    openStream(sessionId.value)
+  }
+
+  const submitConfirm = async (
+    action: 'approve' | 'reject' | 'edit',
+    feedback?: string,
+    editedOutput?: Record<string, unknown>
+  ): Promise<void> => {
+    if (!sessionId.value || !hitlSchema.value) {
+      throw new Error('no active HITL request')
+    }
+    await confirmRamNode(sessionId.value, {
+      nodeName: hitlSchema.value.nodeName,
+      action,
+      feedback,
+      editedOutput
+    })
+    hitlSchema.value = null
     status.value = 'running'
     openStream(sessionId.value)
   }
@@ -264,8 +304,10 @@ export function useRamSession(): UseRamSessionReturn {
     status,
     cost,
     clarifyQuestions,
+    hitlSchema,
     start,
     submitClarify,
+    submitConfirm,
     resume,
     abort,
     rejoin,

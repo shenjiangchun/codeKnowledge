@@ -2,7 +2,7 @@
  * Type definitions for the Requirement Analysis Master (RAM) Phase-1 frontend.
  */
 
-export type RamStatus = 'idle' | 'running' | 'clarify' | 'completed' | 'error' | 'aborted'
+export type RamStatus = 'idle' | 'running' | 'clarify' | 'confirm' | 'completed' | 'error' | 'aborted'
 
 /**
  * A single event streamed from {@code GET /api/ram/sessions/{sid}/stream}.
@@ -48,4 +48,19 @@ export interface ResumeResponse {
 
 export interface AbortResponse {
   readonly aborted: boolean
+}
+
+/**
+ * Schema for a node-confirmation interrupt (HITL_REQ). The frontend receives
+ * this when the orchestrator pauses after a node completes, waiting for user
+ * approval before proceeding to the next node.
+ */
+export interface HitlSchema {
+  readonly nodeName: string
+  readonly output: Readonly<Record<string, unknown>>
+}
+
+export interface ConfirmResponse {
+  readonly accepted: boolean
+  readonly nextSeq: number
 }

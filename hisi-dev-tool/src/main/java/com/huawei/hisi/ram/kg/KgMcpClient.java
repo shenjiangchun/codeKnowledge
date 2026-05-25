@@ -4,6 +4,7 @@ import com.huawei.hisi.ram.kg.dto.Bridge;
 import com.huawei.hisi.ram.kg.dto.CallTreeNode;
 import com.huawei.hisi.ram.kg.dto.Entry;
 import com.huawei.hisi.ram.kg.dto.Impl;
+import com.huawei.hisi.ram.kg.dto.MethodBodyInfo;
 import com.huawei.hisi.ram.kg.dto.Seed;
 import com.huawei.hisi.ram.kg.dto.SqlMapping;
 
@@ -28,7 +29,7 @@ public interface KgMcpClient {
 
     List<Entry> rootEntries(String className, String methodName, String projectPath);
 
-    List<Entry> affecting(String className, String methodName, String projectPath);
+    List<Entry> affecting(String className, String methodName, String projectPath, int maxDepth);
 
     List<Entry> downstream(String nodeId, String projectPath, int maxDepth);
 
@@ -39,4 +40,7 @@ public interface KgMcpClient {
     List<Bridge> bridges(String nodeId, String projectPath);
 
     List<SqlMapping> mybatisSql(String mapperInterface, String projectPath);
+
+    /** Batch-load method bodies and metadata for AI relevance analysis. */
+    List<MethodBodyInfo> loadMethodBodies(List<String> nodeIds, String projectPath);
 }

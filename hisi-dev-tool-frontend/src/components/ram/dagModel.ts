@@ -51,10 +51,15 @@ const PHASE_TO_NODE: Readonly<Record<string, DagNodeKey>> = {
 }
 
 function classifyEvent(evt: RamEvent): DagNodeKey | null {
-  const phase = String(evt.payload['phase'] ?? '').toLowerCase()
+  // Backend CHECKPOINT events use 'nodeName'; legacy events may use 'phase'.
+  const phase = String(evt.payload['phase'] ?? evt.payload['nodeName'] ?? '').toLowerCase()
   if (phase && PHASE_TO_NODE[phase]) return PHASE_TO_NODE[phase]
   const t = evt.type
   if (t === 'CLARIFY_REQ' || t === 'CLARIFY_REQUIRED' || t === 'CLARIFY_RES') return 'clarify'
+  if (t === 'HITL_REQ' || t === 'HITL_REQUIRED' || t === 'HITL_RES') {
+    const nn = String(evt.payload['nodeName'] ?? '').toLowerCase()
+    if (nn && PHASE_TO_NODE[nn]) return PHASE_TO_NODE[nn]
+  }
   if (t === 'IMPACT_DONE' || t === 'IMPACT_UPDATE') return 'impact'
   if (t === 'IMPLEMENT_DONE' || t === 'IMPLEMENT_UPDATE' || t === 'DRAFT_UPDATE') return 'implement'
   if (t === 'VERIFY_DONE' || t === 'VERIFY_UPDATE') return 'verify'
@@ -115,7 +120,13 @@ export function deriveDagSnapshot(
       const t = evt.type
       if (t === 'CLARIFY_REQ' || t === 'CLARIFY_REQUIRED') {
         acc[node].status = 'awaiting-hitl'
-      } else if (t.endsWith('_DONE')) {
+      } else if (t === 'HITL_REQ' || t === 'HITL_REQUIRED') {
+        acc[node].status = 'awaiting-hitl'
+      } else if (t === 'HITL_RES') {
+        // Confirmed — mark done (next node hasn't started yet)
+        acc[node].status = 'done'
+      } else if (t.endsWith('_DONE') || t === 'CHECKPOINT') {
+        // CHECKPOINT is emitted after successful node execution → mark done
         acc[node].status = 'done'
       }
       const risk = evt.payload['riskLevel']
@@ -131,7 +142,7 @@ export function deriveDagSnapshot(
     }
     if (evt.type === 'RUN_COMPLETED') {
       for (const k of DAG_ORDER) {
-        if (acc[k].status === 'running' || acc[k].status === 'awaiting-hitl') {
+        if (acc[k].status === 'pending' || acc[k].status === 'running' || acc[k].status === 'awaiting-hitl') {
           acc[k].status = 'done'
         }
       }
@@ -139,9 +150,11 @@ export function deriveDagSnapshot(
   }
 
   // Honor terminal session status as a final overlay.
+  // Defense-in-depth: also flip 'pending' → 'done' when session confirmed completed,
+  // covering race conditions where CHECKPOINT events weren't properly classified.
   if (sessionStatus === 'completed') {
     for (const k of DAG_ORDER) {
-      if (acc[k].status === 'running' || acc[k].status === 'awaiting-hitl') {
+      if (acc[k].status === 'pending' || acc[k].status === 'running' || acc[k].status === 'awaiting-hitl') {
         acc[k].status = 'done'
       }
     }
@@ -200,7 +213,7 @@ export function statusLabel(s: DagNodeStatus): string {
     case 'running':
       return '执行中'
     case 'awaiting-hitl':
-      return '待澄清'
+      return '待确认'
     case 'done':
       return '完成'
     case 'failed':

@@ -20,6 +20,8 @@ class ImpactNodeTest {
     @Mock
     InvolvedRingResolver involvedRingResolver;
     @Mock
+    ScopeNarrowingService scopeNarrowingService;
+    @Mock
     ModifiedRingResolver modifiedRingResolver;
     @Mock
     ImpactRingResolver impactRingResolver;
@@ -38,13 +40,14 @@ class ImpactNodeTest {
                 new DeterministicValidator.ValidationOutcome(true, List.of());
 
         when(involvedRingResolver.resolve(anyString(), anyString())).thenReturn(involved);
+        when(scopeNarrowingService.narrow(anyString(), any(), anyString())).thenReturn(List.of());
         when(modifiedRingResolver.resolve(any(), anyString(), anyInt())).thenReturn(modified);
         when(impactRingResolver.resolve(any(), anyString())).thenReturn(impact);
         when(riskScorer.score(any(), any(), any())).thenReturn(risk);
         when(deterministicValidator.validate(any(), any(), any(), anyString())).thenReturn(outcome);
 
-        ImpactNode node = new ImpactNode(involvedRingResolver, modifiedRingResolver,
-                impactRingResolver, riskScorer, deterministicValidator);
+        ImpactNode node = new ImpactNode(involvedRingResolver, scopeNarrowingService,
+                modifiedRingResolver, impactRingResolver, riskScorer, deterministicValidator);
 
         Map<String, Object> out = node.execute(Map.of(
                 "intent", "add payment retry",

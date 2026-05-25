@@ -12,6 +12,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -22,6 +23,10 @@ class InvolvedRingResolverTest {
 
     @Mock
     KgMcpClient kg;
+    @Mock
+    QueryDecomposer decomposer;
+    @Mock
+    MultiQuerySearcher searcher;
 
     @Test
     void resolve_unionsSeedsEntriesImpls() {
@@ -29,11 +34,12 @@ class InvolvedRingResolverTest {
         Entry entry = new Entry("e1", "Cls", "m", "CONTROLLER");
         Impl impl = new Impl("i1", "Impl", "Iface");
 
-        when(kg.hybridSearch(anyString(), anyString(), anyInt())).thenReturn(List.of(seed));
+        when(decomposer.decompose(anyString())).thenReturn(List.of("query"));
+        when(searcher.search(any(), anyString(), anyInt(), anyInt())).thenReturn(List.of(seed));
         when(kg.entryPoints(anyString(), eq("ALL"))).thenReturn(List.of(entry));
         when(kg.implementations(eq("s1"), anyString())).thenReturn(List.of(impl));
 
-        InvolvedRing ring = new InvolvedRingResolver(kg).resolve("query", "/p");
+        InvolvedRing ring = new InvolvedRingResolver(kg, decomposer, searcher).resolve("query", "/p");
 
         assertThat(ring.seeds()).containsExactly(seed);
         assertThat(ring.entries()).containsExactly(entry);

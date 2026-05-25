@@ -64,8 +64,20 @@ public class DagExecutor {
                 previousOutput.keySet(),
                 sessionEvents.size());
 
-        for (DagNode node : orderedNodes) {
+        for (int nodeIdx = 0; nodeIdx < orderedNodes.size(); nodeIdx++) {
+            DagNode node = orderedNodes.get(nodeIdx);
             Map<String, Object> input = previousOutput;
+
+            // Inject rejection feedback into input if the user rejected this node's
+            // prior output. This changes the inputsHash → forces cache miss → re-execute.
+            String feedback = findRejectionFeedback(sessionEvents, node.name());
+            if (feedback != null) {
+                input = new LinkedHashMap<>(input);
+                input.put("hitl_feedback", feedback);
+                log.info("[RAM][DagExecutor] sid={} node={} injecting rejection feedback",
+                        sessionId, node.name());
+            }
+
             String inputsHash = InputsHasher.hash(input);
 
             Map<String, Object> cached = findCachedOutput(sessionEvents, node.name(), inputsHash);
@@ -104,6 +116,18 @@ public class DagExecutor {
             appendCheckpoint(sessionId, node.name(), inputsHash, safeOutput);
             executed.add(node.name());
             previousOutput = safeOutput;
+
+            // ★ Inter-node confirmation gate: pause after each node (except the last)
+            // to let the user review the output before proceeding.
+            boolean isLastNode = (nodeIdx == orderedNodes.size() - 1);
+            if (!isLastNode && !isNodeConfirmed(sessionEvents, node.name())) {
+                log.info("[RAM][DagExecutor] sid={} node={} HITL_REQ — awaiting confirmation",
+                        sessionId, node.name());
+                appendHitlReq(sessionId, node.name(), safeOutput);
+                sessionRepo.updateStatus(sessionId, SessionStatus.WAITING_HITL);
+                return new ExecutionResult(
+                        sessionId, SessionStatus.WAITING_HITL, executed, skipped, previousOutput);
+            }
         }
 
         log.info("[RAM][DagExecutor] sid={} DONE executed={} skipped={}",
@@ -197,6 +221,61 @@ public class DagExecutor {
                 .createdAt(nowEpoch())
                 .build();
         eventRepo.append(ev);
+    }
+
+    private void appendHitlReq(long sessionId, String nodeName, Map<String, Object> output) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("nodeName", nodeName);
+        payload.put("output", output);
+        String key = "hitl-req-" + sessionId + "-" + nodeName + "-" + System.nanoTime();
+        AgentEvent ev = AgentEvent.builder()
+                .sessionId(sessionId)
+                .type(EventType.HITL_REQ)
+                .payload(toJson(payload))
+                .idempotencyKey(key)
+                .circuitState("OK")
+                .validatorStatus("OK")
+                .createdAt(nowEpoch())
+                .build();
+        eventRepo.append(ev);
+    }
+
+    /**
+     * Checks whether a node has been confirmed via a {@code HITL_RES} event
+     * after its most recent {@code CHECKPOINT}. Scans backwards so the most
+     * recent cycle is evaluated first.
+     */
+    private boolean isNodeConfirmed(List<AgentEvent> events, String nodeName) {
+        for (int i = events.size() - 1; i >= 0; i--) {
+            AgentEvent ev = events.get(i);
+            Map<String, Object> payload = parsePayload(ev.getPayload());
+            if (payload == null) continue;
+            if (!nodeName.equals(payload.get("nodeName"))) continue;
+
+            if (ev.getType() == EventType.HITL_RES) return true;
+            if (ev.getType() == EventType.CHECKPOINT) break; // only look at the most recent cycle
+        }
+        return false;
+    }
+
+    /**
+     * If the user rejected a node's output, find the feedback string so it can
+     * be injected into the node's next execution input, changing the inputsHash
+     * and forcing a cache miss.
+     */
+    private String findRejectionFeedback(List<AgentEvent> events, String nodeName) {
+        for (int i = events.size() - 1; i >= 0; i--) {
+            AgentEvent ev = events.get(i);
+            if (ev.getType() != EventType.HITL_RES) continue;
+            Map<String, Object> payload = parsePayload(ev.getPayload());
+            if (payload == null || !nodeName.equals(payload.get("nodeName"))) continue;
+            if ("reject".equals(payload.get("action"))) {
+                Object fb = payload.get("feedback");
+                return fb instanceof String s ? s : null;
+            }
+            return null; // approved or edit — no feedback injection
+        }
+        return null;
     }
 
     private String toJson(Map<String, Object> payload) {

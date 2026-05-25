@@ -77,6 +77,35 @@ public class RequirementAnalysisOrchestrator {
         return executor.run(nodes, sessionId, merged);
     }
 
+    /**
+     * Confirms or rejects a node's output and re-runs the DAG.
+     *
+     * <ul>
+     *   <li><b>approve</b> — the HITL_RES is recorded; on re-run, the confirmed
+     *       node cache-hits and the next node starts executing.</li>
+     *   <li><b>reject</b> — the HITL_RES carries feedback; {@link DagExecutor}
+     *       injects it into the node's input, changing the hash and forcing
+     *       a cache miss (re-execute).</li>
+     *   <li><b>edit</b> — a new CHECKPOINT with edited output is appended,
+     *       cascading cache misses to all downstream nodes.</li>
+     * </ul>
+     */
+    public ExecutionResult confirmAndResume(long sessionId,
+                                             String nodeName,
+                                             String action,
+                                             String feedback,
+                                             Map<String, Object> editedOutput,
+                                             List<DagNode> nodes) {
+        appendHitlRes(sessionId, nodeName, action, feedback, editedOutput);
+        sessionRepo.updateStatus(sessionId, SessionStatus.RUNNING);
+
+        if ("edit".equals(action) && editedOutput != null) {
+            overwriteCheckpoint(sessionId, nodeName, editedOutput);
+        }
+
+        return executor.run(nodes, sessionId, Map.of());
+    }
+
     public AgentRegistry getAgentRegistry() {
         return agentRegistry;
     }
@@ -94,6 +123,57 @@ public class RequirementAnalysisOrchestrator {
                 .type(EventType.CLARIFY_RES)
                 .payload(toJson(payload))
                 .idempotencyKey(key)
+                .circuitState("OK")
+                .validatorStatus("OK")
+                .createdAt(System.currentTimeMillis() / 1000L)
+                .build();
+        eventRepo.append(ev);
+    }
+
+    private void appendHitlRes(long sessionId, String nodeName,
+                                String action, String feedback,
+                                Map<String, Object> editedOutput) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("nodeName", nodeName);
+        payload.put("action", action);
+        if (feedback != null) {
+            payload.put("feedback", feedback);
+        }
+        if (editedOutput != null) {
+            payload.put("editedOutput", editedOutput);
+        }
+        String key = "hitl-res-" + sessionId + "-" + nodeName + "-" + System.nanoTime();
+        AgentEvent ev = AgentEvent.builder()
+                .sessionId(sessionId)
+                .type(EventType.HITL_RES)
+                .payload(toJson(payload))
+                .idempotencyKey(key)
+                .circuitState("OK")
+                .validatorStatus("OK")
+                .createdAt(System.currentTimeMillis() / 1000L)
+                .build();
+        eventRepo.append(ev);
+    }
+
+    /**
+     * Appends a new CHECKPOINT with the user-edited output. The new inputsHash
+     * differs from the original, cascading cache misses to all downstream nodes.
+     */
+    private void overwriteCheckpoint(long sessionId, String nodeName,
+                                      Map<String, Object> editedOutput) {
+        String newHash = InputsHasher.hash(editedOutput);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("nodeName", nodeName);
+        payload.put("inputsHash", newHash);
+        payload.put("output", editedOutput);
+        payload.put("edited", true);
+        String key = "ckpt-edit-" + sessionId + "-" + nodeName + "-" + System.nanoTime();
+        AgentEvent ev = AgentEvent.builder()
+                .sessionId(sessionId)
+                .type(EventType.CHECKPOINT)
+                .payload(toJson(payload))
+                .idempotencyKey(key)
+                .inputsHash(newHash)
                 .circuitState("OK")
                 .validatorStatus("OK")
                 .createdAt(System.currentTimeMillis() / 1000L)

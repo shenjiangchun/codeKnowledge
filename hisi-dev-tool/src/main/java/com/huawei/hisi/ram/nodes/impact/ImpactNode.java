@@ -30,17 +30,20 @@ public class ImpactNode implements DagNode {
     static final int DEFAULT_TREE_DEPTH = 2;
 
     private final InvolvedRingResolver involvedRingResolver;
+    private final ScopeNarrowingService scopeNarrowingService;
     private final ModifiedRingResolver modifiedRingResolver;
     private final ImpactRingResolver impactRingResolver;
     private final RiskScorer riskScorer;
     private final DeterministicValidator deterministicValidator;
 
     public ImpactNode(InvolvedRingResolver involvedRingResolver,
+                      ScopeNarrowingService scopeNarrowingService,
                       ModifiedRingResolver modifiedRingResolver,
                       ImpactRingResolver impactRingResolver,
                       RiskScorer riskScorer,
                       DeterministicValidator deterministicValidator) {
         this.involvedRingResolver = involvedRingResolver;
+        this.scopeNarrowingService = scopeNarrowingService;
         this.modifiedRingResolver = modifiedRingResolver;
         this.impactRingResolver = impactRingResolver;
         this.riskScorer = riskScorer;
@@ -84,6 +87,12 @@ public class ImpactNode implements DagNode {
             involved = involvedRingResolver.resolve(intent, projectPath);
             log.info("[RAM][ImpactNode] involved seeds={} entries={} impls={}",
                     involved.seeds().size(), involved.entries().size(), involved.impls().size());
+
+            // ★ AI gatekeeper: filter seeds to only those truly relevant to intent
+            var narrowedSeeds = scopeNarrowingService.narrow(intent, involved.seeds(), projectPath);
+            involved = new InvolvedRing(narrowedSeeds, involved.entries(), involved.impls());
+            log.info("[RAM][ImpactNode] after AI narrowing: seeds={}", involved.seeds().size());
+
             modified = modifiedRingResolver.resolve(involved, projectPath, DEFAULT_TREE_DEPTH);
             log.info("[RAM][ImpactNode] modified tree.size={}", modified.tree().size());
             impact = impactRingResolver.resolve(modified, projectPath);

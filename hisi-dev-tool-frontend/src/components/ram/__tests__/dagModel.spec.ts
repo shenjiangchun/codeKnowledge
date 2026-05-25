@@ -87,12 +87,61 @@ describe('deriveDagSnapshot', () => {
     expect(snap[1].status).toBe('done')
   })
 
+  it('promotes pending nodes to done on RUN_COMPLETED (defense-in-depth)', () => {
+    // Simulates case where CHECKPOINT events weren't classified (nodeName unrecognized)
+    // but RUN_COMPLETED still arrives — all nodes should be marked done
+    const snap = deriveDagSnapshot([
+      evt(1, 'RUN_COMPLETED', {})
+    ])
+    expect(snap[0].status).toBe('done')
+    expect(snap[1].status).toBe('done')
+    expect(snap[2].status).toBe('done')
+    expect(snap[3].status).toBe('done')
+  })
+
+  it('promotes pending nodes to done when sessionStatus is completed (defense-in-depth)', () => {
+    // Simulates case where events arrive but none are properly classified,
+    // then session transitions to completed — all pending nodes should be done
+    const snap = deriveDagSnapshot(
+      [evt(1, 'UNKNOWN_EVENT', { some: 'data' })],
+      'completed'
+    )
+    expect(snap[0].status).toBe('done')
+    expect(snap[1].status).toBe('done')
+    expect(snap[2].status).toBe('done')
+    expect(snap[3].status).toBe('done')
+  })
+
   it('overlays session-level aborted onto running nodes', () => {
     const snap = deriveDagSnapshot(
       [evt(1, 'ASSISTANT_DELTA', { phase: 'verify' })],
       'aborted'
     )
     expect(snap[3].status).toBe('failed')
+  })
+
+  it('marks nodes done via CHECKPOINT events with nodeName payload (backend format)', () => {
+    const snap = deriveDagSnapshot([
+      evt(1, 'CHECKPOINT', { nodeName: 'clarify', inputsHash: 'h1', output: {} }),
+      evt(2, 'CHECKPOINT', { nodeName: 'impact', inputsHash: 'h2', output: {} }),
+      evt(3, 'CHECKPOINT', { nodeName: 'implement', inputsHash: 'h3', output: {} }),
+      evt(4, 'CHECKPOINT', { nodeName: 'verify', inputsHash: 'h4', output: {} })
+    ])
+    expect(snap[0].status).toBe('done')
+    expect(snap[1].status).toBe('done')
+    expect(snap[2].status).toBe('done')
+    expect(snap[3].status).toBe('done')
+  })
+
+  it('handles mixed legacy phase events and CHECKPOINT events', () => {
+    const snap = deriveDagSnapshot([
+      evt(1, 'ASSISTANT_DELTA', { phase: 'clarify' }),
+      evt(2, 'CHECKPOINT', { nodeName: 'clarify', inputsHash: 'h1', output: {} }),
+      evt(3, 'CHECKPOINT', { nodeName: 'impact', inputsHash: 'h2', output: {} })
+    ])
+    expect(snap[0].status).toBe('done')
+    expect(snap[0].events).toBe(2)
+    expect(snap[1].status).toBe('done')
   })
 })
 

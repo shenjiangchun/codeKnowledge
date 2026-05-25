@@ -15,11 +15,10 @@ import java.util.Map;
  *
  * <p>Pipeline:
  * <ol>
- *     <li>Pick a Claude model based on the upstream risk level:
- *         {@code HIGH}/{@code CRITICAL} → {@code claude-opus-4-6};
- *         otherwise → {@code claude-sonnet-4-5}.</li>
  *     <li>Extract any acceptance criteria carried forward from clarify.</li>
- *     <li>Ask {@link ImplementLlmClient} to draft business / UI / tech plans.</li>
+ *     <li>Ask {@link ImplementLlmClient} to draft business / UI / tech plans.
+ *         Model selection is delegated to the LLM client, which reads from
+ *         {@code anthropic.model} configuration (no hardcoded model names).</li>
  *     <li>Validate against the {@code implement.output} JSON schema. A failure
  *         is a hard error here (not clarify-recoverable).</li>
  * </ol>
@@ -29,8 +28,6 @@ import java.util.Map;
 public class ImplementNode implements DagNode {
 
     private static final String SCHEMA_NAME = "implement.output";
-    private static final String MODEL_HIGH_RISK = "claude-opus-4-6";
-    private static final String MODEL_DEFAULT = "claude-sonnet-4-5";
 
     private final ImplementLlmClient llmClient;
     private final SchemaValidator schemaValidator;
@@ -55,11 +52,11 @@ public class ImplementNode implements DagNode {
         if (input == null) {
             throw new IllegalArgumentException("ImplementNode input must not be null");
         }
-        String model = selectModel(input);
+        // Pass null model — let the LLM client use its configured default from anthropic.model
         List<String> acceptanceCriteria = extractAcceptanceCriteria(input);
 
-        log.debug("implement invoking llm model={} acCount={}", model, acceptanceCriteria.size());
-        Map<String, Object> output = llmClient.draft(input, acceptanceCriteria, model);
+        log.debug("implement invoking llm acCount={}", acceptanceCriteria.size());
+        Map<String, Object> output = llmClient.draft(input, acceptanceCriteria, null);
 
         ValidationResult validation = schemaValidator.validate(SCHEMA_NAME, output);
         if (!validation.passed()) {
@@ -69,20 +66,6 @@ public class ImplementNode implements DagNode {
                             + " violations=" + validation.violations());
         }
         return output;
-    }
-
-    private String selectModel(Map<String, Object> input) {
-        Object risk = input.get("risk");
-        if (risk instanceof Map<?, ?> riskMap) {
-            Object level = riskMap.get("level");
-            if (level instanceof String levelStr) {
-                String upper = levelStr.toUpperCase();
-                if ("HIGH".equals(upper) || "CRITICAL".equals(upper)) {
-                    return MODEL_HIGH_RISK;
-                }
-            }
-        }
-        return MODEL_DEFAULT;
     }
 
     @SuppressWarnings("unchecked")

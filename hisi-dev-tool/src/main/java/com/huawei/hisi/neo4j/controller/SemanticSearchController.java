@@ -5,6 +5,7 @@ import com.huawei.hisi.neo4j.model.SearchResult;
 import com.huawei.hisi.neo4j.model.SearchResultItem;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.neo4j.service.HybridSearchService;
+import com.huawei.hisi.neo4j.service.MultiQueryHybridSearchService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -32,6 +33,7 @@ public class SemanticSearchController {
     private static final Logger log = LoggerFactory.getLogger(SemanticSearchController.class);
 
     private final HybridSearchService hybridSearchService;
+    private final MultiQueryHybridSearchService multiQueryHybridSearchService;
     private final Neo4jMethodNodeRepository methodNodeRepository;
 
     /**
@@ -43,15 +45,19 @@ public class SemanticSearchController {
 
     public SemanticSearchController(
             HybridSearchService hybridSearchService,
+            MultiQueryHybridSearchService multiQueryHybridSearchService,
             Neo4jMethodNodeRepository methodNodeRepository) {
         this.hybridSearchService = hybridSearchService;
+        this.multiQueryHybridSearchService = multiQueryHybridSearchService;
         this.methodNodeRepository = methodNodeRepository;
     }
 
     /**
-     * 语义搜索
-     * 将前端 SemanticSearchRequest 适配到 HybridSearchService
+     * 语义搜索（旧版，不含多路召回+RRF）
+     *
+     * @deprecated 使用 {@link #semanticSearchV2(Map)} 替代，支持分词多路召回和 RRF 融合
      */
+    @Deprecated
     @PostMapping("/semantic")
     @SuppressWarnings("unchecked")
     public ResponseEntity<Map<String, Object>> semanticSearch(@RequestBody Map<String, Object> request) {
@@ -165,6 +171,109 @@ public class SemanticSearchController {
                     "total", 0,
                     "queryTime", queryTime,
                     "suggestedQueries", Collections.emptyList()
+            ));
+        }
+    }
+
+    /**
+     * 语义搜索 v2 — 多路召回 + RRF 融合
+     * 将查询分词为多个子查询，分别搜索后通过 RRF 聚合排序。
+     * 返回额外包含 subQueries 和 rrfScores 字段。
+     */
+    @PostMapping("/semantic/v2")
+    @SuppressWarnings("unchecked")
+    public ResponseEntity<Map<String, Object>> semanticSearchV2(@RequestBody Map<String, Object> request) {
+        String query = (String) request.get("query");
+        String projectPath = (String) request.get("projectPath");
+        List<String> projectPaths = request.get("projectPaths") != null ? (List<String>) request.get("projectPaths") : null;
+        Integer limit = request.get("limit") != null ? ((Number) request.get("limit")).intValue() : 20;
+
+        // 从 filters 或顶层提取 language 参数
+        String language = null;
+        if (request.get("filters") instanceof Map) {
+            Map<String, Object> filters = (Map<String, Object>) request.get("filters");
+            if (filters.get("language") instanceof String lang && !lang.isBlank()) {
+                language = lang;
+            }
+        }
+        if (language == null && request.get("language") instanceof String lang && !lang.isBlank()) {
+            language = lang;
+        }
+
+        if (query == null || query.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "查询不能为空",
+                    "results", Collections.emptyList(),
+                    "total", 0,
+                    "queryTime", 0
+            ));
+        }
+
+        // 构建搜索路径
+        List<String> searchPaths = new ArrayList<>();
+        if (projectPaths != null && !projectPaths.isEmpty()) {
+            searchPaths.addAll(projectPaths);
+        } else if (projectPath != null && !projectPath.trim().isEmpty()) {
+            searchPaths.add(projectPath);
+        } else {
+            List<String> projects = methodNodeRepository.findDistinctProjectPaths();
+            if (projects.isEmpty()) {
+                return ResponseEntity.ok(Map.of(
+                        "results", Collections.emptyList(),
+                        "total", 0,
+                        "queryTime", 0,
+                        "suggestedQueries", Collections.emptyList(),
+                        "subQueries", Collections.emptyList()
+                ));
+            }
+            searchPaths.add(projects.get(0));
+        }
+
+        int graphDepth = request.get("graphDepth") != null ? ((Number) request.get("graphDepth")).intValue() : 0;
+        long startTime = System.currentTimeMillis();
+
+        try {
+            // 使用多路召回+RRF服务
+            SearchResult searchResult = multiQueryHybridSearchService.multiQuerySearch(
+                    query, searchPaths.get(0), searchPaths, language, limit, graphDepth);
+
+            // 构建 nodeId -> similarityScore 映射（此处已是 RRF 分数）
+            Map<String, Double> scoreMap = new HashMap<>();
+            if (searchResult.getItems() != null) {
+                for (SearchResultItem item : searchResult.getItems()) {
+                    if (item.getNodeId() != null && item.getSimilarityScore() != null) {
+                        scoreMap.put(item.getNodeId(), item.getSimilarityScore());
+                    }
+                }
+            }
+
+            List<Map<String, Object>> formattedResults = searchResult.getResults().stream()
+                    .map(node -> convertToSemanticResult(node, scoreMap.getOrDefault(node.getNodeId(), 0.0)))
+                    .collect(Collectors.toList());
+
+            long queryTime = System.currentTimeMillis() - startTime;
+            recordSearchHistory(searchPaths.get(0), query);
+
+            // 构建响应（额外包含 subQueries 和 rrfScores）
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("results", formattedResults);
+            response.put("total", searchResult.getTotalCount());
+            response.put("queryTime", queryTime);
+            response.put("suggestedQueries", searchResult.getSuggestions() != null ? searchResult.getSuggestions() : Collections.emptyList());
+            response.put("subQueries", searchResult.getSubQueries() != null ? searchResult.getSubQueries() : Collections.emptyList());
+            response.put("rrfScores", searchResult.getRrfScores() != null ? searchResult.getRrfScores() : Collections.emptyMap());
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("v2 语义搜索失败: {}", e.getMessage(), e);
+            long queryTime = System.currentTimeMillis() - startTime;
+            return ResponseEntity.ok(Map.of(
+                    "results", Collections.emptyList(),
+                    "total", 0,
+                    "queryTime", queryTime,
+                    "suggestedQueries", Collections.emptyList(),
+                    "subQueries", Collections.emptyList()
             ));
         }
     }

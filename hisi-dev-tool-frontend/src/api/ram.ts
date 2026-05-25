@@ -8,6 +8,7 @@ import request from '@/utils/request'
 import type {
   AbortResponse,
   ClarifyResponse,
+  ConfirmResponse,
   ResumeResponse,
   StartSessionResponse
 } from '@/types/ram'
@@ -37,6 +38,20 @@ export function abortRamSession(sessionId: string): Promise<AbortResponse> {
   return request.post(`/ram/sessions/${sessionId}/abort`)
 }
 
+export interface ConfirmPayload {
+  nodeName: string
+  action: 'approve' | 'reject' | 'edit'
+  feedback?: string
+  editedOutput?: Record<string, unknown>
+}
+
+export function confirmRamNode(
+  sessionId: string,
+  payload: ConfirmPayload
+): Promise<ConfirmResponse> {
+  return request.post(`/ram/sessions/${sessionId}/confirm`, payload)
+}
+
 /** Absolute (proxied) URL for the SSE endpoint. */
 export function ramStreamUrl(sessionId: string, afterSeq?: number): string {
   const base = `/api/ram/sessions/${sessionId}/stream`
@@ -47,6 +62,8 @@ export interface SessionInfoResponse {
   status: string
   currentSeq: number
   clarifyPending: boolean
+  hitlPending: boolean
+  hitlNodeName?: string
 }
 
 export function getRamSession(sessionId: string): Promise<SessionInfoResponse> {

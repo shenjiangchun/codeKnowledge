@@ -34,7 +34,7 @@ class ImpactRingResolverTest {
         Bridge feignBridge = new Bridge("br1", "FEIGN_CLIENT", "order-service");
         Bridge feignChainBridge = new Bridge("br-feign-chain", "FEIGN", "order-service");
 
-        when(kg.affecting(eq("com.foo.Bar"), eq("method"), anyString())).thenReturn(List.of(up));
+        when(kg.affecting(anyString(), anyString(), anyString(), anyInt())).thenReturn(List.of(up));
         when(kg.downstream(eq("com.foo.Bar#method"), anyString(), anyInt())).thenReturn(List.of(down));
         when(kg.bridges(eq("com.foo.Bar#method"), anyString())).thenReturn(List.of(feignBridge));
         when(kg.feignChain(eq("order-service"), anyString())).thenReturn(List.of(feignChainBridge));

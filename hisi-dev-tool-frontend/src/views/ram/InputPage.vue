@@ -1,8 +1,10 @@
 <script setup lang="ts">
 /**
  * RAM InputPage — capture the requirement raw text + target project path,
- * then start a session via {@code useRamSession} and navigate to the draft
- * page using the returned {@code sessionId}.
+ * then POST to create a session and navigate to the draft page.
+ *
+ * Note: This page only calls the REST API to create the session. The SSE
+ * event stream is opened exclusively by DraftPage to avoid duplicate streams.
  *
  * Project selection is aligned with the Knowledge Graph page:
  * - Auto-scan local Git repositories via /projects/scan-git-repos
@@ -13,13 +15,12 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAppStore } from '@/stores/app'
-import { useRamSession } from '@/composables/useRamSession'
+import { startRamSession } from '@/api/ram'
 import { projectApi } from '@/api/project'
 import type { GitRepositoryInfo } from '@/types/callchain'
 
 const router = useRouter()
 const appStore = useAppStore()
-const { start } = useRamSession()
 
 const rawInput = ref<string>('')
 const projectPath = ref<string>('')
@@ -72,8 +73,10 @@ async function onSubmit(): Promise<void> {
   }
   submitting.value = true
   try {
-    const sid = await start(rawInput.value, projectPath.value)
-    await router.push({ name: 'RamDraft', params: { sid } })
+    // Only POST to create the session — do NOT open an SSE stream here.
+    // DraftPage.vue will open the single SSE stream via rejoin().
+    const resp = await startRamSession({ rawInput: rawInput.value, projectPath: projectPath.value })
+    await router.push({ name: 'RamDraft', params: { sid: resp.sessionId } })
   } catch (error) {
     const msg = error instanceof Error ? error.message : '启动失败'
     ElMessage.error(msg)
