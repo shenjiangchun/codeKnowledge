@@ -149,6 +149,23 @@ export function deriveDagSnapshot(
     }
   }
 
+  // When the session is actively running but no node shows "running" (e.g. right
+  // after a HITL confirm before the next node's first event arrives, or when a
+  // node's first classified event is also its CHECKPOINT), promote the first
+  // pending node so the user always sees an "执行中" indicator while work is
+  // happening on the backend.
+  if (sessionStatus === 'running') {
+    const hasRunning = DAG_ORDER.some((k) => acc[k].status === 'running')
+    if (!hasRunning) {
+      for (const k of DAG_ORDER) {
+        if (acc[k].status === 'pending') {
+          acc[k].status = 'running'
+          break
+        }
+      }
+    }
+  }
+
   // Honor terminal session status as a final overlay.
   // Defense-in-depth: also flip 'pending' → 'done' when session confirmed completed,
   // covering race conditions where CHECKPOINT events weren't properly classified.

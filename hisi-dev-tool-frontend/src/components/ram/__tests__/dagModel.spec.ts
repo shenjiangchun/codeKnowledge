@@ -143,6 +143,41 @@ describe('deriveDagSnapshot', () => {
     expect(snap[0].events).toBe(2)
     expect(snap[1].status).toBe('done')
   })
+
+  it('promotes first pending node to running when session is running but no node is running', () => {
+    // After clarify CHECKPOINT completes, no node is "running" yet but
+    // session status is still 'running' — the next node (impact) should
+    // show as running so the user sees the "执行中" indicator.
+    const snap = deriveDagSnapshot(
+      [evt(1, 'CHECKPOINT', { nodeName: 'clarify', inputsHash: 'h1', output: {} })],
+      'running'
+    )
+    expect(snap[0].status).toBe('done')
+    expect(snap[1].status).toBe('running')  // impact promoted
+    expect(snap[2].status).toBe('pending')
+    expect(snap[3].status).toBe('pending')
+  })
+
+  it('promotes first pending node to running when session starts (no events yet)', () => {
+    // Session just started, no events received yet — clarify should show running
+    const snap = deriveDagSnapshot([], 'running')
+    expect(snap[0].status).toBe('running')
+    expect(snap[1].status).toBe('pending')
+  })
+
+  it('does not promote when a node is already running', () => {
+    // Impact is actively running — no promotion should happen
+    const snap = deriveDagSnapshot(
+      [
+        evt(1, 'CHECKPOINT', { nodeName: 'clarify', inputsHash: 'h1', output: {} }),
+        evt(2, 'ASSISTANT_DELTA', { phase: 'impact' })
+      ],
+      'running'
+    )
+    expect(snap[0].status).toBe('done')
+    expect(snap[1].status).toBe('running')  // already running, no extra promotion
+    expect(snap[2].status).toBe('pending')
+  })
 })
 
 describe('formatTokens', () => {
