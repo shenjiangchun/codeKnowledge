@@ -5,12 +5,11 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import com.huawei.hisi.knowledgegraph.python.model.PyCall;
-import com.huawei.hisi.knowledgegraph.python.model.PyClass;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
 import lombok.extern.slf4j.Slf4j;
@@ -19,16 +18,22 @@ import org.springframework.stereotype.Component;
 /**
  * Scans a parsed {@link PyModule} for Django view entry points.
  *
- * <h3>Two detection modes</h3>
- * <ol>
- *   <li><strong>URL configuration</strong> — if the module file path ends with
- *       {@code urls.py}, the scanner walks the {@link PyCall} list looking for
- *       calls to {@code path(...)}, {@code re_path(...)}, or {@code url(...)}.
- *       The first string argument is captured as the URL pattern.</li>
- *   <li><strong>Class-based views (CBV)</strong> — any {@link PyClass} whose base
- *       class list contains "View", "ViewSet", or "APIView" (substring match)
- *       emits one entry point per class.</li>
- * </ol>
+ * <h3>Detection model</h3>
+ * Entry points are emitted ONLY for {@code path(...)} / {@code re_path(...)} /
+ * {@code url(...)} calls in modules whose file path ends with {@code urls.py}.
+ * For each registration the second positional argument (the view callable
+ * expression) is resolved through {@link DjangoViewResolver} into a concrete
+ * {@code methodNodeId} so downstream call-chain traversal can follow the
+ * {@code (:EntryPoint)-->[methodNodeId]-->(:Method)} link.
+ *
+ * <p>Class-based-views (CBV) are emitted as a single class-level entry point
+ * anchored on a representative handler method (one of
+ * {@code get/post/put/delete/patch/dispatch}). They are NOT split into one
+ * entry per HTTP method (deferred — see plan).
+ *
+ * <p>The previous "scan any module for CBV classes" mode has been removed —
+ * untriggered CBV classes (those not registered to a URL) no longer produce
+ * orphan entry points.
  */
 @Slf4j
 @Component
@@ -36,50 +41,59 @@ public class DjangoUrlScanner {
 
     private static final Set<String> URL_FUNCTIONS = Set.of("path", "re_path", "url");
 
-    private static final Set<String> CBV_BASE_KEYWORDS = Set.of("View", "ViewSet", "APIView");
-
     private static final String LANGUAGE_PYTHON = "python";
     private static final String FRAMEWORK_DJANGO = "django";
 
+    private final DjangoViewResolver viewResolver = new DjangoViewResolver();
+
     /**
-     * Scan the given module and produce entry points for Django URL patterns
-     * and class-based views.
+     * Scan the given module and produce entry points for Django URL patterns.
+     *
+     * @param module          parsed module under scan
+     * @param projectPath     project root (used to tag the entry point)
+     * @param modulesByPath   global map of {@code modulePath -> PyModule} needed
+     *                        for cross-module view-callable resolution. May be
+     *                        {@code null} or empty when invoked from tests that
+     *                        don't care about resolution; in that case no
+     *                        methodNodeId will be set.
      */
-    public List<EntryPointNode> scanModule(PyModule module, String projectPath) {
+    public List<EntryPointNode> scanModule(PyModule module,
+                                           String projectPath,
+                                           Map<String, PyModule> modulesByPath) {
         if (module == null) {
+            return List.of();
+        }
+        if (module.getFilePath() == null || !module.getFilePath().endsWith("urls.py")) {
             return List.of();
         }
 
         List<EntryPointNode> entries = new ArrayList<>();
-
-        // Mode 1: URL config scanning (only in urls.py)
-        if (module.getFilePath() != null && module.getFilePath().endsWith("urls.py")) {
-            for (PyCall call : module.getCalls()) {
-                EntryPointNode entry = classifyUrlCall(call, module, projectPath);
-                if (entry != null) {
-                    entries.add(entry);
-                }
+        for (PyCall call : module.getCalls()) {
+            EntryPointNode entry = classifyUrlCall(call, module, projectPath, modulesByPath);
+            if (entry != null) {
+                entries.add(entry);
             }
         }
-
-        // Mode 2: CBV scanning (any module)
-        for (PyClass clazz : module.getClasses()) {
-            if (isCbvClass(clazz)) {
-                entries.add(buildCbvEntry(module, clazz, projectPath));
-            }
-        }
-
         return List.copyOf(entries);
+    }
+
+    /**
+     * Backwards-compatible overload (no cross-module resolution) used by older
+     * callers / unit tests. {@code methodNodeId} will be {@code null} when
+     * resolution is not possible.
+     */
+    public List<EntryPointNode> scanModule(PyModule module, String projectPath) {
+        return scanModule(module, projectPath, Map.of());
     }
 
     private EntryPointNode classifyUrlCall(PyCall call,
                                            PyModule module,
-                                           String projectPath) {
+                                           String projectPath,
+                                           Map<String, PyModule> modulesByPath) {
         String expr = call.getCalleeExpression();
         if (expr == null) {
             return null;
         }
-        // Extract the function name (last segment)
         String funcName = expr.contains(".") ? expr.substring(expr.lastIndexOf('.') + 1) : expr;
         if (!URL_FUNCTIONS.contains(funcName)) {
             return null;
@@ -89,11 +103,25 @@ public class DjangoUrlScanner {
         if (urlPattern == null) {
             urlPattern = "";
         }
+        String viewExpression = call.getSecondPositionalArg();
+
+        String methodNodeId = null;
+        if (viewExpression != null && modulesByPath != null && !modulesByPath.isEmpty()) {
+            Optional<DjangoViewResolver.ResolvedView> resolved =
+                    viewResolver.resolve(viewExpression, module, modulesByPath);
+            if (resolved.isPresent()) {
+                methodNodeId = resolved.get().computeNodeId();
+            } else {
+                log.warn("[DjangoUrlScanner] Cannot resolve view expression '{}' at {}:{} — "
+                                + "entry point will have methodNodeId=null (call chain will be empty)",
+                        viewExpression, module.getFilePath(), call.getLineNumber());
+            }
+        }
 
         String entryId = sha256Prefix(module.getFilePath() + ":DJANGO:" + urlPattern + ":" + call.getLineNumber());
         String entryKey = urlPattern;
-        String entryInfo = buildUrlEntryInfoJson(urlPattern, expr, call.getEnclosingFunction(),
-                module.getFilePath(), call.getLineNumber());
+        String entryInfo = buildUrlEntryInfoJson(urlPattern, expr, viewExpression,
+                call.getEnclosingFunction(), module.getFilePath(), call.getLineNumber());
 
         return EntryPointNode.builder()
                 .entryId(entryId)
@@ -103,63 +131,25 @@ public class DjangoUrlScanner {
                 .projectPath(projectPath)
                 .language(LANGUAGE_PYTHON)
                 .framework(FRAMEWORK_DJANGO)
-                .build();
-    }
-
-    private boolean isCbvClass(PyClass clazz) {
-        for (String base : clazz.getBaseClasses()) {
-            for (String keyword : CBV_BASE_KEYWORDS) {
-                if (base.contains(keyword)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private EntryPointNode buildCbvEntry(PyModule module,
-                                         PyClass clazz,
-                                         String projectPath) {
-        String entryId = sha256Prefix(module.getFilePath() + ":CBV:" + clazz.getName());
-        String entryKey = clazz.getName();
-        String entryInfo = buildCbvEntryInfoJson(clazz, module.getFilePath());
-
-        return EntryPointNode.builder()
-                .entryId(entryId)
-                .entryType(EntryPointNode.TYPE_HTTP)
-                .entryKey(entryKey)
-                .entryInfo(entryInfo)
-                .projectPath(projectPath)
-                .language(LANGUAGE_PYTHON)
-                .framework(FRAMEWORK_DJANGO)
+                .methodNodeId(methodNodeId)
                 .build();
     }
 
     private static String buildUrlEntryInfoJson(String urlPattern,
                                                 String callExpression,
+                                                String viewExpression,
                                                 String enclosingFunction,
                                                 String filePath,
                                                 int lineNumber) {
-        StringBuilder sb = new StringBuilder(128);
+        StringBuilder sb = new StringBuilder(160);
         sb.append('{');
         appendField(sb, "subType", "DJANGO_VIEW", true);
         appendField(sb, "urlPattern", urlPattern, false);
         appendField(sb, "callExpression", callExpression, false);
+        appendField(sb, "viewExpression", viewExpression, false);
         appendField(sb, "enclosingFunction", enclosingFunction, false);
         appendField(sb, "filePath", filePath, false);
         sb.append(",\"lineNumber\":").append(lineNumber);
-        sb.append('}');
-        return sb.toString();
-    }
-
-    private static String buildCbvEntryInfoJson(PyClass clazz, String filePath) {
-        StringBuilder sb = new StringBuilder(128);
-        sb.append('{');
-        appendField(sb, "subType", "DJANGO_CBV", true);
-        appendField(sb, "className", clazz.getName(), false);
-        appendField(sb, "baseClasses", String.join(",", clazz.getBaseClasses()), false);
-        appendField(sb, "filePath", filePath, false);
-        sb.append(",\"lineNumber\":").append(clazz.getLineStart());
         sb.append('}');
         return sb.toString();
     }

@@ -2,6 +2,7 @@ package com.huawei.hisi.knowledgegraph.python.scanner;
 
 import java.util.List;
 
+import com.huawei.hisi.knowledgegraph.python.PythonKnowledgeGraphBuilder;
 import com.huawei.hisi.knowledgegraph.python.model.PyClass;
 import com.huawei.hisi.knowledgegraph.python.model.PyFunction;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
@@ -127,5 +128,26 @@ class FlaskRouteScannerTest {
     @DisplayName("Null module returns empty list")
     void scanModule_nullModule() {
         assertThat(scanner.scanModule(null, PROJECT_PATH)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("methodNodeId computed from handler function qualName + params")
+    void scanModule_setsMethodNodeId() {
+        PyFunction fn = PyFunction.builder()
+                .name("list_users")
+                .qualName("list_users")
+                .paramNames(List.of())
+                .decorators(List.of("app.route(\"/users\")"))
+                .lineStart(10).lineEnd(15).build();
+        PyModule module = PyModule.builder()
+                .filePath("views.py").modulePath("views")
+                .topLevelFunctions(List.of(fn)).build();
+
+        List<EntryPointNode> entries = scanner.scanModule(module, PROJECT_PATH);
+
+        assertThat(entries).hasSize(1);
+        String expected = PythonKnowledgeGraphBuilder.computeMethodNodeId(
+                "views", "list_users", List.of());
+        assertThat(entries.get(0).getMethodNodeId()).isEqualTo(expected);
     }
 }
