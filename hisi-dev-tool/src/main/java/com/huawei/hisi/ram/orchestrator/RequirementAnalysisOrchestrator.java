@@ -11,6 +11,7 @@ import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -71,12 +72,13 @@ public class RequirementAnalysisOrchestrator {
         appendClarifyRes(sessionId, clarifyAnswers);
         sessionRepo.updateStatus(sessionId, SessionStatus.RUNNING);
         // Reconstruct the original input (userRequirement, projectHints, etc.)
-        // from the event log, then merge clarify answers under the "answers" key
-        // so ClarifyNode can pass them to the LLM on re-run.
+        // from the event log, then accumulate ALL clarify answers from ALL rounds
+        // so the LLM sees the full Q&A history on re-run.
         Map<String, Object> originalInput = findOriginalInput(sessionId);
         Map<String, Object> merged = new LinkedHashMap<>(originalInput);
-        if (clarifyAnswers != null && !clarifyAnswers.isEmpty()) {
-            merged.put("answers", clarifyAnswers);
+        List<Map<String, Object>> allRounds = collectAllClarifyRounds(sessionId);
+        if (!allRounds.isEmpty()) {
+            merged.put("clarify_history", allRounds);
         }
         return executor.run(nodes, sessionId, merged);
     }
@@ -109,6 +111,53 @@ public class RequirementAnalysisOrchestrator {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * Collects ALL clarify Q&A rounds for a session by pairing
+     * consecutive CLARIFY_REQ → CLARIFY_RES events in chronological order.
+     *
+     * <p>Each round map contains:
+     * <ul>
+     *   <li>{@code questions} — the {@code List<String>} from the CLARIFY_REQ</li>
+     *   <li>{@code answers} — the {@code Map<String, Object>} from the CLARIFY_RES</li>
+     * </ul>
+     *
+     * <p>A CLARIFY_REQ without a subsequent CLARIFY_RES (i.e. the most recent
+     * unanswered request) is excluded — it represents the pending round whose
+     * response triggered this resume.
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> collectAllClarifyRounds(long sessionId) {
+        List<AgentEvent> events = eventRepo.findBySessionId(sessionId);
+        List<Map<String, Object>> rounds = new ArrayList<>();
+
+        // Pending CLARIFY_REQ waiting for its CLARIFY_RES pair
+        List<String> pendingQuestions = null;
+
+        for (AgentEvent ev : events) {
+            if (ev.getType() == EventType.CLARIFY_REQ) {
+                Map<String, Object> payload = parsePayload(ev.getPayload());
+                if (payload != null && payload.get("questions") instanceof List<?> qs) {
+                    pendingQuestions = qs.stream()
+                            .filter(q -> q instanceof String)
+                            .map(q -> (String) q)
+                            .toList();
+                }
+            } else if (ev.getType() == EventType.CLARIFY_RES && pendingQuestions != null) {
+                Map<String, Object> payload = parsePayload(ev.getPayload());
+                Map<String, Object> answers = Map.of();
+                if (payload != null && payload.get("answers") instanceof Map<?, ?> ans) {
+                    answers = (Map<String, Object>) ans;
+                }
+                Map<String, Object> round = new LinkedHashMap<>();
+                round.put("questions", List.copyOf(pendingQuestions));
+                round.put("answers", answers);
+                rounds.add(round);
+                pendingQuestions = null;
+            }
+        }
+        return rounds;
     }
 
     /**
