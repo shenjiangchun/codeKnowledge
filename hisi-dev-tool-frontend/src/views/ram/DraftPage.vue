@@ -391,6 +391,16 @@ async function onClarifySubmit(answers: Record<string, unknown>): Promise<void> 
   }
 }
 
+/** Whether the clarify modal can be re-opened (user closed it but status is still 'clarify'). */
+const canReopenClarify = computed(
+  () => session.status.value === 'clarify' && !showClarify.value
+)
+
+/** Whether the confirm modal can be re-opened (user closed it but status is still 'confirm'). */
+const canReopenConfirm = computed(
+  () => session.status.value === 'confirm' && !showConfirm.value
+)
+
 function onClarifyCancel(): void {
   showClarify.value = false
 }
@@ -501,6 +511,22 @@ onBeforeUnmount(() => {
         {{ session.status.value }}
       </el-tag>
       <div class="topbar-spacer" />
+      <el-button
+        v-if="canReopenClarify"
+        type="warning"
+        size="small"
+        @click="showClarify = true"
+      >
+        继续澄清
+      </el-button>
+      <el-button
+        v-if="canReopenConfirm"
+        type="warning"
+        size="small"
+        @click="showConfirm = true"
+      >
+        继续确认
+      </el-button>
       <el-button
         v-if="impactPayload"
         type="primary"
