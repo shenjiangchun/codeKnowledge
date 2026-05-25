@@ -10,6 +10,7 @@
  */
 import { computed, ref, watch } from 'vue'
 import type { HitlSchema } from '@/types/ram'
+import ImpactOutputView from './ImpactOutputView.vue'
 
 const props = defineProps<{
   schema: HitlSchema | null
@@ -151,6 +152,23 @@ const structuredSections = computed<OutputSection[]>(() => {
 
 const isStructured = computed(() => structuredSections.value.length > 0)
 
+/**
+ * Detect whether the output is an impact analysis result.
+ * Impact output has: modified + impacted + risk (involved is optional/ignored).
+ */
+const isImpactOutput = computed(() => {
+  if (!props.schema?.output) return false
+  const out = props.schema.output
+  return (
+    typeof out['modified'] === 'object' &&
+    out['modified'] !== null &&
+    typeof out['impacted'] === 'object' &&
+    out['impacted'] !== null &&
+    typeof out['risk'] === 'object' &&
+    out['risk'] !== null
+  )
+})
+
 const outputMarkdown = computed(() => {
   if (!props.schema?.output) return '(无输出)'
   const out = props.schema.output
@@ -228,8 +246,11 @@ function onCancel(): void {
     <div class="confirm-body">
       <!-- Node output preview -->
       <div v-if="mode === 'view' || mode === 'reject'" class="output-preview">
+        <!-- Impact analysis: human-readable specialized renderer -->
+        <ImpactOutputView v-if="isImpactOutput" :output="schema!.output as any" />
+
         <!-- Structured output: render as labeled sections -->
-        <div v-if="isStructured" class="structured-output">
+        <div v-else-if="isStructured" class="structured-output">
           <div
             v-for="(section, idx) in structuredSections"
             :key="idx"
