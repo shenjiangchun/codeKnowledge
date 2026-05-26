@@ -7,6 +7,7 @@ import com.huawei.hisi.neo4j.model.SearchResult;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.neo4j.service.EmbeddingService;
 import com.huawei.hisi.neo4j.service.HybridSearchService;
+import com.huawei.hisi.neo4j.service.MultiQueryHybridSearchService;
 import com.huawei.hisi.utils.PathUtils;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -37,28 +38,49 @@ public class VectorSearchController {
     private static final int MIN_QUERY_LENGTH = 2;
 
     private final HybridSearchService hybridSearchService;
+    private final MultiQueryHybridSearchService multiQueryHybridSearchService;
     private final Neo4jMethodNodeRepository methodNodeRepository;
     private final EmbeddingService embeddingService;
 
     public VectorSearchController(
             HybridSearchService hybridSearchService,
+            MultiQueryHybridSearchService multiQueryHybridSearchService,
             Neo4jMethodNodeRepository methodNodeRepository,
             EmbeddingService embeddingService) {
         this.hybridSearchService = hybridSearchService;
+        this.multiQueryHybridSearchService = multiQueryHybridSearchService;
         this.methodNodeRepository = methodNodeRepository;
         this.embeddingService = embeddingService;
     }
 
     /**
-     * 执行混合检索
+     * 执行混合检索（旧版，不含多路召回+RRF）
      *
+     * @deprecated 使用 {@link #searchV2(SearchRequest)} 替代，支持分词多路召回和 RRF 融合
      * @param request 搜索请求
      * @return 搜索结果
      */
+    @Deprecated
     @PostMapping
     public ResponseEntity<ApiResponse<SearchResult>> search(@Valid @RequestBody SearchRequest request) {
+        // 路径规范化：统一转为正斜杠形式（项目约定）。
+        // 防止 Windows 反斜杠路径与正斜杠路径在 Neo4j 中作为两份独立数据匹配。
+        String normalizedProjectPath = PathUtils.normalize(request.getProjectPath());
+        List<String> normalizedProjectPaths;
+        if (request.getProjectPaths() != null && !request.getProjectPaths().isEmpty()) {
+            normalizedProjectPaths = new ArrayList<>(request.getProjectPaths().size());
+            for (String p : request.getProjectPaths()) {
+                String n = PathUtils.normalize(p);
+                if (n != null && !n.isBlank()) {
+                    normalizedProjectPaths.add(n);
+                }
+            }
+        } else {
+            normalizedProjectPaths = null;
+        }
+
         log.info("收到搜索请求: query={}, projectPath={}, projectPaths={}, language={}, limit={}, graphDepth={}",
-                request.getQuery(), request.getProjectPath(), request.getProjectPaths(), request.getLanguage(),
+                request.getQuery(), normalizedProjectPath, normalizedProjectPaths, request.getLanguage(),
                 request.getLimit(), request.getGraphDepth());
 
         // 1. 查询长度校验
@@ -67,15 +89,17 @@ public class VectorSearchController {
         }
 
         try {
-            // 2. 解析项目路径列表
-            List<String> paths = request.getProjectPaths() != null && !request.getProjectPaths().isEmpty()
-                    ? request.getProjectPaths()
-                    : request.getProjectPath() != null ? List.of(request.getProjectPath()) : List.of();
+            // 2. 解析项目路径列表（已规范化）
+            List<String> paths = normalizedProjectPaths != null && !normalizedProjectPaths.isEmpty()
+                    ? normalizedProjectPaths
+                    : normalizedProjectPath != null && !normalizedProjectPath.isBlank()
+                            ? List.of(normalizedProjectPath)
+                            : List.of();
 
             // 3. 执行搜索
             SearchResult result = hybridSearchService.hybridSearch(
                     request.getQuery(),
-                    request.getProjectPath(),
+                    normalizedProjectPath,
                     paths,
                     request.getLanguage(),
                     request.getLimit(),
@@ -114,6 +138,76 @@ public class VectorSearchController {
     }
 
     /**
+     * 多路召回 + RRF 融合混合检索（v2）
+     * 将查询分词为多个子查询，分别搜索后通过 RRF 聚合排序。
+     * 返回的 SearchResult 额外包含 subQueries 和 rrfScores 字段。
+     *
+     * @param request 搜索请求（与 v1 相同的 DTO）
+     * @return 带分词信息和 RRF 分数的搜索结果
+     */
+    @PostMapping("/v2")
+    public ResponseEntity<ApiResponse<SearchResult>> searchV2(@Valid @RequestBody SearchRequest request) {
+        String normalizedProjectPath = PathUtils.normalize(request.getProjectPath());
+        List<String> normalizedProjectPaths;
+        if (request.getProjectPaths() != null && !request.getProjectPaths().isEmpty()) {
+            normalizedProjectPaths = new ArrayList<>(request.getProjectPaths().size());
+            for (String p : request.getProjectPaths()) {
+                String n = PathUtils.normalize(p);
+                if (n != null && !n.isBlank()) {
+                    normalizedProjectPaths.add(n);
+                }
+            }
+        } else {
+            normalizedProjectPaths = null;
+        }
+
+        log.info("收到 v2 搜索请求: query={}, projectPath={}, projectPaths={}, language={}, limit={}, graphDepth={}",
+                request.getQuery(), normalizedProjectPath, normalizedProjectPaths, request.getLanguage(),
+                request.getLimit(), request.getGraphDepth());
+
+        if (request.getQuery() == null || request.getQuery().trim().length() < MIN_QUERY_LENGTH) {
+            return buildErrorResponse(SearchErrorCode.QUERY_TOO_SHORT);
+        }
+
+        try {
+            List<String> paths = normalizedProjectPaths != null && !normalizedProjectPaths.isEmpty()
+                    ? normalizedProjectPaths
+                    : normalizedProjectPath != null && !normalizedProjectPath.isBlank()
+                            ? List.of(normalizedProjectPath)
+                            : List.of();
+
+            SearchResult result = multiQueryHybridSearchService.multiQuerySearch(
+                    request.getQuery(),
+                    normalizedProjectPath,
+                    paths,
+                    request.getLanguage(),
+                    request.getLimit(),
+                    request.getGraphDepth()
+            );
+
+            log.info("v2 搜索完成: totalCount={}, subQueries={}, costTimeMs={}",
+                    result.getTotalCount(),
+                    result.getSubQueries() != null ? result.getSubQueries().size() : 0,
+                    result.getCostTimeMs());
+
+            return ResponseEntity.ok(ApiResponse.success(result));
+
+        } catch (SearchException e) {
+            log.warn("v2 搜索异常: errorCode={}, message={}", e.getErrorCode(), e.getMessage());
+            return buildErrorResponse(e.getErrorCode());
+
+        } catch (IllegalArgumentException e) {
+            log.warn("v2 搜索请求参数无效: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.error(400, e.getMessage()));
+
+        } catch (Exception e) {
+            log.error("v2 搜索失败: {}", e.getMessage(), e);
+            return buildErrorResponse(SearchErrorCode.UNKNOWN_ERROR);
+        }
+    }
+
+    /**
      * 向量索引诊断接口
      * 用于排查向量搜索不返回结果的问题
      */
@@ -121,6 +215,8 @@ public class VectorSearchController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> diagnose(
             @PathVariable String projectPath,
             @RequestParam(required = false) String testQuery) {
+        // 路径规范化：统一为正斜杠形式（项目约定）
+        projectPath = PathUtils.normalize(projectPath);
         try {
             Map<String, Object> diagnosis = new HashMap<>();
 

@@ -60,10 +60,20 @@ export interface VectorSearchResponse {
   items?: VectorSearchResultItem[]
   totalCount: number
   costTimeMs: number
+  /** 分词后的子查询列表（v2 多路召回时由 QueryDecomposer 生成） */
+  subQueries?: string[]
+  /** RRF 融合得分（nodeId → score），仅多路召回时存在 */
+  rrfScores?: Record<string, number>
 }
 
 export const vectorSearchApi = {
+  /** @deprecated 使用 searchV2 替代，支持分词多路召回和 RRF 融合 */
   search(params: VectorSearchRequest): Promise<VectorSearchResponse> {
     return request.post('/vector-search', params)
+  },
+
+  /** 多路召回 + RRF 融合搜索（v2），返回 subQueries 和 rrfScores */
+  searchV2(params: VectorSearchRequest): Promise<VectorSearchResponse> {
+    return request.post('/vector-search/v2', params)
   }
 }

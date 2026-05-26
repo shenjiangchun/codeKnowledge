@@ -179,8 +179,8 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
      * 返回所有调用指定方法的节点
      */
     @Query("""
-        MATCH (caller:Method)-[r:CALLS]->(callee:Method {nodeId: $nodeId})
-        RETURN caller, r, callee
+        MATCH (caller:Method)-[:CALLS]->(callee:Method {nodeId: $nodeId})
+        RETURN caller
         """)
     List<MethodNode> findCallers(@Param("nodeId") String nodeId);
 
@@ -189,8 +189,8 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
      * 返回指定方法调用的所有节点
      */
     @Query("""
-        MATCH (caller:Method {nodeId: $nodeId})-[r:CALLS]->(callee:Method)
-        RETURN caller, r, callee
+        MATCH (caller:Method {nodeId: $nodeId})-[:CALLS]->(callee:Method)
+        RETURN callee
         """)
     List<MethodNode> findCallees(@Param("nodeId") String nodeId);
 

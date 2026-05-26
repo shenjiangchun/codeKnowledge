@@ -4,7 +4,7 @@
     <div class="search-input-section">
       <el-input
         v-model="searchQuery"
-        placeholder="输入自然语言描述搜索方法，如：错误诊断、数据库查询"
+        placeholder="输入自然语言描述搜索方法，如：处理用户登录的方法、支付回调处理"
         size="large"
         clearable
         @keyup.enter="handleSearch"
@@ -17,6 +17,26 @@
       </el-input>
     </div>
 
+    <!-- 分词子查询展示 -->
+    <div class="sub-queries-section" v-if="subQueries.length > 1">
+      <div class="sub-queries-header">
+        <el-icon><Connection /></el-icon>
+        <span class="sub-queries-label">AI 分词多路召回</span>
+        <el-tag size="small" type="info">{{ subQueries.length }} 路</el-tag>
+      </div>
+      <div class="sub-queries-tags">
+        <el-tag
+          v-for="(sq, idx) in subQueries"
+          :key="idx"
+          size="small"
+          effect="plain"
+          class="sub-query-tag"
+        >
+          {{ sq }}
+        </el-tag>
+      </div>
+    </div>
+
     <!-- 搜索结果 -->
     <div class="search-results" v-if="results.length > 0">
       <el-card v-for="result in results" :key="result.nodeId" class="result-card">
@@ -24,8 +44,19 @@
           <div class="result-header">
             <span class="method-name">{{ result.methodName }}</span>
             <el-tag size="small">{{ result.className.split('.').pop() }}</el-tag>
+            <!-- RRF 分数标签（多路召回时显示） -->
             <el-tag
-              v-if="result.similarityScore != null"
+              v-if="getRrfScore(result.nodeId) != null"
+              type="primary"
+              size="small"
+              effect="dark"
+              class="rrf-tag"
+            >
+              RRF {{ formatRrfScore(getRrfScore(result.nodeId)!) }}
+            </el-tag>
+            <!-- 相似度分数标签（单路或作为补充） -->
+            <el-tag
+              v-else-if="result.similarityScore != null"
               :type="getSimilarityTagType(result.similarityScore)"
               size="small"
               class="similarity-tag"
@@ -68,6 +99,9 @@
     <div class="search-info" v-if="costTimeMs">
       <el-text type="info">
         搜索耗时 {{ costTimeMs }}ms，共找到 {{ totalCount }} 个结果
+        <template v-if="subQueries.length > 1">
+          （{{ subQueries.length }} 路召回 + RRF 融合）
+        </template>
       </el-text>
     </div>
 
@@ -116,7 +150,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Search } from '@element-plus/icons-vue'
+import { Search, Connection } from '@element-plus/icons-vue'
 import { vectorSearchApi, type VectorSearchResult } from '@/api/vectorSearch'
 
 const props = defineProps<{
@@ -135,6 +169,8 @@ const loading = ref(false)
 const searched = ref(false)
 const totalCount = ref(0)
 const costTimeMs = ref(0)
+const subQueries = ref<string[]>([])
+const rrfScores = ref<Record<string, number>>({})
 
 // 详情弹窗状态
 const detailDialogVisible = ref(false)
@@ -145,13 +181,20 @@ async function handleSearch() {
 
   loading.value = true
   searched.value = true
+  subQueries.value = []
+  rrfScores.value = {}
   try {
-    const response = await vectorSearchApi.search({
+    const response = await vectorSearchApi.searchV2({
       query: searchQuery.value,
       projectPath: props.projectPath,
       projectPaths: props.projectPaths && props.projectPaths.length > 0 ? props.projectPaths : undefined,
       limit: 10
     })
+
+    // 保存分词和 RRF 分数
+    subQueries.value = response.subQueries ?? []
+    rrfScores.value = response.rrfScores ?? {}
+
     // 合并 items 中的 similarityScore 到 results（按 nodeId 匹配）
     const scoreMap = new Map<string, number>()
     if (response.items && Array.isArray(response.items)) {
@@ -172,6 +215,18 @@ async function handleSearch() {
   } finally {
     loading.value = false
   }
+}
+
+/** 获取节点的 RRF 分数，仅多路召回时存在 */
+function getRrfScore(nodeId: string): number | null {
+  const score = rrfScores.value[nodeId]
+  return score != null ? score : null
+}
+
+/** 格式化 RRF 分数为可读字符串 */
+function formatRrfScore(score: number): string {
+  // RRF 分数一般在 0.01-0.1 范围，乘以 1000 显示更直观
+  return (score * 1000).toFixed(1)
 }
 
 function viewDetail(result: VectorSearchResult) {
@@ -218,6 +273,40 @@ function getSimilarityTagType(score: number): '' | 'success' | 'warning' | 'dang
   margin-bottom: 20px;
 }
 
+/* 分词子查询展示 */
+.sub-queries-section {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #ecf5ff 0%, #f0f9eb 100%);
+  border-radius: 8px;
+  border: 1px solid #d9ecff;
+}
+
+.sub-queries-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--el-color-primary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.sub-queries-label {
+  font-weight: 600;
+}
+
+.sub-queries-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sub-query-tag {
+  border-radius: 12px;
+  font-size: 12px;
+}
+
 .result-card {
   margin-bottom: 16px;
 }
@@ -230,7 +319,8 @@ function getSimilarityTagType(score: number): '' | 'success' | 'warning' | 'dang
   flex-wrap: wrap;
 }
 
-.similarity-tag {
+.similarity-tag,
+.rrf-tag {
   margin-left: auto;
 }
 

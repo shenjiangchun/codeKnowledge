@@ -100,6 +100,24 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/ram',
+    name: 'RamInput',
+    component: () => import('@/views/ram/InputPage.vue'),
+    meta: { title: '需求分析大师' }
+  },
+  {
+    path: '/ram/draft/:sid',
+    name: 'RamDraft',
+    component: () => import('@/views/ram/DraftPage.vue'),
+    meta: { title: 'RAM 草稿' }
+  },
+  {
+    path: '/ram/graph/:sid',
+    name: 'RamGraph',
+    component: () => import('@/views/ram/GraphPreviewPage.vue'),
+    meta: { title: 'RAM 影响图谱' }
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: () => import('@/views/settings/SettingsView.vue'),

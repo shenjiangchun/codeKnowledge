@@ -9,10 +9,18 @@ import type {
   CodeNode
 } from '@/types/search'
 
-// REST API 搜索
+/** @deprecated 使用 semanticSearchV2 替代，支持分词多路召回和 RRF 融合 */
 export async function semanticSearch(params: SemanticSearchRequest): Promise<SemanticSearchResponse> {
   // axios 拦截器已解包，request.post 直接返回 data
   return request.post('/search/semantic', params)
+}
+
+/** 多路召回 + RRF 融合语义搜索（v2），返回 subQueries 和 rrfScores */
+export async function semanticSearchV2(params: SemanticSearchRequest): Promise<SemanticSearchResponse & {
+  subQueries?: string[]
+  rrfScores?: Record<string, number>
+}> {
+  return request.post('/search/semantic/v2', params)
 }
 
 // 获取搜索结果详情（代码节点）

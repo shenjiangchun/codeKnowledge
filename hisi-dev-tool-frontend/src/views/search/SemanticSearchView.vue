@@ -119,7 +119,7 @@ import { Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import SearchResultsPanel from './components/SearchResultsPanel.vue'
 import CodePreviewPanel from './components/CodePreviewPanel.vue'
-import { semanticSearch, getSearchHistory } from '@/api/search'
+import { semanticSearchV2, getSearchHistory } from '@/api/search'
 import { useAppStore } from '@/stores/app'
 import type { SemanticSearchResult, SearchFilters } from '@/types/search'
 
@@ -159,7 +159,7 @@ async function handleSearch() {
 
   try {
     const projectPaths = appStore.getSelectedProjectPaths()
-    const response = await semanticSearch({
+    const response = await semanticSearchV2({
       query: searchQuery.value,
       projectPath: projectPaths[0] || '',
       projectPaths,
@@ -198,7 +198,7 @@ async function loadMoreResults() {
 
   try {
     const projectPaths = appStore.getSelectedProjectPaths()
-    const response = await semanticSearch({
+    const response = await semanticSearchV2({
       query: searchQuery.value,
       projectPath: projectPaths[0] || '',
       projectPaths,

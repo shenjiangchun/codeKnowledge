@@ -13,6 +13,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.HashSet;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import com.huawei.hisi.knowledgegraph.python.PythonFrameworkDetector.Framework;
@@ -101,8 +103,46 @@ public class PythonKnowledgeGraphBuilder {
                 result.methodNodes.size(), projectPath);
 
         if (!result.callRelations.isEmpty()) {
-            neo4jStorageService.saveCallRelations(result.callRelations);
-            log.info("[Python KG] Saved {} call relations", result.callRelations.size());
+            // Diagnostic: count resolved vs unresolved edges, and check node-id matches
+            Set<String> validNodeIds = result.methodNodes.stream()
+                    .map(MethodNode::getNodeId).collect(Collectors.toSet());
+            int resolved = 0, unresolved = 0, callerMissing = 0, calleeMissing = 0, bothPresent = 0;
+            for (Map<String, Object> rel : result.callRelations) {
+                String callerId = (String) rel.get("callerId");
+                String calleeId = (String) rel.get("calleeId");
+                boolean isUnresolved = calleeId != null && calleeId.startsWith("unresolved:");
+                if (isUnresolved) {
+                    unresolved++;
+                } else {
+                    resolved++;
+                }
+                boolean callerOk = callerId != null && validNodeIds.contains(callerId);
+                boolean calleeOk = calleeId != null && validNodeIds.contains(calleeId);
+                if (!callerOk) callerMissing++;
+                if (!calleeOk && !isUnresolved) calleeMissing++;
+                if (callerOk && calleeOk) bothPresent++;
+            }
+            log.info("[Python KG] Call edge diagnostics: total={}, resolved={}, unresolved={}, "
+                            + "callerMissing={}, calleeMissing(resolved)={}, bothNodesPresent={}",
+                    result.callRelations.size(), resolved, unresolved,
+                    callerMissing, calleeMissing, bothPresent);
+
+            // Filter out edges where either caller or callee doesn't exist as a Method node,
+            // to avoid silent MERGE failures in Neo4j.
+            List<Map<String, Object>> persistableEdges = result.callRelations.stream()
+                    .filter(rel -> {
+                        String cid = (String) rel.get("callerId");
+                        String eid = (String) rel.get("calleeId");
+                        return cid != null && validNodeIds.contains(cid)
+                                && eid != null && validNodeIds.contains(eid);
+                    })
+                    .collect(Collectors.toList());
+            log.info("[Python KG] Persisting {} call relations (filtered from {} total)",
+                    persistableEdges.size(), result.callRelations.size());
+            if (!persistableEdges.isEmpty()) {
+                neo4jStorageService.saveCallRelations(persistableEdges);
+            }
+            log.info("[Python KG] Saved {} call relations", persistableEdges.size());
         }
 
         if (!result.entryPoints.isEmpty()) {
@@ -153,6 +193,14 @@ public class PythonKnowledgeGraphBuilder {
             }
         }
 
+        // Build modulesByPath for cross-module view-callable resolution (Django FBV / CBV).
+        Map<String, PyModule> modulesByPath = new LinkedHashMap<>();
+        for (PyModule m : allModules) {
+            if (m.getModulePath() != null) {
+                modulesByPath.putIfAbsent(m.getModulePath(), m);
+            }
+        }
+
         // Entry points: framework-gated + always-on Celery
         List<EntryPointNode> entryPoints = new ArrayList<>();
         // Outbound HTTP / MQ records (collected then converted to bridge relations)
@@ -161,7 +209,7 @@ public class PythonKnowledgeGraphBuilder {
 
         for (PyModule module : allModules) {
             if (frameworks.contains(Framework.DJANGO)) {
-                entryPoints.addAll(djangoUrlScanner.scanModule(module, projectPath));
+                entryPoints.addAll(djangoUrlScanner.scanModule(module, projectPath, modulesByPath));
             }
             if (frameworks.contains(Framework.FASTAPI)) {
                 entryPoints.addAll(fastApiRouteScanner.scanModule(module, projectPath));
@@ -174,6 +222,11 @@ public class PythonKnowledgeGraphBuilder {
             httpCalls.addAll(pythonHttpCallScanner.scanModule(module, projectPath, primaryFramework));
             mqCalls.addAll(pythonMqCallScanner.scanModule(module, projectPath, primaryFramework));
         }
+
+        // Guard: clear methodNodeId references that don't point to a known Method node.
+        // This prevents broken call-chain queries from returning empty for resolvable URLs
+        // and surfaces resolution gaps in the logs for diagnosis.
+        clearDanglingMethodNodeIds(entryPoints, allNodes);
 
         // Resolve intra-/cross-module call edges
         List<Map<String, Object>> callRelations = new ArrayList<>(
@@ -336,6 +389,35 @@ public class PythonKnowledgeGraphBuilder {
         return null;
     }
 
+    /**
+     * Drop {@code methodNodeId} references on entry points that don't point to
+     * any known {@link MethodNode}. Without this guard, Cypher call-chain
+     * queries silently return empty results when the resolver produced an ID
+     * that doesn't match a real Method node (e.g. due to stale data, scanner
+     * bug, or unresolved import).
+     */
+    private static void clearDanglingMethodNodeIds(List<EntryPointNode> entryPoints,
+                                                   List<MethodNode> allNodes) {
+        Set<String> validNodeIds = new HashSet<>(allNodes.size());
+        for (MethodNode node : allNodes) {
+            if (node.getNodeId() != null) {
+                validNodeIds.add(node.getNodeId());
+            }
+        }
+        int dangling = 0;
+        for (EntryPointNode ep : entryPoints) {
+            if (ep.getMethodNodeId() != null && !validNodeIds.contains(ep.getMethodNodeId())) {
+                log.warn("[Python KG] EntryPoint {} ({}) methodNodeId={} 不指向任何 Method 节点,清零",
+                        ep.getEntryKey(), ep.getFramework(), ep.getMethodNodeId());
+                ep.setMethodNodeId(null);
+                dangling++;
+            }
+        }
+        if (dangling > 0) {
+            log.warn("[Python KG] {} 个 EntryPoint methodNodeId 失效已清零", dangling);
+        }
+    }
+
     private static String pickPrimaryFramework(Set<Framework> frameworks) {
         if (frameworks.contains(Framework.FASTAPI)) {
             return "fastapi";
@@ -370,6 +452,19 @@ public class PythonKnowledgeGraphBuilder {
             normalized = normalized.substring(0, normalized.length() - 3);
         }
         return normalized.replace('/', '.');
+    }
+
+    /**
+     * Compute the {@code methodNodeId} for a Python function/method given its
+     * containing module path, qualified name ({@code "func"} or
+     * {@code "Class.method"}), and parameter list. This is the inverse of
+     * what {@link #parseFileInternal} writes into {@link MethodNode#getNodeId()}
+     * and MUST stay in sync with that formula.
+     */
+    public static String computeMethodNodeId(String modulePath, String qualName, List<String> paramNames) {
+        String params = paramNames == null ? "" : String.join(",", paramNames);
+        String signature = qualName + "(" + params + ")";
+        return toNodeId(modulePath + "::" + signature);
     }
 
     /**

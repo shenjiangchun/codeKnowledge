@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.huawei.hisi.knowledgegraph.python.PythonKnowledgeGraphBuilder;
 import com.huawei.hisi.knowledgegraph.python.model.PyClass;
 import com.huawei.hisi.knowledgegraph.python.model.PyFunction;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
@@ -128,11 +129,17 @@ public class CeleryTaskScanner {
         String entryId = sha256Prefix(filePath + ":CELERY:" + taskName);
         String entryInfo = buildEntryInfoJson(taskName, function.getName(), filePath, lineNumber);
 
+        // Compute methodNodeId: the task function is directly decorated,
+        // so we can resolve it from the same module without cross-module lookup.
+        String methodNodeId = PythonKnowledgeGraphBuilder.computeMethodNodeId(
+                module.getModulePath(), function.getQualName(), function.getParamNames());
+
         return EntryPointNode.builder()
                 .entryId(entryId)
                 .entryType(EntryPointNode.TYPE_MQ_CONSUMER)
                 .entryKey(taskName)
                 .entryInfo(entryInfo)
+                .methodNodeId(methodNodeId)
                 .projectPath(projectPath)
                 .language(LANGUAGE_PYTHON)
                 .framework(FRAMEWORK_CELERY)

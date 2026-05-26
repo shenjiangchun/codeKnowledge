@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.huawei.hisi.knowledgegraph.python.PythonKnowledgeGraphBuilder;
 import com.huawei.hisi.knowledgegraph.python.model.PyCall;
@@ -13,6 +14,8 @@ import com.huawei.hisi.knowledgegraph.python.model.PyClass;
 import com.huawei.hisi.knowledgegraph.python.model.PyFunction;
 import com.huawei.hisi.knowledgegraph.python.model.PyImport;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -34,10 +37,25 @@ import org.springframework.stereotype.Component;
 @Component
 public class PythonCallGraphResolver {
 
+    private static final Logger log = LoggerFactory.getLogger(PythonCallGraphResolver.class);
+
     private static final String CALL_TYPE_DIRECT = "DIRECT";
     private static final String CALL_TYPE_SELF = "SELF";
     private static final String CALL_TYPE_IMPORT = "IMPORT";
     private static final String CALL_TYPE_UNRESOLVED = "UNRESOLVED";
+
+    /** Common Python builtins — skip these, they have no KG node. */
+    private static final Set<String> PYTHON_BUILTINS = Set.of(
+            "print", "len", "range", "enumerate", "zip", "map", "filter", "sorted",
+            "reversed", "list", "dict", "set", "tuple", "str", "int", "float", "bool",
+            "type", "isinstance", "issubclass", "hasattr", "getattr", "setattr", "delattr",
+            "super", "property", "classmethod", "staticmethod", "abs", "min", "max", "sum",
+            "any", "all", "round", "repr", "hash", "id", "input", "open", "iter", "next",
+            "callable", "vars", "dir", "globals", "locals", "exec", "eval", "compile",
+            "format", "chr", "ord", "hex", "oct", "bin", "pow", "divmod",
+            "object", "Exception", "ValueError", "TypeError", "KeyError", "IndexError",
+            "AttributeError", "RuntimeError", "StopIteration", "NotImplementedError",
+            "OSError", "IOError", "FileNotFoundError", "ImportError", "ModuleNotFoundError");
 
     /**
      * Resolve calls for a single module. Cross-module resolution uses {@code allModules}
@@ -61,6 +79,20 @@ public class PythonCallGraphResolver {
                 indexImports(module.getImports()),
                 indexTopLevelFunctions(module.getTopLevelFunctions()),
                 indexClasses(module.getClasses()));
+
+        // Diagnostic: dump resolution context for first module with calls
+        if (!module.getCalls().isEmpty()) {
+            log.debug("[CallGraph] Module {} has {} calls, {} imports, {} top-level funcs, {} classes",
+                    module.getModulePath(), module.getCalls().size(),
+                    ctx.importsBySymbol().size(), ctx.topLevelByName().size(), ctx.classesByName().size());
+            // Dump first 5 call expressions
+            int i = 0;
+            for (PyCall call : module.getCalls()) {
+                if (i++ >= 5) break;
+                log.debug("[CallGraph]   call: expression='{}' enclosing='{}' line={}",
+                        call.getCalleeExpression(), call.getEnclosingFunction(), call.getLineNumber());
+            }
+        }
 
         List<Map<String, Object>> edges = new ArrayList<>();
 
@@ -107,39 +139,69 @@ public class PythonCallGraphResolver {
     // Resolution dispatch
     // ---------------------------------------------------------------------
 
+    /**
+     * Normalize constructor-chain expressions.
+     * {@code ClassName().method} → {@code ClassName.method}
+     * {@code module.ClassName().method} → {@code module.ClassName.method}
+     */
+    private String normalizeExpression(String expression) {
+        // Strip constructor parens in chain: Foo().bar → Foo.bar, Foo(arg).bar → Foo.bar
+        return expression.replaceAll("\\([^)]*\\)\\.", ".");
+    }
+
     private Map<String, Object> resolveCall(PyCall call, String callerNodeId, ResolutionContext ctx) {
-        String expression = call.getCalleeExpression();
-        if (expression == null || expression.isEmpty()) {
+        String rawExpression = call.getCalleeExpression();
+        if (rawExpression == null || rawExpression.isEmpty()) {
             return null;
         }
 
+        // Normalize constructor chains: ClassName().method → ClassName.method
+        String expression = normalizeExpression(rawExpression);
         String[] parts = expression.split("\\.");
         String head = parts[0];
 
-        if ("self".equals(head) && parts.length >= 2) {
-            Map<String, Object> e = resolveSelfCall(call, callerNodeId, parts[1], ctx);
-            return e != null ? e : unresolvedEdge(callerNodeId, expression, call.getLineNumber());
+        // Skip Python builtins — no KG node exists for these
+        if (PYTHON_BUILTINS.contains(head)) {
+            return null;
         }
 
+        // self.method() → method on the call's enclosing class
+        if ("self".equals(head) && parts.length >= 2) {
+            Map<String, Object> e = resolveSelfCall(call, callerNodeId, parts[1], ctx);
+            if (e != null) return e;
+            // self.field.method() or unresolvable self call — skip
+            return null;
+        }
+
+        // Single-part call: foo()
         if (parts.length == 1) {
             Map<String, Object> direct = resolveDirectCall(call, callerNodeId, head, ctx);
             if (direct != null) {
                 return direct;
             }
             Map<String, Object> imported = resolveImportCall(call, callerNodeId, parts, ctx);
-            return imported != null
-                    ? imported
-                    : unresolvedEdge(callerNodeId, expression, call.getLineNumber());
+            if (imported != null) {
+                return imported;
+            }
+            // Can't resolve — skip (don't create phantom unresolved edge)
+            log.trace("[CallGraph] Skipping unresolvable call '{}' in {}",
+                    head, call.getEnclosingFunction());
+            return null;
         }
 
+        // Multi-part call: module.func() or Class.method()
         Map<String, Object> imported = resolveImportCall(call, callerNodeId, parts, ctx);
         if (imported != null) {
             return imported;
         }
         Map<String, Object> localClass = resolveLocalClassCall(call, callerNodeId, parts, ctx);
-        return localClass != null
-                ? localClass
-                : unresolvedEdge(callerNodeId, expression, call.getLineNumber());
+        if (localClass != null) {
+            return localClass;
+        }
+        // Can't resolve — skip
+        log.trace("[CallGraph] Skipping unresolvable call '{}' in {}",
+                expression, call.getEnclosingFunction());
+        return null;
     }
 
     /** {@code self.method()} → method on the call's enclosing class. */
@@ -187,7 +249,10 @@ public class PythonCallGraphResolver {
         if (imp == null) {
             return null;
         }
-        PyModule target = ctx.moduleIndex().get(imp.getModuleName());
+        // Absolutize relative imports: from .services → api.services
+        String absModuleName = absolutizeModuleName(
+                imp.getModuleName(), imp.getRelativeLevel(), ctx.module());
+        PyModule target = ctx.moduleIndex().get(absModuleName);
         if (target == null) {
             return null;
         }
@@ -300,6 +365,39 @@ public class PythonCallGraphResolver {
     // ---------------------------------------------------------------------
     // Indexing
     // ---------------------------------------------------------------------
+
+    /**
+     * Convert a (possibly relative) import module name into an absolute dotted path.
+     * Uses {@code currentModule.modulePath} as the anchor.
+     *
+     * <p>{@code relativeLevel == 0} → already absolute.
+     * {@code relativeLevel == 1} → relative to current package.
+     * {@code relativeLevel == 2} → one more level up; etc.
+     */
+    private String absolutizeModuleName(String moduleName, int relativeLevel, PyModule currentModule) {
+        if (relativeLevel <= 0) {
+            return moduleName == null ? "" : moduleName;
+        }
+        String current = currentModule.getModulePath();
+        if (current == null) {
+            return moduleName == null ? "" : moduleName;
+        }
+        String[] parts = current.split("\\.");
+        int keep = parts.length - relativeLevel;
+        if (keep < 0) {
+            return moduleName == null ? "" : moduleName;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < keep; i++) {
+            if (i > 0) sb.append('.');
+            sb.append(parts[i]);
+        }
+        if (moduleName != null && !moduleName.isEmpty()) {
+            if (sb.length() > 0) sb.append('.');
+            sb.append(moduleName);
+        }
+        return sb.toString();
+    }
 
     private Map<String, PyModule> indexModules(List<PyModule> modules) {
         if (modules == null || modules.isEmpty()) {
