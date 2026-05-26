@@ -34,12 +34,12 @@ import java.util.stream.Collectors;
 /**
  * 向量生成协调服务
  *
- * 使用统一线程池（固定10线程 + 无界队列）管理所有 API 调用：
- * - LLM 描述生成（智谱AI chat）
- * - 向量生成（SiliconFlow / 智谱AI embedding）
+ * <p>使用固定线程池并发处理方法/SQL 节点的向量生成。
+ * <b>限流由下游令牌桶承担</b>：{@code UnifiedEmbeddingService} / {@code UnifiedTextService}
+ * 内部每次调用先 {@code rateLimiter.acquire()} 拿令牌，拿不到就阻塞等待。
  *
- * 每个线程串行完成 描述生成 → embedding生成 → 落表，原子提交。
- * 天然限制并发为 10，多余任务在队列中排队等待。
+ * <p>线程数 ≤ min(embedding.burst, text-model.burst)，确保不会出现"线程比令牌多导致空等"。
+ * 线程拿到令牌才发请求，令牌桶控制实际 QPS，线程池只提供并发度。
  */
 @Service
 @Slf4j
@@ -57,24 +57,16 @@ public class VectorGenerationService {
     private final EmbeddingService embeddingService;
 
     /**
-     * 工作线程数（同时最多 N 个 HTTP 请求"在飞"）。
-     *
-     * <p>注意：限流策略已由 {@code UnifiedEmbeddingService} / {@code UnifiedTextService} 的
-     * 令牌桶承担（qps + burst）。这里的线程数只决定"有几个工人去取令牌"，
-     * 不再是限流主体。设置原则：threads ≤ embedding.burst，且大致 ≈ embedding.qps
-     * （避免一启动就把桶吸干），默认 10 配合 burst=40 / qps=25。
+     * 工作线程数。限流由下游令牌桶承担，线程数只需 ≤ burst 即可。
+     * 设置原则：≤ min(embedding.burst, text-model.burst)
      */
-    @Value("${vector.generation.concurrency:10}")
+    @Value("${vector.generation.concurrency:3}")
     private int concurrency;
 
     @Value("${vector.generation.progress-update-interval:10}")
     private int progressUpdateInterval;
 
-    /**
-     * 统一线程池：固定线程数 + 无界队列（LinkedBlockingQueue）
-     * 所有待处理方法直接 submit，多余的在队列中排队
-     */
-    private ThreadPoolExecutor executorService;
+    private ExecutorService executorService;
     private final ConcurrentHashMap<String, AtomicInteger> progressTracker = new ConcurrentHashMap<>();
 
     @Lazy
@@ -96,13 +88,12 @@ public class VectorGenerationService {
 
     @PostConstruct
     public void init() {
-        executorService = new ThreadPoolExecutor(
-                concurrency,                     // corePoolSize = 5
-                concurrency,                     // maxPoolSize = 5（固定）
-                60L, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>()       // 无界队列，多余任务排队
-        );
-        fileLog("========== VectorGenerationService 初始化完成: 线程池固定=" + concurrency + ", 队列=无界 ==========");
+        executorService = Executors.newFixedThreadPool(concurrency, r -> {
+            Thread t = new Thread(r, "vector-gen-worker");
+            t.setDaemon(true);
+            return t;
+        });
+        fileLog("========== VectorGenerationService 初始化完成: concurrency={}, 限流=令牌桶 ==========", concurrency);
     }
 
     @PreDestroy
@@ -143,7 +134,10 @@ public class VectorGenerationService {
 
     /**
      * 启动向量生成（异步）
-     * 所有方法一次性提交到线程池队列，线程池固定5线程自动消费
+     *
+     * <p>提交所有方法到线程池并发处理。限流由下游令牌桶承担：
+     * 每个线程在调用 generateEmbedding()/generateText() 时内部先 acquire 令牌，
+     * 拿不到就阻塞，不会出现争抢超限。
      */
     @Async("analysisTaskExecutor")
     public void startVectorGeneration(String projectPath) {
@@ -187,50 +181,24 @@ public class VectorGenerationService {
             taskRepository.save(task);
             fileLog("[向量生成] Initial task state saved");
 
+            // 3. 提交到线程池并发处理 —— 限流由下游令牌桶承担
+            int totalMethods = methods.size();
+
             if (!methods.isEmpty()) {
-                fileLog("[向量生成] 开始提交到线程池: totalMethods=" + methods.size() +
-                        ", 固定线程=" + concurrency + ", 队列排队");
-
-                // 3. 所有方法一次性提交到线程池，多余的在队列中排队
-                final String finalProjectPath = projectPath;
-                int totalMethods = methods.size();
-
                 List<CompletableFuture<Void>> futures = new ArrayList<>(totalMethods);
                 for (MethodNode method : methods) {
                     CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                         processMethod(method, successCount, failCount);
 
-                        // 更新进度
                         int processed = processedCount.incrementAndGet();
-                        fileLog("[向量生成] Method processed - processed={}/{}, success={}, fail={}",
-                            processed, totalMethods, successCount.get(), failCount.get());
                         if (processed % progressUpdateInterval == 0 || processed == totalMethods) {
-                            // 查询最新的任务来获取 ID
-                            Optional<GenerationTask> latestTask = taskRepository.findLatestByProjectPathAndType(finalProjectPath, TASK_TYPE);
-                            if (latestTask.isPresent()) {
-                                Long taskId = latestTask.get().getId();
-                                fileLog("[向量生成] Calling updateProgress for task id={}, processed={}/{}, success={}, fail={}",
-                                    taskId, processed, totalMethods, successCount.get(), failCount.get());
-                                try {
-                                    int rows = taskRepository.updateProgress(taskId, processed, successCount.get(), failCount.get());
-                                    fileLog("[向量生成] updateProgress completed, rows updated={}", rows);
-                                } catch (Exception e) {
-                                    log.error("[向量生成] Failed to update progress", e);
-                                }
-                            } else {
-                                fileLog("[向量生成] Could not find latest task to update progress");
-                            }
-                            fileLog("[进度] " + processed + "/" + totalMethods +
-                                    " (成功=" + successCount.get() + ", 失败=" + failCount.get() +
-                                    ", 队列=" + executorService.getQueue().size() + ")");
+                            updateProgress(projectPath, processed, totalMethods, successCount, failCount);
                         }
                     }, executorService);
                     futures.add(future);
                 }
 
-                fileLog("[向量生成] 已提交 " + totalMethods + " 个任务到队列, 当前队列大小: " + executorService.getQueue().size());
-
-                // 等待所有任务完成
+                fileLog("[向量生成] 已提交 " + totalMethods + " 个任务, 线程数=" + concurrency);
                 CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
             } else {
                 fileLog("[向量生成] 没有需要处理的方法，跳转到 SQL 向量生成...");
@@ -242,8 +210,6 @@ public class VectorGenerationService {
 
             // 5. 完成
             long totalTime = System.currentTimeMillis() - startTime;
-            int totalMethods = methods.size();
-            // 查询最新的任务来获取 ID
             Optional<GenerationTask> latestTask = taskRepository.findLatestByProjectPathAndType(projectPath, TASK_TYPE);
             if (latestTask.isPresent()) {
                 Long taskId = latestTask.get().getId();
@@ -279,6 +245,26 @@ public class VectorGenerationService {
             progressTracker.remove(projectPath);
             fileLog("[向量生成] Task completed, removed from progressTracker");
         }
+    }
+
+    /**
+     * 更新进度
+     */
+    private void updateProgress(String projectPath, int processed, int total,
+                                AtomicInteger successCount, AtomicInteger failCount) {
+        Optional<GenerationTask> latestTask = taskRepository.findLatestByProjectPathAndType(projectPath, TASK_TYPE);
+        if (latestTask.isPresent()) {
+            Long taskId = latestTask.get().getId();
+            fileLog("[向量生成] updateProgress: id={}, processed={}/{}, success={}, fail={}",
+                taskId, processed, total, successCount.get(), failCount.get());
+            try {
+                taskRepository.updateProgress(taskId, processed, successCount.get(), failCount.get());
+            } catch (Exception e) {
+                log.error("[向量生成] Failed to update progress", e);
+            }
+        }
+        fileLog("[进度] " + processed + "/" + total +
+                " (成功=" + successCount.get() + ", 失败=" + failCount.get() + ")");
     }
 
     /**
@@ -339,7 +325,7 @@ public class VectorGenerationService {
     }
 
     /**
-     * 处理 SQL 节点的向量生成（也通过线程池，排队执行）
+     * 处理 SQL 节点的向量生成（并发提交到线程池，限流由下游令牌桶承担）
      */
     private void processSqlNodes(String projectPath, GenerationTask task) {
         fileLog("[SQL向量生成] 开始处理 SQL 节点...");
@@ -364,7 +350,6 @@ public class VectorGenerationService {
             return;
         }
 
-        // 通过线程池并发处理 SQL 节点
         AtomicInteger sqlSuccess = new AtomicInteger(0);
         AtomicInteger sqlFail = new AtomicInteger(0);
 

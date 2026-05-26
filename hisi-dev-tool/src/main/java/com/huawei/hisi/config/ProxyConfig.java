@@ -135,8 +135,8 @@ public class ProxyConfig {
     private RestTemplate buildRestTemplate() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(30000);
-        // 读超时 180s：embedding-3 / glm-4-flash 偶发慢响应（含长方法体输入）
-        factory.setReadTimeout(180000);
+        // 读超时 300s：GLM-4.7-flashX 推理模型思考链可能较长
+        factory.setReadTimeout(300000);
 
         if (enabled && host != null && !host.isBlank() && port > 0) {
             Proxy.Type proxyType = "SOCKS".equalsIgnoreCase(type) ? Proxy.Type.SOCKS : Proxy.Type.HTTP;

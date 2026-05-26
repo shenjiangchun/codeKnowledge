@@ -70,6 +70,7 @@ public class UnifiedEmbeddingService {
 
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             // 1) 先拿令牌
+            long acquireStart = System.currentTimeMillis();
             try {
                 if (!rateLimiter.tryAcquire(config.getAcquireTimeoutSeconds(), TimeUnit.SECONDS)) {
                     throw new RuntimeException("[Embedding] 获取令牌超时（"
@@ -79,8 +80,11 @@ public class UnifiedEmbeddingService {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException("[Embedding] 等待令牌被中断", ie);
             }
+            long acquireMs = System.currentTimeMillis() - acquireStart;
+            log.info("[Embedding] 令牌获取耗时={}ms, 当前可用令牌={}", acquireMs, rateLimiter.availablePermits());
 
             try {
+                long apiStart = System.currentTimeMillis();
                 String url = config.getBaseUrl() + "/embeddings";
 
                 ObjectNode requestBody = objectMapper.createObjectNode();
@@ -94,12 +98,14 @@ public class UnifiedEmbeddingService {
                 HttpEntity<String> entity = new HttpEntity<>(
                         objectMapper.writeValueAsString(requestBody), headers);
 
-                log.debug("[Embedding] 调用向量生成API: url={}, model={}, textLen={}, attempt={}/{}, permits={}",
+                log.info("[Embedding] 开始调用API: url={}, model={}, textLen={}, attempt={}/{}, permits={}",
                         url, config.getModel(), text.length(), attempt + 1, maxRetries + 1,
                         rateLimiter.availablePermits());
 
                 RestTemplate rt = proxyConfig.getCurrentRestTemplate();
                 ResponseEntity<String> response = rt.exchange(url, HttpMethod.POST, entity, String.class);
+                long apiMs = System.currentTimeMillis() - apiStart;
+                log.info("[Embedding] API响应耗时={}ms", apiMs);
 
                 return extractEmbedding(response.getBody());
 
