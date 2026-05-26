@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.HashSet;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import com.huawei.hisi.knowledgegraph.python.PythonFrameworkDetector.Framework;
@@ -102,8 +103,46 @@ public class PythonKnowledgeGraphBuilder {
                 result.methodNodes.size(), projectPath);
 
         if (!result.callRelations.isEmpty()) {
-            neo4jStorageService.saveCallRelations(result.callRelations);
-            log.info("[Python KG] Saved {} call relations", result.callRelations.size());
+            // Diagnostic: count resolved vs unresolved edges, and check node-id matches
+            Set<String> validNodeIds = result.methodNodes.stream()
+                    .map(MethodNode::getNodeId).collect(Collectors.toSet());
+            int resolved = 0, unresolved = 0, callerMissing = 0, calleeMissing = 0, bothPresent = 0;
+            for (Map<String, Object> rel : result.callRelations) {
+                String callerId = (String) rel.get("callerId");
+                String calleeId = (String) rel.get("calleeId");
+                boolean isUnresolved = calleeId != null && calleeId.startsWith("unresolved:");
+                if (isUnresolved) {
+                    unresolved++;
+                } else {
+                    resolved++;
+                }
+                boolean callerOk = callerId != null && validNodeIds.contains(callerId);
+                boolean calleeOk = calleeId != null && validNodeIds.contains(calleeId);
+                if (!callerOk) callerMissing++;
+                if (!calleeOk && !isUnresolved) calleeMissing++;
+                if (callerOk && calleeOk) bothPresent++;
+            }
+            log.info("[Python KG] Call edge diagnostics: total={}, resolved={}, unresolved={}, "
+                            + "callerMissing={}, calleeMissing(resolved)={}, bothNodesPresent={}",
+                    result.callRelations.size(), resolved, unresolved,
+                    callerMissing, calleeMissing, bothPresent);
+
+            // Filter out edges where either caller or callee doesn't exist as a Method node,
+            // to avoid silent MERGE failures in Neo4j.
+            List<Map<String, Object>> persistableEdges = result.callRelations.stream()
+                    .filter(rel -> {
+                        String cid = (String) rel.get("callerId");
+                        String eid = (String) rel.get("calleeId");
+                        return cid != null && validNodeIds.contains(cid)
+                                && eid != null && validNodeIds.contains(eid);
+                    })
+                    .collect(Collectors.toList());
+            log.info("[Python KG] Persisting {} call relations (filtered from {} total)",
+                    persistableEdges.size(), result.callRelations.size());
+            if (!persistableEdges.isEmpty()) {
+                neo4jStorageService.saveCallRelations(persistableEdges);
+            }
+            log.info("[Python KG] Saved {} call relations", persistableEdges.size());
         }
 
         if (!result.entryPoints.isEmpty()) {
