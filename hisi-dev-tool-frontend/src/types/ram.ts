@@ -40,6 +40,11 @@ export interface StartSessionResponse {
 export interface ClarifyResponse {
   readonly accepted: boolean
   readonly nextSeq: number
+  readonly status?: string
+  readonly hitlPayload?: {
+    readonly nodeName: string
+    readonly output: Readonly<Record<string, unknown>>
+  }
 }
 
 export interface ResumeResponse {

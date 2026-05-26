@@ -15,7 +15,6 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
@@ -29,13 +28,13 @@ class ClarifyNodeTest {
 
     @BeforeEach
     void setUp() {
-        clarifyNode = new ClarifyNode(new SchemaValidator(), clarifyLlmClient, null);
+        clarifyNode = new ClarifyNode(new SchemaValidator(), clarifyLlmClient);
     }
 
     @Test
     @DisplayName("throws ClarifyRequiredException with question mentioning the missing field")
     void clarify_throwsClarifyRequired_whenProjectPathsMissing() {
-        when(clarifyLlmClient.extractRequirements(anyString(), any(), anyList()))
+        when(clarifyLlmClient.extractRequirements(anyString(), any()))
                 .thenReturn(Map.of(
                         "intent", "X",
                         "acceptance_criteria", List.of("a1")
@@ -58,7 +57,7 @@ class ClarifyNodeTest {
                 "project_paths", List.of("repo1"),
                 "acceptance_criteria", List.of("a1")
         );
-        when(clarifyLlmClient.extractRequirements(anyString(), any(), anyList())).thenReturn(llmOutput);
+        when(clarifyLlmClient.extractRequirements(anyString(), any())).thenReturn(llmOutput);
 
         Map<String, Object> result = clarifyNode.execute(Map.of("userRequirement", "do X"));
 

@@ -39,6 +39,12 @@ const projectOptions = computed(() =>
   }))
 )
 
+const selectedProjectLabel = computed(() => {
+  if (!projectPath.value) return ''
+  const match = projects.value.find((p) => p.path === projectPath.value)
+  return match ? match.name : projectPath.value
+})
+
 async function loadProjects(): Promise<void> {
   loadingProjects.value = true
   try {
@@ -149,6 +155,11 @@ async function onSubmit(): Promise<void> {
               {{ manualMode ? '从列表选择' : '手动输入路径' }}
             </el-button>
           </div>
+          <div v-if="projectPath && !manualMode" class="selected-project-hint">
+            <el-icon :size="14"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="14" height="14"><path fill="currentColor" d="M512 64a448 448 0 1 1 0 896 448 448 0 0 1 0-896m-55.808 536.384-99.52-99.584a38.4 38.4 0 1 0-54.336 54.336l126.72 126.72a38.272 38.272 0 0 0 54.336 0l262.4-262.464a38.4 38.4 0 1 0-54.336-54.336z"/></svg></el-icon>
+            <span class="selected-name">{{ selectedProjectLabel }}</span>
+            <span class="selected-path">{{ projectPath }}</span>
+          </div>
           <div v-if="!manualMode && projects.length === 0 && !loadingProjects" class="empty-hint">
             未扫描到 Git 仓库，可点击「手动输入路径」直接填写绝对路径，或在「项目管理」中克隆/添加项目。
           </div>
@@ -212,5 +223,30 @@ async function onSubmit(): Promise<void> {
 .proj-meta {
   display: inline-flex;
   gap: 4px;
+}
+.selected-project-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: #f0f9eb;
+  border: 1px solid #e1f3d8;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #67c23a;
+}
+.selected-project-hint .selected-name {
+  font-weight: 600;
+  color: #529b2e;
+}
+.selected-project-hint .selected-path {
+  color: #909399;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin-left: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

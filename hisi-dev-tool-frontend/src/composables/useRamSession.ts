@@ -225,9 +225,16 @@ export function useRamSession(): UseRamSessionReturn {
     if (!sessionId.value) {
       throw new Error('no active session')
     }
-    await submitRamClarify(sessionId.value, answers)
+    const resp = await submitRamClarify(sessionId.value, answers)
     clarifyQuestions.value = null
+
+    // The backend dispatches the orchestrator asynchronously and returns
+    // immediately.  We always open an SSE stream to track subsequent events
+    // (CHECKPOINT, HITL_REQ, RUN_COMPLETED, etc.).
     status.value = 'running'
+    if (typeof resp.nextSeq === 'number' && resp.nextSeq > lastSeq.value) {
+      lastSeq.value = resp.nextSeq
+    }
     openStream(sessionId.value)
   }
 

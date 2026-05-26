@@ -1,6 +1,7 @@
 package com.huawei.hisi.ram.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hisi.model.ApiResponse;
 import com.huawei.hisi.ram.mcp.McpResponse;
@@ -428,7 +429,8 @@ public class RamController {
 
     public record ClarifyRequest(Map<String, Object> answers) {}
 
-    public record ClarifyResponse(boolean accepted, long nextSeq) {}
+    public record ClarifyResponse(boolean accepted, long nextSeq,
+                                      String status, Map<String, Object> hitlPayload) {}
 
     @PostMapping("/sessions/{sid}/clarify")
     public ApiResponse<ClarifyResponse> clarify(@PathVariable("sid") String handle,
@@ -439,15 +441,29 @@ public class RamController {
         }
         Map<String, Object> answers = request == null || request.answers() == null
                 ? Map.of() : request.answers();
-        Map<String, Object> args = Map.of("session_id", backendId, "answers", answers);
-        McpResponse resp = ramMcpServer.invoke("submit_clarification", args);
-        if (resp == null || !resp.ok()) {
-            return ApiResponse.error(500, resp == null ? "no response" : resp.error());
-        }
+
+        // Record the current max seq BEFORE dispatching async — the frontend uses
+        // this as its SSE afterSeq so it receives all events from the new run.
         long nextSeq = eventRepository.findMaxSeq(backendId);
-        // accepted=true reflects the success branch only — the error branch above
-        // short-circuits with ApiResponse.error so the caller never sees accepted=false.
-        return ApiResponse.success(new ClarifyResponse(true, nextSeq));
+
+        // ★ Async dispatch: like startSession and confirm, the orchestrator runs
+        // in the background.  The frontend picks up CLARIFY_REQ / HITL_REQ /
+        // CHECKPOINT / RUN_COMPLETED via SSE — no need to block the HTTP thread.
+        Map<String, Object> args = Map.of("session_id", backendId, "answers", answers);
+        CompletableFuture.runAsync(() -> {
+            try {
+                McpResponse resp = ramMcpServer.invoke("submit_clarification", args);
+                if (resp == null || !resp.ok()) {
+                    log.error("[RAM][clarify] async dispatch failed handle={} error={}",
+                            handle, resp == null ? "null" : resp.error());
+                }
+            } catch (Exception e) {
+                log.error("[RAM][clarify] async dispatch threw handle={} error={}",
+                        handle, e.getMessage(), e);
+            }
+        }, asyncExecutor);
+
+        return ApiResponse.success(new ClarifyResponse(true, nextSeq, null, null));
     }
 
     // ---------------------------------------------------------------------
