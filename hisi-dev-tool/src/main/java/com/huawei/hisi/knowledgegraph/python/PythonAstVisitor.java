@@ -255,15 +255,15 @@ public class PythonAstVisitor extends Python3ParserBaseVisitor<Void> {
 
     @Override
     public Void visitAtom_expr(Atom_exprContext ctx) {
-        if (ctx.atom() != null && ctx.trailer() != null && !ctx.trailer().isEmpty()
-                && !functionQualNameStack.isEmpty()) {
+        if (ctx.atom() != null && ctx.trailer() != null && !ctx.trailer().isEmpty()) {
             StringBuilder running = new StringBuilder(ctx.atom().getText());
+            String enclosing = functionQualNameStack.isEmpty() ? "<module>" : functionQualNameStack.peek();
             for (TrailerContext trailer : ctx.trailer()) {
                 if (trailer.OPEN_PAREN() != null) {
                     calls.add(PyCall.builder()
                             .calleeExpression(running.toString())
                             .lineNumber(trailer.getStart().getLine())
-                            .enclosingFunction(functionQualNameStack.peek())
+                            .enclosingFunction(enclosing)
                             .firstStringArg(extractFirstStringArg(trailer))
                             .secondPositionalArg(extractSecondPositionalArg(trailer))
                             .build());

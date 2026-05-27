@@ -10,6 +10,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.huawei.hisi.knowledgegraph.python.PythonKnowledgeGraphBuilder;
+import com.huawei.hisi.knowledgegraph.python.model.PyCall;
 import com.huawei.hisi.knowledgegraph.python.model.PyClass;
 import com.huawei.hisi.knowledgegraph.python.model.PyFunction;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
@@ -61,21 +62,43 @@ public class FastApiRouteScanner {
             return List.of();
         }
 
+        String routerPrefix = extractSingleRouterPrefix(module);
+
         List<EntryPointNode> entries = new ArrayList<>();
         for (PyFunction function : module.getTopLevelFunctions()) {
-            entries.addAll(scanFunction(module, function, projectPath));
+            entries.addAll(scanFunction(module, function, projectPath, routerPrefix));
         }
         for (PyClass clazz : module.getClasses()) {
             for (PyFunction method : clazz.getMethods()) {
-                entries.addAll(scanFunction(module, method, projectPath));
+                entries.addAll(scanFunction(module, method, projectPath, routerPrefix));
             }
         }
         return List.copyOf(entries);
     }
 
+    private String extractSingleRouterPrefix(PyModule module) {
+        if (module.getCalls() == null) return null;
+        String prefix = null;
+        int routerCount = 0;
+        for (PyCall call : module.getCalls()) {
+            if (!"<module>".equals(call.getEnclosingFunction())) continue;
+            String expr = call.getCalleeExpression();
+            if (expr == null) continue;
+            String funcName = expr.contains(".") ? expr.substring(expr.lastIndexOf('.') + 1) : expr;
+            if ("APIRouter".equals(funcName)) {
+                routerCount++;
+                if (call.getFirstStringArg() != null && !call.getFirstStringArg().isEmpty()) {
+                    prefix = call.getFirstStringArg();
+                }
+            }
+        }
+        return routerCount == 1 ? prefix : null;
+    }
+
     private List<EntryPointNode> scanFunction(PyModule module,
                                               PyFunction function,
-                                              String projectPath) {
+                                              String projectPath,
+                                              String routerPrefix) {
         List<EntryPointNode> result = new ArrayList<>();
         for (String decorator : function.getDecorators()) {
             if (decorator == null) {
@@ -85,6 +108,7 @@ public class FastApiRouteScanner {
             if (!matcher.matches()) {
                 continue;
             }
+            String identifier = matcher.group(1);
             String method = matcher.group(2).toLowerCase();
             if (!HTTP_METHODS.contains(method)) {
                 continue;
@@ -95,6 +119,9 @@ public class FastApiRouteScanner {
                 log.debug("FastAPI route decorator without parseable string path: {} (file={}, line={})",
                         decorator, module.getFilePath(), function.getLineStart());
                 url = "";
+            }
+            if (routerPrefix != null && !"app".equals(identifier)) {
+                url = routerPrefix + url;
             }
             result.add(buildEntry(module, function, httpMethod, url, projectPath));
         }

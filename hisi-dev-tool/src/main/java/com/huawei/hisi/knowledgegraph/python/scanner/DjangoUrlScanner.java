@@ -6,8 +6,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.huawei.hisi.knowledgegraph.python.model.PyCall;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
@@ -41,6 +42,11 @@ public class DjangoUrlScanner {
 
     private static final Set<String> URL_FUNCTIONS = Set.of("path", "re_path", "url");
 
+    private static final Pattern INCLUDE_PATTERN = Pattern.compile(
+            "include\\s*\\(\\s*['\"]([^'\"]+)['\"]\\s*\\)");
+
+    public record IncludeMapping(String prefix, String targetModulePath) {}
+
     private static final String LANGUAGE_PYTHON = "python";
     private static final String FRAMEWORK_DJANGO = "django";
 
@@ -69,10 +75,7 @@ public class DjangoUrlScanner {
 
         List<EntryPointNode> entries = new ArrayList<>();
         for (PyCall call : module.getCalls()) {
-            EntryPointNode entry = classifyUrlCall(call, module, projectPath, modulesByPath);
-            if (entry != null) {
-                entries.add(entry);
-            }
+            entries.addAll(classifyUrlCall(call, module, projectPath, modulesByPath));
         }
         return List.copyOf(entries);
     }
@@ -86,17 +89,67 @@ public class DjangoUrlScanner {
         return scanModule(module, projectPath, Map.of());
     }
 
-    private EntryPointNode classifyUrlCall(PyCall call,
+    public List<IncludeMapping> scanIncludes(PyModule module) {
+        if (module == null || module.getFilePath() == null
+                || !module.getFilePath().endsWith("urls.py")) {
+            return List.of();
+        }
+        List<IncludeMapping> result = new ArrayList<>();
+        for (PyCall call : module.getCalls()) {
+            String expr = call.getCalleeExpression();
+            if (expr == null) continue;
+            String funcName = expr.contains(".") ? expr.substring(expr.lastIndexOf('.') + 1) : expr;
+            if (!URL_FUNCTIONS.contains(funcName)) continue;
+
+            String viewExpression = call.getSecondPositionalArg();
+            if (viewExpression == null) continue;
+            Matcher m = INCLUDE_PATTERN.matcher(viewExpression);
+            if (m.find()) {
+                String prefix = call.getFirstStringArg() != null ? call.getFirstStringArg() : "";
+                String targetModule = m.group(1).replace(".urls", "").replace(".", "/");
+                String dotted = m.group(1);
+                result.add(new IncludeMapping(prefix, dotted));
+            }
+        }
+        return result;
+    }
+
+    public static void applyIncludes(List<EntryPointNode> entries,
+                                     List<IncludeMapping> includes,
+                                     Map<String, PyModule> modulesByPath) {
+        if (includes.isEmpty()) return;
+        for (IncludeMapping inc : includes) {
+            String targetUrlsModule = inc.targetModulePath();
+            for (EntryPointNode ep : entries) {
+                if (ep.getFramework() == null || !FRAMEWORK_DJANGO.equals(ep.getFramework())) {
+                    continue;
+                }
+                String entryInfo = ep.getEntryInfo();
+                if (entryInfo == null) continue;
+                PyModule targetMod = modulesByPath.get(targetUrlsModule);
+                if (targetMod == null) continue;
+                String targetFile = targetMod.getFilePath();
+                if (targetFile != null && entryInfo.contains(escapeJson(targetFile))) {
+                    String oldKey = ep.getEntryKey();
+                    if (oldKey != null && !oldKey.startsWith(inc.prefix())) {
+                        ep.setEntryKey(inc.prefix() + oldKey);
+                    }
+                }
+            }
+        }
+    }
+
+    private List<EntryPointNode> classifyUrlCall(PyCall call,
                                            PyModule module,
                                            String projectPath,
                                            Map<String, PyModule> modulesByPath) {
         String expr = call.getCalleeExpression();
         if (expr == null) {
-            return null;
+            return List.of();
         }
         String funcName = expr.contains(".") ? expr.substring(expr.lastIndexOf('.') + 1) : expr;
         if (!URL_FUNCTIONS.contains(funcName)) {
-            return null;
+            return List.of();
         }
 
         String urlPattern = call.getFirstStringArg();
@@ -105,34 +158,58 @@ public class DjangoUrlScanner {
         }
         String viewExpression = call.getSecondPositionalArg();
 
-        String methodNodeId = null;
+        if (viewExpression != null && INCLUDE_PATTERN.matcher(viewExpression).find()) {
+            return List.of();
+        }
+
+        List<DjangoViewResolver.ResolvedView> resolvedViews = List.of();
         if (viewExpression != null && modulesByPath != null && !modulesByPath.isEmpty()) {
-            Optional<DjangoViewResolver.ResolvedView> resolved =
-                    viewResolver.resolve(viewExpression, module, modulesByPath);
-            if (resolved.isPresent()) {
-                methodNodeId = resolved.get().computeNodeId();
-            } else {
+            resolvedViews = viewResolver.resolveAll(viewExpression, module, modulesByPath);
+            if (resolvedViews.isEmpty()) {
                 log.warn("[DjangoUrlScanner] Cannot resolve view expression '{}' at {}:{} — "
                                 + "entry point will have methodNodeId=null (call chain will be empty)",
                         viewExpression, module.getFilePath(), call.getLineNumber());
             }
         }
 
-        String entryId = sha256Prefix(module.getFilePath() + ":DJANGO:" + urlPattern + ":" + call.getLineNumber());
-        String entryKey = urlPattern;
-        String entryInfo = buildUrlEntryInfoJson(urlPattern, expr, viewExpression,
-                call.getEnclosingFunction(), module.getFilePath(), call.getLineNumber());
+        if (resolvedViews.size() <= 1) {
+            String methodNodeId = resolvedViews.isEmpty() ? null : resolvedViews.get(0).computeNodeId();
+            String entryId = sha256Prefix(module.getFilePath() + ":DJANGO:" + urlPattern + ":" + call.getLineNumber());
+            String entryInfo = buildUrlEntryInfoJson(urlPattern, expr, viewExpression,
+                    call.getEnclosingFunction(), module.getFilePath(), call.getLineNumber());
+            return List.of(EntryPointNode.builder()
+                    .entryId(entryId)
+                    .entryType(EntryPointNode.TYPE_HTTP)
+                    .entryKey(urlPattern)
+                    .entryInfo(entryInfo)
+                    .projectPath(projectPath)
+                    .language(LANGUAGE_PYTHON)
+                    .framework(FRAMEWORK_DJANGO)
+                    .methodNodeId(methodNodeId)
+                    .build());
+        }
 
-        return EntryPointNode.builder()
-                .entryId(entryId)
-                .entryType(EntryPointNode.TYPE_HTTP)
-                .entryKey(entryKey)
-                .entryInfo(entryInfo)
-                .projectPath(projectPath)
-                .language(LANGUAGE_PYTHON)
-                .framework(FRAMEWORK_DJANGO)
-                .methodNodeId(methodNodeId)
-                .build();
+        List<EntryPointNode> entries = new ArrayList<>();
+        for (DjangoViewResolver.ResolvedView rv : resolvedViews) {
+            String httpMethod = rv.qualName.contains(".")
+                    ? rv.qualName.substring(rv.qualName.lastIndexOf('.') + 1)
+                    : rv.qualName;
+            String entryId = sha256Prefix(module.getFilePath() + ":DJANGO:" + urlPattern
+                    + ":" + httpMethod + ":" + call.getLineNumber());
+            String entryInfo = buildUrlEntryInfoJson(urlPattern, expr, viewExpression,
+                    call.getEnclosingFunction(), module.getFilePath(), call.getLineNumber());
+            entries.add(EntryPointNode.builder()
+                    .entryId(entryId)
+                    .entryType(EntryPointNode.TYPE_HTTP)
+                    .entryKey(urlPattern + " [" + httpMethod.toUpperCase() + "]")
+                    .entryInfo(entryInfo)
+                    .projectPath(projectPath)
+                    .language(LANGUAGE_PYTHON)
+                    .framework(FRAMEWORK_DJANGO)
+                    .methodNodeId(rv.computeNodeId())
+                    .build());
+        }
+        return entries;
     }
 
     private static String buildUrlEntryInfoJson(String urlPattern,

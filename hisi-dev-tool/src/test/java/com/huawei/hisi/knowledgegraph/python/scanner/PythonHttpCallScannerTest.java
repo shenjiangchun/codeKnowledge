@@ -3,6 +3,7 @@ package com.huawei.hisi.knowledgegraph.python.scanner;
 import java.util.List;
 
 import com.huawei.hisi.knowledgegraph.python.model.PyCall;
+import com.huawei.hisi.knowledgegraph.python.model.PyImport;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -69,7 +70,7 @@ class PythonHttpCallScannerTest {
     }
 
     @Test
-    @DisplayName("session.get matched as heuristic instance call")
+    @DisplayName("session.get matched when module has requests import")
     void sessionGet() {
         PyCall call = PyCall.builder()
                 .calleeExpression("session.get")
@@ -77,7 +78,13 @@ class PythonHttpCallScannerTest {
                 .enclosingFunction("do_request")
                 .firstStringArg("/users")
                 .build();
-        PyModule module = moduleWith(call);
+        PyImport imp = PyImport.builder()
+                .moduleName("requests").fromImport(false).lineNumber(1).build();
+        PyModule module = PyModule.builder()
+                .filePath("app.py").modulePath("app")
+                .calls(List.of(call))
+                .imports(List.of(imp))
+                .build();
 
         List<PythonHttpCall> results = scanner.scanModule(module, PROJECT_PATH, null);
 
@@ -169,20 +176,42 @@ class PythonHttpCallScannerTest {
     }
 
     @Test
-    @DisplayName("client.post matched as heuristic instance call")
+    @DisplayName("client.post matched when module has httpx import")
     void clientPost() {
         PyCall call = PyCall.builder()
                 .calleeExpression("client.post")
                 .lineNumber(12)
                 .enclosingFunction("upload")
                 .build();
-        PyModule module = moduleWith(call);
+        PyImport imp = PyImport.builder()
+                .moduleName("httpx").fromImport(false).lineNumber(1).build();
+        PyModule module = PyModule.builder()
+                .filePath("app.py").modulePath("app")
+                .calls(List.of(call))
+                .imports(List.of(imp))
+                .build();
 
         List<PythonHttpCall> results = scanner.scanModule(module, PROJECT_PATH, null);
 
         assertThat(results).hasSize(1);
         assertThat(results.get(0).getLibrary()).isEqualTo("client");
         assertThat(results.get(0).getHttpMethod()).isEqualTo("POST");
+    }
+
+    @Test
+    @DisplayName("session.get without HTTP library import is ignored")
+    void sessionGetWithoutImport_ignored() {
+        PyCall call = PyCall.builder()
+                .calleeExpression("session.get")
+                .lineNumber(5)
+                .enclosingFunction("do_request")
+                .firstStringArg("/users")
+                .build();
+        PyModule module = moduleWith(call);
+
+        List<PythonHttpCall> results = scanner.scanModule(module, PROJECT_PATH, null);
+
+        assertThat(results).isEmpty();
     }
 
     @Test

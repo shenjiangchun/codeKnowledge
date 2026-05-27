@@ -1,5 +1,6 @@
 package com.huawei.hisi.knowledgegraph.python.scanner;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -33,8 +34,8 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 class DjangoViewResolver {
 
-    private static final List<String> CBV_REPRESENTATIVE_METHODS = List.of(
-            "get", "post", "put", "delete", "patch", "head", "options", "dispatch");
+    private static final List<String> CBV_HTTP_METHODS = List.of(
+            "get", "post", "put", "delete", "patch", "head", "options");
 
     /** Result of resolving a view expression to a concrete callable. */
     static final class ResolvedView {
@@ -164,6 +165,85 @@ class DjangoViewResolver {
         return findCallableInModule(targetModule, callableSymbol);
     }
 
+    List<ResolvedView> resolveAll(String viewExpression,
+                                  PyModule currentModule,
+                                  Map<String, PyModule> modulesByPath) {
+        Optional<ResolvedView> single = resolve(viewExpression, currentModule, modulesByPath);
+        if (single.isEmpty()) {
+            return List.of();
+        }
+        if (!single.get().isClassBased) {
+            return List.of(single.get());
+        }
+        return resolveAllInternal(viewExpression, currentModule, modulesByPath);
+    }
+
+    private List<ResolvedView> resolveAllInternal(String viewExpression,
+                                                   PyModule currentModule,
+                                                   Map<String, PyModule> modulesByPath) {
+        String expr = stripAsView(viewExpression);
+        int firstDot = expr.indexOf('.');
+        String root = firstDot < 0 ? expr : expr.substring(0, firstDot);
+        String remainder = firstDot < 0 ? "" : expr.substring(firstDot + 1);
+        PyImport binding = findBindingFor(root, currentModule);
+        if (binding == null) {
+            return List.of();
+        }
+
+        String targetModulePath;
+        String callableSymbol;
+
+        if (!binding.isFromImport()) {
+            String moduleName = binding.getModuleName();
+            String alias = binding.getAlias();
+            if (alias != null) {
+                targetModulePath = moduleName;
+            } else {
+                targetModulePath = moduleName;
+                String expectedSuffix = moduleName.contains(".")
+                        ? moduleName.substring(moduleName.indexOf('.') + 1) : "";
+                if (!expectedSuffix.isEmpty()) {
+                    if (remainder.startsWith(expectedSuffix + ".")) {
+                        remainder = remainder.substring(expectedSuffix.length() + 1);
+                    } else if (remainder.equals(expectedSuffix)) {
+                        remainder = "";
+                    }
+                }
+            }
+            if (remainder.isEmpty()) {
+                return List.of();
+            }
+            int dot = remainder.indexOf('.');
+            callableSymbol = dot < 0 ? remainder : remainder.substring(0, dot);
+        } else {
+            String containingModule = absolutize(binding.getModuleName(),
+                    binding.getRelativeLevel(), currentModule);
+            if (containingModule == null) {
+                return List.of();
+            }
+            String originalSymbol = binding.getSymbol();
+            String submoduleCandidate = containingModule.isEmpty()
+                    ? originalSymbol : containingModule + "." + originalSymbol;
+            if (modulesByPath.containsKey(submoduleCandidate)) {
+                targetModulePath = submoduleCandidate;
+                if (remainder.isEmpty()) {
+                    return List.of();
+                }
+                int dot = remainder.indexOf('.');
+                callableSymbol = dot < 0 ? remainder : remainder.substring(0, dot);
+            } else {
+                targetModulePath = containingModule;
+                callableSymbol = originalSymbol;
+            }
+        }
+
+        PyModule targetModule = modulesByPath.get(targetModulePath);
+        if (targetModule == null) {
+            return List.of();
+        }
+        return findAllCallablesInModule(targetModule, callableSymbol);
+    }
+
     // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
@@ -250,9 +330,14 @@ class DjangoViewResolver {
     }
 
     private Optional<ResolvedView> findCallableInModule(PyModule module, String symbol) {
+        List<ResolvedView> all = findAllCallablesInModule(module, symbol);
+        return all.isEmpty() ? Optional.empty() : Optional.of(all.get(0));
+    }
+
+    List<ResolvedView> findAllCallablesInModule(PyModule module, String symbol) {
         for (PyFunction fn : module.getTopLevelFunctions()) {
             if (fn.getName().equals(symbol)) {
-                return Optional.of(new ResolvedView(
+                return List.of(new ResolvedView(
                         module.getModulePath(),
                         fn.getQualName(),
                         fn.getParamNames(),
@@ -263,30 +348,38 @@ class DjangoViewResolver {
             if (!clazz.getName().equals(symbol)) {
                 continue;
             }
-            PyFunction representative = pickCbvRepresentativeMethod(clazz);
-            if (representative == null) {
-                return Optional.empty();
-            }
-            return Optional.of(new ResolvedView(
-                    module.getModulePath(),
-                    representative.getQualName(),
-                    representative.getParamNames(),
-                    true));
+            List<PyFunction> methods = pickCbvMethods(clazz);
+            return methods.stream()
+                    .map(m -> new ResolvedView(
+                            module.getModulePath(),
+                            m.getQualName(),
+                            m.getParamNames(),
+                            true))
+                    .toList();
         }
-        return Optional.empty();
+        return List.of();
     }
 
-    private static PyFunction pickCbvRepresentativeMethod(PyClass clazz) {
-        for (String preferred : CBV_REPRESENTATIVE_METHODS) {
+    private static List<PyFunction> pickCbvMethods(PyClass clazz) {
+        List<PyFunction> httpMethods = new ArrayList<>();
+        for (String preferred : CBV_HTTP_METHODS) {
             for (PyFunction m : clazz.getMethods()) {
                 if (m.getName().equals(preferred)) {
-                    return m;
+                    httpMethods.add(m);
                 }
             }
         }
-        if (!clazz.getMethods().isEmpty()) {
-            return clazz.getMethods().get(0);
+        if (!httpMethods.isEmpty()) {
+            return httpMethods;
         }
-        return null;
+        for (PyFunction m : clazz.getMethods()) {
+            if ("dispatch".equals(m.getName())) {
+                return List.of(m);
+            }
+        }
+        if (!clazz.getMethods().isEmpty()) {
+            return List.of(clazz.getMethods().get(0));
+        }
+        return List.of();
     }
 }

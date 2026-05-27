@@ -1,5 +1,6 @@
 package com.huawei.hisi.knowledgegraph.python.scanner;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -153,6 +154,59 @@ class DjangoUrlScannerTest {
     }
 
     @Test
+    @DisplayName("CBV with get+post: produces two entry points with method-tagged entryKeys")
+    void cbv_multipleHttpMethods() {
+        PyFunction get = PyFunction.builder()
+                .name("get").qualName("UserView.get")
+                .paramNames(List.of("self", "request"))
+                .isMethod(true).enclosingClass("UserView")
+                .build();
+        PyFunction post = PyFunction.builder()
+                .name("post").qualName("UserView.post")
+                .paramNames(List.of("self", "request"))
+                .isMethod(true).enclosingClass("UserView")
+                .build();
+        PyClass userView = PyClass.builder()
+                .name("UserView")
+                .baseClasses(List.of("View"))
+                .methods(List.of(get, post))
+                .lineStart(1).lineEnd(20)
+                .build();
+        PyModule viewsModule = PyModule.builder()
+                .filePath("/app/views.py").modulePath("app.views")
+                .classes(List.of(userView))
+                .build();
+
+        PyImport imp = PyImport.builder()
+                .moduleName("views").symbol("UserView")
+                .fromImport(true).relativeLevel(1).lineNumber(1).build();
+        PyCall call = PyCall.builder()
+                .calleeExpression("path").lineNumber(5)
+                .firstStringArg("users/")
+                .secondPositionalArg("UserView.as_view()")
+                .build();
+        PyModule urlsModule = PyModule.builder()
+                .filePath("/app/urls.py").modulePath("app.urls")
+                .imports(List.of(imp))
+                .calls(List.of(call)).build();
+
+        List<EntryPointNode> entries = scanner.scanModule(urlsModule, PROJECT_PATH,
+                Map.of("app.views", viewsModule, "app.urls", urlsModule));
+
+        assertThat(entries).hasSize(2);
+        assertThat(entries).extracting(EntryPointNode::getEntryKey)
+                .containsExactlyInAnyOrder("users/ [GET]", "users/ [POST]");
+        assertThat(entries).extracting(EntryPointNode::getMethodNodeId)
+                .containsExactlyInAnyOrder(
+                        PythonKnowledgeGraphBuilder.computeMethodNodeId(
+                                "app.views", "UserView.get", List.of("self", "request")),
+                        PythonKnowledgeGraphBuilder.computeMethodNodeId(
+                                "app.views", "UserView.post", List.of("self", "request")));
+        assertThat(entries).allMatch(e -> e.getEntryId() != null && !e.getEntryId().isEmpty());
+        assertThat(entries.get(0).getEntryId()).isNotEqualTo(entries.get(1).getEntryId());
+    }
+
+    @Test
     @DisplayName("Unresolvable view expression → entry created with null methodNodeId")
     void unresolvable_yieldsNullMethodNodeId() {
         PyCall call = PyCall.builder()
@@ -254,5 +308,69 @@ class DjangoUrlScannerTest {
 
         assertThat(entries).hasSize(1);
         assertThat(entries.get(0).getMethodNodeId()).isNull();
+    }
+
+    @Test
+    @DisplayName("include(): path('api/', include('myapp.urls')) skips entry and produces include mapping")
+    void includeSkipsEntry_andProducesMapping() {
+        PyCall includeCall = PyCall.builder()
+                .calleeExpression("path").lineNumber(5)
+                .firstStringArg("api/")
+                .secondPositionalArg("include('myapp.urls')")
+                .build();
+        PyCall directCall = PyCall.builder()
+                .calleeExpression("path").lineNumber(6)
+                .firstStringArg("home/")
+                .secondPositionalArg("views.home")
+                .build();
+        PyModule urls = PyModule.builder()
+                .filePath("/proj/urls.py").modulePath("proj.urls")
+                .calls(List.of(includeCall, directCall)).build();
+
+        List<EntryPointNode> entries = scanner.scanModule(urls, PROJECT_PATH);
+        assertThat(entries).hasSize(1);
+        assertThat(entries.get(0).getEntryKey()).isEqualTo("home/");
+
+        List<DjangoUrlScanner.IncludeMapping> includes = scanner.scanIncludes(urls);
+        assertThat(includes).hasSize(1);
+        assertThat(includes.get(0).prefix()).isEqualTo("api/");
+        assertThat(includes.get(0).targetModulePath()).isEqualTo("myapp.urls");
+    }
+
+    @Test
+    @DisplayName("applyIncludes: prepends prefix to child entries from target module")
+    void applyIncludes_prependsPrefix() {
+        PyFunction userList = PyFunction.builder()
+                .name("user_list").qualName("user_list")
+                .paramNames(List.of("request"))
+                .lineStart(1).lineEnd(5).isMethod(false).build();
+        PyModule childViews = PyModule.builder()
+                .filePath("/myapp/views.py").modulePath("myapp.views")
+                .topLevelFunctions(List.of(userList)).build();
+
+        PyCall childPath = PyCall.builder()
+                .calleeExpression("path").lineNumber(3)
+                .firstStringArg("users/")
+                .secondPositionalArg("views.user_list").build();
+        PyImport imp = PyImport.builder()
+                .moduleName("").symbol("views").fromImport(true).relativeLevel(1).lineNumber(1).build();
+        PyModule childUrls = PyModule.builder()
+                .filePath("/myapp/urls.py").modulePath("myapp.urls")
+                .imports(List.of(imp))
+                .calls(List.of(childPath)).build();
+
+        Map<String, PyModule> modulesByPath = Map.of(
+                "myapp.urls", childUrls, "myapp.views", childViews);
+
+        List<EntryPointNode> entries = new ArrayList<>(
+                scanner.scanModule(childUrls, PROJECT_PATH, modulesByPath));
+        assertThat(entries).hasSize(1);
+        assertThat(entries.get(0).getEntryKey()).isEqualTo("users/");
+
+        List<DjangoUrlScanner.IncludeMapping> includes = List.of(
+                new DjangoUrlScanner.IncludeMapping("api/", "myapp.urls"));
+        DjangoUrlScanner.applyIncludes(entries, includes, modulesByPath);
+
+        assertThat(entries.get(0).getEntryKey()).isEqualTo("api/users/");
     }
 }

@@ -222,11 +222,7 @@ class PythonCallGraphResolverTest {
 
         List<Map<String, Object>> edges = resolver.resolveModule(module, "/x", List.of(module));
 
-        assertThat(edges).hasSize(1);
-        Map<String, Object> e = edges.get(0);
-        assertThat(e.get("callType")).isEqualTo("UNRESOLVED");
-        assertThat(e.get("unresolved")).isEqualTo(true);
-        assertThat((String) e.get("calleeId")).startsWith("unresolved:");
+        assertThat(edges).isEmpty();
     }
 
     @Test
@@ -268,5 +264,71 @@ class PythonCallGraphResolverTest {
 
         assertThat(edges).hasSize(1);
         assertThat(edges.get(0).get("callType")).isEqualTo("IMPORT");
+    }
+
+    @Test
+    @DisplayName("resolveModule: 'from . import views' + views.func() resolves via submodule fallback")
+    void fromDotImportSubmodule() {
+        PyFunction userList = PyFunction.builder()
+                .name("user_list").qualName("user_list").paramNames(List.of("request"))
+                .lineStart(1).lineEnd(2).isMethod(false).build();
+        PyModule viewsMod = PyModule.builder()
+                .filePath("/x/app/views.py").modulePath("app.views")
+                .topLevelFunctions(List.of(userList))
+                .build();
+
+        PyImport imp = PyImport.builder()
+                .moduleName("").symbol("views").fromImport(true).relativeLevel(1).lineNumber(1).build();
+        PyFunction caller = PyFunction.builder()
+                .name("setup").qualName("setup").lineStart(3).lineEnd(4).isMethod(false).build();
+        PyCall call = PyCall.builder()
+                .calleeExpression("views.user_list").lineNumber(4).enclosingFunction("setup").build();
+        PyModule urlsMod = PyModule.builder()
+                .filePath("/x/app/urls.py").modulePath("app.urls")
+                .imports(List.of(imp))
+                .topLevelFunctions(List.of(caller))
+                .calls(List.of(call))
+                .build();
+
+        List<Map<String, Object>> edges =
+                resolver.resolveModule(urlsMod, "/x", List.of(urlsMod, viewsMod));
+
+        assertThat(edges).hasSize(1);
+        Map<String, Object> e = edges.get(0);
+        assertThat(e.get("callType")).isEqualTo("IMPORT");
+        assertThat(e.get("calleeId")).isEqualTo(nodeId("app.views::user_list(request)"));
+    }
+
+    @Test
+    @DisplayName("resolveModule: 'from x import *' + func() resolves via wildcard fallback")
+    void wildcardImportFallback() {
+        PyFunction helper = PyFunction.builder()
+                .name("helper").qualName("helper").paramNames(List.of("x"))
+                .lineStart(1).lineEnd(2).isMethod(false).build();
+        PyModule utilsMod = PyModule.builder()
+                .filePath("/x/utils.py").modulePath("utils")
+                .topLevelFunctions(List.of(helper))
+                .build();
+
+        PyImport wildcard = PyImport.builder()
+                .moduleName("utils").symbol("*").fromImport(true).lineNumber(1).build();
+        PyFunction caller = PyFunction.builder()
+                .name("main").qualName("main").lineStart(3).lineEnd(4).isMethod(false).build();
+        PyCall call = PyCall.builder()
+                .calleeExpression("helper").lineNumber(4).enclosingFunction("main").build();
+        PyModule mainMod = PyModule.builder()
+                .filePath("/x/main.py").modulePath("main")
+                .imports(List.of(wildcard))
+                .topLevelFunctions(List.of(caller))
+                .calls(List.of(call))
+                .build();
+
+        List<Map<String, Object>> edges =
+                resolver.resolveModule(mainMod, "/x", List.of(mainMod, utilsMod));
+
+        assertThat(edges).hasSize(1);
+        Map<String, Object> e = edges.get(0);
+        assertThat(e.get("callType")).isEqualTo("IMPORT");
+        assertThat(e.get("calleeId")).isEqualTo(nodeId("utils::helper(x)"));
     }
 }

@@ -172,4 +172,27 @@ class PythonAstVisitorTest {
                 .orElseThrow();
         assertEquals("https://api.x/y", call.getFirstStringArg());
     }
+
+    @Test
+    @DisplayName("module-level calls are captured with <module> as enclosingFunction")
+    void moduleLevelCallDetection() {
+        String src = String.join("\n",
+                "from django.urls import path",
+                "from . import views",
+                "",
+                "urlpatterns = [",
+                "    path(\"users/\", views.user_list),",
+                "]",
+                "");
+
+        PyModule mod = parse(src);
+
+        assertFalse(mod.getCalls().isEmpty(), "expected module-level calls to be captured");
+        boolean found = mod.getCalls().stream()
+                .anyMatch(c -> "path".equals(c.getCalleeExpression())
+                        && "<module>".equals(c.getEnclosingFunction())
+                        && "users/".equals(c.getFirstStringArg())
+                        && "views.user_list".equals(c.getSecondPositionalArg()));
+        assertTrue(found, "expected path('users/', views.user_list) at module level, got: " + mod.getCalls());
+    }
 }
