@@ -172,15 +172,35 @@ public class KnowledgeGraphController {
      * 替代旧的 /api/callchain/classes 接口
      */
     @GetMapping("/classes")
-    public ApiResponse<List<String>> getClasses(
+    public ApiResponse<Map<String, Object>> getClasses(
             @RequestParam(required = false) String projectPath,
-            @RequestParam(required = false) List<String> projectPaths) {
+            @RequestParam(required = false) List<String> projectPaths,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int pageSize,
+            @RequestParam(required = false) String keyword) {
         List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
         if (paths.isEmpty()) {
             return ApiResponse.error(400, "projectPath or projectPaths required");
         }
-        List<String> classes = neo4jMethodNodeRepository.findDistinctClassNamesByProjectPaths(paths);
-        return ApiResponse.success(classes);
+
+        long skip = (long) (page - 1) * pageSize;
+        List<String> classes;
+        long total;
+
+        if (keyword != null && !keyword.isBlank()) {
+            classes = neo4jMethodNodeRepository.findDistinctClassNamesByProjectPathsAndKeywordPaged(paths, keyword, skip, pageSize);
+            total = neo4jMethodNodeRepository.countDistinctClassNamesByProjectPathsAndKeyword(paths, keyword);
+        } else {
+            classes = neo4jMethodNodeRepository.findDistinctClassNamesByProjectPathsPaged(paths, skip, pageSize);
+            total = neo4jMethodNodeRepository.countDistinctClassNamesByProjectPaths(paths);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("items", classes);
+        result.put("total", total);
+        result.put("page", page);
+        result.put("pageSize", pageSize);
+        return ApiResponse.success(result);
     }
 
     // ============================================================
@@ -696,18 +716,18 @@ public class KnowledgeGraphController {
      * 查询入口点列表
      */
     @GetMapping("/entry-points")
-    public ApiResponse<List<Map<String, Object>>> getEntryPoints(
+    public ApiResponse<Map<String, Object>> getEntryPoints(
             @RequestParam(required = false) String projectPath,
             @RequestParam(required = false) List<String> projectPaths,
-            @RequestParam(required = false) String entryType) {
+            @RequestParam(required = false) String entryType,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int pageSize) {
 
         List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
         if (paths.isEmpty()) {
             return ApiResponse.error(400, "projectPath or projectPaths required");
         }
 
-        List<Map<String, Object>> entryPoints = new ArrayList<>();
-        List<com.huawei.hisi.neo4j.model.EntryPointNode> neo4jEntryPoints;
         // Normalize entryType alias: MCP uses "CONTROLLER"/"MQ_LISTENER" but Neo4j stores "HTTP"/"MQ_CONSUMER"
         String resolvedType = entryType;
         if (resolvedType != null) {
@@ -718,12 +738,20 @@ public class KnowledgeGraphController {
                 default -> resolvedType;
             };
         }
+
+        long skip = (long) (page - 1) * pageSize;
+        List<com.huawei.hisi.neo4j.model.EntryPointNode> neo4jEntryPoints;
+        long total;
+
         if (resolvedType != null && !resolvedType.isEmpty()) {
-            neo4jEntryPoints = neo4jEntryPointNodeRepository.findByProjectPathsAndEntryType(paths, resolvedType);
+            neo4jEntryPoints = neo4jEntryPointNodeRepository.findByProjectPathsAndEntryTypePaged(paths, resolvedType, skip, pageSize);
+            total = neo4jEntryPointNodeRepository.countByProjectPathsAndEntryType(paths, resolvedType);
         } else {
-            neo4jEntryPoints = neo4jEntryPointNodeRepository.findByProjectPaths(paths);
+            neo4jEntryPoints = neo4jEntryPointNodeRepository.findByProjectPathsPaged(paths, skip, pageSize);
+            total = neo4jEntryPointNodeRepository.countByProjectPaths(paths);
         }
 
+        List<Map<String, Object>> items = new ArrayList<>();
         for (var ep : neo4jEntryPoints) {
             Map<String, Object> map = new HashMap<>();
             map.put("nodeId", ep.getEntryId());
@@ -732,10 +760,15 @@ public class KnowledgeGraphController {
             map.put("entryInfo", ep.getEntryInfo());
             map.put("methodNodeId", ep.getMethodNodeId());
             map.put("projectPath", ep.getProjectPath());
-            entryPoints.add(map);
+            items.add(map);
         }
 
-        return ApiResponse.success(entryPoints);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("items", items);
+        result.put("total", total);
+        result.put("page", page);
+        result.put("pageSize", pageSize);
+        return ApiResponse.success(result);
     }
 
     /**
@@ -1579,6 +1612,7 @@ public class KnowledgeGraphController {
         map.put("methodName", node.getMethodName());
         map.put("signature", node.getSignature());
         map.put("filePath", node.getFilePath());
+        map.put("description", node.getDescription());
         return map;
     }
 

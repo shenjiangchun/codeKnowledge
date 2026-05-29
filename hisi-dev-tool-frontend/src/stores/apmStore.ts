@@ -198,7 +198,8 @@ export const useApmStore = defineStore('apm', () => {
     entryPointsLoading.value = true
     try {
       // Backend stores controller endpoints as 'HTTP' entryType (not 'CONTROLLER')
-      const entries = await knowledgeGraphApi.getEntryPoints(projectPath, 'HTTP') as unknown as EntryPoint[]
+      const result = await knowledgeGraphApi.getEntryPoints(projectPath, 'HTTP', undefined, 1, 10000)
+      const entries = (result?.items ?? []) as EntryPoint[]
       entryPoints.value = entries.map((e: EntryPoint) => {
         const parsed = parseEntryKey(e.entryKey)
         const info = parseEntryInfo((e as Record<string, unknown>).entryInfo as string | null)

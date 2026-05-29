@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   knowledgeGraphApi,
@@ -7,7 +7,8 @@ import {
   type EntryPoint,
   type RootEntriesResponse,
   type CallChainGraphData,
-  type GraphNode
+  type GraphNode,
+  type PageResult
 } from '@/api/knowledgeGraph'
 
 const props = defineProps<{
@@ -36,6 +37,7 @@ let searchTimer: ReturnType<typeof setTimeout> | null = null
 const entryTypeFilter = ref('ALL')
 const entryPoints = ref<EntryPoint[]>([])
 const entryLoading = ref(false)
+const entryPagination = ref({ page: 1, pageSize: 20, total: 0 })
 
 // ---- Class Mode ----
 const classList = ref<string[]>([])
@@ -43,6 +45,8 @@ const classLoading = ref(false)
 const selectedClass = ref('')
 const classMethods = ref<MethodNode[]>([])
 const classMethodsLoading = ref(false)
+const classMethodsPage = ref(1)
+const classMethodsPageSize = ref(20)
 
 // ---- Shared: Detail & Call Chains ----
 const methodDetail = ref<MethodNode | null>(null)
@@ -89,16 +93,23 @@ async function loadEntryPoints() {
   entryLoading.value = true
   try {
     const type = entryTypeFilter.value === 'ALL' ? undefined : entryTypeFilter.value
-    entryPoints.value = await knowledgeGraphApi.getEntryPoints(props.projectPath, type, props.projectPaths) as EntryPoint[]
+    const result = await knowledgeGraphApi.getEntryPoints(
+      props.projectPath, type, props.projectPaths,
+      entryPagination.value.page, entryPagination.value.pageSize
+    )
+    entryPoints.value = (result?.items ?? []) as EntryPoint[]
+    entryPagination.value.total = result?.total ?? 0
   } catch {
     ElMessage.error('加载入口点失败')
     entryPoints.value = []
+    entryPagination.value.total = 0
   } finally {
     entryLoading.value = false
   }
 }
 
 function handleEntryTypeChange() {
+  entryPagination.value.page = 1
   loadEntryPoints()
 }
 
@@ -110,10 +121,14 @@ function handleEntryClick(entry: EntryPoint) {
 // Class Mode
 // ============================================================
 
-async function loadClassList() {
+async function loadClassList(keyword?: string) {
   classLoading.value = true
   try {
-    classList.value = await knowledgeGraphApi.getClasses(props.projectPath, props.projectPaths) as string[]
+    const result = await knowledgeGraphApi.getClasses(
+      props.projectPath, props.projectPaths, 1, 100,
+      keyword || undefined
+    )
+    classList.value = result?.items ?? []
   } catch {
     classList.value = []
   } finally {
@@ -139,6 +154,17 @@ async function handleClassSelect(className: string) {
 
 function handleClassMethodClick(method: MethodNode) {
   handleSelectMethod(method.nodeId)
+}
+
+const paginatedClassMethods = computed(() => {
+  const start = (classMethodsPage.value - 1) * classMethodsPageSize.value
+  return classMethods.value.slice(start, start + classMethodsPageSize.value)
+})
+
+let classSearchTimer: ReturnType<typeof setTimeout> | null = null
+function handleClassRemoteSearch(query: string) {
+  if (classSearchTimer) clearTimeout(classSearchTimer)
+  classSearchTimer = setTimeout(() => loadClassList(query), 300)
 }
 
 // ============================================================
@@ -346,9 +372,17 @@ onMounted(() => {
         <el-table-column prop="entryKey" label="入口标识" min-width="300" show-overflow-tooltip />
         <el-table-column prop="entryInfo" label="描述" min-width="200" show-overflow-tooltip />
       </el-table>
-      <div v-if="!entryLoading && entryPoints.length" class="browse-count">
-        共 {{ entryPoints.length }} 个入口点
-      </div>
+      <el-pagination
+        v-if="entryPagination.total > 0"
+        class="browse-pagination"
+        v-model:current-page="entryPagination.page"
+        v-model:page-size="entryPagination.pageSize"
+        :total="entryPagination.total"
+        :page-sizes="[20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        @size-change="loadEntryPoints"
+        @current-change="loadEntryPoints"
+      />
     </div>
 
     <!-- Class Mode -->
@@ -356,12 +390,15 @@ onMounted(() => {
       <el-select
         v-model="selectedClass"
         filterable
+        remote
+        reserve-keyword
+        :remote-method="handleClassRemoteSearch"
         :loading="classLoading"
-        placeholder="选择一个类..."
+        placeholder="输入类名搜索..."
         style="width: 100%; max-width: 500px"
         @change="handleClassSelect"
         clearable
-        @clear="() => { classMethods = [] }"
+        @clear="() => { classMethods = []; classMethodsPage = 1 }"
       >
         <el-option
           v-for="cls in classList"
@@ -380,7 +417,7 @@ onMounted(() => {
 
       <el-table
         v-if="selectedClass"
-        :data="classMethods"
+        :data="paginatedClassMethods"
         v-loading="classMethodsLoading"
         size="small"
         stripe
@@ -389,12 +426,13 @@ onMounted(() => {
         @row-click="handleClassMethodClick"
         highlight-current-row
       >
-        <el-table-column prop="methodName" label="方法名" min-width="180">
+        <el-table-column prop="methodName" label="方法名" min-width="160">
           <template #default="{ row }">
             <span style="color: #409eff; font-weight: 500; cursor: pointer">{{ row.methodName }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="signature" label="签名" min-width="250" show-overflow-tooltip>
+        <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="signature" label="签名" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="mono">{{ row.signature }}</span>
           </template>
@@ -412,7 +450,16 @@ onMounted(() => {
           </template>
         </el-table-column>
       </el-table>
-      <div v-if="selectedClass && !classMethodsLoading && classMethods.length" class="browse-count">
+      <el-pagination
+        v-if="selectedClass && classMethods.length > classMethodsPageSize"
+        class="browse-pagination"
+        v-model:current-page="classMethodsPage"
+        v-model:page-size="classMethodsPageSize"
+        :total="classMethods.length"
+        :page-sizes="[20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+      />
+      <div v-else-if="selectedClass && !classMethodsLoading && classMethods.length" class="browse-count">
         共 {{ classMethods.length }} 个方法
       </div>
     </div>
@@ -457,6 +504,9 @@ onMounted(() => {
         </el-descriptions-item>
         <el-descriptions-item label="nodeId">
           <span class="mono" style="font-size: 11px; color: #999">{{ methodDetail.nodeId }}</span>
+        </el-descriptions-item>
+        <el-descriptions-item v-if="methodDetail.description" label="描述" :span="2">
+          {{ methodDetail.description }}
         </el-descriptions-item>
       </el-descriptions>
 
@@ -582,6 +632,9 @@ onMounted(() => {
 .browse-count {
   font-size: 12px;
   color: #909399;
+}
+.browse-pagination {
+  margin-top: 8px;
 }
 .detail-card {
   margin-top: 0;

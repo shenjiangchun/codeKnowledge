@@ -140,9 +140,9 @@ const loadClasses = async () => {
     if (appStore.projectDir && !props.project?.includes(':') && !props.project?.startsWith('/')) {
       projectPath = `${appStore.projectDir}\\${props.project}`
     }
-    const res = await knowledgeGraphApi.getClasses(projectPath)
+    const res = await knowledgeGraphApi.getClasses(projectPath, undefined, 1, 10000)
     // 转换为组件期望的格式
-    classes.value = (res || []).map((c: string) => ({
+    classes.value = (res?.items || []).map((c: string) => ({
       className: c,
       methodCount: 0 // 不显示方法数量了
     }))

@@ -68,9 +68,9 @@ const loadUris = async () => {
     if (appStore.projectDir && !props.project.includes(':') && !props.project.startsWith('/')) {
       projectPath = `${appStore.projectDir}\\${props.project}`
     }
-    const res = await knowledgeGraphApi.getEntryPoints(projectPath, 'HTTP')
+    const res = await knowledgeGraphApi.getEntryPoints(projectPath, 'HTTP', undefined, 1, 10000)
     // 从 entryKey 中提取 URI
-    uris.value = (res || []).map((ep: any) => ep.entryKey)
+    uris.value = (res?.items || []).map((ep: any) => ep.entryKey)
   } catch (error) {
     ElMessage.error('加载URI列表失败')
   } finally {

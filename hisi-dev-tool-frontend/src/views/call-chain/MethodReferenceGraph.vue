@@ -395,6 +395,7 @@ const buildSubtreeFromCalleesTree = (graph: any, rootFqn: string): ChainNode => 
       name: n.methodName || n.label || '',
       className: n.className || '',
       methodSignature: `${n.className || ''}.${n.methodName || n.label || ''}`,
+      description: n.description,
       children: []
     }
     nodeMap.set(n.nodeId || n.id, cn)
@@ -403,6 +404,7 @@ const buildSubtreeFromCalleesTree = (graph: any, rootFqn: string): ChainNode => 
       nodeMap.set(n.nodeId || n.id, root)
       root.name = cn.name || root.name
       root.className = cn.className || root.className
+      root.description = cn.description || root.description
     }
   }
 

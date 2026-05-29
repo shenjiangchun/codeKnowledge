@@ -113,6 +113,14 @@ export interface MethodNode {
   caughtExceptions: string[]
   methodBody: string
   projectPath: string
+  description?: string
+}
+
+export interface PageResult<T> {
+  items: T[]
+  total: number
+  page: number
+  pageSize: number
 }
 
 export interface CallChainNode {
@@ -372,9 +380,9 @@ export const knowledgeGraphApi = {
    * 获取项目下的所有类名列表
    * 替代旧的 callChainApi.getClasses()
    */
-  getClasses(projectPath: string, projectPaths?: string[]) {
-    return request.get<string[]>('/knowledge-graph/classes', {
-      params: { projectPath, projectPaths }
+  getClasses(projectPath: string, projectPaths?: string[], page = 1, pageSize = 50, keyword?: string) {
+    return request.get<PageResult<string>>('/knowledge-graph/classes', {
+      params: { projectPath, projectPaths, page, pageSize, keyword }
     })
   },
 
@@ -462,9 +470,9 @@ export const knowledgeGraphApi = {
   /**
    * 查询入口点列表
    */
-  getEntryPoints(projectPath: string, entryType?: string, projectPaths?: string[]) {
-    return request.get<EntryPoint[]>('/knowledge-graph/entry-points', {
-      params: { projectPath, entryType, projectPaths }
+  getEntryPoints(projectPath: string, entryType?: string, projectPaths?: string[], page = 1, pageSize = 20) {
+    return request.get<PageResult<EntryPoint>>('/knowledge-graph/entry-points', {
+      params: { projectPath, entryType, projectPaths, page, pageSize }
     })
   },
 
