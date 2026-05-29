@@ -1,7 +1,14 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { knowledgeGraphApi, type MethodNode, type RootEntriesResponse, type CallChainGraphData, type GraphNode } from '@/api/knowledgeGraph'
+import {
+  knowledgeGraphApi,
+  type MethodNode,
+  type EntryPoint,
+  type RootEntriesResponse,
+  type CallChainGraphData,
+  type GraphNode
+} from '@/api/knowledgeGraph'
 
 const props = defineProps<{
   projectPath: string
@@ -16,23 +23,39 @@ interface MethodSummary {
   filePath: string
 }
 
-const searchKeyword = ref('')
+// ---- Browse Mode ----
+const browseMode = ref<'search' | 'entryType' | 'class'>('entryType')
+
+// ---- Search Mode ----
 const searchResults = ref<MethodSummary[]>([])
 const searchLoading = ref(false)
 const selectedNodeId = ref('')
+let searchTimer: ReturnType<typeof setTimeout> | null = null
 
+// ---- Entry Type Mode ----
+const entryTypeFilter = ref('ALL')
+const entryPoints = ref<EntryPoint[]>([])
+const entryLoading = ref(false)
+
+// ---- Class Mode ----
+const classList = ref<string[]>([])
+const classLoading = ref(false)
+const selectedClass = ref('')
+const classMethods = ref<MethodNode[]>([])
+const classMethodsLoading = ref(false)
+
+// ---- Shared: Detail & Call Chains ----
 const methodDetail = ref<MethodNode | null>(null)
 const detailLoading = ref(false)
-
 const upstreamData = ref<RootEntriesResponse | null>(null)
 const upstreamLoading = ref(false)
-
 const downstreamData = ref<CallChainGraphData | null>(null)
 const downstreamLoading = ref(false)
-
 const activeChainTab = ref('upstream')
 
-let searchTimer: ReturnType<typeof setTimeout> | null = null
+// ============================================================
+// Search Mode
+// ============================================================
 
 function handleRemoteSearch(query: string) {
   if (searchTimer) clearTimeout(searchTimer)
@@ -52,6 +75,75 @@ function handleRemoteSearch(query: string) {
     }
   }, 300)
 }
+
+function formatLabel(item: MethodSummary): string {
+  const shortClass = item.className.split('.').pop() || item.className
+  return `${shortClass}.${item.methodName}`
+}
+
+// ============================================================
+// Entry Type Mode
+// ============================================================
+
+async function loadEntryPoints() {
+  entryLoading.value = true
+  try {
+    const type = entryTypeFilter.value === 'ALL' ? undefined : entryTypeFilter.value
+    entryPoints.value = await knowledgeGraphApi.getEntryPoints(props.projectPath, type, props.projectPaths) as EntryPoint[]
+  } catch {
+    ElMessage.error('加载入口点失败')
+    entryPoints.value = []
+  } finally {
+    entryLoading.value = false
+  }
+}
+
+function handleEntryTypeChange() {
+  loadEntryPoints()
+}
+
+function handleEntryClick(entry: EntryPoint) {
+  handleSelectMethod(entry.nodeId)
+}
+
+// ============================================================
+// Class Mode
+// ============================================================
+
+async function loadClassList() {
+  classLoading.value = true
+  try {
+    classList.value = await knowledgeGraphApi.getClasses(props.projectPath, props.projectPaths) as string[]
+  } catch {
+    classList.value = []
+  } finally {
+    classLoading.value = false
+  }
+}
+
+async function handleClassSelect(className: string) {
+  if (!className) {
+    classMethods.value = []
+    return
+  }
+  classMethodsLoading.value = true
+  try {
+    classMethods.value = await knowledgeGraphApi.getMethodsByClass(className, props.projectPath, props.projectPaths) as MethodNode[]
+  } catch {
+    ElMessage.error('加载类方法失败')
+    classMethods.value = []
+  } finally {
+    classMethodsLoading.value = false
+  }
+}
+
+function handleClassMethodClick(method: MethodNode) {
+  handleSelectMethod(method.nodeId)
+}
+
+// ============================================================
+// Shared: Select Method & Call Chains
+// ============================================================
 
 async function handleSelectMethod(nodeId: string) {
   if (!nodeId) return
@@ -107,8 +199,7 @@ async function loadDownstream() {
 }
 
 function navigateToNode(className: string, methodName: string) {
-  const keyword = `${className}.${methodName}`
-  searchKeyword.value = ''
+  browseMode.value = 'search'
   selectedNodeId.value = ''
   methodDetail.value = null
   upstreamData.value = null
@@ -123,11 +214,9 @@ function navigateToNode(className: string, methodName: string) {
       )
       if (match) {
         selectedNodeId.value = match.nodeId
-        searchKeyword.value = keyword
         handleSelectMethod(match.nodeId)
       } else if (searchResults.value.length > 0) {
         selectedNodeId.value = searchResults.value[0].nodeId
-        searchKeyword.value = `${searchResults.value[0].className}.${searchResults.value[0].methodName}`
         handleSelectMethod(searchResults.value[0].nodeId)
       } else {
         ElMessage.info('未找到匹配的方法节点')
@@ -144,25 +233,58 @@ function navigateToDownstreamNode(node: GraphNode) {
   navigateToNode(className, methodName)
 }
 
-function formatLabel(item: MethodSummary): string {
-  const shortClass = item.className.split('.').pop() || item.className
-  return `${shortClass}.${item.methodName}`
+function shortClassName(fqn: string): string {
+  return fqn.split('.').pop() || fqn
 }
 
-watch(() => props.projectPath, () => {
-  searchKeyword.value = ''
-  selectedNodeId.value = ''
-  searchResults.value = []
+// ============================================================
+// Mode Switch & Project Change
+// ============================================================
+
+function handleModeChange() {
+  if (browseMode.value === 'entryType' && entryPoints.value.length === 0) {
+    loadEntryPoints()
+  }
+  if (browseMode.value === 'class' && classList.value.length === 0) {
+    loadClassList()
+  }
+}
+
+function clearDetail() {
   methodDetail.value = null
   upstreamData.value = null
   downstreamData.value = null
+}
+
+watch(() => props.projectPath, () => {
+  selectedNodeId.value = ''
+  searchResults.value = []
+  entryPoints.value = []
+  classList.value = []
+  selectedClass.value = ''
+  classMethods.value = []
+  clearDetail()
+  handleModeChange()
+})
+
+onMounted(() => {
+  handleModeChange()
 })
 </script>
 
 <template>
   <div class="graph-explorer">
-    <!-- Search Bar -->
-    <div class="search-section">
+    <!-- Mode Selector -->
+    <div class="browse-bar">
+      <el-radio-group v-model="browseMode" @change="handleModeChange" size="default">
+        <el-radio-button value="entryType">按入口类型</el-radio-button>
+        <el-radio-button value="class">按类浏览</el-radio-button>
+        <el-radio-button value="search">搜索</el-radio-button>
+      </el-radio-group>
+    </div>
+
+    <!-- Search Mode -->
+    <div v-if="browseMode === 'search'" class="filter-section">
       <el-select
         v-model="selectedNodeId"
         filterable
@@ -171,10 +293,10 @@ watch(() => props.projectPath, () => {
         :remote-method="handleRemoteSearch"
         :loading="searchLoading"
         placeholder="输入类名或方法名搜索..."
-        style="width: 100%"
+        style="width: 100%; max-width: 600px"
         @change="handleSelectMethod"
         clearable
-        @clear="() => { methodDetail = null; upstreamData = null; downstreamData = null }"
+        @clear="clearDetail"
       >
         <el-option
           v-for="item in searchResults"
@@ -184,7 +306,7 @@ watch(() => props.projectPath, () => {
         >
           <div style="display: flex; justify-content: space-between; align-items: center">
             <span>
-              <span style="font-weight: 500">{{ item.className.split('.').pop() }}</span>.<span style="color: #409eff">{{ item.methodName }}</span>
+              <span style="font-weight: 500">{{ shortClassName(item.className) }}</span>.<span style="color: #409eff">{{ item.methodName }}</span>
             </span>
             <span style="color: #999; font-size: 11px; margin-left: 12px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">
               {{ item.filePath }}
@@ -194,12 +316,113 @@ watch(() => props.projectPath, () => {
       </el-select>
     </div>
 
+    <!-- Entry Type Mode -->
+    <div v-if="browseMode === 'entryType'" class="filter-section">
+      <el-radio-group v-model="entryTypeFilter" @change="handleEntryTypeChange" size="small">
+        <el-radio-button value="ALL">全部</el-radio-button>
+        <el-radio-button value="CONTROLLER">Controller</el-radio-button>
+        <el-radio-button value="SCHEDULED">定时任务</el-radio-button>
+        <el-radio-button value="MQ_LISTENER">MQ 监听</el-radio-button>
+        <el-radio-button value="FEIGN_CLIENT">Feign</el-radio-button>
+      </el-radio-group>
+
+      <el-table
+        :data="entryPoints"
+        v-loading="entryLoading"
+        size="small"
+        stripe
+        max-height="350"
+        class="browse-table"
+        @row-click="handleEntryClick"
+        highlight-current-row
+      >
+        <el-table-column prop="entryType" label="类型" width="120">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.entryType === 'CONTROLLER' ? 'primary' : row.entryType === 'SCHEDULED' ? 'warning' : 'info'">
+              {{ row.entryType }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="entryKey" label="入口标识" min-width="300" show-overflow-tooltip />
+        <el-table-column prop="entryInfo" label="描述" min-width="200" show-overflow-tooltip />
+      </el-table>
+      <div v-if="!entryLoading && entryPoints.length" class="browse-count">
+        共 {{ entryPoints.length }} 个入口点
+      </div>
+    </div>
+
+    <!-- Class Mode -->
+    <div v-if="browseMode === 'class'" class="filter-section">
+      <el-select
+        v-model="selectedClass"
+        filterable
+        :loading="classLoading"
+        placeholder="选择一个类..."
+        style="width: 100%; max-width: 500px"
+        @change="handleClassSelect"
+        clearable
+        @clear="() => { classMethods = [] }"
+      >
+        <el-option
+          v-for="cls in classList"
+          :key="cls"
+          :label="shortClassName(cls)"
+          :value="cls"
+        >
+          <div style="display: flex; justify-content: space-between; align-items: center">
+            <span style="font-weight: 500">{{ shortClassName(cls) }}</span>
+            <span style="color: #999; font-size: 11px; margin-left: 12px; max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">
+              {{ cls }}
+            </span>
+          </div>
+        </el-option>
+      </el-select>
+
+      <el-table
+        v-if="selectedClass"
+        :data="classMethods"
+        v-loading="classMethodsLoading"
+        size="small"
+        stripe
+        max-height="350"
+        class="browse-table"
+        @row-click="handleClassMethodClick"
+        highlight-current-row
+      >
+        <el-table-column prop="methodName" label="方法名" min-width="180">
+          <template #default="{ row }">
+            <span style="color: #409eff; font-weight: 500; cursor: pointer">{{ row.methodName }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="signature" label="签名" min-width="250" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="mono">{{ row.signature }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="行号" width="100">
+          <template #default="{ row }">
+            {{ row.startLine }}-{{ row.endLine }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="complexity" label="复杂度" width="80">
+          <template #default="{ row }">
+            <el-tag :type="row.complexity > 10 ? 'danger' : row.complexity > 5 ? 'warning' : 'success'" size="small">
+              {{ row.complexity }}
+            </el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="selectedClass && !classMethodsLoading && classMethods.length" class="browse-count">
+        共 {{ classMethods.length }} 个方法
+      </div>
+    </div>
+
     <!-- Method Detail -->
     <el-card v-if="methodDetail" v-loading="detailLoading" class="detail-card">
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <div>
-            <span class="detail-class">{{ methodDetail.className.split('.').pop() }}</span>
+            <span class="detail-class">{{ shortClassName(methodDetail.className) }}</span>
             <span style="color: #909399; margin: 0 4px">.</span>
             <span class="detail-method">{{ methodDetail.methodName }}</span>
           </div>
@@ -243,7 +466,7 @@ watch(() => props.projectPath, () => {
       </div>
     </el-card>
 
-    <el-empty v-else-if="!detailLoading" description="搜索并选择一个方法节点开始探索" />
+    <el-empty v-else-if="!detailLoading" description="选择一个方法节点开始探索" />
 
     <!-- Call Chain Results -->
     <el-card v-if="upstreamData || downstreamData" class="chain-card">
@@ -277,7 +500,7 @@ watch(() => props.projectPath, () => {
               <el-table-column label="调用方" min-width="250">
                 <template #default="{ row }">
                   <el-link type="primary" @click="navigateToNode(row.callerClassName, row.callerMethodName)">
-                    {{ row.callerClassName.split('.').pop() }}.{{ row.callerMethodName }}
+                    {{ shortClassName(row.callerClassName) }}.{{ row.callerMethodName }}
                   </el-link>
                 </template>
               </el-table-column>
@@ -342,8 +565,23 @@ watch(() => props.projectPath, () => {
   flex-direction: column;
   gap: 16px;
 }
-.search-section {
-  max-width: 600px;
+.browse-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.filter-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.browse-table {
+  margin-top: 4px;
+  cursor: pointer;
+}
+.browse-count {
+  font-size: 12px;
+  color: #909399;
 }
 .detail-card {
   margin-top: 0;
