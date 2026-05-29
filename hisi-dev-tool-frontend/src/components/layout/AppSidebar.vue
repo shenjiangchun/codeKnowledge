@@ -58,7 +58,8 @@ const baseMenuItems: MenuItem[] = [
     menuKey: 'knowledge-graph',
     children: [
       { index: '/knowledge-graph', title: '图谱总览' },
-      { index: '/prompt-config', title: '提示词配置' }
+      { index: '/prompt-config', title: '提示词配置' },
+      { index: '/glossary', title: '术语管理' }
     ]
   },
   {

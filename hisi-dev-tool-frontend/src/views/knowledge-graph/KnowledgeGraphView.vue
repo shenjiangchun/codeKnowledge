@@ -43,6 +43,13 @@
             >
               生成向量
             </el-button>
+            <!-- 术语配置按钮 -->
+            <el-button
+              @click="showGlossaryDialog = true"
+              :disabled="!projectPath"
+            >
+              术语配置
+            </el-button>
             <!-- 补齐缺失向量按钮 -->
             <el-button
               v-if="missingInfo && missingInfo.missingCount > 0"
@@ -194,16 +201,88 @@
         </el-button>
       </div>
     </el-drawer>
+
+    <!-- 术语管理对话框 -->
+    <el-dialog
+      v-model="showGlossaryDialog"
+      title="术语配置"
+      width="700px"
+      destroy-on-close
+    >
+      <p style="color: #909399; margin: 0 0 16px 0; font-size: 13px;">
+        配置术语对照表后，LLM 生成语义描述时将自动遵守术语规范（重新生成向量后生效）
+      </p>
+
+      <div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
+        <el-button type="primary" size="small" @click="glossaryShowForm = true">
+          <el-icon><Plus /></el-icon>
+          新增术语
+        </el-button>
+      </div>
+
+      <el-table :data="glossaryTerms" v-loading="glossaryLoading" empty-text="暂无术语" stripe size="small">
+        <el-table-column prop="wrongTerm" label="错误术语" width="140">
+          <template #default="{ row }">
+            <el-tag type="danger" effect="plain" size="small">{{ row.wrongTerm }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="" width="40" align="center">
+          <template #default>→</template>
+        </el-table-column>
+        <el-table-column prop="correctTerm" label="正确术语" width="140">
+          <template #default="{ row }">
+            <el-tag type="success" effect="plain" size="small">{{ row.correctTerm }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="context" label="说明" min-width="150" show-overflow-tooltip />
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="glossaryEditRow(row)">编辑</el-button>
+            <el-button link type="danger" size="small" @click="glossaryDeleteRow(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <!-- 术语新增/编辑子对话框 -->
+    <el-dialog
+      v-model="glossaryShowForm"
+      :title="glossaryEditingId ? '编辑术语' : '新增术语'"
+      width="420px"
+      append-to-body
+      destroy-on-close
+    >
+      <el-form :model="glossaryForm" label-width="80px">
+        <el-form-item label="错误术语" required>
+          <el-input v-model="glossaryForm.wrongTerm" placeholder="LLM 可能错误使用的术语" />
+        </el-form-item>
+        <el-form-item label="正确术语" required>
+          <el-input v-model="glossaryForm.correctTerm" placeholder="应该使用的正确术语" />
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="glossaryForm.context" placeholder="可选，如适用场景" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="glossaryShowForm = false">取消</el-button>
+        <el-button type="primary" @click="glossarySubmit" :loading="glossarySubmitting">
+          {{ glossaryEditingId ? '保存' : '创建' }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import { projectApi } from '@/api/project'
 import { knowledgeGraphApi, type KnowledgeGraphStatus, type GitStatus } from '@/api/knowledgeGraph'
 import { getVectorGenerationStatus, startVectorGeneration, getMissingEmbeddings, refreshMissing, type VectorGenerationTask, type MissingEmbeddingInfo } from '@/api/vectorGeneration'
+import { glossaryApi } from '@/api/glossary'
+import type { GlossaryTerm } from '@/types/glossary'
 import { useAppStore } from '@/stores/app'
 import CodeUnderstandingTab from './components/CodeUnderstandingTab.vue'
 import SemanticSearchPanel from './components/SemanticSearchPanel.vue'
@@ -646,6 +725,87 @@ function handleViewCallChain(result: any) {
       ElMessage.warning('引用分析组件未就绪')
     }
   })
+}
+
+// ==================== 术语管理 ====================
+const showGlossaryDialog = ref(false)
+const glossaryTerms = ref<GlossaryTerm[]>([])
+const glossaryLoading = ref(false)
+const glossaryShowForm = ref(false)
+const glossarySubmitting = ref(false)
+const glossaryEditingId = ref<number | null>(null)
+const glossaryForm = ref({ wrongTerm: '', correctTerm: '', context: '' })
+
+const loadGlossaryTerms = async () => {
+  if (!projectPath.value) return
+  glossaryLoading.value = true
+  try {
+    glossaryTerms.value = await glossaryApi.list(projectPath.value) as unknown as GlossaryTerm[]
+  } catch {
+    ElMessage.error('加载术语列表失败')
+  } finally {
+    glossaryLoading.value = false
+  }
+}
+
+watch(showGlossaryDialog, (visible) => {
+  if (visible) loadGlossaryTerms()
+})
+
+const glossaryEditRow = (row: GlossaryTerm) => {
+  glossaryEditingId.value = row.id!
+  glossaryForm.value = {
+    wrongTerm: row.wrongTerm,
+    correctTerm: row.correctTerm,
+    context: row.context || ''
+  }
+  glossaryShowForm.value = true
+}
+
+const glossaryDeleteRow = async (row: GlossaryTerm) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除「${row.wrongTerm} → ${row.correctTerm}」？`,
+      '删除确认',
+      { type: 'warning' }
+    )
+    await glossaryApi.delete(row.id!)
+    ElMessage.success('已删除')
+    await loadGlossaryTerms()
+  } catch {
+    // cancelled
+  }
+}
+
+const glossarySubmit = async () => {
+  if (!glossaryForm.value.wrongTerm.trim() || !glossaryForm.value.correctTerm.trim()) {
+    ElMessage.warning('错误术语和正确术语不能为空')
+    return
+  }
+  glossarySubmitting.value = true
+  try {
+    const payload: GlossaryTerm = {
+      projectPath: projectPath.value,
+      wrongTerm: glossaryForm.value.wrongTerm.trim(),
+      correctTerm: glossaryForm.value.correctTerm.trim(),
+      context: glossaryForm.value.context.trim() || undefined
+    }
+    if (glossaryEditingId.value) {
+      await glossaryApi.update(glossaryEditingId.value, payload)
+      ElMessage.success('术语已更新')
+    } else {
+      await glossaryApi.create(payload)
+      ElMessage.success('术语已创建')
+    }
+    glossaryShowForm.value = false
+    glossaryEditingId.value = null
+    glossaryForm.value = { wrongTerm: '', correctTerm: '', context: '' }
+    await loadGlossaryTerms()
+  } catch {
+    ElMessage.error('保存失败')
+  } finally {
+    glossarySubmitting.value = false
+  }
 }
 
 onMounted(() => {

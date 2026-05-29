@@ -60,6 +60,14 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/glossary',
+    name: 'Glossary',
+    component: () => import('@/views/glossary/GlossaryView.vue'),
+    meta: {
+      title: '术语管理'
+    }
+  },
+  {
     path: '/call-chain',
     redirect: '/knowledge-graph?tab=methodRef'
   },

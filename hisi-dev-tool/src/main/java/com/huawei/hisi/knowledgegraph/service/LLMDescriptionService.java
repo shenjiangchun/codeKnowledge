@@ -1,5 +1,7 @@
 package com.huawei.hisi.knowledgegraph.service;
 
+import com.huawei.hisi.glossary.model.GlossaryTerm;
+import com.huawei.hisi.glossary.repository.GlossaryTermRepository;
 import com.huawei.hisi.neo4j.model.MethodNode;
 import com.huawei.hisi.service.UnifiedTextService;
 import java.io.FileWriter;
@@ -28,6 +30,7 @@ import org.springframework.stereotype.Service;
 public class LLMDescriptionService {
 
     private final UnifiedTextService textService;
+    private final GlossaryTermRepository glossaryTermRepository;
 
     // 文件日志
     private PrintWriter fileLogger;
@@ -42,8 +45,10 @@ public class LLMDescriptionService {
     private static final int MAX_METHOD_BODY_LENGTH = 2000;
 
     @Autowired
-    public LLMDescriptionService(UnifiedTextService textService) {
+    public LLMDescriptionService(UnifiedTextService textService,
+                                  GlossaryTermRepository glossaryTermRepository) {
         this.textService = textService;
+        this.glossaryTermRepository = glossaryTermRepository;
     }
 
     /**
@@ -143,12 +148,14 @@ public class LLMDescriptionService {
         }
 
         try {
-            String description = textService.generateDescription(
+            String glossarySegment = buildGlossarySegment(node.getProjectPath());
+            String prompt = buildPrompt(
                     node.getClassName(),
                     node.getMethodName(),
                     node.getSignature(),
                     comment != null ? comment : node.getComment()
-            );
+            ) + glossarySegment;
+            String description = textService.generateText(prompt);
             fileLog(methodId + " 文本模型生成成功: " + description);
             return description;
         } catch (Exception e) {
@@ -249,6 +256,7 @@ public class LLMDescriptionService {
                     node.getComment(),
                     node.getMethodBody()
             );
+            prompt += buildGlossarySegment(node.getProjectPath());
             String description = textService.generateText(prompt);
             fileLog(methodId + " 文本模型生成成功（含方法体）: " + description);
             return description;
@@ -256,5 +264,25 @@ public class LLMDescriptionService {
             fileLog("[ERROR] " + methodId + " 文本模型生成失败（含方法体）: " + e.getMessage());
             throw new RuntimeException("LLM描述生成失败（含方法体）: " + e.getMessage(), e);
         }
+    }
+
+    private String buildGlossarySegment(String projectPath) {
+        if (projectPath == null || projectPath.isBlank()) {
+            return "";
+        }
+        List<GlossaryTerm> terms = glossaryTermRepository.findByProjectPath(projectPath);
+        if (terms.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("\n\n## 术语规范（必须严格遵守）\n");
+        for (GlossaryTerm t : terms) {
+            sb.append("- 禁止使用「").append(t.getWrongTerm())
+              .append("」，应使用「").append(t.getCorrectTerm()).append("」");
+            if (t.getContext() != null && !t.getContext().isBlank()) {
+                sb.append("（").append(t.getContext()).append("）");
+            }
+            sb.append("\n");
+        }
+        return sb.toString();
     }
 }
