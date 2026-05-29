@@ -38,6 +38,25 @@ const entryTypeFilter = ref('ALL')
 const entryPoints = ref<EntryPoint[]>([])
 const entryLoading = ref(false)
 const entryPagination = ref({ page: 1, pageSize: 20, total: 0 })
+const availableEntryTypes = ref<string[]>([])
+const entryTypesLoading = ref(false)
+
+const ENTRY_TYPE_LABELS: Record<string, string> = {
+  HTTP: 'HTTP接口',
+  SCHEDULED: '定时任务',
+  MQ_CONSUMER: 'MQ消费',
+  FEIGN_CLIENT: 'Feign',
+  FASTAPI_ROUTE: 'FastAPI',
+  FLASK_ROUTE: 'Flask',
+  DJANGO_VIEW: 'Django',
+  CELERY_TASK: 'Celery',
+  GRPC: 'gRPC',
+  RMI: 'RMI',
+}
+
+function entryTypeLabel(type: string): string {
+  return ENTRY_TYPE_LABELS[type] || type
+}
 
 // ---- Class Mode ----
 const classList = ref<string[]>([])
@@ -111,6 +130,17 @@ async function loadEntryPoints() {
 function handleEntryTypeChange() {
   entryPagination.value.page = 1
   loadEntryPoints()
+}
+
+async function loadEntryTypes() {
+  entryTypesLoading.value = true
+  try {
+    availableEntryTypes.value = (await knowledgeGraphApi.getEntryTypes(props.projectPath, props.projectPaths)) ?? []
+  } catch {
+    availableEntryTypes.value = []
+  } finally {
+    entryTypesLoading.value = false
+  }
 }
 
 function handleEntryClick(entry: EntryPoint) {
@@ -268,8 +298,13 @@ function shortClassName(fqn: string): string {
 // ============================================================
 
 function handleModeChange() {
-  if (browseMode.value === 'entryType' && entryPoints.value.length === 0) {
-    loadEntryPoints()
+  if (browseMode.value === 'entryType') {
+    if (availableEntryTypes.value.length === 0) {
+      loadEntryTypes()
+    }
+    if (entryPoints.value.length === 0) {
+      loadEntryPoints()
+    }
   }
   if (browseMode.value === 'class' && classList.value.length === 0) {
     loadClassList()
@@ -286,6 +321,7 @@ watch(() => props.projectPath, () => {
   selectedNodeId.value = ''
   searchResults.value = []
   entryPoints.value = []
+  availableEntryTypes.value = []
   classList.value = []
   selectedClass.value = ''
   classMethods.value = []
@@ -346,10 +382,11 @@ onMounted(() => {
     <div v-if="browseMode === 'entryType'" class="filter-section">
       <el-radio-group v-model="entryTypeFilter" @change="handleEntryTypeChange" size="small">
         <el-radio-button value="ALL">全部</el-radio-button>
-        <el-radio-button value="CONTROLLER">Controller</el-radio-button>
-        <el-radio-button value="SCHEDULED">定时任务</el-radio-button>
-        <el-radio-button value="MQ_LISTENER">MQ 监听</el-radio-button>
-        <el-radio-button value="FEIGN_CLIENT">Feign</el-radio-button>
+        <el-radio-button
+          v-for="t in availableEntryTypes"
+          :key="t"
+          :value="t"
+        >{{ entryTypeLabel(t) }}</el-radio-button>
       </el-radio-group>
 
       <el-table
@@ -365,7 +402,7 @@ onMounted(() => {
         <el-table-column prop="entryType" label="类型" width="120">
           <template #default="{ row }">
             <el-tag size="small" :type="row.entryType === 'CONTROLLER' ? 'primary' : row.entryType === 'SCHEDULED' ? 'warning' : 'info'">
-              {{ row.entryType }}
+              {{ entryTypeLabel(row.entryType) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -383,6 +420,12 @@ onMounted(() => {
         @size-change="loadEntryPoints"
         @current-change="loadEntryPoints"
       />
+      <el-empty
+        v-if="!entryLoading && !entryTypesLoading && availableEntryTypes.length === 0 && browseMode === 'entryType'"
+        description="该项目未检测到入口点"
+      >
+        <el-button type="primary" @click="browseMode = 'class'">切换到按类浏览</el-button>
+      </el-empty>
     </div>
 
     <!-- Class Mode -->

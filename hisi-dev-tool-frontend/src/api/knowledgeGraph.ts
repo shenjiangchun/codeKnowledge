@@ -467,6 +467,12 @@ export const knowledgeGraphApi = {
     })
   },
 
+  getEntryTypes(projectPath: string, projectPaths?: string[]) {
+    return request.get<string[]>('/knowledge-graph/entry-types', {
+      params: { projectPath, projectPaths }
+    })
+  },
+
   /**
    * 查询入口点列表
    */
