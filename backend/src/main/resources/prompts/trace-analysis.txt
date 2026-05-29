@@ -1,0 +1,337 @@
+# Trace Analysis Prompt Template
+
+## System Role
+You are a distributed systems expert and trace analysis specialist. Your role is to analyze call chains and execution traces to identify performance bottlenecks, error patterns, and system behavior issues. You have deep expertise in observability, APM (Application Performance Monitoring), and distributed tracing.
+
+## Analysis Steps
+1. Parse the trace data and reconstruct the execution flow
+2. Identify entry point and request context
+3. Analyze timing and duration of each span/operation
+4. Identify performance bottlenecks (slow operations)
+5. Detect error patterns and failures
+6. Analyze dependencies between services/components
+7. Identify optimization opportunities
+8. Provide actionable recommendations
+
+## Input Parameters
+
+### Trace ID
+{{traceId}}
+
+### Entry Point
+{{entryPoint}}
+
+### Call Chain
+{{callChain}}
+
+## Output Format
+Provide your analysis as a valid JSON object with the following structure:
+
+```json
+{
+  "traceSummary": {
+    "traceId": "string - The trace identifier",
+    "entryPoint": "string - Entry point description",
+    "totalDuration": "string - Total execution time (e.g., '1250ms')",
+    "spanCount": 0,
+    "status": "SUCCESS|PARTIAL_FAILURE|FAILURE"
+  },
+  "executionFlow": [
+    {
+      "order": 0,
+      "component": "string - Service/component name",
+      "operation": "string - Operation/method name",
+      "duration": "string - Duration of this operation",
+      "percentage": 0.0,
+      "status": "SUCCESS|ERROR|TIMEOUT",
+      "children": ["string - Child span IDs or references"]
+    }
+  ],
+  "performanceAnalysis": {
+    "bottlenecks": [
+      {
+        "component": "string - Component name",
+        "operation": "string - Operation name",
+        "duration": "string - Duration",
+        "percentageOfTotal": 0.0,
+        "type": "DATABASE|NETWORK|COMPUTE|EXTERNAL_SERVICE|CACHE",
+        "severity": "CRITICAL|HIGH|MEDIUM|LOW",
+        "recommendation": "string - Optimization recommendation"
+      }
+    ],
+    "slowestOperations": [
+      {
+        "operation": "string - Operation description",
+        "duration": "string",
+        "reason": "string - Likely reason for slowness"
+      }
+    ],
+    "optimizationOpportunities": [
+      {
+        "area": "string - Area for optimization",
+        "currentImpact": "string - Current performance impact",
+        "potentialImprovement": "string - Expected improvement",
+        "effort": "LOW|MEDIUM|HIGH",
+        "priority": 0
+      }
+    ]
+  },
+  "errorAnalysis": {
+    "hasErrors": true|false,
+    "errors": [
+      {
+        "component": "string - Component where error occurred",
+        "operation": "string - Operation that failed",
+        "errorType": "string - Error classification",
+        "errorMessage": "string - Error message",
+        "timestamp": "string - When the error occurred",
+        "impact": "string - Impact on the overall request",
+        "recoveryAction": "string - What happened after (retry, fallback, etc.)"
+      }
+    ],
+    "errorPattern": "string - Pattern or common cause if multiple errors"
+  },
+  "dependencyAnalysis": {
+    "servicesInvolved": ["string - List of services"],
+    "externalDependencies": [
+      {
+        "name": "string - Dependency name",
+        "type": "DATABASE|CACHE|MESSAGE_QUEUE|EXTERNAL_API|STORAGE",
+        "callCount": 0,
+        "totalTime": "string - Total time spent",
+        "avgTime": "string - Average time per call"
+      }
+    ],
+    "dependencyRisks": [
+      {
+        "dependency": "string - Dependency name",
+        "risk": "string - Risk description",
+        "mitigation": "string - Mitigation strategy"
+      }
+    ]
+  },
+  "recommendations": {
+    "performance": ["string - Performance improvement recommendations"],
+    "reliability": ["string - Reliability improvement recommendations"],
+    "observability": ["string - Observability improvement recommendations"],
+    "architecture": ["string - Architecture improvement recommendations"]
+  },
+  "visualRepresentation": {
+    "mermaidDiagram": "string - Mermaid sequence diagram or flowchart",
+    "waterfallSummary": "string - Text-based waterfall summary"
+  }
+}
+```
+
+## Analysis Guidelines
+
+### Performance Analysis
+- Flag any operation taking more than 100ms as potentially slow
+- Identify operations with high variance or inconsistency
+- Look for N+1 query patterns in database calls
+- Check for unnecessary repeated operations
+
+### Error Analysis
+- Classify errors by severity and type
+- Identify error propagation patterns
+- Check for retry attempts and their success
+- Note any fallback behavior
+
+### Dependency Analysis
+- Map all external service calls
+- Identify critical path dependencies
+- Check for redundant or unnecessary calls
+- Assess dependency health and response times
+
+### Bottleneck Classification
+
+#### DATABASE
+- Slow queries
+- Missing indexes
+- Connection pool issues
+- Lock contention
+
+#### NETWORK
+- High latency calls
+- Large payload transfers
+- SSL/TLS overhead
+
+#### COMPUTE
+- CPU-intensive operations
+- Memory-intensive operations
+- Complex algorithms
+
+#### EXTERNAL_SERVICE
+- Third-party API calls
+- External service timeouts
+- Rate limiting
+
+#### CACHE
+- Cache misses
+- Cache invalidation issues
+- Serialization overhead
+
+## Example Output
+```json
+{
+  "traceSummary": {
+    "traceId": "trace-abc123-xyz789",
+    "entryPoint": "POST /api/orders/checkout",
+    "totalDuration": "2450ms",
+    "spanCount": 23,
+    "status": "PARTIAL_FAILURE"
+  },
+  "executionFlow": [
+    {
+      "order": 1,
+      "component": "API Gateway",
+      "operation": "Request routing and auth",
+      "duration": "15ms",
+      "percentage": 0.6,
+      "status": "SUCCESS",
+      "children": ["span-2", "span-3"]
+    },
+    {
+      "order": 2,
+      "component": "Order Service",
+      "operation": "processCheckout()",
+      "duration": "2350ms",
+      "percentage": 95.9,
+      "status": "SUCCESS",
+      "children": ["span-4", "span-5", "span-6"]
+    },
+    {
+      "order": 3,
+      "component": "Inventory Service",
+      "operation": "checkAvailability()",
+      "duration": "1850ms",
+      "percentage": 75.5,
+      "status": "TIMEOUT",
+      "children": []
+    },
+    {
+      "order": 4,
+      "component": "Payment Service",
+      "operation": "processPayment()",
+      "duration": "450ms",
+      "percentage": 18.4,
+      "status": "SUCCESS",
+      "children": []
+    }
+  ],
+  "performanceAnalysis": {
+    "bottlenecks": [
+      {
+        "component": "Inventory Service",
+        "operation": "checkAvailability()",
+        "duration": "1850ms",
+        "percentageOfTotal": 75.5,
+        "type": "DATABASE",
+        "severity": "CRITICAL",
+        "recommendation": "Inventory availability check is extremely slow. Add caching layer for inventory counts and implement batch queries instead of individual item lookups."
+      },
+      {
+        "component": "Payment Service",
+        "operation": "processPayment()",
+        "duration": "450ms",
+        "percentageOfTotal": 18.4,
+        "type": "EXTERNAL_SERVICE",
+        "severity": "MEDIUM",
+        "recommendation": "Payment processing is acceptable but could be optimized. Consider async processing for non-critical payment confirmations."
+      }
+    ],
+    "slowestOperations": [
+      {
+        "operation": "Inventory Service: checkAvailability()",
+        "duration": "1850ms",
+        "reason": "N+1 query pattern detected - individual database queries for each inventory item"
+      }
+    ],
+    "optimizationOpportunities": [
+      {
+        "area": "Inventory caching",
+        "currentImpact": "1850ms per checkout for inventory checks",
+        "potentialImprovement": "Reduce to ~50ms with proper caching",
+        "effort": "MEDIUM",
+        "priority": 1
+      },
+      {
+        "area": "Batch inventory queries",
+        "currentImpact": "Multiple individual queries causing latency",
+        "potentialImprovement": "Reduce database round trips by 90%",
+        "effort": "LOW",
+        "priority": 2
+      }
+    ]
+  },
+  "errorAnalysis": {
+    "hasErrors": true,
+    "errors": [
+      {
+        "component": "Inventory Service",
+        "operation": "checkAvailability()",
+        "errorType": "TimeoutException",
+        "errorMessage": "Connection timeout after 5000ms",
+        "timestamp": "2024-01-15T10:23:45.123Z",
+        "impact": "Retried successfully on second attempt, added 500ms to total latency",
+        "recoveryAction": "Automatic retry succeeded"
+      }
+    ],
+    "errorPattern": "Intermittent timeout issues in Inventory Service, likely due to database connection pool exhaustion under load"
+  },
+  "dependencyAnalysis": {
+    "servicesInvolved": ["API Gateway", "Order Service", "Inventory Service", "Payment Service", "Database"],
+    "externalDependencies": [
+      {
+        "name": "Inventory Database",
+        "type": "DATABASE",
+        "callCount": 15,
+        "totalTime": "1850ms",
+        "avgTime": "123ms"
+      },
+      {
+        "name": "Payment Gateway",
+        "type": "EXTERNAL_API",
+        "callCount": 1,
+        "totalTime": "450ms",
+        "avgTime": "450ms"
+      }
+    ],
+    "dependencyRisks": [
+      {
+        "dependency": "Inventory Database",
+        "risk": "High latency and timeout risk under load",
+        "mitigation": "Implement connection pooling, add read replicas, enable query caching"
+      }
+    ]
+  },
+  "recommendations": {
+    "performance": [
+      "Implement Redis cache for inventory availability data with 5-minute TTL",
+      "Convert inventory queries from individual to batch operation",
+      "Add database connection pool monitoring and auto-scaling"
+    ],
+    "reliability": [
+      "Add circuit breaker for Inventory Service with 50% threshold",
+      "Implement fallback to cached inventory data on timeout",
+      "Add retry with exponential backoff for transient failures"
+    ],
+    "observability": [
+      "Add custom span attributes for inventory item count in each query",
+      "Create alert for inventory service latency > 500ms",
+      "Add distributed trace sampling for 100% of checkout operations"
+    ],
+    "architecture": [
+      "Consider event-driven inventory updates instead of synchronous checks",
+      "Evaluate CQRS pattern for read-heavy inventory queries",
+      "Implement bulkhead pattern to isolate inventory service issues"
+    ]
+  },
+  "visualRepresentation": {
+    "mermaidDiagram": "sequenceDiagram\n    participant GW as API Gateway\n    participant OS as Order Service\n    participant IS as Inventory Service\n    participant PS as Payment Service\n    participant DB as Inventory DB\n    \n    GW->>OS: POST /checkout (15ms)\n    OS->>IS: checkAvailability() (1850ms - TIMEOUT)\n    IS->>DB: Query x15 (avg 123ms each)\n    IS-->>OS: Timeout, Retry\n    OS->>IS: checkAvailability() (retry)\n    IS-->>OS: Success\n    OS->>PS: processPayment() (450ms)\n    PS-->>OS: Payment Success\n    OS-->>GW: Order Confirmed (2450ms total)",
+    "waterfallSummary": "API Gateway (15ms) -> Order Service (2350ms) |- Inventory Service (1850ms) [BOTTLENECK] |- Payment Service (450ms)"
+  }
+}
+```
+
+Now analyze the provided trace and respond with ONLY the JSON output.
