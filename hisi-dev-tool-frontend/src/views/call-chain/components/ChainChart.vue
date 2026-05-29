@@ -192,12 +192,15 @@
         </div>
       </div>
 
-      <!-- DAG 图视图 - 使用 ECharts -->
+      <!-- DAG 图视图 - 使用 FlowDag -->
       <div v-else-if="viewMode === 'dag'" class="dag-view">
-        <div ref="dagChartRef" class="dag-chart"></div>
-        <div v-if="!dagData" class="dag-empty">
-          <el-empty description="请先加载调用链数据" />
-        </div>
+        <FlowDag
+          :nodes="dagGraphNodes"
+          :edges="dagGraphEdges"
+          direction="TB"
+          @node-click="handleFlowNodeClick"
+          @contextmenu="handleFlowContextMenu"
+        />
       </div>
     </div>
 
@@ -374,7 +377,8 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import TreeNode from './TreeNode.vue'
 import { ElMessage } from 'element-plus'
 import { knowledgeGraphApi, type CallerInfo, type RootEntryInfo, type CallChainGraphData } from '@/api/knowledgeGraph'
-import * as echarts from 'echarts'
+import FlowDag from './FlowDag.vue'
+import type { FlowNode } from './flowDagLayout'
 
 // 桥接类型定义
 type BridgeType = 'MAPPER' | 'JPA' | 'MQ' | 'FEIGN' | 'HTTP' | 'ASPECT' | 'DIRECT'
@@ -510,11 +514,8 @@ const showDetail = ref(false)
 const selectedNode = ref<ChainNode | null>(null)
 
 // DAG视图相关
-const dagChartRef = ref<HTMLElement | null>(null)
 const highlightCycles = ref(true)
 const cycleCount = ref(0)
-const dagData = ref<any>(null)
-let dagChart: echarts.ECharts | null = null
 
 // 右键菜单状态
 const contextMenu = ref({
@@ -577,6 +578,43 @@ const filteredNodes = computed(() => {
   }
 
   return nodes
+})
+
+const dagGraphNodes = computed(() => {
+  return filteredNodes.value.map(n => ({
+    id: n.id,
+    name: n.name,
+    className: n.className || '',
+    depth: n.depth,
+    inCycle: n.isNoMatch || false,
+    callType: n.bridgeType || n.callType || '',
+    description: n.description,
+  }))
+})
+
+const dagGraphEdges = computed(() => {
+  const edges: { source: string; target: string; callType: string; callLine: number; isCycleEdge: boolean }[] = []
+  const nodeSet = new Set(filteredNodes.value.map(n => n.id))
+
+  const walk = (node: ChainNode) => {
+    if (!node.children) return
+    for (const child of node.children) {
+      const parentId = node.id || node.name
+      const childId = child.id || child.name
+      if (nodeSet.has(parentId) && nodeSet.has(childId)) {
+        edges.push({
+          source: parentId,
+          target: childId,
+          callType: child.bridgeType || child.callType || '',
+          callLine: 0,
+          isCycleEdge: child.isNoMatch || false,
+        })
+      }
+      walk(child)
+    }
+  }
+  if (props.data) walk(props.data)
+  return edges
 })
 
 // 根节点
@@ -684,6 +722,16 @@ const getBridgeDescription = (node: ChainNode): string => {
     default:
       return ''
   }
+}
+
+const handleFlowNodeClick = (node: FlowNode) => {
+  const chainNode = flatNodes.value.find(n => n.id === node.id)
+  if (chainNode) handleSelect(chainNode)
+}
+
+const handleFlowContextMenu = (node: FlowNode, event: MouseEvent) => {
+  const chainNode = flatNodes.value.find(n => n.id === node.id)
+  if (chainNode) handleContextMenu(chainNode, event)
 }
 
 const handleSelect = (node: ChainNode) => {
@@ -884,176 +932,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
-  if (dagChart) {
-    dagChart.dispose()
-    dagChart = null
-  }
 })
 
-// DAG 视图初始化
-const initDagChart = () => {
-  if (!dagChartRef.value) return
-
-  if (dagChart) {
-    dagChart.dispose()
-  }
-
-  dagChart = echarts.init(dagChartRef.value)
-
-  // 从 flatNodes 构建 DAG 数据
-  const nodes = filteredNodes.value.map(node => ({
-    id: node.id,
-    name: node.name,
-    className: node.className,
-    depth: node.depth,
-    description: node.description,
-    bridgeType: node.bridgeType,
-    bridgeInfo: node.bridgeInfo,
-    symbolSize: 30 + node.depth * 5,
-    category: node.bridgeType ? `bridge_${node.bridgeType.toLowerCase()}` : (node.isNoMatch ? 'external' : 'normal'),
-    itemStyle: {
-      color: node.bridgeType ? getBridgeNodeColor(node) : (node.isNoMatch ? '#f0a020' : '#409eff'),
-      borderColor: node.bridgeType ? getBridgeNodeColor(node) : (node.isNoMatch ? '#f0a020' : '#409eff'),
-      borderWidth: node.bridgeType ? 2 : 1
-    },
-    label: {
-      show: true,
-      formatter: node.bridgeType ? `${getBridgeIcon(node.bridgeType)}: ${node.name}` : node.name,
-      fontSize: 12
-    }
-  }))
-
-  // 构建边（父子关系）
-  const edges: any[] = []
-  flatNodes.value.forEach(node => {
-    if (node.children) {
-      node.children.forEach(child => {
-        const childNode = flatNodes.value.find(n => n.name === child.name && n.depth === node.depth + 1)
-        if (childNode) {
-          edges.push({
-            source: node.id,
-            target: childNode.id,
-            lineStyle: {
-              color: '#909399',
-              width: 1,
-              curveness: 0.1
-            }
-          })
-        }
-      })
-    }
-  })
-
-  const option = {
-    title: {
-      text: '调用链 DAG 图',
-      left: 'center',
-      top: 10
-    },
-    tooltip: {
-      trigger: 'item',
-      formatter: (params: any) => {
-        if (params.dataType === 'node') {
-          const bridgeInfo = params.data.bridgeType
-            ? `<br/><span style="color: #67c23a;">桥接: ${params.data.bridgeType}</span>`
-            : ''
-          const descriptionHtml = params.data.description
-            ? `<div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #eee; color: #666; font-size: 12px;">${params.data.description}</div>`
-            : ''
-          return `<div class="node-tooltip">
-            <div style="font-weight: bold; font-size: 14px;">${params.data.name}</div>
-            <div style="color: #909399; font-size: 12px;">类: ${params.data.className || '-'}</div>
-            <div style="color: #606266; font-size: 12px;">深度: ${params.data.depth}</div>${bridgeInfo}
-            ${descriptionHtml}
-          </div>`
-        }
-        return `${params.data.source} -> ${params.data.target}`
-      }
-    },
-    legend: [{
-      data: ['普通方法', '外部依赖', 'Mapper', 'JPA', 'MQ', 'Feign', 'HTTP', 'Aspect'],
-      top: 40
-    }],
-    series: [{
-      type: 'graph',
-      layout: 'force',
-      data: nodes,
-      edges: edges,
-      roam: true,
-      draggable: true,
-      force: {
-        repulsion: 200,
-        edgeLength: 100,
-        gravity: 0.1
-      },
-      categories: [{
-        name: 'normal',
-        itemStyle: { color: '#409eff' }
-      }, {
-        name: 'external',
-        itemStyle: { color: '#f0a020' }
-      }, {
-        name: 'bridge_mapper',
-        itemStyle: { color: '#67c23a' }
-      }, {
-        name: 'bridge_jpa',
-        itemStyle: { color: '#409eff' }
-      }, {
-        name: 'bridge_mq',
-        itemStyle: { color: '#e6a23c' }
-      }, {
-        name: 'bridge_feign',
-        itemStyle: { color: '#f56c6c' }
-      }, {
-        name: 'bridge_http',
-        itemStyle: { color: '#f5d44d' }
-      }, {
-        name: 'bridge_aspect',
-        itemStyle: { color: '#b37feb' }
-      }],
-      label: {
-        show: true,
-        position: 'bottom'
-      },
-      edgeSymbol: ['none', 'arrow'],
-      edgeSymbolSize: [4, 10],
-      emphasis: {
-        focus: 'adjacency',
-        lineStyle: { width: 5 }
-      }
-    }]
-  }
-
-  dagChart.setOption(option)
-
-  // 设置 dagData 标记已加载数据
-  dagData.value = { nodes: nodes.length, edges: edges.length }
-
-  // 点击事件
-  dagChart.on('click', (params: any) => {
-    if (params.dataType === 'node') {
-      const node = filteredNodes.value.find(n => n.id === params.data.id)
-      if (node) {
-        handleSelect(node)
-      }
-    }
-  })
-}
-
-// 监听视图模式变化
-watch(viewMode, async (mode) => {
-  if (mode === 'dag') {
-    await nextTick()
-    initDagChart()
-  }
-})
-
-// 监听数据变化，更新 DAG
-watch([flatNodes, filteredNodes], () => {
-  if (viewMode.value === 'dag' && dagChartRef.value) {
-    initDagChart()
-  }
-}, { deep: true })
 </script>
 
 <style scoped>
@@ -1727,22 +1607,7 @@ watch([flatNodes, filteredNodes], () => {
 /* DAG 图视图 */
 .dag-view {
   flex: 1;
-  position: relative;
-  min-height: 500px;
-  background: #fafafa;
-}
-
-.dag-chart {
-  width: 100%;
-  height: 100%;
-  min-height: 500px;
-}
-
-.dag-empty {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  min-height: 400px;
 }
 
 /* 环节点高亮样式 */
