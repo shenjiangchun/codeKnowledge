@@ -219,4 +219,15 @@ public interface Neo4jEntryPointNodeRepository extends Neo4jRepository<EntryPoin
         @Param("projectPaths") List<String> projectPaths,
         @Param("entryType") String entryType
     );
+
+    /**
+     * 获取多个项目下所有不同的入口类型
+     */
+    @Query("""
+        MATCH (entry:EntryPoint)
+        WHERE entry.projectPath IN $projectPaths
+        RETURN DISTINCT entry.entryType
+        ORDER BY entry.entryType
+        """)
+    List<String> findDistinctEntryTypesByProjectPaths(@Param("projectPaths") List<String> projectPaths);
 }
