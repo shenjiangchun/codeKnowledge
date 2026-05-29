@@ -136,9 +136,9 @@ public class PythonAstVisitor extends Python3ParserBaseVisitor<Void> {
 
         List<String> params = new ArrayList<>();
         if (ctx.parameters() != null && ctx.parameters().typedargslist() != null) {
-            ctx.parameters().typedargslist().tfpdef().forEach(tfp -> {
-                if (tfp != null && tfp.name() != null) {
-                    params.add(tfp.name().getText());
+            ctx.parameters().typedargslist().typedelem().forEach(elem -> {
+                if (elem.tfpdef() != null && elem.tfpdef().name() != null) {
+                    params.add(elem.tfpdef().name().getText());
                 }
             });
         }
