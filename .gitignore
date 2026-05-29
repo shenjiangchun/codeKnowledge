@@ -1,0 +1,59 @@
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Agent deliverables (internal)
+.agent-deliverables/
+
+# Git worktrees
+.worktrees/
+
+# Environment variables
+.env
+.env.local
+.env.neo4j
+
+# Neo4j volumes (local data)
+neo4j-data/
+neo4j-backup/
+models/
+
+# Node dependencies
+node_modules/
+**/node_modules/
+
+# Frontend builds
+frontend/node_modules
+frontend/dist
+frontend/dist-ssr
+frontend/*.local
+frontend/test-results/
+frontend/playwright-report/
+frontend/playwright/.cache/
+
+# Claude config
+.claude/
+
+# AI sessions
+ai-sessions/
+
+# CodeAI
+.codeai/
+
+# Playwright test videos
+**/test-results/*.webm
+**/playwright-report/
