@@ -1,0 +1,170 @@
+spring:
+  application:
+    name: devTool
+  profiles:
+    active: dev
+  datasource:
+    url: jdbc:sqlite:${user.home}/.hisi-devtool/devtool.db
+  # WebSocket 配置 - 保持长连接
+  websocket:
+    max-text-message-buffer-size: 65536
+    max-binary-message-buffer-size: 65536
+  # 允许循环依赖（临时解决方案）
+  main:
+    allow-circular-references: true
+
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+# ==================== 向量生成模型（Embedding） ====================
+# 用于代码语义向量化，支持任意 OpenAI 兼容的 /embeddings 端点
+# 前端「系统设置」可快速切换预置供应商或自定义
+embedding:
+  api-key: ${EMBEDDING_API_KEY}
+  base-url: https://api.siliconflow.cn/v1
+  model: Qwen/Qwen3-VL-Embedding-8B
+  dimension: 4096
+  timeout: 30000
+  max-retries: 3
+  retry-base-delay-ms: 60000
+  # ---- 备选向量模型（修改上方配置即可切换） ----
+  # 智谱 AI:       base-url=https://open.bigmodel.cn/api/paas/v4  model=embedding-3          dimension=2048
+  # 科大讯飞:      base-url=https://maas-api.cn-huabei-1.xf-yun.com/v2  model=xop3qwen8bembedding  dimension=768
+
+# ==================== 自然语言生成模型（Text / Chat） ====================
+# 用于代码描述生成，支持任意 OpenAI 兼容的 /chat/completions 端点
+text-model:
+  api-key: ${TEXT_MODEL_API_KEY}
+  base-url: https://open.bigmodel.cn/api/paas/v4
+  model: glm-4-flash
+  temperature: 0.1
+  max-tokens: 200
+  timeout: 30000
+  max-retries: 3
+  retry-base-delay-ms: 60000
+  # ---- 备选文本模型（修改上方配置即可切换） ----
+  # 智谱 glm-4-flash: base-url=https://open.bigmodel.cn/api/paas/v4  model=glm-4-flash (当前默认)
+
+# ==================== 旧版平台配置（已废弃，保留向后兼容） ====================
+# 以下配置已迁移至上方 embedding / text-model 统一配置，不再生效
+# 如需恢复旧模式，请联系管理员
+zhipu:
+  enabled: false
+siliconflow:
+  enabled: false
+iflytek:
+  enabled: false
+
+#应用配置
+app:
+  project_dir: C:\Users\47583\projects\hisi-dev-tool
+  codeHubUser: ${CODEHUB_USERNAME:placeholder}
+  codeHubPassword: ${CODEHUB_PASSWORD:placeholder}
+
+# CORS 跨域配置（生产环境请通过环境变量 CORS_ALLOWED_ORIGINS 配置允许的源）
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000}
+
+# 影响分析配置
+impact:
+  # 默认测试覆盖率分数（当实际覆盖率数据不可用时使用）
+  # 可通过环境变量 IMPACT_DEFAULT_COVERAGE_SCORE 覆盖
+  default-coverage-score: ${IMPACT_DEFAULT_COVERAGE_SCORE:50}
+
+# 日志配置
+logging:
+  level:
+    root: info
+    com.example.llmapi: info
+    com.huawei.hisi: info
+    org.springframework.web: info
+    # Spring框架日志（生产环境建议设为warn）
+    org.springframework: warn
+    org.springframework.beans: warn
+    org.springframework.context: warn
+    # 抑制 Neo4j id() 弃用警告（Spring Data Neo4j 内部使用）
+    org.springframework.data.neo4j.cypher.deprecation: error
+    org.springframework.data.neo4j.cypher.unrecognized: error
+    # 只对关键模块开启debug
+    com.huawei.hisi.neo4j: debug
+    com.huawei.hisi.knowledgegraph: debug
+
+# 日志云配置
+logcloud:
+  # 基础 URL（用于 Playwright 模式，HTTP API 模式不使用）
+  base-url: https://console.his.huawei.com
+  # 应用 ID
+  app-id: com.huawei.hiapm
+  # 用户名（Playwright 模式用）
+  username: ${LOGCLOUD_USERNAME:}
+  # 密码（Playwright 模式用）
+  password: ${LOGCLOUD_PASSWORD:}
+  # HTTP API 配置
+  api:
+    # API 基础 URL
+    base-url: https://apig-beta.his.huawei.com/api/gaia/rm-openapi
+    # 查询接口路径
+    query-path: /platforms/logQueryService/dslQuery/hiapm_error_fetcher
+    # 请求头：X-HW-ID
+    header-xhw-id: com.huawei.hiapm
+    # 请求头：x-hw-appkey
+    header-appkey: ${LOGCLOUD_APPKEY:placeholder}
+    # 请求超时时间（毫秒）
+    timeout: 60000
+    # 连接超时时间（毫秒）
+    connect-timeout: 30000
+  # 浏览器配置（Playwright 模式用，保留以兼容旧代码）
+  browser:
+    headless: true
+    timeout: 60000
+    cache-expire: 1800
+
+# 异常继承关系配置
+exception:
+  inheritance:
+    enable-defaults: true
+    # 可通过以下配置添加自定义异常继承关系
+    # hierarchy:
+    #   java.lang.Exception:
+    #     - com.example.CustomException
+
+# 代码分析功能开关配置
+# 用于控制新旧逻辑切换，确保重构安全
+analysis:
+  features:
+    # 增强版接口实现解析 - 同时存储简单名称和完整限定名
+    enhanced-interface-resolution: true
+    # 增强版字段调用解析 - 识别 @Autowired、@Lazy 等注入字段
+    enhanced-field-call-resolution: true
+    # Spring 注解感知调用链分析 - 识别 @Async、@Transactional 等代理调用
+    spring-annotation-aware: true
+    # 调试日志 - 输出详细的类型解析日志
+    debug-logging: true
+
+# Neo4j 图数据库配置
+neo4j:
+  uri: bolt://127.0.0.1:7687
+  username: neo4j
+  password: ${NEO4J_PASSWORD:12345678}
+  pool:
+    max-connection-pool-size: 50
+    connection-timeout: 30s
+
+# HTTP 代理配置（用于内网环境连接外部大模型 API）
+# 前端可通过 /api/settings/proxy 实时修改
+proxy:
+  enabled: ${PROXY_ENABLED:true}
+  host: ${PROXY_HOST:proxy.huawei.com}
+  port: ${PROXY_PORT:8080}
+  # 代理类型: HTTP / SOCKS
+  type: ${PROXY_TYPE:HTTP}
+  # 代理认证（可选）
+  username: ${PROXY_USERNAME}
+  password: ${PROXY_PASSWORD}
+  # 不走代理的地址列表（逗号分隔）
+  non-proxy-hosts: ${PROXY_NON_HOSTS:localhost,127.0.0.1}
+  # 是否禁用 SSL 证书验证（仅用于内网/测试环境）
+  disable-ssl-verification: ${PROXY_DISABLE_SSL_VERIFICATION:true}
+
