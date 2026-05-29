@@ -1538,6 +1538,51 @@ public class KnowledgeGraphController {
     }
 
     /**
+     * 模糊搜索方法（按类名或方法名）
+     */
+    @GetMapping("/method/search")
+    public ApiResponse<List<Map<String, Object>>> searchMethods(
+            @RequestParam String keyword,
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths,
+            @RequestParam(defaultValue = "50") int limit) {
+
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) {
+            return ApiResponse.error(400, "projectPath or projectPaths required");
+        }
+
+        List<MethodNode> byMethod = neo4jMethodNodeRepository
+                .findByProjectPathsAndMethodNameContaining(paths, keyword);
+        List<MethodNode> byClass = neo4jMethodNodeRepository
+                .findByProjectPathsAndClassNameContaining(paths, keyword);
+
+        Set<String> seen = new HashSet<>();
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (MethodNode node : byMethod) {
+            if (seen.add(node.getNodeId()) && results.size() < limit) {
+                results.add(toMethodSummary(node));
+            }
+        }
+        for (MethodNode node : byClass) {
+            if (seen.add(node.getNodeId()) && results.size() < limit) {
+                results.add(toMethodSummary(node));
+            }
+        }
+        return ApiResponse.success(results);
+    }
+
+    private Map<String, Object> toMethodSummary(MethodNode node) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("nodeId", node.getNodeId());
+        map.put("className", node.getClassName());
+        map.put("methodName", node.getMethodName());
+        map.put("signature", node.getSignature());
+        map.put("filePath", node.getFilePath());
+        return map;
+    }
+
+    /**
      * 查询方法详情（包含方法体）
      */
     @GetMapping("/method/detail")

@@ -158,6 +158,14 @@
           />
           <el-empty v-else description="请先选择项目" />
         </el-tab-pane>
+        <el-tab-pane label="图谱探索" name="explorer">
+          <GraphExplorerTab
+            v-if="projectPath"
+            :project-path="projectPath"
+            :project-paths="projectPaths"
+          />
+          <el-empty v-else description="请先选择项目" />
+        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -288,6 +296,7 @@ import CodeUnderstandingTab from './components/CodeUnderstandingTab.vue'
 import SemanticSearchPanel from './components/SemanticSearchPanel.vue'
 import MethodReferenceGraph from '@/views/call-chain/MethodReferenceGraph.vue'
 import CrossServiceBridgeTab from './components/CrossServiceBridgeTab.vue'
+import GraphExplorerTab from './components/GraphExplorerTab.vue'
 
 const route = useRoute()
 const appStore = useAppStore()

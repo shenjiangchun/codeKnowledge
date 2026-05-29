@@ -545,6 +545,15 @@ export const knowledgeGraphApi = {
     })
   },
 
+  /**
+   * 模糊搜索方法（按类名或方法名）
+   */
+  searchMethods(keyword: string, projectPath: string, limit = 50, projectPaths?: string[]) {
+    return request.get<MethodNode[]>('/knowledge-graph/method/search', {
+      params: { keyword, projectPath, limit, projectPaths }
+    })
+  },
+
   // ============================================================
   // 调用链图数据接口
   // ============================================================
