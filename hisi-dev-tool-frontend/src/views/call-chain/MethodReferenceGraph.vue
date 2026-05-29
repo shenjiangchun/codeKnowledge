@@ -99,6 +99,24 @@
       <el-empty v-if="analysisDirection === 'upstream' && upstreamGraphNodes.length === 0 && !loading && hasQueried"
         description="未找到调用者" />
 
+      <!-- 多入口合并流程图 -->
+      <div v-if="analysisDirection === 'downstream' && mergedGraph" class="merged-graph-section">
+        <div class="section-header">
+          <span>多入口合并流程图 ({{ mergedGraph.nodes.length }} 节点)</span>
+        </div>
+        <div class="merged-flow-container">
+          <FlowDag
+            :nodes="mergedGraph.nodes"
+            :edges="mergedGraph.edges"
+            direction="TB"
+            :entry-sources="mergedGraph.entrySources"
+            :entry-colors="mergedGraph.entryColors"
+            :entry-labels="mergedGraph.entryLabels"
+            @node-click="handleMergedNodeClick"
+          />
+        </div>
+      </div>
+
       <!-- 向下查询：展示依赖图 -->
       <ChainChart
         v-if="analysisDirection === 'downstream'"
@@ -125,7 +143,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ChatDotRound, Link } from '@element-plus/icons-vue'
-import { knowledgeGraphApi, type GraphNode as ApiGraphNode, type GraphEdge as ApiGraphEdge } from '@/api/knowledgeGraph'
+import { knowledgeGraphApi, type GraphNode as ApiGraphNode, type GraphEdge as ApiGraphEdge, type CallChainGraphData } from '@/api/knowledgeGraph'
+import { mergeCallChainGraphs, type MergedGraph } from './components/mergeGraphs'
 import { claudeApi } from '@/api/claude'
 import { useAppStore } from '@/stores/app'
 import { usePromptStore } from '@/stores/promptStore'
@@ -184,6 +203,7 @@ const upstreamGraphNodes = ref<ApiGraphNode[]>([])
 const upstreamGraphEdges = ref<ApiGraphEdge[]>([])
 const hasQueried = ref(false)
 const maxDepth = ref<number>(5)
+const mergedGraph = ref<MergedGraph | null>(null)
 
 // Multi-method input
 const methodInput = ref('')
@@ -234,6 +254,7 @@ const loadDependencyGraph = async () => {
   upstreamGraphNodes.value = []
   upstreamGraphEdges.value = []
   chainData.value = null
+  mergedGraph.value = null
 
   try {
     const projectPaths = effectiveProjectPaths.value
@@ -302,18 +323,15 @@ const loadDependencyGraph = async () => {
       }
     } else {
       // 向下：使用 callees-tree 获取完整子树
+      const graphResults: { entryFqn: string; data: CallChainGraphData }[] = []
       const rootChildren: ChainNode[] = []
       for (const method of entryMethods.value) {
         const { className, methodName } = splitFqn(method)
         try {
-          const graph = await knowledgeGraphApi.getCalleesTree(className, methodName, projectPath, maxDepth.value, projectPaths) as unknown as any
-          if (graph && Array.isArray(graph.nodes)) {
-            if (graph.nodes.length > 0) {
-              rootChildren.push(buildSubtreeFromCalleesTree(graph, method))
-            } else {
-              // 方法存在但没有下游调用
-              rootChildren.push({ name: methodName, className, methodSignature: method, children: [] })
-            }
+          const graph = await knowledgeGraphApi.getCalleesTree(className, methodName, projectPath, maxDepth.value, projectPaths) as unknown as CallChainGraphData
+          if (graph && Array.isArray(graph.nodes) && graph.nodes.length > 0) {
+            graphResults.push({ entryFqn: method, data: graph })
+            rootChildren.push(buildSubtreeFromCalleesTree(graph, method))
           } else {
             rootChildren.push({ name: methodName, className, methodSignature: method, children: [] })
           }
@@ -322,6 +340,13 @@ const loadDependencyGraph = async () => {
         }
       }
       chainData.value = { name: '入口方法', className: '', children: rootChildren }
+
+      if (graphResults.length > 1) {
+        mergedGraph.value = mergeCallChainGraphs(graphResults)
+      } else {
+        mergedGraph.value = null
+      }
+
       ElMessage.success('依赖图生成成功')
     }
   } catch (error) {
@@ -412,6 +437,13 @@ const handleUpstreamNodeClick = (node: FlowNode) => {
       entryMethods.value.push(fqn)
     }
     loadDependencyGraph()
+  }
+}
+
+// 合并图节点点击：显示节点信息
+const handleMergedNodeClick = (node: FlowNode) => {
+  if (node.className && node.name) {
+    ElMessage.info(`${node.className}.${node.name}`)
   }
 }
 
@@ -583,6 +615,17 @@ onMounted(() => {
 
 .upstream-flow-container {
   height: 500px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  margin-top: 12px;
+}
+
+.merged-graph-section {
+  margin-top: 16px;
+}
+
+.merged-flow-container {
+  height: 600px;
   border: 1px solid #ebeef5;
   border-radius: 8px;
   margin-top: 12px;
