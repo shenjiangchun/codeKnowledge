@@ -27,12 +27,15 @@ class DiffExtractServiceTest {
         service = new DiffExtractService();
         repoPath = tempDir.toString();
 
-        try (Git git = Git.init().setDirectory(tempDir.toFile()).setInitialBranch("main").call()) {
-            // Initial commit on main
+        try (Git git = Git.init().setDirectory(tempDir.toFile()).call()) {
+            // Initial commit on default branch
             File helloFile = new File(repoPath, "hello.txt");
             Files.writeString(helloFile.toPath(), "hello");
             git.add().addFilepattern("hello.txt").call();
             git.commit().setMessage("initial commit").call();
+
+            // Rename default branch to "main"
+            git.branchRename().setNewName("main").call();
 
             // Create feature branch and switch to it
             git.checkout().setCreateBranch(true).setName("feature").call();
