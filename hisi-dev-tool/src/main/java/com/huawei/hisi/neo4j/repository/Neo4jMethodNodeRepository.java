@@ -280,6 +280,27 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
         """)
     void createCallRelations(@Param("relations") List<Map<String, Object>> relations);
 
+    /**
+     * 批量创建 bridge 调用关系（HTTP/MQ 跨服务）
+     * callee 使用 MERGE 而非 MATCH，自动创建占位 bridge 节点
+     */
+    @Query("""
+        UNWIND $relations AS rel
+        MATCH (caller:Method {nodeId: rel.callerId})
+        MERGE (callee:Method {nodeId: rel.calleeId})
+        ON CREATE SET callee.methodName = rel.targetEndpoint,
+                      callee.className  = rel.bridgeType,
+                      callee.language   = 'external',
+                      callee.projectPath = rel.targetService
+        MERGE (caller)-[r:CALLS]->(callee)
+        SET r.callType = rel.callType,
+            r.callLine = rel.callLine,
+            r.bridgeType = rel.bridgeType,
+            r.targetService = rel.targetService,
+            r.targetEndpoint = rel.targetEndpoint
+        """)
+    void createBridgeRelations(@Param("relations") List<Map<String, Object>> relations);
+
     // ==================== 接口实现关系 (IMPLEMENTS) ====================
 
     /**

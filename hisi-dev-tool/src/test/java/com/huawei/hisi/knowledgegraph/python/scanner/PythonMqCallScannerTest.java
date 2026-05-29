@@ -3,6 +3,7 @@ package com.huawei.hisi.knowledgegraph.python.scanner;
 import java.util.List;
 
 import com.huawei.hisi.knowledgegraph.python.model.PyCall;
+import com.huawei.hisi.knowledgegraph.python.model.PyImport;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,7 +46,7 @@ class PythonMqCallScannerTest {
     }
 
     @Test
-    @DisplayName("producer.send(\"my-topic\", value) → kafka")
+    @DisplayName("producer.send(\"my-topic\", value) → kafka when kafka import present")
     void scanModule_kafkaSend() {
         PyCall call = PyCall.builder()
                 .calleeExpression("producer.send")
@@ -53,9 +54,13 @@ class PythonMqCallScannerTest {
                 .enclosingFunction("publish_event")
                 .firstStringArg("my-topic")
                 .build();
+        PyImport imp = PyImport.builder()
+                .moduleName("kafka").fromImport(false).lineNumber(1).build();
         PyModule module = PyModule.builder()
                 .filePath("events.py").modulePath("events")
-                .calls(List.of(call)).build();
+                .calls(List.of(call))
+                .imports(List.of(imp))
+                .build();
 
         List<PythonMqCall> results = scanner.scanModule(module, PROJECT_PATH, null);
 
@@ -117,15 +122,37 @@ class PythonMqCallScannerTest {
                 .calleeExpression("exchange.publish")
                 .lineNumber(30).firstStringArg("queue-c")
                 .enclosingFunction("fn3").build();
+        PyImport imp = PyImport.builder()
+                .moduleName("kafka").fromImport(false).lineNumber(1).build();
         PyModule module = PyModule.builder()
                 .filePath("multi.py").modulePath("multi")
-                .calls(List.of(call1, call2, call3)).build();
+                .calls(List.of(call1, call2, call3))
+                .imports(List.of(imp))
+                .build();
 
         List<PythonMqCall> results = scanner.scanModule(module, PROJECT_PATH, null);
 
         assertThat(results).hasSize(3);
         assertThat(results).extracting(PythonMqCall::getLibrary)
                 .containsExactly("celery", "kafka", "aio_pika");
+    }
+
+    @Test
+    @DisplayName("producer.send without kafka import → not classified")
+    void scanModule_sendWithoutKafkaImport_ignored() {
+        PyCall call = PyCall.builder()
+                .calleeExpression("producer.send")
+                .lineNumber(10)
+                .enclosingFunction("fn")
+                .firstStringArg("my-topic")
+                .build();
+        PyModule module = PyModule.builder()
+                .filePath("events.py").modulePath("events")
+                .calls(List.of(call)).build();
+
+        List<PythonMqCall> results = scanner.scanModule(module, PROJECT_PATH, null);
+
+        assertThat(results).isEmpty();
     }
 
     @Test

@@ -152,6 +152,19 @@ class PythonKnowledgeGraphBuilderTest {
         verify(storage).saveMethodNodes(anyList());
     }
 
+    @Test
+    @DisplayName("toModulePath: __init__.py stripped to package name")
+    void toModulePath_initPy_stripsInit() {
+        assertThat(PythonKnowledgeGraphBuilder.toModulePath("app/api/__init__.py"))
+                .isEqualTo("app.api");
+        assertThat(PythonKnowledgeGraphBuilder.toModulePath("app/__init__.py"))
+                .isEqualTo("app");
+        assertThat(PythonKnowledgeGraphBuilder.toModulePath("__init__.py"))
+                .isEqualTo("__init__");
+        assertThat(PythonKnowledgeGraphBuilder.toModulePath("app/api/views.py"))
+                .isEqualTo("app.api.views");
+    }
+
     private static String sha256Hex16(String src) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");

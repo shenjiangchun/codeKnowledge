@@ -3,6 +3,7 @@ package com.huawei.hisi.knowledgegraph.python.scanner;
 import java.util.List;
 
 import com.huawei.hisi.knowledgegraph.python.PythonKnowledgeGraphBuilder;
+import com.huawei.hisi.knowledgegraph.python.model.PyCall;
 import com.huawei.hisi.knowledgegraph.python.model.PyClass;
 import com.huawei.hisi.knowledgegraph.python.model.PyFunction;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
@@ -214,5 +215,101 @@ class FastApiRouteScannerTest {
         String expected = PythonKnowledgeGraphBuilder.computeMethodNodeId(
                 "main", "list_users", List.of("skip", "limit"));
         assertThat(entries.get(0).getMethodNodeId()).isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("Single APIRouter with prefix prepends to router-decorated routes")
+    void singleRouterWithPrefix_prependsToRoutes() {
+        PyCall routerCall = PyCall.builder()
+                .calleeExpression("APIRouter")
+                .lineNumber(3)
+                .enclosingFunction("<module>")
+                .firstStringArg("/api/v1")
+                .build();
+        PyFunction fn = PyFunction.builder()
+                .name("get_items")
+                .qualName("get_items")
+                .paramNames(List.of())
+                .decorators(List.of("router.get(\"/items\")"))
+                .lineStart(10)
+                .lineEnd(15)
+                .build();
+        PyModule module = PyModule.builder()
+                .filePath("items.py")
+                .modulePath("items")
+                .topLevelFunctions(List.of(fn))
+                .calls(List.of(routerCall))
+                .build();
+
+        List<EntryPointNode> entries = scanner.scanModule(module, PROJECT_PATH);
+
+        assertThat(entries).hasSize(1);
+        assertThat(entries.get(0).getEntryKey()).isEqualTo("GET /api/v1/items");
+    }
+
+    @Test
+    @DisplayName("Multiple APIRouters: prefix not applied (conservative)")
+    void multipleRouters_noPrefixApplied() {
+        PyCall router1 = PyCall.builder()
+                .calleeExpression("APIRouter")
+                .lineNumber(3)
+                .enclosingFunction("<module>")
+                .firstStringArg("/api/v1")
+                .build();
+        PyCall router2 = PyCall.builder()
+                .calleeExpression("APIRouter")
+                .lineNumber(4)
+                .enclosingFunction("<module>")
+                .firstStringArg("/api/v2")
+                .build();
+        PyFunction fn = PyFunction.builder()
+                .name("get_items")
+                .qualName("get_items")
+                .paramNames(List.of())
+                .decorators(List.of("router.get(\"/items\")"))
+                .lineStart(10)
+                .lineEnd(15)
+                .build();
+        PyModule module = PyModule.builder()
+                .filePath("items.py")
+                .modulePath("items")
+                .topLevelFunctions(List.of(fn))
+                .calls(List.of(router1, router2))
+                .build();
+
+        List<EntryPointNode> entries = scanner.scanModule(module, PROJECT_PATH);
+
+        assertThat(entries).hasSize(1);
+        assertThat(entries.get(0).getEntryKey()).isEqualTo("GET /items");
+    }
+
+    @Test
+    @DisplayName("app.get decorator not affected by router prefix")
+    void appDecorator_notAffectedByPrefix() {
+        PyCall routerCall = PyCall.builder()
+                .calleeExpression("APIRouter")
+                .lineNumber(3)
+                .enclosingFunction("<module>")
+                .firstStringArg("/api/v1")
+                .build();
+        PyFunction fn = PyFunction.builder()
+                .name("root")
+                .qualName("root")
+                .paramNames(List.of())
+                .decorators(List.of("app.get(\"/\")"))
+                .lineStart(10)
+                .lineEnd(15)
+                .build();
+        PyModule module = PyModule.builder()
+                .filePath("main.py")
+                .modulePath("main")
+                .topLevelFunctions(List.of(fn))
+                .calls(List.of(routerCall))
+                .build();
+
+        List<EntryPointNode> entries = scanner.scanModule(module, PROJECT_PATH);
+
+        assertThat(entries).hasSize(1);
+        assertThat(entries.get(0).getEntryKey()).isEqualTo("GET /");
     }
 }

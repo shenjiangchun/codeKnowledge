@@ -79,6 +79,15 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
         log.info("[Neo4j] 保存调用关系: {} 条", relations.size());
     }
 
+    @Transactional(transactionManager = "neo4jTransactionManager")
+    public void saveBridgeRelations(List<Map<String, Object>> relations) {
+        if (relations == null || relations.isEmpty()) {
+            return;
+        }
+        methodNodeRepository.createBridgeRelations(relations);
+        log.info("[Neo4j] 保存 bridge 关系: {} 条", relations.size());
+    }
+
     @Override
     @Transactional(transactionManager = "neo4jTransactionManager", readOnly = true)
     public int countCallRelations(String projectPath) {

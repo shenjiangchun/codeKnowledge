@@ -2,32 +2,23 @@ package com.huawei.hisi.knowledgegraph.python.scanner;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import com.huawei.hisi.knowledgegraph.python.model.PyCall;
+import com.huawei.hisi.knowledgegraph.python.model.PyImport;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-/**
- * Scans a parsed {@link PyModule} for outbound message-queue calls and
- * produces {@link PythonMqCall} records for each detected call site.
- *
- * <h3>Detection heuristics</h3>
- * <ul>
- *   <li>{@code *.send_task(...)} &rarr; library=celery, topic=firstStringArg</li>
- *   <li>{@code *.send(...)} &rarr; library=kafka (heuristic), topic=firstStringArg</li>
- *   <li>{@code *.publish(...)} &rarr; library=aio_pika, topic=firstStringArg</li>
- * </ul>
- */
 @Slf4j
 @Component
 public class PythonMqCallScanner {
 
     private static final String LANGUAGE_PYTHON = "python";
 
-    /**
-     * Scan the given module for outbound MQ calls.
-     */
+    private static final Set<String> KAFKA_IMPORT_MODULES = Set.of(
+            "kafka", "confluent_kafka", "aiokafka");
+
     public List<PythonMqCall> scanModule(PyModule module,
                                          String projectPath,
                                          String framework) {
@@ -35,10 +26,12 @@ public class PythonMqCallScanner {
             return List.of();
         }
 
+        boolean hasKafkaImport = hasRelevantImport(module, KAFKA_IMPORT_MODULES);
+
         List<PythonMqCall> results = new ArrayList<>();
         for (PyCall call : module.getCalls()) {
             PythonMqCall mqCall = classify(call, module.getFilePath(),
-                    projectPath, framework);
+                    projectPath, framework, hasKafkaImport);
             if (mqCall != null) {
                 results.add(mqCall);
             }
@@ -49,7 +42,8 @@ public class PythonMqCallScanner {
     private PythonMqCall classify(PyCall call,
                                   String filePath,
                                   String projectPath,
-                                  String framework) {
+                                  String framework,
+                                  boolean hasKafkaImport) {
         String expr = call.getCalleeExpression();
         if (expr == null || expr.isEmpty()) {
             return null;
@@ -65,6 +59,7 @@ public class PythonMqCallScanner {
         if ("send_task".equals(lastSegment)) {
             library = "celery";
         } else if ("send".equals(lastSegment) && call.getFirstStringArg() != null) {
+            if (!hasKafkaImport) return null;
             library = "kafka";
         } else if ("publish".equals(lastSegment)) {
             library = "aio_pika";
@@ -82,5 +77,19 @@ public class PythonMqCallScanner {
                 .framework(framework)
                 .projectPath(projectPath)
                 .build();
+    }
+
+    private static boolean hasRelevantImport(PyModule module, Set<String> modules) {
+        if (module.getImports() == null) return false;
+        for (PyImport imp : module.getImports()) {
+            String moduleName = imp.getModuleName();
+            if (moduleName == null) continue;
+            String topLevel = moduleName.contains(".")
+                    ? moduleName.substring(0, moduleName.indexOf('.'))
+                    : moduleName;
+            if (modules.contains(topLevel)) return true;
+            if (imp.isFromImport() && modules.contains(moduleName)) return true;
+        }
+        return false;
     }
 }

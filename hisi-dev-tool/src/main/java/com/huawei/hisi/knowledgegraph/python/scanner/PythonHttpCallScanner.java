@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Set;
 
 import com.huawei.hisi.knowledgegraph.python.model.PyCall;
+import com.huawei.hisi.knowledgegraph.python.model.PyImport;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -43,6 +44,9 @@ public class PythonHttpCallScanner {
     private static final Set<String> INSTANCE_IDENTIFIERS = Set.of(
             "session", "client");
 
+    private static final Set<String> HTTP_IMPORT_MODULES = Set.of(
+            "requests", "httpx", "aiohttp");
+
     private static final String LANGUAGE_PYTHON = "python";
 
     /**
@@ -60,10 +64,12 @@ public class PythonHttpCallScanner {
             return List.of();
         }
 
+        boolean hasHttpImport = hasRelevantImport(module, HTTP_IMPORT_MODULES);
+
         List<PythonHttpCall> results = new ArrayList<>();
         for (PyCall call : module.getCalls()) {
             PythonHttpCall httpCall = classify(call, module.getFilePath(),
-                    projectPath, framework);
+                    projectPath, framework, hasHttpImport);
             if (httpCall != null) {
                 results.add(httpCall);
             }
@@ -74,7 +80,8 @@ public class PythonHttpCallScanner {
     private PythonHttpCall classify(PyCall call,
                                     String filePath,
                                     String projectPath,
-                                    String framework) {
+                                    String framework,
+                                    boolean hasHttpImport) {
         String expr = call.getCalleeExpression();
         if (expr == null || expr.isEmpty()) {
             return null;
@@ -91,7 +98,7 @@ public class PythonHttpCallScanner {
         }
 
         String secondToLast = parts[parts.length - 2].toLowerCase();
-        String library = resolveLibrary(secondToLast);
+        String library = resolveLibrary(secondToLast, hasHttpImport);
         if (library == null) {
             return null;
         }
@@ -118,14 +125,27 @@ public class PythonHttpCallScanner {
      * Resolve the second-to-last segment to a library name.
      * Returns null if the segment is not recognised.
      */
-    private String resolveLibrary(String segment) {
+    private String resolveLibrary(String segment, boolean hasHttpImport) {
         if (KNOWN_LIBRARIES.contains(segment)) {
             return segment;
         }
-        if (INSTANCE_IDENTIFIERS.contains(segment)) {
-            // Heuristic match -- could be aiohttp.ClientSession or httpx.Client
+        if (INSTANCE_IDENTIFIERS.contains(segment) && hasHttpImport) {
             return segment;
         }
         return null;
+    }
+
+    private static boolean hasRelevantImport(PyModule module, Set<String> modules) {
+        if (module.getImports() == null) return false;
+        for (PyImport imp : module.getImports()) {
+            String moduleName = imp.getModuleName();
+            if (moduleName == null) continue;
+            String topLevel = moduleName.contains(".")
+                    ? moduleName.substring(0, moduleName.indexOf('.'))
+                    : moduleName;
+            if (modules.contains(topLevel)) return true;
+            if (imp.isFromImport() && modules.contains(moduleName)) return true;
+        }
+        return false;
     }
 }

@@ -183,7 +183,10 @@ public class PythonCallGraphResolver {
             if (imported != null) {
                 return imported;
             }
-            // Can't resolve — skip (don't create phantom unresolved edge)
+            Map<String, Object> wildcard = resolveWildcardImport(call, callerNodeId, head, ctx);
+            if (wildcard != null) {
+                return wildcard;
+            }
             log.trace("[CallGraph] Skipping unresolvable call '{}' in {}",
                     head, call.getEnclosingFunction());
             return null;
@@ -253,6 +256,30 @@ public class PythonCallGraphResolver {
         String absModuleName = absolutizeModuleName(
                 imp.getModuleName(), imp.getRelativeLevel(), ctx.module());
         PyModule target = ctx.moduleIndex().get(absModuleName);
+        if (target == null && imp.isFromImport() && imp.getSymbol() != null) {
+            String submoduleCandidate = absModuleName.isEmpty()
+                    ? imp.getSymbol()
+                    : absModuleName + "." + imp.getSymbol();
+            target = ctx.moduleIndex().get(submoduleCandidate);
+            if (target != null) {
+                absModuleName = submoduleCandidate;
+                if (parts.length >= 2) {
+                    PyFunction func = findTopLevel(target, parts[1]);
+                    if (func != null) {
+                        return edge(callerNodeId, topLevelNodeId(target.getModulePath(), func),
+                                CALL_TYPE_IMPORT, call.getLineNumber(), false);
+                    }
+                    PyClass cls = findClass(target, parts[1]);
+                    if (cls != null && parts.length >= 3) {
+                        PyFunction method = findMethod(cls, parts[2]);
+                        return method == null ? null : edge(
+                                callerNodeId, methodNodeId(target.getModulePath(), cls.getName(), method),
+                                CALL_TYPE_IMPORT, call.getLineNumber(), false);
+                    }
+                }
+                return null;
+            }
+        }
         if (target == null) {
             return null;
         }
@@ -345,6 +372,34 @@ public class PythonCallGraphResolver {
         }
         String className = enclosing.substring(0, dot);
         return classesByName.containsKey(className) ? className : null;
+    }
+
+    // ---------------------------------------------------------------------
+    // Wildcard import fallback
+    // ---------------------------------------------------------------------
+
+    private Map<String, Object> resolveWildcardImport(PyCall call, String callerNodeId,
+                                                       String funcName, ResolutionContext ctx) {
+        if (ctx.module().getImports() == null) {
+            return null;
+        }
+        for (PyImport imp : ctx.module().getImports()) {
+            if (!"*".equals(imp.getSymbol()) || !imp.isFromImport()) {
+                continue;
+            }
+            String absModule = absolutizeModuleName(
+                    imp.getModuleName(), imp.getRelativeLevel(), ctx.module());
+            PyModule source = ctx.moduleIndex().get(absModule);
+            if (source == null) {
+                continue;
+            }
+            PyFunction func = findTopLevel(source, funcName);
+            if (func != null) {
+                return edge(callerNodeId, topLevelNodeId(source.getModulePath(), func),
+                        CALL_TYPE_IMPORT, call.getLineNumber(), false);
+            }
+        }
+        return null;
     }
 
     // ---------------------------------------------------------------------

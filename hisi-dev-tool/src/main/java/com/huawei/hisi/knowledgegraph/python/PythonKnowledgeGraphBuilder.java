@@ -151,7 +151,7 @@ public class PythonKnowledgeGraphBuilder {
         }
 
         if (!result.bridgeRelations.isEmpty()) {
-            neo4jStorageService.saveCallRelations(result.bridgeRelations);
+            neo4jStorageService.saveBridgeRelations(result.bridgeRelations);
             log.info("[Python KG] Saved {} bridge relations (HTTP/MQ)",
                     result.bridgeRelations.size());
         }
@@ -203,13 +203,14 @@ public class PythonKnowledgeGraphBuilder {
 
         // Entry points: framework-gated + always-on Celery
         List<EntryPointNode> entryPoints = new ArrayList<>();
-        // Outbound HTTP / MQ records (collected then converted to bridge relations)
         List<PythonHttpCall> httpCalls = new ArrayList<>();
         List<PythonMqCall> mqCalls = new ArrayList<>();
+        List<DjangoUrlScanner.IncludeMapping> djangoIncludes = new ArrayList<>();
 
         for (PyModule module : allModules) {
             if (frameworks.contains(Framework.DJANGO)) {
                 entryPoints.addAll(djangoUrlScanner.scanModule(module, projectPath, modulesByPath));
+                djangoIncludes.addAll(djangoUrlScanner.scanIncludes(module));
             }
             if (frameworks.contains(Framework.FASTAPI)) {
                 entryPoints.addAll(fastApiRouteScanner.scanModule(module, projectPath));
@@ -221,6 +222,10 @@ public class PythonKnowledgeGraphBuilder {
 
             httpCalls.addAll(pythonHttpCallScanner.scanModule(module, projectPath, primaryFramework));
             mqCalls.addAll(pythonMqCallScanner.scanModule(module, projectPath, primaryFramework));
+        }
+
+        if (!djangoIncludes.isEmpty()) {
+            DjangoUrlScanner.applyIncludes(entryPoints, djangoIncludes, modulesByPath);
         }
 
         // Guard: clear methodNodeId references that don't point to a known Method node.
@@ -450,6 +455,9 @@ public class PythonKnowledgeGraphBuilder {
         String normalized = relativePath.replace('\\', '/');
         if (normalized.endsWith(".py")) {
             normalized = normalized.substring(0, normalized.length() - 3);
+        }
+        if (normalized.endsWith("/__init__")) {
+            normalized = normalized.substring(0, normalized.length() - "/__init__".length());
         }
         return normalized.replace('/', '.');
     }
