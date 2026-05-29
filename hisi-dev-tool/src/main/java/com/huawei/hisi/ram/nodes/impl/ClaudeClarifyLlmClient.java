@@ -94,6 +94,7 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
               the user's words. If the user was vague, this may be empty — that's
               fine, the user will fill it in after answering your questions.
             - target_modules: package or feature module names, may be empty.
+            - target_methods: specific methods (fully.qualified.ClassName#methodName format) that need code changes to implement this requirement, may be empty. MUST use fully-qualified class name when known; short class name is acceptable only if the full name is unknown.
             - constraints: optional must/must_not lists, may be empty arrays.
 
             Language requirement (MANDATORY):
@@ -218,6 +219,7 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
               "project_paths": ["<path>", ...],
               "acceptance_criteria": ["<testable AC>", ...],
               "target_modules": ["<actual package/class from code context>", ...],
+              "target_methods": ["<fully.qualified.ClassName#methodName from code context>", ...],
               "constraints": { "must": [...], "must_not": [...] },
               "code_analysis_summary": "<现状/需求/差距 in 简体中文>"
             }
@@ -232,6 +234,7 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
               NOT invent paths.
             - target_modules: MUST reference real classes/packages from the
               provided code context — do NOT guess.
+            - target_methods: MUST reference actual methods found in the code context that need modification — use fully.qualified.ClassName#methodName format. Use full package path when available.
             - acceptance_criteria: only criteria you can CONFIDENTLY derive.
             - constraints: optional must/must_not lists.
             - code_analysis_summary: MANDATORY. Format: "现状：...。需求：...。差距：..."
@@ -325,6 +328,7 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
               "project_paths": ["<path>", ...],
               "acceptance_criteria": ["<testable AC>", ...],
               "target_modules": ["<actual package/class found via tools>", ...],
+              "target_methods": ["<fully.qualified.ClassName#methodName found via tools>", ...],
               "constraints": { "must": [...], "must_not": [...] },
               "code_analysis_summary": "<现状/需求/差距 in 简体中文>"
             }
@@ -334,6 +338,7 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
             - clarify_questions: DECISION questions only; empty when false.
             - target_modules: MUST reference real classes/packages you found
               via tools — never guess.
+            - target_methods: specific methods you found via tools that need modification — use fully.qualified.ClassName#methodName format. Use full package path when available.
             - code_analysis_summary: MANDATORY — summarize what you discovered.
 
             Language: All natural-language values in 简体中文.
@@ -557,15 +562,27 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
         out.put("intent", (intent instanceof String s && !s.isBlank())
                 ? s : (userRequest == null ? "" : userRequest));
 
-        List<String> paths = asStringList(raw == null ? null : raw.get("project_paths"));
-        if (paths.isEmpty()) paths = hintPaths;
-        out.put("project_paths", paths);
+        // ★ Merge paths: hintPaths (frontend-selected, correct) first, then LLM paths as supplements
+        // Previously LLM paths overwrote hintPaths, causing file paths to replace correct projectPaths
+        List<String> llmPaths = asStringList(raw == null ? null : raw.get("project_paths"));
+        List<String> mergedPaths = new java.util.ArrayList<>(hintPaths);
+        for (String p : llmPaths) {
+            if (!mergedPaths.contains(p)) {
+                mergedPaths.add(p);
+            }
+        }
+        out.put("project_paths", mergedPaths);
+        // Preserve projectHints so downstream nodes (ImpactNode) can use the ground-truth paths
+        out.put("projectHints", hintPaths);
 
         List<String> acs = asStringList(raw == null ? null : raw.get("acceptance_criteria"));
         out.put("acceptance_criteria", acs);
 
         if (raw != null && raw.get("target_modules") != null) {
             out.put("target_modules", asStringList(raw.get("target_modules")));
+        }
+        if (raw != null && raw.get("target_methods") != null) {
+            out.put("target_methods", asStringList(raw.get("target_methods")));
         }
         if (raw != null && raw.get("constraints") instanceof Map<?, ?> c) {
             out.put("constraints", c);

@@ -76,6 +76,7 @@ public class HybridSearchService {
     private final QueryTypeDetector queryTypeDetector;
     private final Neo4jVectorIndexService vectorIndexService;
     private final QueryEmbeddingCache queryEmbeddingCache;
+    private final com.huawei.hisi.neo4j.config.SearchIntentProperties intentProperties;
 
     public HybridSearchService(
             Neo4jMethodNodeRepository methodNodeRepository,
@@ -84,7 +85,8 @@ public class HybridSearchService {
             EmbeddingService embeddingService,
             QueryTypeDetector queryTypeDetector,
             Neo4jVectorIndexService vectorIndexService,
-            QueryEmbeddingCache queryEmbeddingCache) {
+            QueryEmbeddingCache queryEmbeddingCache,
+            com.huawei.hisi.neo4j.config.SearchIntentProperties intentProperties) {
         this.methodNodeRepository = methodNodeRepository;
         this.sqlNodeRepository = sqlNodeRepository;
         this.entryPointRepository = entryPointRepository;
@@ -92,6 +94,7 @@ public class HybridSearchService {
         this.queryTypeDetector = queryTypeDetector;
         this.vectorIndexService = vectorIndexService;
         this.queryEmbeddingCache = queryEmbeddingCache;
+        this.intentProperties = intentProperties;
     }
 
     /**
@@ -282,7 +285,7 @@ public class HybridSearchService {
 
     /**
      * NATURAL_LANGUAGE 搜索策略 (带分数)
-     * descriptionEmbedding 向量检索
+     * descriptionEmbedding 向量检索 + 关键词补充召回
      */
     private VectorSearchResult<MethodNode> searchByNaturalLanguageWithScores(String query, List<String> projectPaths, int limit) {
         float[] embedding = getOrGenerateEmbedding(query);
@@ -293,7 +296,7 @@ public class HybridSearchService {
 
         boolean useVectorIndex = vectorIndexService.isVectorIndexAvailable();
         Map<String, Double> scoreMap = new HashMap<>();
-        List<MethodNode> methods;
+        List<MethodNode> methods = Collections.emptyList();
 
         if (useVectorIndex) {
             try {
@@ -315,14 +318,18 @@ public class HybridSearchService {
                             log.warn("[DEBUG-VECTOR] ====== 检查向量维度和索引配置 ======");
                             List<Map<String, Object>> dimensions = methodNodeRepository.diagnosticCheckVectorDimensions(firstPath);
                             for (Map<String, Object> dim : dimensions) {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> info = dim.get("info") instanceof Map ? (Map<String, Object>) dim.get("info") : dim;
                                 log.warn("[DEBUG-VECTOR]   {}#{} dimension={}",
-                                        dim.get("className"), dim.get("methodName"), dim.get("dimension"));
+                                        info.get("className"), info.get("methodName"), info.get("dimension"));
                             }
                             // 检查索引配置
                             List<Map<String, Object>> indexes = methodNodeRepository.diagnosticCheckVectorIndexes();
                             for (Map<String, Object> idx : indexes) {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> info2 = idx.get("info") instanceof Map ? (Map<String, Object>) idx.get("info") : idx;
                                 log.warn("[DEBUG-VECTOR]   Index: {} type={} options={}",
-                                        idx.get("name"), idx.get("type"), idx.get("options"));
+                                        info2.get("name"), info2.get("type"), info2.get("options"));
                             }
                             // 尝试不使用索引直接搜索
                             log.warn("[DEBUG-VECTOR] ====== 尝试直接相似度搜索（不使用向量索引）======");
@@ -331,11 +338,13 @@ public class HybridSearchService {
                             log.warn("[DEBUG-VECTOR]   Direct search returned {} results", directResults.size());
                             for (int i = 0; i < directResults.size(); i++) {
                                 Map<String, Object> row = directResults.get(i);
-                                Object desc = row.get("description");
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> r = row.get("info") instanceof Map ? (Map<String, Object>) row.get("info") : row;
+                                Object desc = r.get("description");
                                 String descStr = desc == null ? "<null>" : desc.toString();
                                 if (descStr.length() > 120) descStr = descStr.substring(0, 120) + "...";
                                 log.warn("[DEBUG-VECTOR]   #{} score={} {}#{} desc={}",
-                                        i, row.get("score"), row.get("className"), row.get("methodName"), descStr);
+                                        i, r.get("score"), r.get("className"), r.get("methodName"), descStr);
                             }
                             // 尝试不带阈值的索引搜索
                             log.warn("[DEBUG-VECTOR] ====== 尝试不带阈值的索引搜索 ======");
@@ -343,11 +352,13 @@ public class HybridSearchService {
                             log.warn("[DEBUG-VECTOR]   Index search (no threshold) returned {} results", topScores.size());
                             for (int i = 0; i < topScores.size(); i++) {
                                 Map<String, Object> row = topScores.get(i);
-                                Object desc = row.get("description");
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> r = row.get("info") instanceof Map ? (Map<String, Object>) row.get("info") : row;
+                                Object desc = r.get("description");
                                 String descStr = desc == null ? "<null>" : desc.toString();
                                 if (descStr.length() > 120) descStr = descStr.substring(0, 120) + "...";
                                 log.warn("[DEBUG-VECTOR]   #{} score={} {}#{} desc={}",
-                                        i, row.get("score"), row.get("className"), row.get("methodName"), descStr);
+                                        i, r.get("score"), r.get("className"), r.get("methodName"), descStr);
                             }
                         } catch (Exception diagEx) {
                             log.warn("[DEBUG-VECTOR] diagnostic query failed: {}", diagEx.getMessage(), diagEx);
@@ -361,33 +372,142 @@ public class HybridSearchService {
                         scoreMap.put(result.nodeId(), result.score());
                     }
                 }
-                return new VectorSearchResult<>(methods, scoreMap);
             } catch (SearchException e) {
                 throw e;
             } catch (Exception e) {
                 log.warn("向量索引查询失败，降级为全表扫描: {}", e.getMessage(), e);
+                // Fall through to full scan below
             }
         }
 
-        // 全表扫描降级
-        try {
-            List<MethodWithScore> results = methodNodeRepository.findByDescriptionVectorSimilarityWithScoreByProjectPaths(
-                    projectPaths, embedding, SIMILARITY_THRESHOLD, limit);
-            methods = new ArrayList<>();
-            for (MethodWithScore result : results) {
-                methods.add(result.toMethodNode());
-                if (result.score() != null) {
-                    scoreMap.put(result.nodeId(), result.score());
+        if (methods.isEmpty()) {
+            // 全表扫描降级
+            try {
+                List<MethodWithScore> results = methodNodeRepository.findByDescriptionVectorSimilarityWithScoreByProjectPaths(
+                        projectPaths, embedding, SIMILARITY_THRESHOLD, limit);
+                if (results.isEmpty()) {
+                    log.info("[DEBUG-VECTOR] full-scan with threshold={} also returned 0, retrying with relaxed threshold={}",
+                            SIMILARITY_THRESHOLD, RELAXED_SIMILARITY_THRESHOLD);
+                    results = methodNodeRepository.findByDescriptionVectorSimilarityWithScoreByProjectPaths(
+                            projectPaths, embedding, RELAXED_SIMILARITY_THRESHOLD, limit);
+                }
+                methods = new ArrayList<>();
+                for (MethodWithScore result : results) {
+                    methods.add(result.toMethodNode());
+                    if (result.score() != null) {
+                        scoreMap.put(result.nodeId(), result.score());
+                    }
+                }
+                if (!methods.isEmpty()) {
+                    log.info("[DEBUG-VECTOR] full-scan fallback returned {} results", methods.size());
+                }
+            } catch (SearchException e) {
+                throw e;
+            } catch (Exception e) {
+                log.warn("[DEBUG-VECTOR] fallback findByDescriptionVectorSimilarityWithScore failed: {} — falling back to keyword-only search", e.getMessage());
+                // 不抛异常，降级为空向量结果，继续走关键词补充召回
+            }
+        }
+
+        // 关键词补充召回：从查询中提取关键术语，在方法名中补充匹配
+        // 弥补向量检索无法跨越的"回卷"vs"反标"等术语鸿沟
+        // 策略：只在 methodName 中精确匹配（避免描述中"同步"/"状态"等高频词噪声），
+        // 关键词结果参与 RRF 但权重极低（KEYWORD_SUPPLEMENT），仅在向量检索空结果时才有实质作用
+        List<MethodNode> keywordSupplement = keywordSupplementSearch(query, projectPaths, methods, limit);
+        if (!keywordSupplement.isEmpty()) {
+            log.info("[KEYWORD-SUPPLEMENT] query='{}', supplement hits={}, vector hits={}", query, keywordSupplement.size(), methods.size());
+            // 关键词结果追加到向量结果末尾，由上层 MultiQueryHybridSearchService
+            // 以 KEYWORD_SUPPLEMENT 权重(0.1)参与 RRF 融合
+            List<MethodNode> combined = new ArrayList<>(methods);
+            Set<String> vectorNodeIds = methods.stream()
+                    .map(MethodNode::getNodeId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+            for (MethodNode kwNode : keywordSupplement) {
+                if (!vectorNodeIds.contains(kwNode.getNodeId())) {
+                    combined.add(kwNode);
+                    // 标记关键词补充来源，权重由上层 RRF 处理
+                    scoreMap.putIfAbsent(kwNode.getNodeId(),
+                            intentProperties.getIntentWeights()
+                                    .getOrDefault(com.huawei.hisi.neo4j.model.IntentType.KEYWORD_SUPPLEMENT, 0.1));
                 }
             }
-            return new VectorSearchResult<>(methods, scoreMap);
-        } catch (SearchException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("[DEBUG-VECTOR] fallback findByDescriptionVectorSimilarityWithScore failed", e);
-            throw new SearchException(SearchErrorCode.GRAPH_SERVICE_ERROR, e);
+            return new VectorSearchResult<>(combined, scoreMap);
         }
+
+        return new VectorSearchResult<>(methods, scoreMap);
     }
+
+    /**
+     * 关键词补充召回：提取查询中的关键术语，在方法名中做精确匹配。
+     *
+     * <p>只在 methodName 中匹配（不匹配 description/comment/className），避免
+     * "同步"/"状态"等高频业务词在描述中命中大量无关方法。关键词补充的目的是
+     * 桥接向量检索无法跨越的术语鸿沟（如"回卷"→"反标/syncReqStatus"），
+     * 这类映射通常体现在方法命名上。</p>
+     */
+    private List<MethodNode> keywordSupplementSearch(String query, List<String> projectPaths,
+                                                      List<MethodNode> vectorResults, int limit) {
+        List<String> keywords = extractSearchKeywords(query);
+        if (keywords.isEmpty()) return Collections.emptyList();
+
+        // 向量结果已覆盖的 nodeId，不再重复
+        Set<String> coveredNodeIds = vectorResults.stream()
+                .map(MethodNode::getNodeId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        List<MethodNode> supplement = new ArrayList<>();
+        Set<String> seenNodeIds = new HashSet<>(coveredNodeIds);
+        for (String keyword : keywords) {
+            try {
+                // 只在 methodName 中匹配，避免描述中高频词噪声
+                List<MethodNode> hits = methodNodeRepository.findByProjectPathsAndMethodNameContaining(
+                        projectPaths, keyword);
+                for (MethodNode hit : hits) {
+                    if (hit.getNodeId() != null && seenNodeIds.add(hit.getNodeId())) {
+                        supplement.add(hit);
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("[KEYWORD-SUPPLEMENT] keyword '{}' search failed: {}", keyword, e.getMessage());
+            }
+            if (supplement.size() >= limit) break;
+        }
+        return supplement;
+    }
+
+    /**
+     * 从查询文本中提取有检索价值的关键术语。
+     * 规则：长度2-20的中文/英文/驼峰片段，排除常见停用词。
+     */
+    private List<String> extractSearchKeywords(String query) {
+        if (query == null || query.isBlank()) return Collections.emptyList();
+        // 按空格/标点拆分，保留有检索价值的片段
+        String[] tokens = query.split("[\\s，,。.；;、！!？?（）()\\[\\]【】{}\"'<>《》]+");
+        List<String> keywords = new ArrayList<>();
+        Set<String> stopWords = Set.of(
+                "的", "了", "在", "是", "和", "与", "及", "或", "不", "有", "无",
+                "从", "到", "向", "上", "下", "中", "后", "前", "时", "当",
+                "the", "a", "an", "is", "are", "was", "and", "or", "not", "in", "on", "at", "to", "for"
+        );
+        for (String token : tokens) {
+            String t = token.trim();
+            // 跳过太短/太长/停用词
+            if (t.length() < 2 || t.length() > 30) continue;
+            if (stopWords.contains(t.toLowerCase())) continue;
+            // 保留中文片段(>=2字)、英文/驼峰片段(>=3字符)、混合片段
+            if (t.matches(".*[\\u4e00-\\u9fa5].*") || t.length() >= 3) {
+                keywords.add(t);
+            }
+        }
+        // 最多取前5个关键词，避免过多查询
+        return keywords.stream().limit(5).collect(Collectors.toList());
+    }
+
+    /**
+     * RRF融合算法
+     */
 
     /**
      * METHOD_NAME 搜索策略 (带分数)
@@ -1370,5 +1490,126 @@ public class HybridSearchService {
             return sql;
         }
         return sql.substring(0, maxLength) + "...";
+    }
+
+    // ==================== Intent-Aware Post-Filter Support ====================
+
+    /**
+     * Check whether a method node has any of the given annotations.
+     * Uses the ANNOTATION search path internally (methodBody/comment CONTAINS).
+     *
+     * @param nodeIds    method node IDs to check
+     * @param annotation the annotation to look for (with or without @)
+     * @return set of nodeIds that have the annotation
+     */
+    public Set<String> findNodesWithAnnotation(List<String> nodeIds, String annotation) {
+        if (nodeIds == null || nodeIds.isEmpty() || annotation == null || annotation.isBlank()) {
+            return Collections.emptySet();
+        }
+        String normalized = annotation.startsWith("@") ? annotation.substring(1) : annotation;
+        try {
+            // Query all methods with the annotation, then intersect with nodeIds
+            List<MethodNode> annotated = methodNodeRepository.findByProjectPathsAndAnnotation(
+                    List.of(), normalized); // empty projectPaths → all projects
+            Set<String> annotatedIds = annotated.stream()
+                    .map(MethodNode::getNodeId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+            Set<String> result = new LinkedHashSet<>(nodeIds);
+            result.retainAll(annotatedIds);
+            return result;
+        } catch (Exception e) {
+            log.debug("[POST-FILTER] annotation check failed for '{}': {}", annotation, e.getMessage());
+            return Collections.emptySet();
+        }
+    }
+
+    /**
+     * Batch-check annotations for a set of nodeIds against multiple annotation patterns.
+     * Returns nodeId → set of matched annotation strings.
+     *
+     * @param nodeIds     method node IDs to check
+     * @param annotations annotations to look for
+     * @return map of nodeId → matched annotations (only entries with at least one match)
+     */
+    public Map<String, Set<String>> batchCheckAnnotations(List<String> nodeIds, String[] annotations) {
+        if (nodeIds == null || nodeIds.isEmpty() || annotations == null || annotations.length == 0) {
+            return Collections.emptyMap();
+        }
+        Map<String, Set<String>> result = new HashMap<>();
+        for (String annotation : annotations) {
+            Set<String> matched = findNodesWithAnnotation(nodeIds, annotation);
+            for (String nodeId : matched) {
+                result.computeIfAbsent(nodeId, k -> new LinkedHashSet<>()).add(annotation);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Get 1-hop callees for a list of node IDs.
+     * Used for callee weight propagation in intent-aware search.
+     *
+     * @param nodeIds source node IDs
+     * @return map of source nodeId → list of callee nodeIds
+     */
+    public Map<String, List<String>> get1HopCallees(List<String> nodeIds) {
+        if (nodeIds == null || nodeIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        try {
+            List<CalleeWithRelationBySource> callees = methodNodeRepository.findCalleesByNodeIds(nodeIds);
+            return callees.stream()
+                    .filter(c -> c.calleeId() != null)
+                    .collect(Collectors.groupingBy(
+                            CalleeWithRelationBySource::sourceNodeId,
+                            Collectors.mapping(
+                                    CalleeWithRelationBySource::calleeId,
+                                    Collectors.toList()
+                            )
+                    ));
+        } catch (Exception e) {
+            log.debug("[CALLEE-PROP] 1-hop callee lookup failed: {}", e.getMessage());
+            return Collections.emptyMap();
+        }
+    }
+
+    /**
+     * Extract core noun words from a query for required-word filtering.
+     * Strategy: split by whitespace/punctuation, remove stop words and short tokens,
+     * keep Chinese fragments (≥2 chars) and English/technical fragments (≥3 chars).
+     *
+     * @param query the sub-query text
+     * @return list of core words (at most 5)
+     */
+    public List<String> extractCoreNouns(String query) {
+        if (query == null || query.isBlank()) return Collections.emptyList();
+        // Reuse extractSearchKeywords logic — same stop words and length rules
+        return extractSearchKeywords(query);
+    }
+
+    /**
+     * Check if a method node matches at least one of the required words.
+     * Matches against methodName, className, and description.
+     *
+     * @param node          the method node to check
+     * @param requiredWords list of required words
+     * @return true if at least one word matches
+     */
+    public boolean matchesAnyRequiredWord(MethodNode node, List<String> requiredWords) {
+        if (requiredWords == null || requiredWords.isEmpty()) return true;
+        if (node == null) return false;
+
+        String text = String.join(" ",
+                Objects.toString(node.getMethodName(), ""),
+                Objects.toString(node.getClassName(), ""),
+                Objects.toString(node.getDescription(), ""));
+
+        for (String word : requiredWords) {
+            if (word != null && text.contains(word)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

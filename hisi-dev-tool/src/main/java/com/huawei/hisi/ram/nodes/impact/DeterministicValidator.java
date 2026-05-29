@@ -42,22 +42,26 @@ public class DeterministicValidator {
                                       String projectPath) {
         List<String> violations = new ArrayList<>();
 
-        // Rule 1: claimed entries ⊆ union(rootEntries(entry))
+        // Rule 1: claimed entries must be reachable as root entry points.
+        // An entry IS a root entry if it's itself an EntryPointNode, or if any of its
+        // callers is an EntryPointNode. Using rootEntryAncestors which handles both cases.
         Set<String> claimedEntryIds = new LinkedHashSet<>();
-        Set<String> reachableEntryIds = new LinkedHashSet<>();
         for (Entry e : involved.entries()) {
-            if (e == null) continue;
-            if (e.nodeId() != null) claimedEntryIds.add(e.nodeId());
-            if (e.className() == null || e.methodName() == null) continue;
-            List<Entry> roots = kg.rootEntries(e.className(), e.methodName(), projectPath);
-            if (roots == null) continue;
-            for (Entry r : roots) {
+            if (e != null && e.nodeId() != null) claimedEntryIds.add(e.nodeId());
+        }
+        if (!claimedEntryIds.isEmpty()) {
+            List<Entry> rootAncestors = kg.rootEntryAncestors(
+                    new ArrayList<>(claimedEntryIds), projectPath, 10);
+            Set<String> reachableEntryIds = new LinkedHashSet<>();
+            for (Entry r : rootAncestors) {
                 if (r != null && r.nodeId() != null) reachableEntryIds.add(r.nodeId());
             }
-        }
-        for (String claimed : claimedEntryIds) {
-            if (!reachableEntryIds.contains(claimed)) {
-                violations.add("Entry not reachable as a root entry: " + claimed);
+            for (String claimed : claimedEntryIds) {
+                // A claimed entry is reachable if ANY root entry ancestor's methodNodeId matches,
+                // OR if the entry itself appears as a root entry (it IS an entry point)
+                if (!reachableEntryIds.contains(claimed)) {
+                    violations.add("Entry not reachable as a root entry: " + claimed);
+                }
             }
         }
 

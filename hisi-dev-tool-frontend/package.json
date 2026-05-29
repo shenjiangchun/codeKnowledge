@@ -31,6 +31,8 @@
     "echarts": "^6.0.0",
     "element-plus": "^2.13.5",
     "lodash-es": "^4.18.1",
+    "marked": "^18.0.4",
+    "mermaid": "^11.15.0",
     "pinia": "^3.0.4",
     "vue": "^3.5.30",
     "vue-router": "^4.6.4"

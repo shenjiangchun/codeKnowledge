@@ -230,11 +230,26 @@ public class VectorSearchController {
 
             // 2. 向量维度检查
             List<Map<String, Object>> dimensions = methodNodeRepository.diagnosticCheckVectorDimensions(projectPath);
-            diagnosis.put("vectorDimensions", dimensions);
+            // Unwrap nested "info" map projection for API response
+            List<Map<String, Object>> unwrappedDimensions = dimensions.stream()
+                    .map(dim -> {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> info = dim.get("info") instanceof Map ? (Map<String, Object>) dim.get("info") : dim;
+                        return info;
+                    })
+                    .toList();
+            diagnosis.put("vectorDimensions", unwrappedDimensions);
 
             // 3. 索引配置检查
             List<Map<String, Object>> indexes = methodNodeRepository.diagnosticCheckVectorIndexes();
-            diagnosis.put("vectorIndexes", indexes);
+            List<Map<String, Object>> unwrappedIndexes = indexes.stream()
+                    .map(idx -> {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> info = idx.get("info") instanceof Map ? (Map<String, Object>) idx.get("info") : idx;
+                        return info;
+                    })
+                    .toList();
+            diagnosis.put("vectorIndexes", unwrappedIndexes);
 
             // 4. 如果有测试查询，进行查询测试
             if (testQuery != null && !testQuery.isBlank() && withDescriptionEmbedding > 0) {
@@ -249,12 +264,26 @@ public class VectorSearchController {
                 // 直接相似度搜索（不使用索引）
                 List<Map<String, Object>> directResults = methodNodeRepository.diagnosticDirectSimilaritySearch(
                         projectPath, embeddingList, 0.0, 10);
-                diagnosis.put("directSearchResults", directResults);
+                List<Map<String, Object>> unwrappedDirectResults = directResults.stream()
+                        .map(row -> {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> info = row.get("info") instanceof Map ? (Map<String, Object>) row.get("info") : row;
+                            return info;
+                        })
+                        .toList();
+                diagnosis.put("directSearchResults", unwrappedDirectResults);
 
                 // 索引搜索（不带阈值）
                 List<Map<String, Object>> indexResults = methodNodeRepository.diagnosticTopScoresByDescription(
                         projectPath, embeddingList, 10);
-                diagnosis.put("indexSearchResults", indexResults);
+                List<Map<String, Object>> unwrappedIndexResults = indexResults.stream()
+                        .map(row -> {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> info = row.get("info") instanceof Map ? (Map<String, Object>) row.get("info") : row;
+                            return info;
+                        })
+                        .toList();
+                diagnosis.put("indexSearchResults", unwrappedIndexResults);
             }
 
             return ResponseEntity.ok(ApiResponse.success(diagnosis));

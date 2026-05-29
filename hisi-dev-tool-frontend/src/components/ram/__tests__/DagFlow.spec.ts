@@ -1,5 +1,5 @@
 /**
- * DagFlow component tests — verifies the 4-card layout, status pills, and
+ * DagFlow component tests — verifies the 5-card layout, status pills, and
  * click event emission.
  */
 import { describe, expect, it } from 'vitest'
@@ -11,18 +11,19 @@ const baseNodes = (): DagNodeSnapshot[] => [
   { key: 'clarify', label: '澄清', status: 'done', tokens: 1200, events: 5 },
   { key: 'impact', label: '影响', status: 'running', tokens: 3400, events: 8, riskLevel: 'HIGH' },
   { key: 'implement', label: '实现', status: 'pending', tokens: 0, events: 0 },
-  { key: 'verify', label: '验证', status: 'pending', tokens: 0, events: 0 }
+  { key: 'verify', label: '验证', status: 'pending', tokens: 0, events: 0 },
+  { key: 'tech_plan', label: '技术方案', status: 'pending', tokens: 0, events: 0 }
 ]
 
 describe('DagFlow', () => {
   it('renders one card per node', () => {
     const wrapper = mount(DagFlow, { props: { nodes: baseNodes() } })
-    expect(wrapper.findAll('g.dag-card-group')).toHaveLength(4)
+    expect(wrapper.findAll('g.dag-card-group')).toHaveLength(5)
   })
 
   it('renders edges between consecutive nodes (n-1 edges)', () => {
     const wrapper = mount(DagFlow, { props: { nodes: baseNodes() } })
-    expect(wrapper.findAll('line.dag-edge')).toHaveLength(3)
+    expect(wrapper.findAll('line.dag-edge')).toHaveLength(4)
   })
 
   it('marks the edge entering a running node as flowing', () => {
@@ -72,6 +73,6 @@ describe('DagFlow', () => {
       'running'
     )
     const wrapper = mount(DagFlow, { props: { nodes: snap } })
-    expect(wrapper.findAll('g.dag-card-group')).toHaveLength(4)
+    expect(wrapper.findAll('g.dag-card-group')).toHaveLength(5)
   })
 })

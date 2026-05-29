@@ -102,7 +102,7 @@ function handleClick(file: string): void {
 defineExpose({ handleClick, resetView, zoom })
 
 const LEGEND: { key: RingKey; label: string; desc: string }[] = [
-  { key: 'involved', label: '涉及', desc: '直接命中' },
+  { key: 'involved', label: '受影响的入口', desc: '受影响的入口接口' },
   { key: 'modified', label: '修改', desc: '需要改动' },
   { key: 'impacted', label: '影响', desc: '波及范围' }
 ]

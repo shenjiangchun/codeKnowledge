@@ -25,6 +25,7 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -63,23 +64,41 @@ public class DirectKgClient implements KgMcpClient {
     @Override
     public List<Seed> hybridSearch(String query, String projectPath, int limit) {
         String normPath = PathUtils.normalize(projectPath);
+        return doHybridSearch(query, List.of(normPath), limit);
+    }
+
+    @Override
+    public List<Seed> hybridSearch(String query, List<String> projectPaths, int limit) {
+        List<String> normPaths = projectPaths.stream()
+                .map(PathUtils::normalize)
+                .filter(p -> p != null && !p.isBlank())
+                .collect(Collectors.toList());
+        return doHybridSearch(query, normPaths, limit);
+    }
+
+    private List<Seed> doHybridSearch(String query, List<String> normPaths, int limit) {
         try {
             // graphDepth=0: skip graph expansion inside HybridSearchService — RAM performs
             // its own callees-tree and impact-ring expansion, so the 2-hop graph expansion
             // only inflates result count without adding value.
-            SearchResult result = hybridSearchService.hybridSearch(query, normPath, limit, 0);
+            // 使用 projectPaths + language 重载，确保走 searchByNaturalLanguageWithScores
+            // （含关键词补充召回，弥合需求术语与代码术语的语义鸿沟）
+            String firstPath = normPaths.isEmpty() ? "" : normPaths.get(0);
+            SearchResult result = hybridSearchService.hybridSearch(
+                    query, firstPath, normPaths, null, limit, 0);
             if (result == null || result.getResults() == null) {
                 return Collections.emptyList();
             }
+            // 保留全部结果，不做 .limit(limit) 截断
+            // RAM 的 MultiQuerySearcher 会做 RRF 融合和排序
             return result.getResults().stream()
                     .map(m -> new Seed(
                             m.getNodeId(),
                             0.0,
                             m.getDescription() != null ? m.getDescription() : m.getClassName() + "#" + m.getMethodName()))
-                    .limit(limit)
                     .collect(Collectors.toList());
         } catch (Exception e) {
-            log.warn("hybridSearch failed for query='{}', projectPath='{}': {}", query, normPath, e.getMessage());
+            log.warn("hybridSearch failed for query='{}', projectPaths={}: {}", query, normPaths, e.getMessage());
             return Collections.emptyList();
         }
     }
@@ -325,6 +344,98 @@ public class DirectKgClient implements KgMcpClient {
         }
     }
 
+    @Override
+    public List<Entry> rootEntryAncestors(List<String> nodeIds, String projectPath, int maxDepth) {
+        String normPath = PathUtils.normalize(projectPath);
+        if (nodeIds == null || nodeIds.isEmpty() || normPath == null || normPath.isBlank()) {
+            return Collections.emptyList();
+        }
+        try {
+            Set<String> seen = new HashSet<>();
+            List<Entry> rootEntries = new ArrayList<>();
+            for (String nodeId : nodeIds) {
+                if (nodeId == null || seen.contains(nodeId)) continue;
+
+                // 1. Check if the nodeId itself is an entry point
+                List<EntryPointNode> selfEps = entryPointRepository.findByProjectPathAndMethodNodeId(normPath, nodeId);
+                for (EntryPointNode ep : selfEps) {
+                    rootEntries.add(toEntry(ep));
+                }
+
+                // 2. Trace callers upward and find entry points among them
+                List<MethodNode> callers = methodNodeRepository.findCallersUpToDepth(nodeId, maxDepth);
+                for (MethodNode caller : callers) {
+                    if (seen.contains(caller.getNodeId())) continue;
+                    seen.add(caller.getNodeId());
+                    List<EntryPointNode> eps = entryPointRepository.findByProjectPathAndMethodNodeId(normPath, caller.getNodeId());
+                    for (EntryPointNode ep : eps) {
+                        rootEntries.add(toEntry(ep));
+                    }
+                }
+            }
+            return rootEntries;
+        } catch (Exception e) {
+            log.warn("rootEntryAncestors failed for {} nodeIds: {}", nodeIds.size(), e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    // ─────────────────────── project path resolution ───────────────────────
+
+    @Override
+    public List<String> resolveProjectPaths(List<String> pathHints, List<String> classNames) {
+        Set<String> resolved = new LinkedHashSet<>();
+
+        // Strategy 1: Resolve by className (most reliable — direct Neo4j lookup)
+        if (classNames != null) {
+            for (String className : classNames) {
+                if (className == null || className.isBlank()) continue;
+                try {
+                    // Try full qualified name first
+                    List<String> paths = methodNodeRepository.findProjectPathsByClassName(className);
+                    if (paths.isEmpty() && className.contains(".")) {
+                        // Try short class name (last segment)
+                        String shortName = className.substring(className.lastIndexOf('.') + 1);
+                        paths = methodNodeRepository.findProjectPathsByClassName(shortName);
+                    }
+                    resolved.addAll(paths);
+                    if (!paths.isEmpty()) {
+                        log.debug("[resolveProjectPaths] className='{}' → paths={}", className, paths);
+                    }
+                } catch (Exception e) {
+                    log.debug("[resolveProjectPaths] className lookup failed for '{}': {}", className, e.getMessage());
+                }
+            }
+        }
+
+        // Strategy 2: Resolve by path prefix matching (handles file paths)
+        if (pathHints != null) {
+            for (String hint : pathHints) {
+                if (hint == null || hint.isBlank()) continue;
+                String normalized = PathUtils.normalize(hint);
+                if (normalized == null || normalized.isBlank()) continue;
+                try {
+                    List<String> paths = methodNodeRepository.findProjectPathsByPathPrefix(normalized);
+                    resolved.addAll(paths);
+                    if (!paths.isEmpty()) {
+                        log.debug("[resolveProjectPaths] pathHint='{}' → paths={}", normalized, paths);
+                    }
+                } catch (Exception e) {
+                    log.debug("[resolveProjectPaths] pathHint lookup failed for '{}': {}", normalized, e.getMessage());
+                }
+            }
+        }
+
+        if (resolved.isEmpty()) {
+            log.warn("[resolveProjectPaths] no projectPaths resolved from hints={} classNames={}", pathHints, classNames);
+        } else {
+            log.info("[resolveProjectPaths] resolved {} projectPaths: {} (from hints={} classNames={})",
+                    resolved.size(), resolved, pathHints, classNames);
+        }
+
+        return new ArrayList<>(resolved);
+    }
+
     // ─────────────────────── private helpers ───────────────────────
 
     /** Recursively build a callees tree up to {@code maxDepth}. */
@@ -347,12 +458,37 @@ public class DirectKgClient implements KgMcpClient {
 
     /** Map {@link EntryPointNode} to the KG DTO {@link Entry}. */
     private Entry toEntry(EntryPointNode ep) {
+        // Extract className/methodName from methodNodeId format: projectPath:className.methodName.signatureHash
+        ClassMethod cm = extractClassMethodFromNodeId(ep.getMethodNodeId());
         return new Entry(
                 ep.getMethodNodeId(),
-                null,
-                null,
+                cm != null ? cm.className() : null,
+                cm != null ? cm.methodName() : null,
                 ep.getEntryType());
     }
+
+    /**
+     * Extract className and methodName from a nodeId of the format
+     * {@code projectPath:className.methodName.signatureHash}.
+     * Returns {@code null} if the format is unrecognisable.
+     */
+    private static ClassMethod extractClassMethodFromNodeId(String nodeId) {
+        if (nodeId == null) return null;
+        int colon = nodeId.indexOf(':');
+        if (colon < 0 || colon >= nodeId.length() - 1) return null;
+        String afterColon = nodeId.substring(colon + 1);
+        int lastDot = afterColon.lastIndexOf('.');
+        if (lastDot <= 0) return null;
+        int secondLastDot = afterColon.lastIndexOf('.', lastDot - 1);
+        if (secondLastDot <= 0) return null;
+        String className = afterColon.substring(0, secondLastDot);
+        String methodName = afterColon.substring(secondLastDot + 1, lastDot);
+        if (className.isEmpty() || methodName.isEmpty()) return null;
+        return new ClassMethod(className, methodName);
+    }
+
+    /** Simple holder for className + methodName parsed from a nodeId. */
+    private record ClassMethod(String className, String methodName) {}
 
     /** Map {@link MethodNode} to the KG DTO {@link Entry}. */
     private Entry toEntry(MethodNode m) {
@@ -374,11 +510,24 @@ public class DirectKgClient implements KgMcpClient {
             MethodNode found = methodNodeRepository.findByNodeId(className).orElse(null);
             if (found != null) return found;
         }
-        // Strategy 2: className + methodName lookup
+        // Strategy 2: fully-qualified className + methodName lookup
         if (className != null && methodName != null && !methodName.isEmpty()) {
             List<MethodNode> candidates = methodNodeRepository.findByProjectPathsAndClassNameAndMethodName(
                     List.of(normPath), className, methodName);
             if (!candidates.isEmpty()) return candidates.get(0);
+        }
+        // Strategy 3: short className (ENDS WITH) + methodName fallback
+        // LLM often outputs short names like "RequireStatusServiceImpl" instead of
+        // the fully-qualified "com.hisilicon.rms...RequireStatusServiceImpl"
+        if (className != null && methodName != null && !methodName.isEmpty()
+                && !className.contains(".")) {
+            List<MethodNode> candidates = methodNodeRepository.findByProjectPathsAndShortClassNameAndMethodName(
+                    List.of(normPath), className, methodName);
+            if (!candidates.isEmpty()) {
+                log.info("resolveMethod: short-className fallback matched {}#{} → nodeId={}",
+                        className, methodName, candidates.get(0).getNodeId());
+                return candidates.get(0);
+            }
         }
         return null;
     }

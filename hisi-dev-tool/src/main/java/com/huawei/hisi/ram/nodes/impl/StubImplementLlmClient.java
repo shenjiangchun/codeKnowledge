@@ -21,28 +21,20 @@ public class StubImplementLlmClient implements ImplementLlmClient {
     public Map<String, Object> draft(Map<String, Object> impactOutput,
                                      List<String> acceptanceCriteria,
                                      String model) {
-        Object involved = impactOutput == null ? null : impactOutput.get("involved");
-
         Map<String, Object> bizPlan = new LinkedHashMap<>();
         bizPlan.put("steps", List.of(
-                "Step 1: Analyze " + involved,
-                "Step 2: Modify per AC"
+                "Step 1: 分析影响范围",
+                "Step 2: 按验收标准实施修改"
         ));
         bizPlan.put("data_flow", "User -> API -> Service -> Repository");
-
-        Map<String, Object> uiPlan = new LinkedHashMap<>();
-        uiPlan.put("screens", List.of("MainPage"));
-        uiPlan.put("interactions", List.of("Click Submit"));
-
-        Map<String, Object> techPlan = new LinkedHashMap<>();
-        techPlan.put("files", List.of("OrderService.java", "OrderController.java"));
-        techPlan.put("new_apis", List.of("POST /orders"));
-        techPlan.put("schema_changes", List.of());
+        bizPlan.put("acceptance_mapping", new LinkedHashMap<>());
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("biz_plan", bizPlan);
-        out.put("ui_plan", uiPlan);
-        out.put("tech_plan", techPlan);
+        out.put("api_changes", List.of());
+        out.put("state_machine_changes", List.of());
+        out.put("data_model_changes", List.of());
+        out.put("config_changes", List.of());
         return out;
     }
 }

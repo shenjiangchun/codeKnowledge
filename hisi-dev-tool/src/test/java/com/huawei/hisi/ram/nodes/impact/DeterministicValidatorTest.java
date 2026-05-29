@@ -10,6 +10,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
@@ -25,7 +27,9 @@ class DeterministicValidatorTest {
         Entry entryB = new Entry("EntryB", "ClsB", "mb", "CONTROLLER");
         Entry entryX = new Entry("EntryX", "ClsX", "mx", "CONTROLLER");
 
-        when(kg.rootEntries(anyString(), anyString(), anyString()))
+        // rootEntryAncestors returns entries reachable via caller chain
+        // EntryA and EntryB are reachable (they are entry points), EntryX is not
+        when(kg.rootEntryAncestors(any(List.class), anyString(), anyInt()))
                 .thenReturn(List.of(
                         new Entry("EntryA", "ClsA", "ma", "CONTROLLER"),
                         new Entry("EntryB", "ClsB", "mb", "CONTROLLER")));
@@ -40,5 +44,27 @@ class DeterministicValidatorTest {
         assertThat(outcome.passed()).isFalse();
         assertThat(outcome.violations())
                 .anySatisfy(v -> assertThat(v).contains("EntryX"));
+    }
+
+    @Test
+    void validate_passesWhenAllEntriesAreRootEntryPoints() {
+        Entry entryA = new Entry("EntryA", "ClsA", "ma", "CONTROLLER");
+        Entry entryB = new Entry("EntryB", "ClsB", "mb", "SCHEDULED");
+
+        // Both entries are themselves root entry points
+        when(kg.rootEntryAncestors(any(List.class), anyString(), anyInt()))
+                .thenReturn(List.of(
+                        new Entry("EntryA", "ClsA", "ma", "CONTROLLER"),
+                        new Entry("EntryB", "ClsB", "mb", "SCHEDULED")));
+
+        InvolvedRing involved = new InvolvedRing(List.of(), List.of(entryA, entryB), List.of());
+        ModifiedRing modified = new ModifiedRing(List.of());
+        ImpactRing impact = new ImpactRing(List.of(), List.of(), List.of(), List.of());
+
+        DeterministicValidator.ValidationOutcome outcome =
+                new DeterministicValidator(kg).validate(involved, modified, impact, "/p");
+
+        assertThat(outcome.passed()).isTrue();
+        assertThat(outcome.violations()).isEmpty();
     }
 }

@@ -1,5 +1,6 @@
 package com.huawei.hisi.neo4j.service;
 
+import com.huawei.hisi.neo4j.config.SearchIntentProperties;
 import com.huawei.hisi.neo4j.model.MethodNode;
 import com.huawei.hisi.neo4j.model.QueryIntent;
 import com.huawei.hisi.neo4j.model.QueryType;
@@ -52,6 +53,9 @@ class HybridSearchServiceTest {
     @Mock
     private QueryEmbeddingCache queryEmbeddingCache;
 
+    @Mock
+    private SearchIntentProperties searchIntentProperties;
+
     private HybridSearchService hybridSearchService;
 
     @BeforeEach
@@ -63,7 +67,8 @@ class HybridSearchServiceTest {
                 embeddingService,
                 queryTypeDetector,
                 vectorIndexService,
-                queryEmbeddingCache
+                queryEmbeddingCache,
+                searchIntentProperties
         );
     }
 

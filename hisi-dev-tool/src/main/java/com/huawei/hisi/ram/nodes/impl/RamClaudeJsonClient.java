@@ -113,6 +113,14 @@ public class RamClaudeJsonClient {
         try {
             return MAPPER.readValue(raw, new TypeReference<>() {});
         } catch (Exception ex) {
+            // Attempt truncated-JSON recovery: when the LLM hits max_tokens mid-response,
+            // the JSON string is cut off. Try closing unclosed structures and re-parsing.
+            Map<String, Object> recovered = recoverTruncatedJson(raw);
+            if (recovered != null) {
+                log.warn("[RamClaudeJsonClient] Recovered truncated JSON (original {} chars → partial result with keys {})",
+                        raw.length(), recovered.keySet());
+                return recovered;
+            }
             log.error("[RamClaudeJsonClient] Failed to parse JSON response: {}",
                     raw.length() > 500 ? raw.substring(0, 500) + "..." : raw, ex);
             throw new IllegalStateException("Claude response is not valid JSON", ex);
@@ -134,22 +142,54 @@ public class RamClaudeJsonClient {
      * @param handlers map of toolName → handler function; each handler
      *                 receives the tool input and returns a serializable result
      */
-    @SuppressWarnings("unchecked")
+    /**
+     * Result of a tool-use call including both the parsed JSON and
+     * reasoning steps collected during the tool rounds.
+     */
+    public record JsonCallResult(Map<String, Object> json, List<String> reasoning) {}
+
+    /**
+     * Send a system + user message with tool definitions, then loop
+     * up to {@link #MAX_TOOL_ROUNDS} times handling any {@code tool_use}
+     * blocks the model emits. When the model finally stops with
+     * {@code end_turn}, parse the concatenated text blocks as JSON.
+     *
+     * <p>If no tools are provided or the tools list is empty, this
+     * method behaves identically to {@link #callJson}.
+     *
+     * @param tools    tool definitions to offer the model (may be empty)
+     * @param handlers map of toolName → handler function; each handler
+     *                 receives the tool input and returns a serializable result
+     */
     public Map<String, Object> callJsonWithTools(String systemPrompt,
                                                   String userPrompt,
                                                   List<ToolDefinition> tools,
                                                   Map<String, Function<Map<String, Object>, Object>> handlers,
                                                   SendOptions opts) {
+        return callJsonWithToolsAndReasoning(systemPrompt, userPrompt, tools, handlers, opts).json();
+    }
+
+    /**
+     * Same as {@link #callJsonWithTools} but also returns reasoning steps.
+     */
+    public JsonCallResult callJsonWithToolsAndReasoning(String systemPrompt,
+                                                        String userPrompt,
+                                                        List<ToolDefinition> tools,
+                                                        Map<String, Function<Map<String, Object>, Object>> handlers,
+                                                        SendOptions opts) {
         if (tools == null || tools.isEmpty()) {
-            return callJson(systemPrompt, userPrompt, opts);
+            Map<String, Object> json = callJson(systemPrompt, userPrompt, opts);
+            return new JsonCallResult(json, List.of("单轮调用，无工具使用"));
         }
 
         SendOptions effective = new SendOptions(
                 opts.model(), opts.maxTokens(), opts.temperature(), systemPrompt);
 
-        // Mutable message list for the conversation
         List<Map<String, Object>> messages = new ArrayList<>();
         messages.add(Map.of("role", "user", "content", userPrompt));
+
+        List<String> reasoningSteps = new ArrayList<>();
+        reasoningSteps.add("初始查询: " + truncateForReasoning(userPrompt));
 
         for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
             // ── Inject "wrap-up" nudge when approaching the limit ──
@@ -168,7 +208,8 @@ public class RamClaudeJsonClient {
 
             // ── If stop_reason is "end_turn" or no tool_use blocks → done ──
             if (!"tool_use".equals(result.stopReason) || result.toolUseBlocks.isEmpty()) {
-                return parseJsonResponse(result.textContent.toString());
+                reasoningSteps.add("LLM返回最终结果");
+                return new JsonCallResult(parseJsonResponse(result.textContent.toString()), List.copyOf(reasoningSteps));
             }
 
             // ── Process tool_use blocks ──
@@ -192,6 +233,9 @@ public class RamClaudeJsonClient {
 
                 // Execute the tool handler
                 String toolResultContent = executeToolHandler(handlers, block);
+                reasoningSteps.add(String.format("Round %d: %s(%s) → %s",
+                        round, block.name, summarizeInput(block.name, block.input),
+                        truncateForReasoning(toolResultContent)));
                 toolResults.add(Map.of(
                         "type", "tool_result",
                         "tool_use_id", block.id,
@@ -206,6 +250,7 @@ public class RamClaudeJsonClient {
 
         // Exceeded MAX_TOOL_ROUNDS — give a warning and try to force final JSON output
         log.warn("[RamClaudeJsonClient] Exceeded {} tool rounds — forcing termination", MAX_TOOL_ROUNDS);
+        reasoningSteps.add("超过最大工具轮次，强制终止");
         // Inject a forceful instruction and call WITHOUT tools to guarantee end_turn
         messages.add(Map.of("role", "user", "content",
                 "[SYSTEM] Tool budget exhausted. You MUST now output your final answer " +
@@ -218,7 +263,7 @@ public class RamClaudeJsonClient {
             log.error("[RamClaudeJsonClient] Final forced response is empty — returning error");
             throw new IllegalStateException("Claude response is not valid JSON");
         }
-        return parseJsonResponse(finalText);
+        return new JsonCallResult(parseJsonResponse(finalText), List.copyOf(reasoningSteps));
     }
 
     // ──────────────── SSE stream parsing with tool_use support ────────────────
@@ -638,5 +683,130 @@ public class RamClaudeJsonClient {
         Object v = event.get(key);
         if (v instanceof Number n) return n.intValue();
         return 0;
+    }
+
+    /** Truncate text for inclusion in reasoning steps. */
+    private static String truncateForReasoning(String text) {
+        if (text == null) return "";
+        if (text.length() <= 150) return text;
+        return text.substring(0, 150) + "...(" + text.length() + " chars)";
+    }
+
+    /**
+     * Attempt to recover a truncated JSON response by closing unclosed structures.
+     *
+     * <p>When the LLM hits max_tokens mid-response, the JSON is cut off.
+     * This method uses a stack-based approach to close unclosed strings, arrays,
+     * and objects in the correct LIFO order, then re-parses.
+     * Returns null if recovery fails.</p>
+     */
+    static Map<String, Object> recoverTruncatedJson(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+
+        String json = raw.trim();
+        // Strip markdown fences
+        if (json.startsWith("```")) {
+            int start = json.indexOf('\n');
+            int end = json.lastIndexOf("```");
+            if (start > 0 && end > start) {
+                json = json.substring(start + 1, end).trim();
+            }
+        }
+
+        // Check if it looks like it was supposed to be a JSON object
+        if (!json.startsWith("{")) return null;
+
+        // Use a stack to track open structures in order
+        java.util.Deque<Character> stack = new java.util.ArrayDeque<>();
+        boolean inString = false;
+        boolean escape = false;
+
+        for (int i = 0; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (escape) { escape = false; continue; }
+            if (c == '\\') { escape = true; continue; }
+            if (c == '"') { inString = !inString; continue; }
+            if (inString) continue;
+            if (c == '{' || c == '[') {
+                stack.push(c);
+            } else if (c == '}' || c == ']') {
+                // Pop matching opener
+                if (!stack.isEmpty()) {
+                    char opener = stack.peek();
+                    if ((c == '}' && opener == '{') || (c == ']' && opener == '[')) {
+                        stack.pop();
+                    }
+                }
+            }
+        }
+
+        // If nothing is unclosed, no recovery needed
+        if (stack.isEmpty() && !inString) return null;
+
+        // If in an unclosed string, close it
+        if (inString) {
+            json += "\"";
+        }
+
+        // Strategy 1: Try to cut at the last complete element boundary
+        // Find the last "}," or "}]" that marks a complete item in the array
+        if (!stack.isEmpty()) {
+            int lastCompleteObj = json.lastIndexOf("},");
+            int lastCompleteArr = json.lastIndexOf("}]");
+            int cutPoint = Math.max(lastCompleteObj, lastCompleteArr);
+
+            if (cutPoint > 0) {
+                // Recalculate the stack for the truncated string
+                String truncated = json.substring(0, cutPoint + 1);
+                java.util.Deque<Character> truncatedStack = new java.util.ArrayDeque<>();
+                boolean tInString = false;
+                boolean tEscape = false;
+                for (int i = 0; i < truncated.length(); i++) {
+                    char c = truncated.charAt(i);
+                    if (tEscape) { tEscape = false; continue; }
+                    if (c == '\\') { tEscape = true; continue; }
+                    if (c == '"') { tInString = !tInString; continue; }
+                    if (tInString) continue;
+                    if (c == '{' || c == '[') truncatedStack.push(c);
+                    else if (c == '}' || c == ']') {
+                        if (!truncatedStack.isEmpty()) {
+                            char opener = truncatedStack.peek();
+                            if ((c == '}' && opener == '{') || (c == ']' && opener == '[')) {
+                                truncatedStack.pop();
+                            }
+                        }
+                    }
+                }
+                // Close remaining openers in LIFO order
+                StringBuilder closer = new StringBuilder();
+                while (!truncatedStack.isEmpty()) {
+                    char opener = truncatedStack.pop();
+                    closer.append(opener == '{' ? '}' : ']');
+                }
+                String closed = truncated + closer;
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> result = MAPPER.readValue(closed, Map.class);
+                    return result;
+                } catch (Exception e) {
+                    // Cut-point recovery failed, try full closure below
+                }
+            }
+        }
+
+        // Strategy 2: Close all open structures in LIFO order on the full string
+        StringBuilder closer = new StringBuilder();
+        while (!stack.isEmpty()) {
+            char opener = stack.pop();
+            closer.append(opener == '{' ? '}' : ']');
+        }
+        String closed = json + closer;
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> result = MAPPER.readValue(closed, Map.class);
+            return result;
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

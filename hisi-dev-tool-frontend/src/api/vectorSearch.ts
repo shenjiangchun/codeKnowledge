@@ -41,6 +41,8 @@ export interface VectorSearchResultItem {
   endLine: number
   description: string
   similarityScore?: number
+  /** 命中该结果的子查询列表（多路召回时记录，前端按分词筛选用） */
+  matchedSubQueries?: string[]
   callers?: any[]
   callees?: any[]
   entryPoints?: any[]

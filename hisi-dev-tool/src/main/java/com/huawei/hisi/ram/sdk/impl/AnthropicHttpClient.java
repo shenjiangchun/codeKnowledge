@@ -142,12 +142,45 @@ public class AnthropicHttpClient {
                 .writeTimeout(30, TimeUnit.SECONDS);
         if (proxyConfig != null && proxyConfig.isEnabled()
                 && proxyConfig.getHost() != null && !proxyConfig.getHost().isBlank()
-                && proxyConfig.getPort() > 0) {
+                && proxyConfig.getPort() > 0
+                && !isNonProxyHost(apiUrl, proxyConfig.getNonProxyHosts())) {
             Proxy.Type t = "SOCKS".equalsIgnoreCase(proxyConfig.getType())
                     ? Proxy.Type.SOCKS : Proxy.Type.HTTP;
             b.proxy(new Proxy(t, new InetSocketAddress(
                     proxyConfig.getHost(), proxyConfig.getPort())));
+            log.debug("[AnthropicHttpClient] Using proxy {}:{} for {}", proxyConfig.getHost(), proxyConfig.getPort(), apiUrl);
+        } else if (proxyConfig != null && proxyConfig.isEnabled() && isNonProxyHost(apiUrl, proxyConfig.getNonProxyHosts())) {
+            log.info("[AnthropicHttpClient] Bypassing proxy for {} (matched non-proxy-hosts: {})", apiUrl, proxyConfig.getNonProxyHosts());
         }
         return b.build();
+    }
+
+    /**
+     * Check if the target URL's host matches any pattern in the non-proxy-hosts list.
+     * Supports exact match and wildcard prefix (e.g. "*.huawei.com").
+     */
+    private static boolean isNonProxyHost(String url, String nonProxyHosts) {
+        if (nonProxyHosts == null || nonProxyHosts.isBlank()) return false;
+        String host;
+        try {
+            host = java.net.URI.create(url).getHost();
+        } catch (Exception e) {
+            return false;
+        }
+        if (host == null) return false;
+        for (String pattern : nonProxyHosts.split(",")) {
+            String p = pattern.trim();
+            if (p.isEmpty()) continue;
+            if (p.startsWith("*.")) {
+                // Wildcard: *.huawei.com matches aiserver.hisi.huawei.com
+                String suffix = p.substring(1); // ".huawei.com"
+                if (host.endsWith(suffix) || host.equals(p.substring(2))) {
+                    return true;
+                }
+            } else if (host.equalsIgnoreCase(p)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

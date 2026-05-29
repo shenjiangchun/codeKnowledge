@@ -187,7 +187,7 @@ public interface Neo4jSqlNodeRepository extends Neo4jRepository<SqlNode, String>
     @Query("""
         MATCH (s:Sql)
         WHERE s.projectPath = $projectPath AND s.sqlEmbedding IS NOT NULL AND size(s.sqlEmbedding) = size($embedding)
-        WITH s, gds.similarity.cosine(s.sqlEmbedding, $embedding) AS similarity
+        WITH s, vector.similarity.cosine(s.sqlEmbedding, $embedding) AS similarity
         WHERE similarity >= $threshold
         RETURN s
         ORDER BY similarity DESC
@@ -207,7 +207,7 @@ public interface Neo4jSqlNodeRepository extends Neo4jRepository<SqlNode, String>
     @Query("""
         MATCH (s:Sql)
         WHERE s.projectPath = $projectPath AND s.sqlEmbedding IS NOT NULL AND size(s.sqlEmbedding) = size($embedding)
-        WITH s, gds.similarity.cosine(s.sqlEmbedding, $embedding) AS similarity
+        WITH s, vector.similarity.cosine(s.sqlEmbedding, $embedding) AS similarity
         WHERE similarity >= $threshold
         RETURN s.nodeId as nodeId, s.sqlId as sqlId, s.statementType as statementType,
                s.sqlStatement as sqlStatement, s.parameterType as parameterType,

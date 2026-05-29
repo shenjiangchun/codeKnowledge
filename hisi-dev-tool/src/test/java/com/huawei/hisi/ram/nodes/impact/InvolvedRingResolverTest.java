@@ -1,5 +1,7 @@
 package com.huawei.hisi.ram.nodes.impact;
 
+import com.huawei.hisi.neo4j.model.IntentType;
+import com.huawei.hisi.neo4j.model.SubQuery;
 import com.huawei.hisi.ram.kg.KgMcpClient;
 import com.huawei.hisi.ram.kg.dto.Entry;
 import com.huawei.hisi.ram.kg.dto.Impl;
@@ -34,7 +36,7 @@ class InvolvedRingResolverTest {
         Entry entry = new Entry("e1", "Cls", "m", "CONTROLLER");
         Impl impl = new Impl("i1", "Impl", "Iface");
 
-        when(decomposer.decompose(anyString())).thenReturn(List.of("query"));
+        when(decomposer.decompose(anyString())).thenReturn(List.of(SubQuery.general("query")));
         when(searcher.search(any(), anyString(), anyInt(), anyInt())).thenReturn(List.of(seed));
         when(kg.entryPoints(anyString(), eq("ALL"))).thenReturn(List.of(entry));
         when(kg.implementations(eq("s1"), anyString())).thenReturn(List.of(impl));

@@ -55,7 +55,7 @@ export interface SankeyData {
 const COALESCE_THRESHOLD = 3
 
 export const RING_LABELS: Readonly<Record<RingColumn, string>> = {
-  involved: '涉及',
+  involved: '受影响的入口',
   modified: '修改',
   impacted: '影响'
 }

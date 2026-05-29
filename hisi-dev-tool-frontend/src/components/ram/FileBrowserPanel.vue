@@ -49,7 +49,7 @@ const grouped = computed<{ header: string; items: Row[] }[]>(() => {
     const buckets: Record<RingKey, Row[]> = { involved: [], modified: [], impacted: [] }
     for (const r of rows.value) buckets[r.ring].push(r)
     return [
-      { header: `涉及 (${buckets.involved.length})`, items: buckets.involved },
+      { header: `受影响的入口 (${buckets.involved.length})`, items: buckets.involved },
       { header: `修改 (${buckets.modified.length})`, items: buckets.modified },
       { header: `影响 (${buckets.impacted.length})`, items: buckets.impacted }
     ]

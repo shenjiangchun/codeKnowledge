@@ -22,14 +22,16 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { marked } from 'marked'
 import CostMeter from '@/components/ram/CostMeter.vue'
 import ClarifyModal from '@/components/ram/ClarifyModal.vue'
 import ConfirmModal from '@/components/ram/ConfirmModal.vue'
 import DagFlow from '@/components/ram/DagFlow.vue'
-import ImpactSankeyGraph from '@/components/ram/ImpactSankeyGraph.vue'
+import ImpactOutputView from '@/components/ram/ImpactOutputView.vue'
+import TechPlanOutputView from '@/components/ram/TechPlanOutputView.vue'
 import { deriveDagSnapshot, type DagNodeKey } from '@/components/ram/dagModel'
 import { useRamSession } from '@/composables/useRamSession'
-import { getRamSession } from '@/api/ram'
+import { executeTechPlan, getRamSession } from '@/api/ram'
 import { useRamStore, type ImpactPayload } from '@/stores/ram'
 
 const route = useRoute()
@@ -45,7 +47,16 @@ const draftMd = ref<string>('')
 const impactMd = ref<string>('')
 const implementMd = ref<string>('')
 const verifyMd = ref<string>('')
+const techPlanMd = ref<string>('')
+const impactOutputData = ref<Record<string, unknown> | null>(null)
+const techPlanOutputData = ref<Record<string, unknown> | null>(null)
 const impactPayload = ref<ImpactPayload | null>(null)
+
+// Per-node reasoning from CHECKPOINT output
+const nodeReasoning = ref<Record<string, string>>({})
+
+// Current progress message for running node
+const progressMessage = ref<string>('')
 
 const dagNodes = computed(() => deriveDagSnapshot(session.events.value, session.status.value))
 
@@ -103,7 +114,8 @@ function resolveNodeKey(evt: { type: string; payload: Record<string, unknown> })
     draft: 'clarify',
     impact: 'impact',
     implement: 'implement',
-    verify: 'verify'
+    verify: 'verify',
+    tech_plan: 'tech_plan'
   }
   if (phase && map[phase]) return map[phase]
   const t = evt.type
@@ -111,6 +123,7 @@ function resolveNodeKey(evt: { type: string; payload: Record<string, unknown> })
   if (t === 'IMPACT_DONE' || t === 'IMPACT_UPDATE') return 'impact'
   if (t === 'IMPLEMENT_DONE' || t === 'IMPLEMENT_UPDATE' || t === 'DRAFT_UPDATE') return 'implement'
   if (t === 'VERIFY_DONE' || t === 'VERIFY_UPDATE') return 'verify'
+  if (t === 'TECH_PLAN_DONE' || t === 'TECH_PLAN_UPDATE') return 'tech_plan'
   return null
 }
 
@@ -145,7 +158,7 @@ function formatImpactOutput(output: Record<string, unknown>): string {
     const seeds = Array.isArray(involved['seeds']) ? involved['seeds'].length : 0
     const entries = Array.isArray(involved['entries']) ? involved['entries'].length : 0
     const impls = Array.isArray(involved['impls']) ? involved['impls'].length : 0
-    lines.push(`## 涉及范围 (InvolvedRing)\n- Seeds: ${seeds}\n- Entry points: ${entries}\n- Implementations: ${impls}`)
+    lines.push(`## 受影响的入口 (InvolvedRing)\n- Seeds: ${seeds}\n- Entry points: ${entries}\n- Implementations: ${impls}`)
   }
   const impacted = asRecord(output['impacted'])
   if (impacted) {
@@ -181,37 +194,71 @@ function formatImplementOutput(output: Record<string, unknown>): string {
     if (Array.isArray(steps) && steps.length > 0) {
       lines.push(steps.map((s, i) => `${i + 1}. ${s}`).join('\n'))
     }
+    const dataFlow = biz['data_flow']
+    if (typeof dataFlow === 'string' && dataFlow.length > 0) {
+      lines.push(`### 数据流\n${dataFlow}`)
+    }
+    const acceptanceMapping = biz['acceptance_mapping']
+    if (acceptanceMapping != null) {
+      if (typeof acceptanceMapping === 'string' && acceptanceMapping.length > 0) {
+        lines.push(`### 验收标准映射\n${acceptanceMapping}`)
+      } else if (typeof acceptanceMapping === 'object') {
+        lines.push('### 验收标准映射')
+        if (Array.isArray(acceptanceMapping)) {
+          lines.push(acceptanceMapping.map((item) => `- ${typeof item === 'string' ? item : JSON.stringify(item)}`).join('\n'))
+        } else {
+          for (const [k, v] of Object.entries(acceptanceMapping as Record<string, unknown>)) {
+            lines.push(`- **${k}**: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+          }
+        }
+      }
+    }
+    // Show any other biz_plan fields not yet handled
     for (const [k, v] of Object.entries(biz)) {
-      if (k === 'steps') continue
+      if (['steps', 'data_flow', 'acceptance_mapping'].includes(k)) continue
       if (typeof v === 'string') lines.push(`### ${k}\n${v}`)
     }
   }
-  const ui = asRecord(output['ui_plan'])
-  if (ui) {
-    lines.push('## UI 方案 (ui_plan)')
-    for (const [k, v] of Object.entries(ui)) {
-      if (typeof v === 'string') lines.push(`### ${k}\n${v}`)
-      else if (Array.isArray(v)) lines.push(`### ${k}\n${v.map((i) => `- ${i}`).join('\n')}`)
-    }
+  // api_changes: array of API change entries
+  const apiChanges = output['api_changes']
+  if (Array.isArray(apiChanges) && apiChanges.length > 0) {
+    lines.push('## API 变更 (api_changes)')
+    lines.push(apiChanges.map((item) => `- ${typeof item === 'string' ? item : JSON.stringify(item)}`).join('\n'))
   }
-  const tech = asRecord(output['tech_plan'])
-  if (tech) {
-    lines.push('## 技术方案 (tech_plan)')
-    const files = tech['files']
-    if (Array.isArray(files) && files.length > 0) {
-      lines.push(`### 涉及文件\n${files.map((f) => `- \`${f}\``).join('\n')}`)
-    }
-    for (const [k, v] of Object.entries(tech)) {
-      if (k === 'files') continue
-      if (typeof v === 'string') lines.push(`### ${k}\n${v}`)
-    }
+  // state_machine_changes: array of state machine change entries
+  const stateChanges = output['state_machine_changes']
+  if (Array.isArray(stateChanges) && stateChanges.length > 0) {
+    lines.push('## 状态机变更 (state_machine_changes)')
+    lines.push(stateChanges.map((item) => `- ${typeof item === 'string' ? item : JSON.stringify(item)}`).join('\n'))
+  }
+  // data_model_changes: array of data model change entries
+  const dataModelChanges = output['data_model_changes']
+  if (Array.isArray(dataModelChanges) && dataModelChanges.length > 0) {
+    lines.push('## 数据模型变更 (data_model_changes)')
+    lines.push(dataModelChanges.map((item) => `- ${typeof item === 'string' ? item : JSON.stringify(item)}`).join('\n'))
+  }
+  // config_changes: array of config change entries
+  const configChanges = output['config_changes']
+  if (Array.isArray(configChanges) && configChanges.length > 0) {
+    lines.push('## 配置变更 (config_changes)')
+    lines.push(configChanges.map((item) => `- ${typeof item === 'string' ? item : JSON.stringify(item)}`).join('\n'))
   }
   // Fallback: show any other top-level string fields
   for (const [k, v] of Object.entries(output)) {
-    if (['biz_plan', 'ui_plan', 'tech_plan'].includes(k)) continue
+    if (['biz_plan', 'api_changes', 'state_machine_changes', 'data_model_changes', 'config_changes'].includes(k)) continue
     if (typeof v === 'string' && v.length > 0) lines.push(`## ${k}\n${v}`)
   }
   return lines.length > 0 ? lines.join('\n\n') : JSON.stringify(output, null, 2)
+}
+
+/** Chinese labels for the 6 VerifyNode check keys. */
+const VERIFY_CHECK_LABELS: Record<string, string> = {
+  acceptance_criteria_addressed: '验收标准覆盖',
+  api_changes_consistent: 'API变更一致性',
+  state_changes_complete: '状态变更完整性',
+  data_migration_covered: '数据迁移覆盖',
+  impact_validation_passed: '影响分析验证',
+  change_coverage_ratio: '变更覆盖率'
 }
 
 /** Format the structured verify output into readable text. */
@@ -219,6 +266,34 @@ function formatVerifyOutput(output: Record<string, unknown>): string {
   const lines: string[] = []
   const pass = output['pass'] === true
   lines.push(`## 验证结果: ${pass ? '✅ 通过' : '❌ 未通过'}`)
+
+  // Render the 6 check keys as a structured checklist
+  for (const [key, label] of Object.entries(VERIFY_CHECK_LABELS)) {
+    const val = output[key]
+    if (val === undefined || val === null) continue
+    if (typeof val === 'boolean') {
+      lines.push(`${val ? '✅' : '❌'} **${label}**: ${val ? '通过' : '未通过'}`)
+    } else if (typeof val === 'number') {
+      // change_coverage_ratio is a ratio (0~1 or percentage)
+      const icon = val >= 1 ? '✅' : val > 0 ? '⚠️' : '❌'
+      lines.push(`${icon} **${label}**: ${val}`)
+    } else if (typeof val === 'string') {
+      lines.push(`- **${label}**: ${val}`)
+    } else if (typeof val === 'object') {
+      // Object-valued check: render detail
+      const rec = asRecord(val)
+      if (rec) {
+        const passed = rec['passed']
+        const detail = rec['detail'] ?? rec['reason'] ?? ''
+        const icon = passed === true ? '✅' : '❌'
+        lines.push(`${icon} **${label}**: ${detail || (passed ? '通过' : '未通过')}`)
+      } else {
+        lines.push(`- **${label}**: ${JSON.stringify(val)}`)
+      }
+    }
+  }
+
+  // Fallback: if checks array is present (legacy or alternative format), render it
   const checks = output['checks']
   if (Array.isArray(checks) && checks.length > 0) {
     lines.push('## 检查项')
@@ -226,9 +301,12 @@ function formatVerifyOutput(output: Record<string, unknown>): string {
       const rec = asRecord(c)
       if (!rec) continue
       const icon = rec['passed'] === true ? '✅' : '❌'
-      lines.push(`${icon} **${rec['name'] ?? '—'}**: ${rec['detail'] ?? '—'}`)
+      const name = rec['name'] ?? '—'
+      const label = VERIFY_CHECK_LABELS[name] ?? name
+      lines.push(`${icon} **${label}**: ${rec['detail'] ?? '—'}`)
     }
   }
+
   const blockers = output['blockers']
   if (Array.isArray(blockers) && blockers.length > 0) {
     lines.push(`## 阻塞项\n${blockers.map((b) => `- ${b}`).join('\n')}`)
@@ -247,16 +325,37 @@ function formatNodeOutput(nodeKey: DagNodeKey, output: Record<string, unknown>):
       return formatImplementOutput(output)
     case 'verify':
       return formatVerifyOutput(output)
+    case 'tech_plan':
+      // TechPlan uses a specialized view; fallback to markdown_report or JSON
+      return asString(output['markdown_report']) ?? JSON.stringify(output, null, 2)
   }
 }
 
 function extractImpactFromCheckpoint(output: Record<string, unknown>): ImpactPayload | null {
+  // New structure: methods_to_modify + affected_entries
+  const methodsToModify = output['methods_to_modify']
+  const affectedEntries = asRecord(output['affected_entries'])
+  if (methodsToModify || affectedEntries) {
+    const modifiedIds = extractNodeIds(methodsToModify)
+    const impactedIds = [
+      ...extractNodeIds(affectedEntries?.['direct']),
+      ...extractNodeIds(affectedEntries?.['indirect'])
+    ]
+    const risk = asRecord(output['risk'])
+    const riskScores = risk
+      ? (Object.fromEntries(
+          Object.entries(risk).map(([k, v]) => [k, Number(v) || 0])
+        ) as Record<string, number>)
+      : undefined
+    return { involved: [], modified: modifiedIds, impacted: impactedIds, riskScores }
+  }
+
+  // Legacy structure: involved + modified + impacted
   const involved = asRecord(output['involved'])
   const modified = asRecord(output['modified'])
   const impacted = asRecord(output['impacted'])
   if (!involved && !modified && !impacted) return null
 
-  // Collect nodeIds from each ring for ThreeRingGraph
   const involvedIds = [
     ...extractNodeIds(involved?.['seeds']),
     ...extractNodeIds(involved?.['entries']),
@@ -305,12 +404,19 @@ watch(
         if (!output) continue
 
         const formatted = formatNodeOutput(nodeKey, output)
+        // Extract reasoning from output
+        const reasoning = typeof output['reasoning'] === 'string' ? output['reasoning'] as string : ''
+        if (reasoning) {
+          nodeReasoning.value = { ...nodeReasoning.value, [nodeKey]: reasoning }
+        }
+        progressMessage.value = ''
         switch (nodeKey) {
           case 'clarify':
             draftMd.value = formatted
             break
           case 'impact': {
             impactMd.value = formatted
+            impactOutputData.value = output
             const impact = extractImpactFromCheckpoint(output)
             if (impact) {
               impactPayload.value = impact
@@ -324,12 +430,27 @@ watch(
           case 'verify':
             verifyMd.value = formatted
             break
+          case 'tech_plan':
+            techPlanMd.value = formatted
+            techPlanOutputData.value = output
+            break
         }
         continue
       }
 
       // --- Legacy events: content may be at payload top level ---
       const md = extractMd(evt.payload)
+      // Update progress message for running nodes
+      if (nodeKey && evt.type !== 'CHECKPOINT') {
+        const progressLabels: Record<string, string> = {
+          clarify: '正在分析需求...',
+          impact: '正在分析影响范围...',
+          implement: '正在生成实现方案...',
+          verify: '正在验证...',
+          tech_plan: '正在生成技术方案...'
+        }
+        progressMessage.value = progressLabels[nodeKey] ?? '处理中...'
+      }
       switch (nodeKey) {
         case 'clarify':
           if (md) draftMd.value = md
@@ -358,6 +479,9 @@ watch(
           break
         case 'verify':
           if (md) verifyMd.value = md
+          break
+        case 'tech_plan':
+          if (md) techPlanMd.value = md
           break
       }
     }
@@ -444,6 +568,28 @@ function onDagClick(key: DagNodeKey): void {
   activeNode.value = key
 }
 
+/** Whether the tech_plan node can be triggered (verify done, tech_plan still pending). */
+const canTriggerTechPlan = computed(() => {
+  const verifyNode = dagNodes.value.find(n => n.key === 'verify')
+  const techPlanNode = dagNodes.value.find(n => n.key === 'tech_plan')
+  return verifyNode?.status === 'done' && techPlanNode?.status === 'pending'
+})
+
+const techPlanTriggering = ref(false)
+
+async function onTriggerTechPlan(): Promise<void> {
+  techPlanTriggering.value = true
+  try {
+    await executeTechPlan(sid.value)
+    ElMessage.success('技术方案已开始生成')
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : '触发技术方案失败'
+    ElMessage.error(msg)
+  } finally {
+    techPlanTriggering.value = false
+  }
+}
+
 const detailMarkdown = computed(() => {
   switch (activeNode.value) {
     case 'clarify':
@@ -454,7 +600,22 @@ const detailMarkdown = computed(() => {
       return implementMd.value
     case 'verify':
       return verifyMd.value
+    case 'tech_plan':
+      return techPlanMd.value
   }
+})
+
+const detailHtml = computed(() => {
+  const md = detailMarkdown.value
+  if (!md) return ''
+  return marked(md, { breaks: true }) as string
+})
+
+const activeReasoning = computed(() => nodeReasoning.value[activeNode.value] ?? '')
+
+const activeNodeStatus = computed(() => {
+  const node = dagNodes.value.find(n => n.key === activeNode.value)
+  return node?.status ?? 'pending'
 })
 
 const detailTitle = computed(() => {
@@ -462,7 +623,8 @@ const detailTitle = computed(() => {
     clarify: '澄清草稿',
     impact: '影响分析报告',
     implement: '实现三联草案',
-    verify: '验证清单'
+    verify: '验证清单',
+    tech_plan: '技术方案'
   }
   return labels[activeNode.value]
 })
@@ -537,6 +699,15 @@ onBeforeUnmount(() => {
         查看图谱
       </el-button>
       <el-button
+        v-if="canTriggerTechPlan"
+        type="success"
+        size="small"
+        :loading="techPlanTriggering"
+        @click="onTriggerTechPlan"
+      >
+        生成技术方案
+      </el-button>
+      <el-button
         size="small"
         :disabled="session.status.value !== 'running'"
         @click="onAbort"
@@ -555,18 +726,57 @@ onBeforeUnmount(() => {
           <h2>{{ detailTitle }}</h2>
         </header>
         <div class="detail-body">
-          <div v-if="activeNode === 'impact' && impactPayload" class="detail-impact">
-            <ImpactSankeyGraph
-              :involved="impactPayload.involved"
-              :modified="impactPayload.modified"
-              :impacted="impactPayload.impacted"
-              :risk-scores="impactPayload.riskScores ?? {}"
-              :width="740"
-              :height="460"
-            />
-            <pre class="md">{{ impactMd || '— 暂无详细 Markdown —' }}</pre>
+          <!-- Running node progress indicator -->
+          <div v-if="activeNodeStatus === 'running' && progressMessage" class="detail-progress">
+            <div class="progress-pulse" />
+            <span class="progress-text">{{ progressMessage }}</span>
           </div>
-          <pre v-else class="md">{{ detailMarkdown || '— 暂无内容 —' }}</pre>
+
+          <!-- Impact node: specialized renderer -->
+          <div v-if="activeNode === 'impact' && impactOutputData" class="detail-impact-view">
+            <ImpactOutputView :output="impactOutputData as any" />
+          </div>
+
+          <!-- TechPlan node: specialized renderer with Mermaid diagrams -->
+          <div v-else-if="activeNode === 'tech_plan' && techPlanOutputData" class="detail-techplan-view">
+            <TechPlanOutputView :output="techPlanOutputData as any" />
+          </div>
+
+          <!-- TechPlan node: trigger prompt when no data yet -->
+          <div v-else-if="activeNode === 'tech_plan' && !techPlanOutputData" class="detail-techplan-prompt">
+            <template v-if="canTriggerTechPlan">
+              <p>验证阶段已完成，可以生成技术方案。</p>
+              <el-button type="success" :loading="techPlanTriggering" @click="onTriggerTechPlan">
+                生成技术方案
+              </el-button>
+            </template>
+            <template v-else>
+              <p class="empty-hint">请先完成验证阶段后再生成技术方案。</p>
+            </template>
+          </div>
+
+          <!-- All nodes: markdown-rendered content -->
+          <template v-else>
+            <div v-if="detailHtml" class="detail-md" v-html="detailHtml" />
+            <div v-else-if="activeNodeStatus === 'running'" class="detail-waiting">
+              {{ progressMessage || '正在执行中...' }}
+            </div>
+            <div v-else class="detail-empty">— 暂无内容 —</div>
+          </template>
+
+          <!-- Reasoning section (collapsible) -->
+          <div v-if="activeReasoning" class="detail-reasoning">
+            <el-collapse>
+              <el-collapse-item>
+                <template #title>
+                  <div class="collapse-title">
+                    <span>💭 分析过程</span>
+                  </div>
+                </template>
+                <pre class="reasoning-text">{{ activeReasoning }}</pre>
+              </el-collapse-item>
+            </el-collapse>
+          </div>
         </div>
       </article>
 
@@ -690,11 +900,24 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
 }
-.detail-impact {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 16px;
-  align-items: start;
+.detail-impact-view {
+  /* full-width impact output view */
+}
+
+.detail-techplan-view {
+  /* full-width tech plan output view */
+}
+
+.detail-techplan-prompt {
+  text-align: center;
+  padding: 40px 0;
+  color: #606266;
+  font-size: 14px;
+}
+
+.detail-techplan-prompt .empty-hint {
+  color: #c0c4cc;
+  font-style: italic;
 }
 
 .event-list {
@@ -730,5 +953,150 @@ onBeforeUnmount(() => {
   font-size: 13px;
   color: #303133;
   line-height: 1.55;
+}
+
+.detail-md {
+  font-size: 13px;
+  color: #303133;
+  line-height: 1.55;
+}
+
+.detail-md :deep(h2) {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.detail-md :deep(h3) {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 12px 0 8px;
+}
+
+.detail-md :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12px;
+}
+
+.detail-md :deep(th) {
+  text-align: left;
+  background: #f5f7fa;
+  padding: 6px 8px;
+  border: 1px solid #ebeef5;
+  font-weight: 500;
+}
+
+.detail-md :deep(td) {
+  padding: 6px 8px;
+  border: 1px solid #ebeef5;
+}
+
+.detail-md :deep(code) {
+  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+  font-size: 12px;
+  background: #f0f2f5;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: #409eff;
+}
+
+.detail-md :deep(ul) {
+  padding-left: 20px;
+}
+
+.detail-md :deep(li) {
+  margin: 4px 0;
+  line-height: 1.5;
+}
+
+.detail-md :deep(ol) {
+  padding-left: 20px;
+}
+
+.detail-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #ecf5ff;
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.progress-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #409eff;
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.7); }
+}
+
+.progress-text {
+  font-size: 13px;
+  color: #409eff;
+  font-weight: 500;
+}
+
+.detail-waiting {
+  text-align: center;
+  padding: 40px 0;
+  color: #909399;
+  font-size: 14px;
+}
+
+.detail-empty {
+  text-align: center;
+  padding: 40px 0;
+  color: #c0c4cc;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.detail-reasoning {
+  margin-top: 16px;
+  border-top: 1px solid #ebeef5;
+  padding-top: 8px;
+}
+
+.reasoning-text {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #606266;
+  background: #f5f7fa;
+  padding: 10px 12px;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  font-family: inherit;
+}
+
+:deep(.el-collapse) {
+  border: none;
+}
+
+:deep(.el-collapse-item__header) {
+  border-bottom: none;
+  height: 36px;
+  line-height: 36px;
+  background: transparent;
+}
+
+:deep(.el-collapse-item__wrap) {
+  border-bottom: none;
+  background: transparent;
+}
+
+:deep(.el-collapse-item__content) {
+  padding-bottom: 0;
 }
 </style>

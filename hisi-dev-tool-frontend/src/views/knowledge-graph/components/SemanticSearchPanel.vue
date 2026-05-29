@@ -17,29 +17,42 @@
       </el-input>
     </div>
 
-    <!-- 分词子查询展示 -->
+    <!-- 分词子查询展示 + 筛选 -->
     <div class="sub-queries-section" v-if="subQueries.length > 1">
       <div class="sub-queries-header">
         <el-icon><Connection /></el-icon>
         <span class="sub-queries-label">AI 分词多路召回</span>
         <el-tag size="small" type="info">{{ subQueries.length }} 路</el-tag>
+        <span class="filter-hint" v-if="activeFilter">（筛选中）</span>
       </div>
       <div class="sub-queries-tags">
         <el-tag
           v-for="(sq, idx) in subQueries"
           :key="idx"
-          size="small"
-          effect="plain"
+          :size="activeFilter === sq ? 'default' : 'small'"
+          :effect="activeFilter === sq ? 'dark' : 'plain'"
+          :type="activeFilter === sq ? 'primary' : ''"
           class="sub-query-tag"
+          @click="toggleFilter(sq)"
         >
           {{ sq }}
+        </el-tag>
+        <el-tag
+          v-if="activeFilter"
+          size="small"
+          type="warning"
+          effect="plain"
+          class="sub-query-tag clear-filter-tag"
+          @click="clearFilter"
+        >
+          清除筛选
         </el-tag>
       </div>
     </div>
 
     <!-- 搜索结果 -->
-    <div class="search-results" v-if="results.length > 0">
-      <el-card v-for="result in results" :key="result.nodeId" class="result-card">
+    <div class="search-results" v-if="filteredResults.length > 0">
+      <el-card v-for="result in filteredResults" :key="result.nodeId" class="result-card">
         <template #header>
           <div class="result-header">
             <span class="method-name">{{ result.methodName }}</span>
@@ -63,6 +76,16 @@
             >
               置信度 {{ (result.similarityScore * 100).toFixed(1) }}%
             </el-tag>
+            <!-- 多路命中标记 -->
+            <el-tag
+              v-if="getMatchedCount(result.nodeId) > 1"
+              type="success"
+              size="small"
+              effect="dark"
+              class="multi-hit-tag"
+            >
+              {{ getMatchedCount(result.nodeId) }}路命中
+            </el-tag>
           </div>
         </template>
 
@@ -79,6 +102,23 @@
             <code>{{ result.signature }}</code>
           </div>
 
+          <!-- 命中分词（多路召回时显示） -->
+          <div class="matched-queries-section" v-if="getMatchedQueries(result.nodeId).length > 0">
+            <span class="label">命中分词：</span>
+            <div class="matched-queries-tags">
+              <el-tag
+                v-for="(mq, mqi) in getMatchedQueries(result.nodeId)"
+                :key="mqi"
+                size="small"
+                effect="light"
+                type="info"
+                class="matched-query-tag"
+              >
+                {{ mq }}
+              </el-tag>
+            </div>
+          </div>
+
           <!-- 操作按钮 -->
           <div class="actions">
             <el-button size="small" @click="viewDetail(result)">
@@ -93,12 +133,16 @@
     </div>
 
     <!-- 空状态 -->
+    <el-empty v-if="!loading && searched && filteredResults.length === 0 && results.length > 0" description="当前筛选条件下无匹配结果" />
     <el-empty v-if="!loading && searched && results.length === 0" description="未找到相关方法" />
 
     <!-- 耗时提示 -->
     <div class="search-info" v-if="costTimeMs">
       <el-text type="info">
         搜索耗时 {{ costTimeMs }}ms，共找到 {{ totalCount }} 个结果
+        <template v-if="activeFilter">
+          （筛选出 {{ filteredResults.length }} 个）
+        </template>
         <template v-if="subQueries.length > 1">
           （{{ subQueries.length }} 路召回 + RRF 融合）
         </template>
@@ -149,7 +193,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { Search, Connection } from '@element-plus/icons-vue'
 import { vectorSearchApi, type VectorSearchResult } from '@/api/vectorSearch'
 
@@ -171,6 +215,17 @@ const totalCount = ref(0)
 const costTimeMs = ref(0)
 const subQueries = ref<string[]>([])
 const rrfScores = ref<Record<string, number>>({})
+const matchedSubQueriesMap = ref<Record<string, string[]>>({})
+const activeFilter = ref<string | null>(null)
+
+/** 按选中的分词筛选结果 */
+const filteredResults = computed(() => {
+  if (!activeFilter.value) return results.value
+  return results.value.filter(r => {
+    const matched = matchedSubQueriesMap.value[r.nodeId] ?? []
+    return matched.includes(activeFilter.value!)
+  })
+})
 
 // 详情弹窗状态
 const detailDialogVisible = ref(false)
@@ -183,6 +238,8 @@ async function handleSearch() {
   searched.value = true
   subQueries.value = []
   rrfScores.value = {}
+  matchedSubQueriesMap.value = {}
+  activeFilter.value = null
   try {
     const response = await vectorSearchApi.searchV2({
       query: searchQuery.value,
@@ -195,15 +252,22 @@ async function handleSearch() {
     subQueries.value = response.subQueries ?? []
     rrfScores.value = response.rrfScores ?? {}
 
-    // 合并 items 中的 similarityScore 到 results（按 nodeId 匹配）
+    // 合并 items 中的 similarityScore + matchedSubQueries 到 results（按 nodeId 匹配）
     const scoreMap = new Map<string, number>()
+    const matchedMap = new Map<string, string[]>()
     if (response.items && Array.isArray(response.items)) {
       response.items.forEach(item => {
-        if (item && item.nodeId && item.similarityScore != null) {
-          scoreMap.set(item.nodeId, item.similarityScore)
+        if (item && item.nodeId) {
+          if (item.similarityScore != null) {
+            scoreMap.set(item.nodeId, item.similarityScore)
+          }
+          if (item.matchedSubQueries && item.matchedSubQueries.length > 0) {
+            matchedMap.set(item.nodeId, item.matchedSubQueries)
+          }
         }
       })
     }
+    matchedSubQueriesMap.value = Object.fromEntries(matchedMap)
     results.value = (response.results || []).map(r => ({
       ...r,
       similarityScore: scoreMap.get(r.nodeId) ?? r.similarityScore
@@ -227,6 +291,26 @@ function getRrfScore(nodeId: string): number | null {
 function formatRrfScore(score: number): string {
   // RRF 分数一般在 0.01-0.1 范围，乘以 1000 显示更直观
   return (score * 1000).toFixed(1)
+}
+
+/** 获取节点命中的子查询列表 */
+function getMatchedQueries(nodeId: string): string[] {
+  return matchedSubQueriesMap.value[nodeId] ?? []
+}
+
+/** 获取节点被多少路子查询命中 */
+function getMatchedCount(nodeId: string): number {
+  return getMatchedQueries(nodeId).length
+}
+
+/** 切换分词筛选（再次点击同一分词取消筛选） */
+function toggleFilter(sq: string) {
+  activeFilter.value = activeFilter.value === sq ? null : sq
+}
+
+/** 清除分词筛选 */
+function clearFilter() {
+  activeFilter.value = null
 }
 
 function viewDetail(result: VectorSearchResult) {
@@ -305,6 +389,48 @@ function getSimilarityTagType(score: number): '' | 'success' | 'warning' | 'dang
 .sub-query-tag {
   border-radius: 12px;
   font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sub-query-tag:hover {
+  box-shadow: 0 0 4px rgba(64, 158, 255, 0.4);
+}
+
+.clear-filter-tag {
+  cursor: pointer;
+}
+
+.filter-hint {
+  font-size: 12px;
+  color: var(--el-color-warning);
+  margin-left: 4px;
+}
+
+.multi-hit-tag {
+  font-size: 11px;
+}
+
+/* 命中分词展示 */
+.matched-queries-section {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.matched-queries-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.matched-query-tag {
+  border-radius: 10px;
+  font-size: 11px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .result-card {

@@ -63,9 +63,24 @@ public class SearchResultItem {
     private String description;
 
     /**
-     * 相似度分数
+     * 相似度分数（多路召回时被 RRF 分数替换）
      */
     private Double similarityScore;
+
+    /**
+     * 命中该结果的子查询列表（多路召回时记录，前端按分词筛选用）
+     */
+    private List<String> matchedSubQueries;
+
+    /**
+     * 命中该结果的意图类型列表（多路召回时记录，前端展示意图标签用）
+     */
+    private List<IntentType> intentTypes;
+
+    /**
+     * Post-filter 注解加分（如 @Scheduled 命中加分）
+     */
+    private Double bonusScore;
 
     /**
      * 调用者摘要列表 (前3个)

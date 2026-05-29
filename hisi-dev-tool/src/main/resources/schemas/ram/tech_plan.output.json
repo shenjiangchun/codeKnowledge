@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Tech Plan Stage Output",
+  "type": "object",
+  "required": ["target_methods_detail", "test_scope"],
+  "properties": {
+    "target_methods_detail": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "method": { "type": "string" },
+          "file": { "type": "string" },
+          "lines": { "type": "string" },
+          "current_logic": { "type": "string" },
+          "change_spec": { "type": "string" },
+          "pseudocode": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "sequence_diagrams": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "mermaid": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "flow_diagrams": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "mermaid": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "test_scope": {
+      "type": "object",
+      "properties": {
+        "unit_tests": { "type": "array", "items": { "type": "string" } },
+        "integration_tests": { "type": "array", "items": { "type": "string" } },
+        "data_migration": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "risk_mitigations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "risk": { "type": "string" },
+          "mitigation": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "reasoning": { "type": "string" },
+    "markdown_report": { "type": "string" }
+  },
+  "additionalProperties": true
+}

@@ -10,6 +10,8 @@ import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.AgentSession;
 import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.model.SessionStatus;
+import com.huawei.hisi.ram.nodes.TechPlanNode;
+import com.huawei.hisi.ram.orchestrator.InputsHasher;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
 import jakarta.annotation.PreDestroy;
@@ -51,6 +53,10 @@ import java.util.concurrent.atomic.AtomicLong;
  *   <li>{@code POST /sessions/{sid}/resume} – resumes a parked session.</li>
  *   <li>{@code POST /sessions/{sid}/abort} – signals abort, appends an
  *       {@code ERROR} event tagged {@code RUN_ABORTED}.</li>
+ *   <li>{@code POST /sessions/{sid}/nodes/tech-plan} – manually triggers
+ *       TechPlanNode execution (not part of the auto DAG pipeline); returns
+ *       202 Accepted, runs asynchronously, and emits a CHECKPOINT SSE event
+ *       on completion.</li>
  * </ul>
  *
  * <p>The frontend-facing {@code sessionId} is a UUID. The backend long
@@ -72,6 +78,7 @@ public class RamController {
     private final AgentEventRepository eventRepository;
     private final AgentSessionRepository sessionRepository;
     private final ObjectMapper objectMapper;
+    private final TechPlanNode techPlanNode;
 
     private final java.util.concurrent.Executor asyncExecutor;
     private final ScheduledExecutorService streamScheduler;
@@ -99,7 +106,8 @@ public class RamController {
     public RamController(RamMcpServer ramMcpServer,
                          AgentEventRepository eventRepository,
                          AgentSessionRepository sessionRepository,
-                         ObjectMapper objectMapper) {
+                         ObjectMapper objectMapper,
+                         TechPlanNode techPlanNode) {
         ExecutorService async = Executors.newCachedThreadPool(r -> {
             Thread t = new Thread(r, "ram-controller-async");
             t.setDaemon(true);
@@ -114,6 +122,7 @@ public class RamController {
         this.eventRepository = eventRepository;
         this.sessionRepository = sessionRepository;
         this.objectMapper = objectMapper;
+        this.techPlanNode = techPlanNode;
         this.asyncExecutor = async;
         this.streamScheduler = sched;
         this.ownedAsyncExecutor = async;
@@ -125,12 +134,14 @@ public class RamController {
                   AgentEventRepository eventRepository,
                   AgentSessionRepository sessionRepository,
                   ObjectMapper objectMapper,
+                  TechPlanNode techPlanNode,
                   java.util.concurrent.Executor asyncExecutor,
                   ScheduledExecutorService streamScheduler) {
         this.ramMcpServer = ramMcpServer;
         this.eventRepository = eventRepository;
         this.sessionRepository = sessionRepository;
         this.objectMapper = objectMapper;
+        this.techPlanNode = techPlanNode;
         this.asyncExecutor = asyncExecutor;
         this.streamScheduler = streamScheduler;
         this.ownedAsyncExecutor = null;
@@ -277,6 +288,10 @@ public class RamController {
 
         Runnable tick = () -> {
             try {
+                // Send SSE heartbeat (comment) to keep the connection alive
+                // and prevent browser/proxy from closing an idle connection
+                emitter.send(SseEmitter.event().comment("heartbeat"));
+
                 if (abortedSessions.contains(handle)) {
                     sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
                             "RUN_ABORTED", Map.of("reason", "user_requested")));
@@ -526,6 +541,178 @@ public class RamController {
 
         long nextSeq = eventRepository.findMaxSeq(backendId);
         return ApiResponse.success(new ConfirmResponse(true, nextSeq));
+    }
+
+    // ---------------------------------------------------------------------
+    // POST /sessions/{sid}/nodes/tech-plan — manual TechPlan execution
+    // ---------------------------------------------------------------------
+
+    public record TechPlanExecuteResponse(long nextSeq) {}
+
+    @PostMapping("/sessions/{sid}/nodes/tech-plan")
+    @org.springframework.web.bind.annotation.ResponseStatus(
+            org.springframework.http.HttpStatus.ACCEPTED)
+    public ApiResponse<TechPlanExecuteResponse> executeTechPlan(
+            @PathVariable("sid") String handle) {
+        Long backendId = sessionIdMap.get(handle);
+        if (backendId == null) {
+            return ApiResponse.error(404, "session not found: " + handle);
+        }
+        Optional<AgentSession> sessionOpt = sessionRepository.findById(backendId);
+        if (sessionOpt.isEmpty()) {
+            return ApiResponse.error(404, "session row missing: " + backendId);
+        }
+
+        // Load prior checkpoint outputs for impact + implement, and the
+        // original intent from the initial session input.
+        Map<String, Object> impactOutput = findLatestCheckpointOutput(backendId, "impact");
+        Map<String, Object> implementOutput = findLatestCheckpointOutput(backendId, "implement");
+        String intent = findSessionIntent(backendId);
+
+        // Build TechPlanNode input from prior outputs (key names must match
+        // what TechPlanNode.execute() reads: impact, implement, intent, projectPath)
+        Map<String, Object> techPlanInput = new LinkedHashMap<>();
+        if (impactOutput != null) {
+            techPlanInput.put("impact", impactOutput);
+        }
+        if (implementOutput != null) {
+            techPlanInput.put("implement", implementOutput);
+        }
+        if (intent != null) {
+            techPlanInput.put("intent", intent);
+        }
+        // Carry project path from the initial input if available
+        Map<String, Object> initialInput = findSessionInitialInput(backendId);
+        Object projectPath = initialInput.get("project_path");
+        if (projectPath == null) {
+            // Try projectHints (list) — take the first entry
+            Object hints = initialInput.get("projectHints");
+            if (hints instanceof java.util.List<?> list && !list.isEmpty()
+                    && list.get(0) instanceof String s) {
+                projectPath = s;
+            }
+        }
+        if (projectPath instanceof String s && !s.isBlank()) {
+            techPlanInput.put("projectPath", s);
+        }
+
+        long nextSeq = eventRepository.findMaxSeq(backendId);
+
+        // ★ Async dispatch — same pattern as clarify/confirm endpoints.
+        // TechPlanNode calls Claude with KG+FS tools (up to 10 rounds),
+        // then the DagExecutor appends a CHECKPOINT event.
+        CompletableFuture.runAsync(() -> {
+            try {
+                log.info("[RAM][tech-plan] start handle={} backendId={} input.keys={}",
+                        handle, backendId, techPlanInput.keySet());
+                Map<String, Object> output = techPlanNode.execute(techPlanInput);
+                Map<String, Object> safeOutput = output == null ? Map.of() : output;
+                String inputsHash = InputsHasher.hash(techPlanInput);
+                appendTechPlanCheckpoint(backendId, safeOutput, inputsHash);
+                log.info("[RAM][tech-plan] done handle={} output.keys={}",
+                        handle, safeOutput.keySet());
+            } catch (Exception e) {
+                log.error("[RAM][tech-plan] async dispatch failed handle={} error={}",
+                        handle, e.getMessage(), e);
+                appendTechPlanError(backendId, e);
+            }
+        }, asyncExecutor);
+
+        return ApiResponse.success(new TechPlanExecuteResponse(nextSeq));
+    }
+
+    /**
+     * Finds the most recent CHECKPOINT output for a given node name by scanning
+     * session events in reverse order.
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> findLatestCheckpointOutput(long backendId, String nodeName) {
+        List<AgentEvent> events = eventRepository.findBySessionId(backendId);
+        for (int i = events.size() - 1; i >= 0; i--) {
+            AgentEvent ev = events.get(i);
+            if (ev.getType() != EventType.CHECKPOINT) continue;
+            Map<String, Object> payload = parseJsonPayload(ev.getPayload());
+            if (payload == null) continue;
+            if (!nodeName.equals(payload.get("nodeName"))) continue;
+            Object out = payload.get("output");
+            if (out instanceof Map<?, ?> m) {
+                Map<String, Object> result = new LinkedHashMap<>();
+                m.forEach((k, v) -> result.put(String.valueOf(k), v));
+                return result;
+            }
+            return Map.of();
+        }
+        return null;
+    }
+
+    /**
+     * Reconstructs the original user intent (requirement description) from
+     * the session's initial input event.
+     */
+    private String findSessionIntent(long backendId) {
+        Map<String, Object> initialInput = findSessionInitialInput(backendId);
+        Object raw = initialInput.get("userRequirement");
+        return raw instanceof String s ? s : null;
+    }
+
+    /**
+     * Reconstructs the initial input map for a session from its USER_MSG event.
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> findSessionInitialInput(long backendId) {
+        List<AgentEvent> events = eventRepository.findBySessionId(backendId);
+        for (AgentEvent ev : events) {
+            if (ev.getType() == EventType.USER_MSG) {
+                Map<String, Object> payload = parseJsonPayload(ev.getPayload());
+                if (payload != null && payload.get("initialInput") instanceof Map<?, ?> init) {
+                    return (Map<String, Object>) init;
+                }
+            }
+        }
+        return Map.of();
+    }
+
+    private void appendTechPlanCheckpoint(long backendId,
+                                           Map<String, Object> output,
+                                           String inputsHash) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("nodeName", "tech_plan");
+        payload.put("inputsHash", inputsHash);
+        payload.put("output", output);
+        String key = "ckpt-" + backendId + "-tech_plan-" + inputsHash;
+        AgentEvent ev = AgentEvent.builder()
+                .sessionId(backendId)
+                .type(EventType.CHECKPOINT)
+                .payload(toJson(payload, "tech_plan"))
+                .idempotencyKey(key)
+                .inputsHash(inputsHash)
+                .circuitState("OK")
+                .validatorStatus("OK")
+                .createdAt(System.currentTimeMillis() / 1000L)
+                .build();
+        eventRepository.append(ev);
+    }
+
+    private void appendTechPlanError(long backendId, Throwable t) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("nodeName", "tech_plan");
+        payload.put("error", String.valueOf(t.getMessage()));
+        payload.put("type", t.getClass().getName());
+        String key = "error-" + backendId + "-tech_plan-" + System.nanoTime();
+        AgentEvent ev = AgentEvent.builder()
+                .sessionId(backendId)
+                .type(EventType.ERROR)
+                .payload(toJson(payload, "tech_plan"))
+                .idempotencyKey(key)
+                .circuitState("OK")
+                .validatorStatus("FAIL")
+                .createdAt(System.currentTimeMillis() / 1000L)
+                .build();
+        try {
+            eventRepository.append(ev);
+        } catch (RuntimeException e) {
+            log.warn("appendTechPlanError failed for backendId={}", backendId, e);
+        }
     }
 
     // ---------------------------------------------------------------------

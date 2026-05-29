@@ -9,7 +9,7 @@
  */
 import type { RamEvent, RamStatus } from '@/types/ram'
 
-export type DagNodeKey = 'clarify' | 'impact' | 'implement' | 'verify'
+export type DagNodeKey = 'clarify' | 'impact' | 'implement' | 'verify' | 'tech_plan'
 
 export type DagNodeStatus =
   | 'pending'
@@ -26,15 +26,17 @@ export interface DagNodeSnapshot {
   readonly tokens: number
   readonly events: number
   readonly riskLevel?: 'LOW' | 'MEDIUM' | 'HIGH'
+  readonly reasoning?: string
 }
 
-export const DAG_ORDER: readonly DagNodeKey[] = ['clarify', 'impact', 'implement', 'verify'] as const
+export const DAG_ORDER: readonly DagNodeKey[] = ['clarify', 'impact', 'implement', 'verify', 'tech_plan'] as const
 
 const LABELS: Readonly<Record<DagNodeKey, string>> = {
   clarify: '澄清',
   impact: '影响',
   implement: '实现',
-  verify: '验证'
+  verify: '验证',
+  tech_plan: '技术方案'
 }
 
 /**
@@ -47,7 +49,8 @@ const PHASE_TO_NODE: Readonly<Record<string, DagNodeKey>> = {
   draft: 'clarify',
   impact: 'impact',
   implement: 'implement',
-  verify: 'verify'
+  verify: 'verify',
+  tech_plan: 'tech_plan'
 }
 
 function classifyEvent(evt: RamEvent): DagNodeKey | null {
@@ -63,6 +66,7 @@ function classifyEvent(evt: RamEvent): DagNodeKey | null {
   if (t === 'IMPACT_DONE' || t === 'IMPACT_UPDATE') return 'impact'
   if (t === 'IMPLEMENT_DONE' || t === 'IMPLEMENT_UPDATE' || t === 'DRAFT_UPDATE') return 'implement'
   if (t === 'VERIFY_DONE' || t === 'VERIFY_UPDATE') return 'verify'
+  if (t === 'TECH_PLAN_DONE' || t === 'TECH_PLAN_UPDATE') return 'tech_plan'
   return null
 }
 
@@ -103,7 +107,8 @@ export function deriveDagSnapshot(
     clarify: { key: 'clarify', label: LABELS.clarify, status: 'pending', tokens: 0, events: 0 },
     impact: { key: 'impact', label: LABELS.impact, status: 'pending', tokens: 0, events: 0 },
     implement: { key: 'implement', label: LABELS.implement, status: 'pending', tokens: 0, events: 0 },
-    verify: { key: 'verify', label: LABELS.verify, status: 'pending', tokens: 0, events: 0 }
+    verify: { key: 'verify', label: LABELS.verify, status: 'pending', tokens: 0, events: 0 },
+    tech_plan: { key: 'tech_plan', label: LABELS.tech_plan, status: 'pending', tokens: 0, events: 0 }
   }
   let lastRunning: DagNodeKey | null = null
 
@@ -132,6 +137,16 @@ export function deriveDagSnapshot(
       const risk = evt.payload['riskLevel']
       if (risk === 'LOW' || risk === 'MEDIUM' || risk === 'HIGH') {
         acc[node].riskLevel = risk
+      }
+      // Extract reasoning from CHECKPOINT output
+      if (evt.type === 'CHECKPOINT') {
+        const output = evt.payload['output']
+        if (output && typeof output === 'object') {
+          const r = (output as Record<string, unknown>)['reasoning']
+          if (typeof r === 'string' && r.trim()) {
+            acc[node].reasoning = r.trim()
+          }
+        }
       }
     }
     if (evt.type === 'CIRCUIT_OPEN' && lastRunning) {

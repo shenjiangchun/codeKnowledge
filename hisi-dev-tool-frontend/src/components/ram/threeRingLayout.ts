@@ -150,7 +150,7 @@ export function computeLayout(input: LayoutInput): LayoutOutput {
   const risk = input.riskScores ?? {}
 
   const rawRings: { key: RingKey; label: string; color: string; all: readonly string[] }[] = [
-    { key: 'involved', label: '涉及', color: RING_COLORS.involved, all: input.involved },
+    { key: 'involved', label: '受影响的入口', color: RING_COLORS.involved, all: input.involved },
     { key: 'modified', label: '修改', color: RING_COLORS.modified, all: input.modified },
     { key: 'impacted', label: '影响', color: RING_COLORS.impacted, all: input.impacted }
   ]

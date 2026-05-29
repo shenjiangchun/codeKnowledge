@@ -1,5 +1,6 @@
 package com.huawei.hisi.neo4j.service;
 
+import com.huawei.hisi.neo4j.config.SearchIntentProperties;
 import com.huawei.hisi.neo4j.model.MethodNode;
 import com.huawei.hisi.neo4j.model.QueryType;
 import com.huawei.hisi.neo4j.model.SearchResult;
@@ -60,6 +61,9 @@ class VectorSearchAccuracyTest {
     @Mock
     private QueryEmbeddingCache queryEmbeddingCache;
 
+    @Mock
+    private SearchIntentProperties searchIntentProperties;
+
     private HybridSearchService hybridSearchService;
 
     private static final String PROJECT_PATH = "C:\\Users\\test\\project";
@@ -79,7 +83,8 @@ class VectorSearchAccuracyTest {
                 embeddingService,
                 queryTypeDetector,
                 vectorIndexService,
-                queryEmbeddingCache
+                queryEmbeddingCache,
+                searchIntentProperties
         );
 
         methodDataset = buildSimulatedDataset();

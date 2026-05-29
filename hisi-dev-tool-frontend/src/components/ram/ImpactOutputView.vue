@@ -2,66 +2,48 @@
 /**
  * ImpactOutputView — Human-readable renderer for impact analysis node output.
  *
- * Design principles:
- * - NO raw JSON display
- * - DO NOT show "involved" (search candidates are internal process noise)
- * - Use natural language to explain: what to modify, what's affected, why, and what to watch out for
- * - Risk level displayed prominently
- * - Validation warnings highlighted with human-readable text
+ * Adapted to the redesigned ImpactNode output structure:
+ * - methods_to_modify: methods needing code changes
+ * - affected_entries: { direct: [...], indirect: [...] } — upstream root entry points
+ * - risk: { score, level }
+ * - validation: { passed, violations }
+ * - reasoning: analysis step summary
+ * - markdown_report: formatted MD report
  *
- * Section order:
- *   1. Risk badge
- *   2. Validation warnings (if any)
- *   3. Affected entry points (Controllers/APIs extracted from upstream)
- *   4. Modified methods (what to change)
- *   5. Other upstream callers (non-entry-point callers, collapsible)
- *   6. Downstream callees (what the modified methods call)
- *   7. Cross-service impacts
+ * Legacy fields (involved, modified.tree, impacted.downstream/crossService/bridges)
+ * are no longer rendered but handled gracefully if present.
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { marked } from 'marked'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface CallTreeNode {
-  nodeId: string
-  className: string
-  methodName: string
-  depth?: number
-  children?: CallTreeNode[]
-}
-
-interface UpstreamEntry {
-  nodeId: string
-  className: string
-  methodName: string
-  type?: string
-}
-
-interface DownstreamEntry {
-  nodeId: string
-  className: string
-  methodName: string
-  type?: string
-}
-
-interface CrossServiceEntry {
-  nodeId: string
-  bridgeType: string
-  target: string
+interface MethodToModify {
+  nodeId?: string
   className?: string
   methodName?: string
+  reason?: string
+}
+
+interface AnnotatedEntry {
+  nodeId?: string
+  className?: string
+  methodName?: string
+  type?: string
+  relevance?: string
+  reason?: string
+  business_function?: string
+  impact_mechanism?: string
+  change_behavior?: string
+  call_path?: string
 }
 
 interface ImpactOutput {
-  involved?: unknown
-  modified?: {
-    tree?: CallTreeNode[]
-  }
-  impacted?: {
-    upstream?: UpstreamEntry[]
-    downstream?: DownstreamEntry[]
-    crossService?: CrossServiceEntry[]
-    bridges?: CrossServiceEntry[]
+  // New structure
+  methods_to_modify?: MethodToModify[]
+  affected_entries?: {
+    direct?: AnnotatedEntry[]
+    indirect?: AnnotatedEntry[]
   }
   risk?: {
     score?: number
@@ -71,143 +53,110 @@ interface ImpactOutput {
     passed?: boolean
     violations?: string[]
   }
+  reasoning?: string
+  markdown_report?: string
+  // Legacy fallbacks
+  modified?: {
+    tree?: unknown[]
+    methods_to_modify?: unknown[]
+  }
+  impacted?: {
+    upstream?: Array<{
+      nodeId: string
+      className: string
+      methodName: string
+      type?: string
+    }>
+    downstream?: unknown[]
+    crossService?: unknown[]
+    bridges?: unknown[]
+  }
+  involved?: unknown
 }
 
 const props = defineProps<{
   output: ImpactOutput
 }>()
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// ─── Markdown Rendering ──────────────────────────────────────────────────────
 
-/** Entry point types that should be shown in the "Affected APIs" section */
-const ENTRY_POINT_TYPES = new Set([
-  'CONTROLLER', 'SCHEDULED', 'MQ_LISTENER', 'FEIGN_CLIENT',
-  'REST_ENDPOINT', 'WEBSOCKET', 'EVENT_LISTENER'
-])
+const showMarkdownReport = ref(true)
+
+const renderedMarkdown = computed(() => {
+  const md = props.output.markdown_report
+  if (!md) return ''
+  return marked(md, { breaks: true }) as string
+})
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Extract short class name from fully qualified name */
-function shortName(className: string): string {
+function shortName(className: string | null | undefined): string {
   if (!className) return ''
   const parts = className.split('.')
   return parts[parts.length - 1]
 }
 
-/** Format as ShortClassName#methodName */
-function formatMethod(className: string, methodName: string): string {
-  return `${shortName(className)}#${methodName}`
+function formatMethod(className: string | null | undefined, methodName: string | null | undefined, nodeId?: string | null): string {
+  const cls = shortName(className)
+  if (cls && methodName) return `${cls}#${methodName}`
+  if (methodName) return methodName
+  if (cls) return cls
+  // Fallback: extract from nodeId format "path:com.pkg.Class.method.hash"
+  if (nodeId) {
+    const parsed = parseNodeId(nodeId)
+    if (parsed) return formatMethod(parsed.className, parsed.methodName)
+  }
+  return '(未知方法)'
 }
 
-/**
- * Extract short class#method from a nodeId string.
- * NodeId format: "C:/path/to/project:com.package.Class.method.hash"
- */
-function extractMethodFromNodeId(nodeId: string): string {
-  if (!nodeId) return nodeId
-  const colonIdx = nodeId.indexOf(':')
-  if (colonIdx <= 0) return nodeId
-  const qualifiedPart = nodeId.substring(colonIdx + 1)
-  // Split by '.', last segment is hash, second-to-last is method, rest is class
-  const segments = qualifiedPart.split('.')
-  if (segments.length < 3) return qualifiedPart
-  // Remove hash (last segment)
-  const hash = segments[segments.length - 1]
-  if (/^[0-9a-f]{6,}$/i.test(hash)) {
-    segments.pop()
+function entryTypeLabel(type: string | null | undefined): string {
+  if (!type) return '接口'
+  const labels: Record<string, string> = {
+    CONTROLLER: 'HTTP 接口',
+    REST_ENDPOINT: 'REST 接口',
+    HTTP: 'HTTP 接口',
+    SCHEDULED: '定时任务',
+    MQ_LISTENER: '消息监听',
+    MQ_CONSUMER: '消息监听',
+    FEIGN_CLIENT: 'Feign 调用',
+    WEBSOCKET: 'WebSocket',
+    EVENT_LISTENER: '事件监听',
+    GRPC: 'gRPC',
+    RMI: 'RMI'
   }
-  const methodName = segments.pop() ?? ''
-  const className = segments.join('.')
-  return formatMethod(className, methodName)
+  return labels[type.toUpperCase()] ?? type
+}
+
+function entryTypeIcon(type: string | null | undefined): string {
+  if (!type) return '🔌'
+  switch (type.toUpperCase()) {
+    case 'HTTP': case 'CONTROLLER': case 'REST_ENDPOINT': return '🔌'
+    case 'SCHEDULED': return '⏰'
+    case 'MQ_LISTENER': case 'MQ_CONSUMER': return '📨'
+    case 'FEIGN_CLIENT': case 'GRPC': case 'RMI': return '🔗'
+    default: return '🔌'
+  }
 }
 
 /**
  * Humanize a validation violation string for display.
- * Replaces raw nodeIds with short class#method names.
  */
 function humanizeViolation(violation: string): { label: string; detail: string } {
-  // Pattern: "Entry not reachable as a root entry: <nodeId>"
   const entryMatch = violation.match(/^Entry not reachable as a root entry:\s*(.+)$/)
   if (entryMatch) {
-    const method = extractMethodFromNodeId(entryMatch[1].trim())
     return {
-      label: `入口不可达：${method}`,
+      label: `入口不可达：${entryMatch[1]}`,
       detail: '此方法在知识图谱中被标记为入口点，但无法从任何根入口追溯到达'
     }
   }
-  // Pattern: "Impl missing from modified ring: <nodeId>"
   const implMatch = violation.match(/^Impl missing from modified ring:\s*(.+)$/)
   if (implMatch) {
-    const method = extractMethodFromNodeId(implMatch[1].trim())
     return {
-      label: `实现类缺失：${method}`,
+      label: `实现类缺失：${implMatch[1]}`,
       detail: '接口的实现类未包含在修改范围内，可能需要同步修改'
     }
   }
-  // Generic: try to replace any nodeId-like patterns
-  const genericNodeId = violation.match(/([A-Za-z]:[\\/].+?:[a-zA-Z][\w.]+\.[0-9a-f]{6,})/g)
-  if (genericNodeId) {
-    let humanized = violation
-    for (const nid of genericNodeId) {
-      humanized = humanized.replace(nid, extractMethodFromNodeId(nid))
-    }
-    return { label: humanized, detail: '' }
-  }
   return { label: violation, detail: '' }
-}
-
-/** Flatten a CallTreeNode[] into a flat method list (DFS) */
-function flattenTree(nodes: CallTreeNode[]): Array<{ className: string; methodName: string; filePath?: string }> {
-  const result: Array<{ className: string; methodName: string; filePath?: string }> = []
-  const visited = new Set<string>()
-
-  function dfs(node: CallTreeNode): void {
-    const key = `${node.className}.${node.methodName}`
-    if (visited.has(key)) return
-    visited.add(key)
-    result.push({
-      className: node.className,
-      methodName: node.methodName,
-      filePath: extractFilePath(node.nodeId)
-    })
-    if (node.children) {
-      for (const child of node.children) {
-        dfs(child)
-      }
-    }
-  }
-
-  for (const node of nodes) {
-    dfs(node)
-  }
-  return result
-}
-
-/** Extract a human-friendly file path hint from nodeId */
-function extractFilePath(nodeId: string): string | undefined {
-  if (!nodeId) return undefined
-  const colonIdx = nodeId.indexOf(':')
-  if (colonIdx <= 0) return undefined
-  const pathPart = nodeId.substring(0, colonIdx)
-  const segments = pathPart.replace(/\\/g, '/').split('/')
-  if (segments.length > 3) {
-    return '.../' + segments.slice(-3).join('/')
-  }
-  return pathPart
-}
-
-/** Friendly label for entry point types */
-function entryTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    CONTROLLER: 'HTTP 接口',
-    REST_ENDPOINT: 'REST 接口',
-    SCHEDULED: '定时任务',
-    MQ_LISTENER: '消息监听',
-    FEIGN_CLIENT: 'Feign 调用',
-    WEBSOCKET: 'WebSocket',
-    EVENT_LISTENER: '事件监听'
-  }
-  return labels[type] ?? type
 }
 
 // ─── Computed ────────────────────────────────────────────────────────────────
@@ -215,10 +164,9 @@ function entryTypeLabel(type: string): string {
 const riskLevel = computed(() => props.output.risk?.level ?? 'UNKNOWN')
 const riskScore = computed(() => props.output.risk?.score ?? 0)
 
-/** Display risk score: if > 1 treat as percentage, otherwise as 0-1 ratio */
 const riskScoreDisplay = computed(() => {
   const score = riskScore.value
-  if (score > 1) return `${score.toFixed(1)}%`
+  if (score > 1) return `${score.toFixed(1)}/100`
   return score.toFixed(2)
 })
 
@@ -242,44 +190,34 @@ const riskLabel = computed(() => {
   return labels[riskLevel.value] ?? '未知'
 })
 
+/** Methods to modify — from new structure, with legacy fallback */
 const modifiedMethods = computed(() => {
-  const tree = props.output.modified?.tree
-  if (!tree || tree.length === 0) return []
-  return flattenTree(tree)
-})
-
-/** Split upstream into entry points vs. other callers */
-const entryPointMethods = computed(() => {
-  const all = props.output.impacted?.upstream ?? []
-  return all.filter((m) => m.type && ENTRY_POINT_TYPES.has(m.type))
-})
-
-const otherUpstreamMethods = computed(() => {
-  const all = props.output.impacted?.upstream ?? []
-  return all.filter((m) => !m.type || !ENTRY_POINT_TYPES.has(m.type))
-})
-
-const downstreamMethods = computed(() => props.output.impacted?.downstream ?? [])
-
-const crossServiceItems = computed(() => {
-  const cs = props.output.impacted?.crossService ?? []
-  const bridges = props.output.impacted?.bridges ?? []
-  const seen = new Set<string>()
-  const result: CrossServiceEntry[] = []
-  for (const item of [...cs, ...bridges]) {
-    if (!seen.has(item.nodeId)) {
-      seen.add(item.nodeId)
-      result.push(item)
-    }
+  const explicit = props.output.methods_to_modify
+  if (explicit && explicit.length > 0) return explicit
+  // Legacy: check modified.methods_to_modify
+  const legacy = props.output.modified?.methods_to_modify
+  if (legacy && Array.isArray(legacy) && legacy.length > 0) {
+    return legacy as MethodToModify[]
   }
-  return result
+  return []
 })
+
+/** Direct affected entries */
+const directEntries = computed(() => props.output.affected_entries?.direct ?? [])
+
+/** Indirect affected entries */
+const indirectEntries = computed(() => props.output.affected_entries?.indirect ?? [])
 
 const validationPassed = computed(() => props.output.validation?.passed !== false)
 const validationViolations = computed(() => {
   const raw = props.output.validation?.violations ?? []
   return raw.map(humanizeViolation)
 })
+
+const hasReasoning = computed(() => !!props.output.reasoning && props.output.reasoning.trim().length > 0)
+const showReasoning = ref(false)
+
+const hasMarkdownReport = computed(() => !!props.output.markdown_report && props.output.markdown_report.trim().length > 0)
 </script>
 
 <template>
@@ -297,7 +235,101 @@ const validationViolations = computed(() => {
       </el-tag>
     </div>
 
-    <!-- ② Validation Warnings -->
+    <!-- ② Methods to Modify -->
+    <div v-if="modifiedMethods.length > 0" class="section">
+      <div class="section-header">
+        <span class="section-icon">📝</span>
+        <span class="section-title">需要修改的方法</span>
+        <el-tag size="small" type="info" round>{{ modifiedMethods.length }}个</el-tag>
+      </div>
+      <div class="section-desc">以下方法需要进行代码修改：</div>
+      <table class="method-table">
+        <thead>
+          <tr><th>#</th><th>方法</th><th>说明</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="(m, idx) in modifiedMethods" :key="idx">
+            <td class="col-num">{{ idx + 1 }}</td>
+            <td><code class="method-name">{{ formatMethod(m.className, m.methodName, m.nodeId) }}</code></td>
+            <td class="col-reason">{{ m.reason ?? '' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div v-else class="section">
+      <div class="section-header">
+        <span class="section-icon">📝</span>
+        <span class="section-title">需要修改的方法</span>
+      </div>
+      <div class="empty-hint">无需修改的方法</div>
+    </div>
+
+    <!-- ③ Affected Entries — Direct -->
+    <div v-if="directEntries.length > 0" class="section">
+      <div class="section-header">
+        <span class="section-icon">🔌</span>
+        <span class="section-title">受影响的入口 — 直接相关</span>
+        <el-tag size="small" type="danger" round>{{ directEntries.length }}个</el-tag>
+      </div>
+      <div class="section-desc">
+        以下入口的功能与需求直接相关，修改后行为会直接体现：
+      </div>
+      <ul class="method-list plain">
+        <li v-for="(ae, idx) in directEntries" :key="idx" class="method-item">
+          <div class="entry-header">
+            <span class="entry-icon">{{ entryTypeIcon(ae.type) }}</span>
+            <el-tag size="small" type="primary" class="entry-type-tag">
+              {{ entryTypeLabel(ae.type) }}
+            </el-tag>
+            <code class="method-name">{{ formatMethod(ae.className, ae.methodName, ae.nodeId) }}</code>
+            <span v-if="ae.reason" class="entry-reason">— {{ ae.reason }}</span>
+          </div>
+          <!-- Deep analysis detail -->
+          <div v-if="ae.business_function || ae.impact_mechanism || ae.change_behavior || ae.call_path" class="entry-detail">
+            <div v-if="ae.business_function" class="entry-subtitle">{{ ae.business_function }}</div>
+            <div v-if="ae.impact_mechanism" class="entry-mechanism">
+              <span class="detail-label">影响机制：</span>{{ ae.impact_mechanism }}
+            </div>
+            <div v-if="ae.change_behavior" class="entry-behavior">
+              <span class="detail-label">行为变化：</span>{{ ae.change_behavior }}
+            </div>
+            <div v-if="ae.call_path" class="entry-callpath">
+              <span class="detail-label">调用路径：</span><code>{{ ae.call_path }}</code>
+            </div>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <!-- ④ Affected Entries — Indirect -->
+    <div v-if="indirectEntries.length > 0" class="section">
+      <el-collapse>
+        <el-collapse-item>
+          <template #title>
+            <div class="collapse-title">
+              <span class="section-icon">🔗</span>
+              <span class="section-title">受影响的入口 — 间接相关</span>
+              <el-tag size="small" type="info" round>{{ indirectEntries.length }}个</el-tag>
+            </div>
+          </template>
+          <div class="section-desc">
+            以下入口通过调用链间接受影响：
+          </div>
+          <ul class="method-list plain">
+            <li v-for="(ae, idx) in indirectEntries" :key="idx" class="method-item">
+              <span class="entry-icon">{{ entryTypeIcon(ae.type) }}</span>
+              <el-tag size="small" type="info" class="entry-type-tag">
+                {{ entryTypeLabel(ae.type) }}
+              </el-tag>
+              <code class="method-name">{{ formatMethod(ae.className, ae.methodName, ae.nodeId) }}</code>
+              <span v-if="ae.reason" class="entry-reason">— {{ ae.reason }}</span>
+            </li>
+          </ul>
+        </el-collapse-item>
+      </el-collapse>
+    </div>
+
+    <!-- ⑤ Validation Warnings -->
     <div v-if="!validationPassed" class="section validation-section">
       <div class="section-header">
         <span class="section-icon">⚠️</span>
@@ -314,120 +346,42 @@ const validationViolations = computed(() => {
       </div>
     </div>
 
-    <!-- ③ Affected Entry Points (Controllers/APIs) — BEFORE modified -->
-    <div v-if="entryPointMethods.length > 0" class="section">
-      <div class="section-header">
-        <span class="section-icon">🔌</span>
-        <span class="section-title">受影响的接口</span>
-        <el-tag size="small" type="danger" round>{{ entryPointMethods.length }}个</el-tag>
-      </div>
-      <div class="section-desc">
-        以下入口接口的调用链经过待修改方法，修改后这些接口的行为可能发生变化：
-      </div>
-      <ul class="method-list plain">
-        <li v-for="(m, idx) in entryPointMethods" :key="idx" class="method-item">
-          <el-tag size="small" :type="m.type === 'CONTROLLER' ? 'primary' : 'info'" class="entry-type-tag">
-            {{ entryTypeLabel(m.type ?? '') }}
-          </el-tag>
-          <code class="method-name">{{ formatMethod(m.className, m.methodName) }}</code>
-        </li>
-      </ul>
-    </div>
-
-    <!-- ④ Modified Methods (always expanded) -->
-    <div class="section">
-      <div class="section-header">
-        <span class="section-icon">📝</span>
-        <span class="section-title">需要修改的方法</span>
-        <el-tag size="small" type="info" round>{{ modifiedMethods.length }}个</el-tag>
-      </div>
-      <div class="section-desc">以下方法需要进行代码修改：</div>
-      <ol class="method-list">
-        <li v-for="(m, idx) in modifiedMethods" :key="idx" class="method-item">
-          <code class="method-name">{{ formatMethod(m.className, m.methodName) }}</code>
-          <span v-if="m.filePath" class="method-file">{{ m.filePath }}</span>
-        </li>
-      </ol>
-      <div v-if="modifiedMethods.length === 0" class="empty-hint">无需修改的方法</div>
-    </div>
-
-    <!-- ⑤ Other Upstream Callers (collapsible, non-entry-point) -->
-    <div v-if="otherUpstreamMethods.length > 0" class="section">
-      <el-collapse>
-        <el-collapse-item>
-          <template #title>
-            <div class="collapse-title">
-              <span class="section-icon">⬆️</span>
-              <span class="section-title">其他上游调用方</span>
-              <el-tag size="small" type="info" round>{{ otherUpstreamMethods.length }}个</el-tag>
-            </div>
-          </template>
-          <div class="section-desc">
-            这些方法调用了待修改方法，修改后需要回归测试以确保调用方行为不变：
-          </div>
-          <ul class="method-list plain">
-            <li v-for="(m, idx) in otherUpstreamMethods" :key="idx" class="method-item">
-              <code class="method-name">{{ formatMethod(m.className, m.methodName) }}</code>
-              <el-tag v-if="m.type" size="small" class="entry-type-tag">{{ m.type }}</el-tag>
-            </li>
-          </ul>
-        </el-collapse-item>
-      </el-collapse>
-    </div>
-
-    <!-- ⑥ Downstream (collapsible) -->
-    <div v-if="downstreamMethods.length > 0" class="section">
-      <el-collapse>
-        <el-collapse-item>
-          <template #title>
-            <div class="collapse-title">
-              <span class="section-icon">⬇️</span>
-              <span class="section-title">下游被调方</span>
-              <el-tag size="small" type="info" round>{{ downstreamMethods.length }}个</el-tag>
-            </div>
-          </template>
-          <div class="section-desc">
-            这些方法被待修改方法调用，需确认接口兼容性（参数、返回值是否发生变更）：
-          </div>
-          <ul class="method-list plain">
-            <li v-for="(m, idx) in downstreamMethods" :key="idx" class="method-item">
-              <code class="method-name">{{ formatMethod(m.className, m.methodName) }}</code>
-              <el-tag v-if="m.type" size="small" class="entry-type-tag">{{ m.type }}</el-tag>
-            </li>
-          </ul>
-        </el-collapse-item>
-      </el-collapse>
-    </div>
-
-    <!-- ⑦ Cross-Service (always expanded) -->
-    <div v-if="crossServiceItems.length > 0" class="section">
-      <div class="section-header">
-        <span class="section-icon">🌐</span>
-        <span class="section-title">跨服务影响</span>
-        <el-tag size="small" type="danger" round>{{ crossServiceItems.length }}个</el-tag>
-      </div>
-      <div class="section-desc">
-        涉及微服务间调用，修改后需要协调相关服务同步变更：
-      </div>
-      <ul class="method-list plain cross-service-list">
-        <li v-for="(item, idx) in crossServiceItems" :key="idx" class="method-item cross-service-item">
-          <el-tag size="small" :type="item.bridgeType === 'FEIGN' ? 'primary' : 'warning'">
-            {{ item.bridgeType }}
-          </el-tag>
-          <span class="cross-target">→ {{ item.target }}</span>
-          <code v-if="item.className && item.methodName" class="method-name">
-            {{ formatMethod(item.className, item.methodName) }}
-          </code>
-        </li>
-      </ul>
-    </div>
-
     <!-- Validation passed indicator -->
     <div v-if="validationPassed && validationViolations.length === 0" class="section validation-passed">
       <el-tag type="success" effect="plain" size="small">
         <el-icon><Check /></el-icon>
         验证通过，无结构性问题
       </el-tag>
+    </div>
+
+    <!-- ⑥ Reasoning (collapsible) -->
+    <div v-if="hasReasoning" class="section">
+      <el-collapse v-model="showReasoning">
+        <el-collapse-item name="reasoning">
+          <template #title>
+            <div class="collapse-title">
+              <span class="section-icon">💭</span>
+              <span class="section-title">分析过程</span>
+            </div>
+          </template>
+          <pre class="reasoning-text">{{ output.reasoning }}</pre>
+        </el-collapse-item>
+      </el-collapse>
+    </div>
+
+    <!-- ⑦ Markdown Report (collapsible) -->
+    <div v-if="hasMarkdownReport" class="section">
+      <el-collapse v-model="showMarkdownReport">
+        <el-collapse-item name="report">
+          <template #title>
+            <div class="collapse-title">
+              <span class="section-icon">📊</span>
+              <span class="section-title">格式化报告</span>
+            </div>
+          </template>
+          <div class="markdown-body" v-html="renderedMarkdown"></div>
+        </el-collapse-item>
+      </el-collapse>
     </div>
   </div>
 </template>
@@ -502,6 +456,128 @@ export default {
   line-height: 1.5;
 }
 
+/* ─── Method Table ─── */
+.method-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.method-table th {
+  text-align: left;
+  font-weight: 500;
+  color: #909399;
+  border-bottom: 1px solid #ebeef5;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.method-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #f5f7fa;
+  vertical-align: top;
+}
+
+.col-num {
+  width: 30px;
+  color: #909399;
+}
+
+.col-reason {
+  color: #606266;
+  font-size: 12px;
+}
+
+/* ─── Method Lists ─── */
+.method-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.method-list.plain {
+  list-style: none;
+  padding-left: 0;
+}
+
+.method-item {
+  font-size: 13px;
+  line-height: 2;
+  color: #303133;
+}
+
+.entry-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.entry-detail {
+  margin-top: 4px;
+  padding: 6px 10px;
+  background: #f5f7fa;
+  border-radius: 4px;
+  width: 100%;
+  line-height: 1.6;
+}
+
+.entry-subtitle {
+  font-size: 12px;
+  color: #606266;
+  margin-bottom: 4px;
+}
+
+.entry-mechanism, .entry-behavior {
+  font-size: 12px;
+  color: #303133;
+}
+
+.entry-callpath {
+  font-size: 12px;
+  color: #303133;
+}
+
+.entry-callpath code {
+  font-size: 11px;
+  background: #ecf5ff;
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+}
+
+.detail-label {
+  font-weight: 500;
+  color: #909399;
+}
+
+.method-name {
+  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+  font-size: 12px;
+  background: #f0f2f5;
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: #409eff;
+}
+
+.entry-icon {
+  font-size: 14px;
+}
+
+.entry-type-tag {
+  font-size: 10px;
+}
+
+.entry-reason {
+  font-size: 12px;
+  color: #909399;
+}
+
+.empty-hint {
+  font-size: 13px;
+  color: #c0c4cc;
+  font-style: italic;
+}
+
 /* ─── Validation ─── */
 .validation-section {
   background: #fdf6ec;
@@ -534,48 +610,15 @@ export default {
   line-height: 1.4;
 }
 
-/* ─── Method Lists ─── */
-.method-list {
-  margin: 0;
-  padding-left: 20px;
-}
-
-.method-list.plain {
-  list-style: disc;
-}
-
-.method-item {
-  font-size: 13px;
-  line-height: 2;
-  color: #303133;
+.validation-passed {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  border-bottom: none;
+  padding-bottom: 0;
 }
 
-.method-name {
-  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
-  font-size: 12px;
-  background: #f0f2f5;
-  padding: 2px 6px;
-  border-radius: 3px;
-  color: #409eff;
-}
-
-.method-file {
-  font-size: 11px;
-  color: #909399;
-}
-
-.entry-type-tag {
-  font-size: 10px;
-}
-
-.empty-hint {
-  font-size: 13px;
-  color: #c0c4cc;
-  font-style: italic;
+.validation-passed .el-icon {
+  margin-right: 4px;
 }
 
 /* ─── Collapse overrides ─── */
@@ -605,31 +648,80 @@ export default {
   padding-bottom: 0;
 }
 
-/* ─── Cross-Service ─── */
-.cross-service-list {
-  list-style: none;
-  padding-left: 0;
-}
-
-.cross-service-item {
-  gap: 6px;
-}
-
-.cross-target {
-  font-size: 13px;
-  font-weight: 500;
+/* ─── Reasoning ─── */
+.reasoning-text {
+  font-size: 12px;
+  line-height: 1.6;
   color: #606266;
+  background: #f5f7fa;
+  padding: 10px 12px;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  font-family: inherit;
 }
 
-/* ─── Validation Passed ─── */
-.validation-passed {
-  display: flex;
-  align-items: center;
-  border-bottom: none;
-  padding-bottom: 0;
+/* ─── Markdown Report ─── */
+.markdown-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #303133;
 }
 
-.validation-passed .el-icon {
-  margin-right: 4px;
+.markdown-body :deep(h2) {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.markdown-body :deep(h3) {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 12px 0 8px;
+}
+
+.markdown-body :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12px;
+}
+
+.markdown-body :deep(th) {
+  text-align: left;
+  background: #f5f7fa;
+  padding: 6px 8px;
+  border: 1px solid #ebeef5;
+  font-weight: 500;
+}
+
+.markdown-body :deep(td) {
+  padding: 6px 8px;
+  border: 1px solid #ebeef5;
+}
+
+.markdown-body :deep(code) {
+  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+  font-size: 12px;
+  background: #f0f2f5;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: #409eff;
+}
+
+.markdown-body :deep(ul) {
+  padding-left: 20px;
+}
+
+.markdown-body :deep(li) {
+  margin: 4px 0;
+  line-height: 1.5;
+}
+
+.markdown-body :deep(strong) {
+  font-weight: 600;
 }
 </style>
