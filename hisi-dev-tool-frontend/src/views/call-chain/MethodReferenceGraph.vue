@@ -63,13 +63,27 @@
         </div>
       </div>
 
-      <!-- 向上查询：展示调用者方法 -->
-      <div v-if="analysisDirection === 'upstream' && upstreamCallers.length > 0" class="uri-list-section">
+      <!-- 向上查询：展示调用链 -->
+      <div v-if="analysisDirection === 'upstream' && upstreamGraphNodes.length > 0" class="upstream-section">
         <div class="section-header">
           <el-icon><Link /></el-icon>
-          <span>调用者 ({{ upstreamCallers.length }})</span>
+          <span>上游调用链 ({{ upstreamGraphNodes.length }} 节点)</span>
+          <el-radio-group v-model="upstreamViewMode" size="small" style="margin-left: auto;">
+            <el-radio-button value="flow">流程图</el-radio-button>
+            <el-radio-button value="table">表格</el-radio-button>
+          </el-radio-group>
         </div>
-        <el-table :data="upstreamCallers" stripe style="width: 100%">
+
+        <div v-if="upstreamViewMode === 'flow'" class="upstream-flow-container">
+          <FlowDag
+            :nodes="upstreamGraphNodes"
+            :edges="upstreamGraphEdges"
+            direction="BT"
+            @node-click="handleUpstreamNodeClick"
+          />
+        </div>
+
+        <el-table v-else :data="upstreamCallers" stripe style="width: 100%">
           <el-table-column prop="display" label="调用者方法" min-width="400" />
           <el-table-column prop="callType" label="调用类型" width="120" />
           <el-table-column prop="callLine" label="行号" width="80" />
@@ -82,7 +96,7 @@
       </div>
 
       <!-- 向上查询：无结果提示 -->
-      <el-empty v-if="analysisDirection === 'upstream' && upstreamCallers.length === 0 && !loading && hasQueried"
+      <el-empty v-if="analysisDirection === 'upstream' && upstreamGraphNodes.length === 0 && !loading && hasQueried"
         description="未找到调用者" />
 
       <!-- 向下查询：展示依赖图 -->
@@ -111,11 +125,13 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ChatDotRound, Link } from '@element-plus/icons-vue'
-import { knowledgeGraphApi } from '@/api/knowledgeGraph'
+import { knowledgeGraphApi, type GraphNode as ApiGraphNode, type GraphEdge as ApiGraphEdge } from '@/api/knowledgeGraph'
 import { claudeApi } from '@/api/claude'
 import { useAppStore } from '@/stores/app'
 import { usePromptStore } from '@/stores/promptStore'
 import ChainChart from './components/ChainChart.vue'
+import FlowDag from './components/FlowDag.vue'
+import type { FlowNode } from './components/flowDagLayout'
 import ContextMenu from './components/ContextMenu.vue'
 
 interface ChainNode {
@@ -163,6 +179,9 @@ const loading = ref(false)
 const analysisLoading = ref(false)
 const chainData = ref<ChainNode | null>(null)
 const upstreamCallers = ref<UpstreamCaller[]>([])
+const upstreamViewMode = ref<'flow' | 'table'>('flow')
+const upstreamGraphNodes = ref<ApiGraphNode[]>([])
+const upstreamGraphEdges = ref<ApiGraphEdge[]>([])
 const hasQueried = ref(false)
 const maxDepth = ref<number>(5)
 
@@ -212,6 +231,8 @@ const loadDependencyGraph = async () => {
   loading.value = true
   hasQueried.value = true
   upstreamCallers.value = []
+  upstreamGraphNodes.value = []
+  upstreamGraphEdges.value = []
   chainData.value = null
 
   try {
@@ -220,22 +241,60 @@ const loadDependencyGraph = async () => {
 
     if (analysisDirection.value === 'upstream') {
       // 向上：使用合并接口获取根入口 + 直接调用者
+      const allNodes: ApiGraphNode[] = []
+      const allEdges: ApiGraphEdge[] = []
       const callers: UpstreamCaller[] = []
+      let nodeIdCounter = 0
+
       for (const method of entryMethods.value) {
         const { className, methodName } = splitFqn(method)
         const resp = await knowledgeGraphApi.getRootEntries(className, methodName, projectPath, projectPaths) as unknown as { rootEntries: any[]; directCallers: any[] }
+        const targetId = `target_${nodeIdCounter++}`
+
+        allNodes.push({
+          id: targetId, name: methodName, className, depth: 0,
+          inCycle: false, callType: '', description: `查询目标: ${className}.${methodName}`
+        })
+
         for (const item of (resp?.directCallers || [])) {
+          const callerId = item.callerId || `caller_${nodeIdCounter++}`
           callers.push({
-            callerId: item.callerId || '',
+            callerId,
             callerClassName: item.callerClassName || '',
             callerMethodName: item.callerMethodName || '',
             callType: item.callType || '',
             callLine: item.callLine || 0,
             display: `${item.callerClassName || ''}.${item.callerMethodName || ''}`
           })
+          allNodes.push({
+            id: callerId, name: item.callerMethodName || '',
+            className: item.callerClassName || '', depth: 1,
+            inCycle: false, callType: item.callType || ''
+          })
+          allEdges.push({
+            source: callerId, target: targetId,
+            callType: item.callType || '', callLine: item.callLine || 0,
+            isCycleEdge: false
+          })
+        }
+
+        for (const r of (resp?.rootEntries || [])) {
+          const entryNodeId = r.entryId || `entry_${nodeIdCounter++}`
+          if (!allNodes.find(n => n.id === entryNodeId)) {
+            allNodes.push({
+              id: entryNodeId, name: r.entryKey || '',
+              className: r.entryType || '', depth: 2,
+              inCycle: false, callType: r.entryType || '',
+              description: `Root entry: ${r.entryType}`
+            })
+          }
         }
       }
+
       upstreamCallers.value = callers
+      upstreamGraphNodes.value = allNodes
+      upstreamGraphEdges.value = allEdges
+
       if (callers.length > 0) {
         ElMessage.success(`找到 ${callers.length} 个调用者`)
       } else {
@@ -343,6 +402,17 @@ const drillUpFromCaller = (caller: UpstreamCaller) => {
     entryMethods.value.push(fqn)
   }
   loadDependencyGraph()
+}
+
+// FlowDag 节点点击：加入入口列表并重新查询
+const handleUpstreamNodeClick = (node: FlowNode) => {
+  if (node.className && node.name) {
+    const fqn = `${node.className}.${node.name}`
+    if (!entryMethods.value.includes(fqn)) {
+      entryMethods.value.push(fqn)
+    }
+    loadDependencyGraph()
+  }
 }
 
 // 父组件可调用：把方法加入入口列表并立即查询
@@ -505,5 +575,16 @@ onMounted(() => {
 
 .method-reference-graph {
   height: calc(100vh - 200px);
+}
+
+.upstream-section {
+  margin-top: 16px;
+}
+
+.upstream-flow-container {
+  height: 500px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  margin-top: 12px;
 }
 </style>
