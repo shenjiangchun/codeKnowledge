@@ -3,116 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "claude-opus-4-6-cc",
   "firstSeen": "2026-05-26T07:44:32.573Z",
-  "lastUpdated": "2026-05-29T02:34:21.139Z",
+  "lastUpdated": "2026-05-29T02:36:06.208Z",
   "stats": {
     "totalOperations": 31,
     "totalFilesEdited": 19,
-    "totalAiLines": 1680,
-    "totalAiLinesDeleted": 9,
-    "totalCommits": 5
+    "totalAiLines": 2653,
+    "totalAiLinesDeleted": 14,
+    "totalCommits": 6
   },
-  "pendingFiles": [
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/glossary/model/GlossaryTerm.java",
-      "tool": "Write",
-      "aiTool": "claude-code",
-      "model": "claude-opus-4-6-cc",
-      "operations": 1,
-      "timestamp": "2026-05-26T07:50:11.192Z",
-      "lastModified": "2026-05-26T07:50:11.192Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/glossary/repository/GlossaryTermRepository.java",
-      "tool": "Write",
-      "aiTool": "claude-code",
-      "model": "claude-opus-4-6-cc",
-      "operations": 1,
-      "timestamp": "2026-05-26T07:50:40.772Z",
-      "lastModified": "2026-05-26T07:50:40.772Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/glossary/controller/GlossaryController.java",
-      "tool": "Write",
-      "aiTool": "claude-code",
-      "model": "claude-opus-4-6-cc",
-      "operations": 1,
-      "timestamp": "2026-05-26T07:51:13.843Z",
-      "lastModified": "2026-05-26T07:51:13.843Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/service/LLMDescriptionService.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "claude-opus-4-6-cc",
-      "operations": 4,
-      "timestamp": "2026-05-26T07:52:11.669Z",
-      "lastModified": "2026-05-26T07:52:54.271Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/knowledge-graph/KnowledgeGraphView.vue",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "claude-opus-4-6-cc",
-      "operations": 4,
-      "timestamp": "2026-05-26T08:02:30.141Z",
-      "lastModified": "2026-05-26T08:03:37.504Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/project/ProjectList.vue",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "claude-opus-4-6-cc",
-      "operations": 6,
-      "timestamp": "2026-05-26T08:07:29.598Z",
-      "lastModified": "2026-05-26T08:08:52.174Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/model/RemoteProject.java",
-      "tool": "Write",
-      "aiTool": "claude-code",
-      "model": "claude-opus-4-6-cc",
-      "operations": 1,
-      "timestamp": "2026-05-29T02:34:09.738Z",
-      "lastModified": "2026-05-29T02:34:09.738Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/repository/RemoteProjectRepository.java",
-      "tool": "Write",
-      "aiTool": "claude-code",
-      "model": "claude-opus-4-6-cc",
-      "operations": 1,
-      "timestamp": "2026-05-29T02:34:12.103Z",
-      "lastModified": "2026-05-29T02:34:12.103Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/model/DiffResult.java",
-      "tool": "Write",
-      "aiTool": "claude-code",
-      "model": "claude-opus-4-6-cc",
-      "operations": 1,
-      "timestamp": "2026-05-29T02:34:16.289Z",
-      "lastModified": "2026-05-29T02:34:16.289Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/service/DiffExtractService.java",
-      "tool": "Write",
-      "aiTool": "claude-code",
-      "model": "claude-opus-4-6-cc",
-      "operations": 1,
-      "timestamp": "2026-05-29T02:34:18.656Z",
-      "lastModified": "2026-05-29T02:34:18.656Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/test/java/com/huawei/hisi/mergeanalysis/service/DiffExtractServiceTest.java",
-      "tool": "Write",
-      "aiTool": "claude-code",
-      "model": "claude-opus-4-6-cc",
-      "operations": 1,
-      "timestamp": "2026-05-29T02:34:21.139Z",
-      "lastModified": "2026-05-29T02:34:21.139Z"
-    }
-  ]
+  "pendingFiles": []
 }
