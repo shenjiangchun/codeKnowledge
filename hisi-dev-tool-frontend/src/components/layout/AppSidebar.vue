@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Document, Folder, Monitor, Search, Shop, DataAnalysis, Setting, Cpu, MagicStick } from '@element-plus/icons-vue'
+import { Document, Folder, Monitor, Search, Shop, DataAnalysis, Setting, Cpu, MagicStick, Connection } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import { computed } from 'vue'
 import type { Component } from 'vue'
@@ -67,6 +67,12 @@ const baseMenuItems: MenuItem[] = [
     title: '需求分析大师',
     icon: MagicStick,
     menuKey: 'claude-terminal' as MenuKey
+  },
+  {
+    index: '/merge-analysis',
+    title: '合入分析',
+    icon: Connection,
+    menuKey: 'knowledge-graph' as MenuKey
   },
   {
     index: '/project',

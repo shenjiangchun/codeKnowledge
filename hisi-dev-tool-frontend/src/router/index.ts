@@ -126,6 +126,24 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'RAM 影响图谱' }
   },
   {
+    path: '/merge-analysis',
+    name: 'MergeAnalysisInput',
+    component: () => import('@/views/merge-analysis/InputPage.vue'),
+    meta: { title: '合入分析' }
+  },
+  {
+    path: '/merge-analysis/diff',
+    name: 'MergeAnalysisDiff',
+    component: () => import('@/views/merge-analysis/DiffPreviewPage.vue'),
+    meta: { title: 'Diff 预览' }
+  },
+  {
+    path: '/merge-analysis/result',
+    name: 'MergeAnalysisResult',
+    component: () => import('@/views/merge-analysis/AnalysisPage.vue'),
+    meta: { title: '影响分析结果' }
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: () => import('@/views/settings/SettingsView.vue'),
