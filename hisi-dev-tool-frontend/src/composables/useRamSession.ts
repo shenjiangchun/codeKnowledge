@@ -185,13 +185,27 @@ export function useRamSession(): UseRamSessionReturn {
     const url = ramStreamUrl(sid, lastSeq.value)
     dbg('openStream', { sid, afterSeq: lastSeq.value, url })
     const es = new EventSource(url)
-    es.onopen = () => dbg('SSE onopen', { sid, readyState: es.readyState })
-    es.onmessage = handleEvent
+    let consecutiveErrors = 0
+    es.onopen = () => {
+      consecutiveErrors = 0
+      dbg('SSE onopen', { sid, readyState: es.readyState })
+    }
+    es.onmessage = (raw) => {
+      consecutiveErrors = 0
+      handleEvent(raw)
+    }
     es.onerror = () => {
-      dbg('SSE onerror', { sid, readyState: es.readyState, status: status.value })
+      consecutiveErrors++
+      dbg('SSE onerror', { sid, readyState: es.readyState, status: status.value, consecutiveErrors })
       // EventSource auto-retries while readyState !== CLOSED. Surface a failure
-      // only when the connection is permanently closed by the browser.
+      // only when the connection is permanently closed by the browser, OR
+      // when we get too many consecutive errors (proxy/server restart).
       if (es.readyState === EventSource.CLOSED && status.value === 'running') {
+        status.value = 'error'
+        tearDown()
+      } else if (consecutiveErrors > 10 && status.value === 'running') {
+        // Too many consecutive errors without a successful message — give up
+        dbg('SSE too many consecutive errors, giving up')
         status.value = 'error'
         tearDown()
       }

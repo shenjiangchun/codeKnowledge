@@ -3,13 +3,13 @@
   "hostname": "desktop-j6asme4",
   "model": "claude-code",
   "firstSeen": "2026-05-30T01:37:45.023Z",
-  "lastUpdated": "2026-05-30T03:17:39.356Z",
+  "lastUpdated": "2026-05-30T03:20:12.901Z",
   "stats": {
     "totalOperations": 41,
     "totalFilesEdited": 30,
-    "totalAiLines": 1267,
-    "totalAiLinesDeleted": 390,
-    "totalCommits": 5
+    "totalAiLines": 1292,
+    "totalAiLinesDeleted": 393,
+    "totalCommits": 6
   },
   "pendingFiles": [
     {
@@ -61,61 +61,11 @@
       "lastModified": "2026-05-30T01:44:34.096Z"
     },
     {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/model/SearchResultItem.java",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-05-30T01:47:25.374Z",
-      "lastModified": "2026-05-30T01:47:25.374Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/model/SearchResultItem.java",
-      "tool": "Write",
-      "aiTool": "claude-code",
-      "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
-      "operations": 1,
-      "timestamp": "2026-05-30T01:47:25.550Z",
-      "lastModified": "2026-05-30T01:47:25.550Z"
-    },
-    {
       "path": "hisi-dev-tool-frontend/src/components/ram/MermaidDiagram.vue",
       "tool": "Edit",
       "operations": 1,
       "timestamp": "2026-05-30T02:25:02.730Z",
       "lastModified": "2026-05-30T02:25:02.730Z"
-    },
-    {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/controller/RemoteProjectController.java",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-05-30T02:54:37.865Z",
-      "lastModified": "2026-05-30T02:55:25.862Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/controller/RemoteProjectController.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
-      "operations": 2,
-      "timestamp": "2026-05-30T02:54:38.050Z",
-      "lastModified": "2026-05-30T02:55:25.981Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/service/RemoteProjectService.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-05-30T02:55:05.161Z",
-      "lastModified": "2026-05-30T02:55:05.161Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/service/RemoteProjectService.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
-      "operations": 1,
-      "timestamp": "2026-05-30T02:55:05.270Z",
-      "lastModified": "2026-05-30T02:55:05.270Z"
     },
     {
       "path": "hisi-dev-tool-frontend/vite.config.ts",

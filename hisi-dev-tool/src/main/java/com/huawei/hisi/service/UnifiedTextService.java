@@ -271,6 +271,129 @@ public class UnifiedTextService {
     }
 
     /**
+     * 通用 Chat 调用 — 支持独立的 system / user prompt，返回完整响应文本（不截断）。
+     *
+     * <p>适用于需要自定义 system prompt 且返回内容较长的场景（如查询分解），
+     * 区别于 {@link #generateText(String)} 的 100 字截断和单 prompt 设计。
+     *
+     * @param systemPrompt 系统提示词
+     * @param userPrompt   用户输入
+     * @param maxTokens    本次调用最大 token 数（覆盖默认配置）
+     * @return 完整的响应文本
+     */
+    public String chat(String systemPrompt, String userPrompt, int maxTokens) {
+        int maxRetries = config.getMaxRetries();
+        long baseDelay = config.getRetryBaseDelayMs();
+
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                if (!rateLimiter.tryAcquire(config.getAcquireTimeoutSeconds(), TimeUnit.SECONDS)) {
+                    throw new RuntimeException("[TextModel] chat: 获取令牌超时（"
+                            + config.getAcquireTimeoutSeconds() + "s）");
+                }
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("[TextModel] chat: 等待令牌被中断", ie);
+            }
+
+            try {
+                String url = config.getBaseUrl() + "/chat/completions";
+
+                ObjectNode requestBody = objectMapper.createObjectNode();
+                requestBody.put("model", config.getModel());
+                requestBody.put("temperature", config.getTemperature());
+                requestBody.put("max_tokens", maxTokens);
+
+                // 关闭推理模型的思考模式
+                ObjectNode thinkingNode = objectMapper.createObjectNode();
+                thinkingNode.put("type", "disabled");
+                requestBody.set("thinking", thinkingNode);
+
+                ArrayNode messages = requestBody.putArray("messages");
+                ObjectNode sysMsg = messages.addObject();
+                sysMsg.put("role", "system");
+                sysMsg.put("content", systemPrompt);
+                ObjectNode userMsg = messages.addObject();
+                userMsg.put("role", "user");
+                userMsg.put("content", userPrompt);
+
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                headers.set("Authorization", "Bearer " + config.getApiKey());
+
+                HttpEntity<String> entity = new HttpEntity<>(
+                        objectMapper.writeValueAsString(requestBody), headers);
+
+                log.info("[TextModel] chat: model={}, max_tokens={}, attempt={}/{}",
+                        config.getModel(), maxTokens, attempt + 1, maxRetries + 1);
+
+                RestTemplate rt = proxyConfig.getCurrentRestTemplate();
+                ResponseEntity<String> response = rt.exchange(url, HttpMethod.POST, entity, String.class);
+
+                return extractFullTextContent(response.getBody());
+
+            } catch (HttpClientErrorException e) {
+                if (e.getStatusCode().value() == 429 && attempt < maxRetries) {
+                    long delay = computeRetryDelay(e.getResponseHeaders(), baseDelay, attempt);
+                    log.warn("[TextModel] chat: 限流(429)，第{}次重试，等待{}ms", attempt + 1, delay);
+                    sleepQuietly(delay);
+                    continue;
+                }
+                throw new RuntimeException("chat 调用失败: " + e.getMessage(), e);
+            } catch (HttpServerErrorException e) {
+                if (attempt < maxRetries) {
+                    sleepQuietly(baseDelay * (1L << attempt));
+                    continue;
+                }
+                throw new RuntimeException("chat 调用失败: " + e.getMessage(), e);
+            } catch (ResourceAccessException e) {
+                if (attempt < maxRetries) {
+                    sleepQuietly(baseDelay * (1L << attempt));
+                    continue;
+                }
+                throw new RuntimeException("chat 调用失败(IO): " + e.getMessage(), e);
+            } catch (Exception e) {
+                throw new RuntimeException("chat 调用失败: " + e.getMessage(), e);
+            }
+        }
+        throw new RuntimeException("chat 调用失败: 超过最大重试次数");
+    }
+
+    /**
+     * 从 chat/completions 响应提取完整文本内容（不截断）。
+     * 供 {@link #chat} 使用，区别于 {@link #extractTextContent} 的 100 字截断。
+     */
+    private String extractFullTextContent(String response) {
+        try {
+            JsonNode root = objectMapper.readTree(response);
+            JsonNode choices = root.get("choices");
+            if (choices == null || !choices.isArray() || choices.isEmpty()) {
+                throw new RuntimeException("chat: 无法从响应提取内容");
+            }
+            JsonNode message = choices.get(0).get("message");
+            if (message == null) {
+                throw new RuntimeException("chat: 响应中无 message 字段");
+            }
+            String content = message.has("content") ? message.get("content").asText().trim() : "";
+            // 兜底: 推理模型思考链消耗预算时取 reasoning_content
+            if (content.isEmpty() && message.has("reasoning_content")) {
+                String reasoning = message.get("reasoning_content").asText("").trim();
+                if (!reasoning.isEmpty()) {
+                    int lastNl = reasoning.lastIndexOf('\n');
+                    content = (lastNl >= 0 && lastNl < reasoning.length() - 1)
+                            ? reasoning.substring(lastNl + 1).trim()
+                            : reasoning;
+                }
+            }
+            return content;
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("chat: 解析响应失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * 检查服务是否可用
      */
     public boolean isAvailable() {
