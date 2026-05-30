@@ -268,14 +268,12 @@ const loadChain = async () => {
     const [chainResult, graphResult] = await Promise.all([
       knowledgeGraphApi.getCallChainByKey(
         props.entry.entryKey,
-        props.projectPath,
         props.projectPaths
       ),
       knowledgeGraphApi.getCallChainGraph(
         props.entry.entryKey,
-        props.projectPath,
-        true, // includeCycles
         props.projectPaths,
+        true, // includeCycles
         50 // maxDepth
       )
     ])

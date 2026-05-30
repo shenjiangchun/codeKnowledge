@@ -68,7 +68,7 @@ const loadUris = async () => {
     if (appStore.projectDir && !props.project.includes(':') && !props.project.startsWith('/')) {
       projectPath = `${appStore.projectDir}\\${props.project}`
     }
-    const res = await knowledgeGraphApi.getEntryPoints(projectPath, 'HTTP', undefined, 1, 10000)
+    const res = await knowledgeGraphApi.getEntryPoints([projectPath], 'HTTP', 1, 10000)
     // 从 entryKey 中提取 URI
     uris.value = (res?.items || []).map((ep: any) => ep.entryKey)
   } catch (error) {

@@ -537,7 +537,7 @@ const loadGraphStatus = async () => {
 
   try {
     // 使用多项目合并查询，传入所有 projectPaths
-    const result = await knowledgeGraphApi.getStatus(projectPaths.value[0], projectPaths.value)
+    const result = await knowledgeGraphApi.getStatus(projectPaths.value)
     graphStatus.value = result as unknown as KnowledgeGraphStatus
   } catch (error) {
     console.error('[KnowledgeGraph] Failed to load graph status:', error)
@@ -583,7 +583,7 @@ const handleProjectChange = () => {
 const loadGitStatus = async () => {
   if (!projectPath.value) return
   try {
-    const status = await knowledgeGraphApi.getGitStatus(projectPath.value)
+    const status = await knowledgeGraphApi.getGitStatus([projectPath.value])
     gitStatus.value = status as unknown as GitStatus
   } catch (error) {
     console.error('[KnowledgeGraph] Failed to load git status:', error)
@@ -597,7 +597,7 @@ const handleFullGenerate = async () => {
 
   // 检查 Git 状态
   try {
-    const status = await knowledgeGraphApi.getGitStatus(projectPath.value)
+    const status = await knowledgeGraphApi.getGitStatus([projectPath.value])
     const gitStatusData = status as unknown as GitStatus
 
     if (gitStatusData.hasUncommittedChanges) {
@@ -639,7 +639,7 @@ const handleIncrementalGenerate = async () => {
 
   // 检查 Git 状态
   try {
-    const status = await knowledgeGraphApi.getGitStatus(projectPath.value)
+    const status = await knowledgeGraphApi.getGitStatus([projectPath.value])
     const gitStatusData = status as unknown as GitStatus
 
     if (gitStatusData.hasUncommittedChanges) {

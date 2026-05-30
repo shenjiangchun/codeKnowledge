@@ -873,7 +873,7 @@ const doRecursiveQuery = async (type: 'upstream' | 'downstream', method: string)
     // 使用知识图谱 API（已通过 request 工具自动解包 ApiResponse）
     if (type === 'upstream') {
       // 单次调用：root-entries 返回根入口 + 直接调用方
-      const resp = await knowledgeGraphApi.getRootEntries(className, methodName, primaryPath, paths) as unknown as { rootEntries: RootEntryInfo[]; directCallers: CallerInfo[] }
+      const resp = await knowledgeGraphApi.getRootEntries(className, methodName, paths) as unknown as { rootEntries: RootEntryInfo[]; directCallers: CallerInfo[] }
       const roots = resp?.rootEntries ?? []
       const callers = resp?.directCallers ?? []
 
@@ -899,7 +899,7 @@ const doRecursiveQuery = async (type: 'upstream' | 'downstream', method: string)
       }
     } else {
       // 向下：调用 callees-tree 拿完整树（带 depth）
-      const graph = await knowledgeGraphApi.getCalleesTree(className, methodName, primaryPath, 10, paths) as unknown as CallChainGraphData
+      const graph = await knowledgeGraphApi.getCalleesTree(className, methodName, paths, 10) as unknown as CallChainGraphData
       if (!graph || !Array.isArray(graph.nodes)) {
         recursiveData.value = []
         ElMessage.info('未找到相关数据')

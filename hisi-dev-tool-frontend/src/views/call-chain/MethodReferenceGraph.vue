@@ -269,7 +269,7 @@ const loadDependencyGraph = async () => {
 
       for (const method of entryMethods.value) {
         const { className, methodName } = splitFqn(method)
-        const resp = await knowledgeGraphApi.getRootEntries(className, methodName, projectPath, projectPaths) as unknown as { rootEntries: any[]; directCallers: any[] }
+        const resp = await knowledgeGraphApi.getRootEntries(className, methodName, projectPaths) as unknown as { rootEntries: any[]; directCallers: any[] }
         const targetId = `target_${nodeIdCounter++}`
 
         allNodes.push({
@@ -328,7 +328,7 @@ const loadDependencyGraph = async () => {
       for (const method of entryMethods.value) {
         const { className, methodName } = splitFqn(method)
         try {
-          const graph = await knowledgeGraphApi.getCalleesTree(className, methodName, projectPath, maxDepth.value, projectPaths) as unknown as CallChainGraphData
+          const graph = await knowledgeGraphApi.getCalleesTree(className, methodName, projectPaths, maxDepth.value) as unknown as CallChainGraphData
           if (graph && Array.isArray(graph.nodes) && graph.nodes.length > 0) {
             graphResults.push({ entryFqn: method, data: graph })
             rootChildren.push(buildSubtreeFromCalleesTree(graph, method))

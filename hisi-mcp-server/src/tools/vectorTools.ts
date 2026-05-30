@@ -105,7 +105,7 @@ export class VectorTools {
     if (!total) {
       try {
         const availableProjects = await this.client.get<string[]>(
-          '/api/knowledge-graph/projects',
+          '/api/v2/knowledge-graph/projects',
         );
         return {
           ...result,

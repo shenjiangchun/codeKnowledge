@@ -89,7 +89,7 @@ function handleRemoteSearch(query: string) {
   searchTimer = setTimeout(async () => {
     searchLoading.value = true
     try {
-      const data = await knowledgeGraphApi.searchMethods(query, props.projectPath, 50, props.projectPaths)
+      const data = await knowledgeGraphApi.searchMethods(query, props.projectPaths, 50)
       searchResults.value = (data ?? []) as unknown as MethodSummary[]
     } catch {
       searchResults.value = []
@@ -113,7 +113,7 @@ async function loadEntryPoints() {
   try {
     const type = entryTypeFilter.value === 'ALL' ? undefined : entryTypeFilter.value
     const result = await knowledgeGraphApi.getEntryPoints(
-      props.projectPath, type, props.projectPaths,
+      props.projectPaths, type,
       entryPagination.value.page, entryPagination.value.pageSize
     )
     entryPoints.value = (result?.items ?? []) as EntryPoint[]
@@ -135,7 +135,7 @@ function handleEntryTypeChange() {
 async function loadEntryTypes() {
   entryTypesLoading.value = true
   try {
-    availableEntryTypes.value = (await knowledgeGraphApi.getEntryTypes(props.projectPath, props.projectPaths)) ?? []
+    availableEntryTypes.value = (await knowledgeGraphApi.getEntryTypes(props.projectPaths)) ?? []
   } catch {
     availableEntryTypes.value = []
   } finally {
@@ -155,7 +155,7 @@ async function loadClassList(keyword?: string) {
   classLoading.value = true
   try {
     const result = await knowledgeGraphApi.getClasses(
-      props.projectPath, props.projectPaths, 1, 100,
+      props.projectPaths, 1, 100,
       keyword || undefined
     )
     classList.value = result?.items ?? []
@@ -173,7 +173,7 @@ async function handleClassSelect(className: string) {
   }
   classMethodsLoading.value = true
   try {
-    classMethods.value = await knowledgeGraphApi.getMethodsByClass(className, props.projectPath, props.projectPaths) as MethodNode[]
+    classMethods.value = await knowledgeGraphApi.getMethodsByClass(className, props.projectPaths) as MethodNode[]
   } catch {
     ElMessage.error('加载类方法失败')
     classMethods.value = []
@@ -208,7 +208,7 @@ async function handleSelectMethod(nodeId: string) {
   downstreamData.value = null
   detailLoading.value = true
   try {
-    methodDetail.value = await knowledgeGraphApi.getMethodDetail(nodeId, props.projectPath, props.projectPaths) as MethodNode
+    methodDetail.value = await knowledgeGraphApi.getMethodDetail(nodeId, props.projectPaths) as MethodNode
   } catch {
     ElMessage.error('加载方法详情失败')
     methodDetail.value = null
@@ -225,7 +225,6 @@ async function loadUpstream() {
     upstreamData.value = await knowledgeGraphApi.getRootEntries(
       methodDetail.value.className,
       methodDetail.value.methodName,
-      props.projectPath,
       props.projectPaths
     )
   } catch {
@@ -243,9 +242,8 @@ async function loadDownstream() {
     downstreamData.value = await knowledgeGraphApi.getCalleesTree(
       methodDetail.value.className,
       methodDetail.value.methodName,
-      props.projectPath,
-      5,
-      props.projectPaths
+      props.projectPaths,
+      5
     )
   } catch {
     ElMessage.error('查询下游调用链失败')
@@ -262,7 +260,7 @@ function navigateToNode(className: string, methodName: string) {
   downstreamData.value = null
 
   searchLoading.value = true
-  knowledgeGraphApi.searchMethods(methodName, props.projectPath, 50, props.projectPaths)
+  knowledgeGraphApi.searchMethods(methodName, props.projectPaths, 50)
     .then((data) => {
       searchResults.value = (data ?? []) as unknown as MethodSummary[]
       const match = searchResults.value.find(
