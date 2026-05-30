@@ -246,7 +246,9 @@ const loadCallChain = async () => {
     const res = await knowledgeGraphApi.getCallChainGraph(
       selectedUri.value,
       projectPath,
-      true
+      true, // includeCycles
+      undefined, // projectPaths
+      50 // maxDepth
     )
 
     if (res && res.nodes && res.nodes.length > 0) {

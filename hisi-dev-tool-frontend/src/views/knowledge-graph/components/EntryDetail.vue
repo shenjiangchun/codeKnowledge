@@ -275,7 +275,8 @@ const loadChain = async () => {
         props.entry.entryKey,
         props.projectPath,
         true, // includeCycles
-        props.projectPaths
+        props.projectPaths,
+        50 // maxDepth
       )
     ])
 
