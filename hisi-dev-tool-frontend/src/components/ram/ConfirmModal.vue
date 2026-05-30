@@ -65,7 +65,7 @@ const FIELD_LABELS: Record<string, string> = {
   riskLevel: '风险等级',
   affected_files: '影响文件',
   impacted_files: '影响文件',
-  involved_files: '涉及文件',
+  involved_files: '受影响的入口',
   modified_files: '修改文件',
   implementation_plan: '实现方案',
   steps: '实施步骤',
@@ -159,6 +159,11 @@ const isStructured = computed(() => structuredSections.value.length > 0)
 const isImpactOutput = computed(() => {
   if (!props.schema?.output) return false
   const out = props.schema.output
+  // New structure: methods_to_modify + affected_entries
+  if (Array.isArray(out['methods_to_modify']) || typeof out['affected_entries'] === 'object') {
+    return true
+  }
+  // Legacy structure: modified + impacted + risk
   return (
     typeof out['modified'] === 'object' &&
     out['modified'] !== null &&

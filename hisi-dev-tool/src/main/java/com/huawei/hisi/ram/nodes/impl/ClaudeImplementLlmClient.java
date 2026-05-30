@@ -21,56 +21,63 @@ import java.util.Map;
 public class ClaudeImplementLlmClient implements ImplementLlmClient {
 
     private static final String SYSTEM_PROMPT = """
-            You are a senior tech lead drafting a 3-artifact requirement
-            implementation plan (business / UI / tech) from an impact analysis
-            and acceptance criteria.
+            你是一名资深技术架构师，负责根据影响分析结果和验收标准，编写"需求实现方案"。
 
-            You MUST respond with a single JSON object — no prose, no markdown
-            fences — that matches this schema exactly:
+            你必须返回一个 JSON 对象（不要 prose、不要 markdown fences），结构如下：
 
             {
               "biz_plan": {
-                "steps": ["<ordered step>", ...],
-                "data_flow": "<one-paragraph description of the data flow>"
+                "steps": ["<有序实现步骤>", ...],
+                "data_flow": "<一段话描述数据流向>",
+                "acceptance_mapping": {
+                  "AC1": ["Step1", "Step2"],
+                  "AC2": ["Step3"]
+                }
               },
-              "ui_plan": {
-                "screens": ["<screen or component name>", ...],
-                "interactions": ["<user interaction>", ...]
-              },
-              "tech_plan": {
-                "files": ["<repo-relative file path>", ...],
-                "new_apis": ["<METHOD /path or service.method>", ...],
-                "schema_changes": ["<table.column or migration name>", ...]
-              }
+              "api_changes": [
+                {
+                  "endpoint": "POST /api/req/deliver",
+                  "current_behavior": "当前行为描述",
+                  "new_behavior": "修改后行为描述",
+                  "method_ref": "ReqController#deliver"
+                }
+              ],
+              "state_machine_changes": [
+                {
+                  "enum_type": "ReqStatus",
+                  "old_values": ["初始","设计","已发行"],
+                  "new_values": ["初始","设计","开发","测试"],
+                  "migration_note": "存量'已发行'→'设计'，历史快照不处理"
+                }
+              ],
+              "data_model_changes": [
+                {
+                  "entity": "Requirement",
+                  "field": "status",
+                  "change_type": "ENUM_UPDATE",
+                  "detail": "枚举值替换"
+                }
+              ],
+              "config_changes": [
+                {
+                  "key": "req.status.flow.initial-transition",
+                  "old_value": "初始→已发行",
+                  "new_value": "初始→设计"
+                }
+              ]
             }
 
-            Rules:
-            - biz_plan.steps: 3-7 concrete, ordered steps that satisfy the ACs.
-            - biz_plan.data_flow: one sentence/paragraph naming the actors and
-              direction of data movement.
-            - ui_plan: required if any user-facing surface is touched, else
-              return empty arrays for screens/interactions.
-            - tech_plan.files: real file paths inferred from the involved
-              components in the impact output; never invent unrelated ones.
-            - tech_plan.new_apis: HTTP routes or service methods to add/modify.
-            - tech_plan.schema_changes: DB schema/migration items, may be empty.
-            - Output JSON only.
-
-            Language requirement (MANDATORY):
-            - All natural-language string values MUST be written in 简体中文
-              (Simplified Chinese). This includes:
-                * every entry of biz_plan.steps
-                * biz_plan.data_flow
-                * every entry of ui_plan.screens and ui_plan.interactions
-                  (component/screen names may stay in English if they are real
-                  code identifiers, but descriptive text must be Chinese)
-                * descriptive parts of tech_plan.new_apis (the HTTP method +
-                  path / service.method identifier stays in English, but any
-                  附带说明使用中文)
-                * descriptive parts of tech_plan.schema_changes
-            - Keep JSON keys, file paths, class/method identifiers, HTTP routes,
-              and SQL/column names in their original form — do NOT translate code
-              identifiers.
+            规则：
+            - biz_plan.steps: 3-7个具体的、有序的实现步骤，覆盖所有AC
+            - biz_plan.data_flow: 一段话描述数据流向和关键角色
+            - biz_plan.acceptance_mapping: 每个AC映射到覆盖它的步骤编号（步骤引用steps中的条目子串）
+            - api_changes: 每个受影响的API端点，必须包含current_behavior和new_behavior的对比
+            - state_machine_changes: 枚举/状态值变更，包含旧值→新值对比和迁移说明；无状态变更则为空数组
+            - data_model_changes: 实体/字段变更（类型、约束、枚举更新等）；无则为空数组
+            - config_changes: 配置项变更（properties/yml/常量）；无则为空数组
+            - 不要输出 tech_plan 或 ui_plan，这两个结构已废弃
+            - 所有自然语言值使用简体中文
+            - JSON key、文件路径、类名/方法名、HTTP路由、SQL/列名保持原样
             """;
 
     private final RamClaudeJsonClient claude;
@@ -135,26 +142,26 @@ public class ClaudeImplementLlmClient implements ImplementLlmClient {
         }
         Map<String, Object> out = new LinkedHashMap<>();
 
+        // biz_plan (required)
         Map<String, Object> biz = asMap(raw.get("biz_plan"));
         Map<String, Object> normBiz = new LinkedHashMap<>();
         normBiz.put("steps", asList(biz.get("steps")));
         normBiz.put("data_flow", biz.get("data_flow") instanceof String s ? s : "");
+        normBiz.put("acceptance_mapping", biz.get("acceptance_mapping") instanceof Map m ? m : new LinkedHashMap<>());
         out.put("biz_plan", normBiz);
 
-        Map<String, Object> tech = asMap(raw.get("tech_plan"));
-        Map<String, Object> normTech = new LinkedHashMap<>();
-        normTech.put("files", asList(tech.get("files")));
-        normTech.put("new_apis", asList(tech.get("new_apis")));
-        normTech.put("schema_changes", asList(tech.get("schema_changes")));
-        out.put("tech_plan", normTech);
+        // api_changes (required)
+        out.put("api_changes", asList(raw.get("api_changes")));
 
-        if (raw.containsKey("ui_plan")) {
-            Map<String, Object> ui = asMap(raw.get("ui_plan"));
-            Map<String, Object> normUi = new LinkedHashMap<>();
-            normUi.put("screens", asList(ui.get("screens")));
-            normUi.put("interactions", asList(ui.get("interactions")));
-            out.put("ui_plan", normUi);
-        }
+        // state_machine_changes (optional, default empty)
+        out.put("state_machine_changes", asList(raw.get("state_machine_changes")));
+
+        // data_model_changes (optional, default empty)
+        out.put("data_model_changes", asList(raw.get("data_model_changes")));
+
+        // config_changes (optional, default empty)
+        out.put("config_changes", asList(raw.get("config_changes")));
+
         return out;
     }
 

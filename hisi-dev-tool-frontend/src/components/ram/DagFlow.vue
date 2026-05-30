@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * RAM 4-stage DAG visualization.
+ * RAM 5-stage DAG visualization.
  *
- * Layout: 4 horizontal cards (Clarify → Impact → Implement → Verify) linked by
+ * Layout: 5 horizontal cards (Clarify → Impact → Implement → Verify → TechPlan) linked by
  * directional edges. Each card surfaces:
  *   - phase label (中文)
  *   - status pill (待执行 / 执行中 / 待澄清 / 完成 / 失败 / 熔断)
@@ -14,7 +14,7 @@
  * so the parent can swap the right-hand detail drawer.
  *
  * We deliberately roll the layout by hand (no vue-flow): vue-flow ships a CSS
- * reset that fights Element Plus, and for a 4-node fixed-topology DAG plain
+ * reset that fights Element Plus, and for a 5-node fixed-topology DAG plain
  * SVG keeps the component testable under happy-dom and crisp at any zoom.
  */
 import { computed } from 'vue'
@@ -115,7 +115,7 @@ defineExpose({ onCardClick })
       :height="dimensions.height"
       :viewBox="`0 0 ${dimensions.width} ${dimensions.height}`"
       role="img"
-      aria-label="需求分析 4 阶段流程"
+      aria-label="需求分析 5 阶段流程"
     >
       <defs>
         <marker
@@ -172,12 +172,14 @@ defineExpose({ onCardClick })
       >
         <rect
           class="dag-card-bg"
+          :class="{ 'dag-card-bg--manual': card.node.key === 'tech_plan' && card.node.status === 'pending' }"
           :width="CARD_WIDTH"
           :height="CARD_HEIGHT"
           rx="12"
           ry="12"
           :stroke="activeKey === card.node.key ? '#409EFF' : statusColor(card.node.status)"
           :stroke-width="activeKey === card.node.key ? 3 : 2"
+          :stroke-dasharray="card.node.key === 'tech_plan' && card.node.status === 'pending' ? '8 4' : 'none'"
           fill="#FFFFFF"
           @click="onCardClick(card.node.key)"
         />
@@ -255,6 +257,28 @@ defineExpose({ onCardClick })
             dominant-baseline="middle"
           >
             {{ card.node.riskLevel }}
+          </text>
+        </g>
+        <!-- Reasoning indicator -->
+        <g
+          v-if="card.node.reasoning"
+          class="dag-card-reasoning"
+          :transform="`translate(${CARD_WIDTH - 20}, ${CARD_HEIGHT - 24})`"
+        >
+          <title>{{ card.node.reasoning }}</title>
+          <circle
+            :r="9"
+            fill="#409EFF"
+            opacity="0.18"
+          />
+          <text
+            :y="4"
+            font-size="11"
+            fill="#409EFF"
+            text-anchor="middle"
+            dominant-baseline="middle"
+          >
+            💬
           </text>
         </g>
       </g>
