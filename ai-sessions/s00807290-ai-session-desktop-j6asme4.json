@@ -3,13 +3,13 @@
   "hostname": "desktop-j6asme4",
   "model": "claude-code",
   "firstSeen": "2026-05-30T01:37:45.023Z",
-  "lastUpdated": "2026-05-30T03:17:07.660Z",
+  "lastUpdated": "2026-05-30T03:17:39.356Z",
   "stats": {
     "totalOperations": 41,
     "totalFilesEdited": 30,
-    "totalAiLines": 1222,
+    "totalAiLines": 1267,
     "totalAiLinesDeleted": 390,
-    "totalCommits": 4
+    "totalCommits": 5
   },
   "pendingFiles": [
     {
@@ -75,24 +75,6 @@
       "operations": 1,
       "timestamp": "2026-05-30T01:47:25.550Z",
       "lastModified": "2026-05-30T01:47:25.550Z"
-    },
-    {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/repository/Neo4jMethodNodeRepository.java",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-05-30T01:54:36.774Z",
-      "lastModified": "2026-05-30T01:55:03.600Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/repository/Neo4jMethodNodeRepository.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
-      "operations": 2,
-      "timestamp": "2026-05-30T01:54:37.558Z",
-      "lastModified": "2026-05-30T01:55:04.945Z",
-      "lastTool": "Edit"
     },
     {
       "path": "hisi-dev-tool-frontend/src/components/ram/MermaidDiagram.vue",

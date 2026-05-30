@@ -7,6 +7,7 @@ import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.AgentSession;
 import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.model.SessionStatus;
+import com.huawei.hisi.ram.nodes.TechPlanNode;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,6 +54,8 @@ class RamControllerTest {
     private AgentEventRepository eventRepository;
     @Mock
     private AgentSessionRepository sessionRepository;
+    @Mock
+    private TechPlanNode techPlanNode;
 
     private ObjectMapper objectMapper;
     private RamController controller;
@@ -66,7 +69,7 @@ class RamControllerTest {
         Executor sameThread = Runnable::run;
         scheduler = Executors.newSingleThreadScheduledExecutor();
         controller = new RamController(ramMcpServer, eventRepository, sessionRepository,
-                objectMapper, sameThread, scheduler);
+                objectMapper, techPlanNode, sameThread, scheduler);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 

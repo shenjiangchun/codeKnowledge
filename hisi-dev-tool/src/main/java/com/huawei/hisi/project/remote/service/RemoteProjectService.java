@@ -146,6 +146,10 @@ public class RemoteProjectService {
         return Paths.get(System.getProperty("user.dir"), "remote-repos", localPath);
     }
 
+    public String getFullLocalPath(String localPath) {
+        return resolveCloneDir(localPath).toString();
+    }
+
     private String sanitizeName(String name) {
         return name.replaceAll("[^a-zA-Z0-9._-]", "-").toLowerCase();
     }

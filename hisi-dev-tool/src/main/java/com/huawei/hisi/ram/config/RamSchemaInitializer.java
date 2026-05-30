@@ -77,13 +77,6 @@ public class RamSchemaInitializer {
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_agent_event_session_seq "
                 + "ON agent_event(session_id, seq)");
 
-        try {
-            jdbcTemplate.execute("ALTER TABLE agent_session ADD COLUMN session_type TEXT DEFAULT 'RAM'");
-            log.info("[RAM] Added session_type column to agent_session");
-        } catch (Exception e) {
-            // Column already exists — safe to ignore on subsequent startups
-        }
-
         log.info("[RAM-SQLite] Schema initialization complete - 2 tables ensured");
     }
 }

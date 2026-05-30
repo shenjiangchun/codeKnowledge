@@ -63,9 +63,12 @@ public class RemoteProjectController {
     }
 
     private static ProjectResponse toResponse(RemoteProject p) {
+        String fullPath = java.nio.file.Paths.get(System.getProperty("user.dir"), "remote-repos", p.getLocalPath()).toString();
+        // Convert seconds to milliseconds for frontend
+        Long lastSyncAtMs = p.getLastSyncAt() != null ? p.getLastSyncAt() * 1000 : null;
         return new ProjectResponse(
             p.getId(), p.getName(), p.getGitUrl(), p.getUsername(),
-            p.getBranch(), p.getLocalPath(), p.getCloneStatus(), p.getLastSyncAt()
+            p.getBranch(), fullPath, p.getCloneStatus(), lastSyncAtMs
         );
     }
 }
