@@ -290,7 +290,9 @@ import { projectApi } from '@/api/project'
 import { knowledgeGraphApi, type KnowledgeGraphStatus, type GitStatus } from '@/api/knowledgeGraph'
 import { getVectorGenerationStatus, startVectorGeneration, getMissingEmbeddings, refreshMissing, type VectorGenerationTask, type MissingEmbeddingInfo } from '@/api/vectorGeneration'
 import { glossaryApi } from '@/api/glossary'
+import { listRemoteProjects } from '@/api/remote-project'
 import type { GlossaryTerm } from '@/types/glossary'
+import type { RemoteProject } from '@/types/remote-project'
 import { useAppStore } from '@/stores/app'
 import CodeUnderstandingTab from './components/CodeUnderstandingTab.vue'
 import SemanticSearchPanel from './components/SemanticSearchPanel.vue'
@@ -481,15 +483,39 @@ const stopVectorPolling = () => {
 // 加载项目列表
 const loadProjects = async () => {
   try {
-    // 使用与项目管理页面相同的 API 获取项目列表（包含完整路径）
-    const res = await projectApi.scanGitRepos()
-    const scannedRepos = Array.isArray(res) ? res : []
+    // 并行加载本地项目和远端项目
+    const [localRes, remoteRes] = await Promise.all([
+      projectApi.scanGitRepos(),
+      listRemoteProjects().catch(() => []) // 远端项目加载失败不影响
+    ])
+
+    const scannedRepos = Array.isArray(localRes) ? localRes : []
+    const remoteProjects = Array.isArray(remoteRes) ? remoteRes : []
 
     // 直接使用后端返回的项目信息（包含正确的 path）
-    projects.value = scannedRepos.map((repo: any) => ({
+    const localProjects: ProjectInfo[] = scannedRepos.map((repo: any) => ({
       name: repo.name,
       path: repo.path
     }))
+
+    // 将已克隆的远端项目也加入项目列表
+    const remoteProjectsCloned: ProjectInfo[] = remoteProjects
+      .filter((rp: RemoteProject) => rp.cloneStatus === 'CLONED' && rp.localPath)
+      .map((rp: RemoteProject) => ({
+        name: rp.name,
+        path: rp.localPath
+      }))
+
+    // 合并去重（以 name 为 key）
+    const nameMap = new Map<string, ProjectInfo>()
+    localProjects.forEach(p => nameMap.set(p.name, p))
+    remoteProjectsCloned.forEach(p => {
+      if (!nameMap.has(p.name)) {
+        nameMap.set(p.name, p)
+      }
+    })
+
+    projects.value = Array.from(nameMap.values())
 
     // 如果当前没有选中，自动选择 store 中已选项目
     if (selectedProjectNames.value.length === 0 && appStore.selectedProjectNames.length > 0) {
@@ -817,8 +843,10 @@ const glossarySubmit = async () => {
   }
 }
 
-onMounted(() => {
-  loadProjects()
+onMounted(async () => {
+  // 先加载项目列表
+  await loadProjects()
+  // 项目列表加载完成后，再加载图谱数据
   if (projectPath.value) {
     loadGraphStatus()
     loadGitStatus()
@@ -834,11 +862,24 @@ onUnmounted(() => {
   stopVectorPolling()
 })
 
+// 当项目路径变化时重新加载数据
+watch(projectPaths, (newPaths) => {
+  if (newPaths.length > 0) {
+    loadGraphStatus()
+    loadGitStatus()
+    loadVectorStatus()
+    loadMissingInfo()
+  }
+}, { deep: true })
+
 // 当 store 选中项目变化时，同步到本地
 watch(() => appStore.selectedProjectNames, (newNames) => {
   if (newNames.length > 0) {
     selectedProjectNames.value = [...newNames]
-    handleProjectChange()
+    // 等待 nextTick 确保 projectPaths 计算完成
+    nextTick(() => {
+      handleProjectChange()
+    })
   }
 })
 </script>

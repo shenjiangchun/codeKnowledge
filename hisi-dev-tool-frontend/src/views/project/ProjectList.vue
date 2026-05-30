@@ -217,9 +217,22 @@
                 <el-icon><Refresh /></el-icon>
                 刷新列表
               </el-button>
+              <el-button
+                type="primary"
+                @click="handleRemoteConfirmMultiSelect"
+                :disabled="selectedRemoteProjects.length === 0"
+              >
+                <el-icon class="check-icon">
+                  <svg data-v-20d88a06 xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+                    <path fill="currentColor" d="M77.248 415.04a64 64 0 0 1 90.496 0l226.304 226.304L846.528 188.8a64 64 0 1 1 90.56 90.496l-543.04 543.04-316.8-316.8a64 64 0 0 1 0-90.496"></path>
+                  </svg>
+                </el-icon>
+                查看图谱
+              </el-button>
             </div>
           </div>
-          <el-table :data="remoteProjects" v-loading="remoteLoading" stripe>
+          <el-table :data="remoteProjects" v-loading="remoteLoading" stripe @selection-change="handleRemoteSelectionChange">
+            <el-table-column type="selection" width="55" />
             <el-table-column prop="name" label="项目名称" min-width="120" />
             <el-table-column prop="gitUrl" label="Git地址" min-width="200" show-overflow-tooltip />
             <el-table-column prop="branch" label="分支" width="100" />
@@ -548,7 +561,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, Select, FolderOpened, Document, Refresh, Loading, DataAnalysis, Collection, Setting, EditPen } from '@element-plus/icons-vue'
+import { Plus, Select, FolderOpened, Document, Refresh, Loading, DataAnalysis, Collection, Setting, EditPen, View } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { projectApi } from '@/api/project'
 import { gitApi, type GitCommit, type UpdateAllResponse } from '@/api/git'
@@ -1544,10 +1557,15 @@ const handleGenerateVector = async (row: GitRepositoryInfo) => {
 // Multi-select & Cross-service Build
 // ============================================================
 const selectedProjects = ref<any[]>([])
+const selectedRemoteProjects = ref<any[]>([])
 const crossServiceBuilding = ref(false)
 
 function handleSelectionChange(selection: any[]) {
   selectedProjects.value = selection
+}
+
+function handleRemoteSelectionChange(selection: any[]) {
+  selectedRemoteProjects.value = selection
 }
 
 /** 确认多选：将表格勾选的项目设置为全局选中 */
@@ -1560,6 +1578,25 @@ function handleConfirmMultiSelect() {
   appStore.selectProjects(projects)
   const names = projects.map(p => p.name)
   ElMessage.success(`已选择 ${names.length} 个项目: ${names.join(', ')}`)
+}
+
+/** 远端项目查看图谱：跳转到知识图谱页面 */
+function handleRemoteConfirmMultiSelect() {
+  if (selectedRemoteProjects.value.length === 0) {
+    ElMessage.warning('请先在表格中勾选项目')
+    return
+  }
+  // 筛选已克隆的项目
+  const clonedProjects = selectedRemoteProjects.value.filter((p: any) => p.cloneStatus === 'CLONED')
+  if (clonedProjects.length === 0) {
+    ElMessage.warning('请选择已克隆的项目')
+    return
+  }
+  // 转换为项目信息
+  const projects = clonedProjects.map((p: any) => ({ name: p.name, path: p.localPath }))
+  appStore.selectProjects(projects)
+  // 跳转到知识图谱页面
+  router.push('/knowledge-graph')
 }
 
 const selectedProjectsWithKg = computed(() =>
@@ -1836,6 +1873,14 @@ const handleScheduleSubmit = async () => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.check-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
 }
 
 .text-muted {
