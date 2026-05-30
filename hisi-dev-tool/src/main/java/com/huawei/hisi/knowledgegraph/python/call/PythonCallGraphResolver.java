@@ -407,8 +407,9 @@ public class PythonCallGraphResolver {
             if (source == null) {
                 continue;
             }
-            PyFunction func = findTopLevel(source, funcName);
-            if (func != null) {
+            List<PyFunction> funcs = findTopLevel(source, funcName);
+            if (!funcs.isEmpty()) {
+                PyFunction func = funcs.get(0);
                 return edge(callerNodeId, topLevelNodeId(source.getModulePath(), func),
                         CALL_TYPE_IMPORT, call.getLineNumber(), false);
             }

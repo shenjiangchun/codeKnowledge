@@ -3,13 +3,13 @@
   "hostname": "desktop-j6asme4",
   "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
   "firstSeen": "2026-05-30T01:37:45.023Z",
-  "lastUpdated": "2026-05-30T07:38:10.674Z",
+  "lastUpdated": "2026-05-30T08:50:24.828Z",
   "stats": {
-    "totalOperations": 121,
-    "totalFilesEdited": 62,
-    "totalAiLines": 1752,
-    "totalAiLinesDeleted": 652,
-    "totalCommits": 9
+    "totalOperations": 123,
+    "totalFilesEdited": 64,
+    "totalAiLines": 1847,
+    "totalAiLinesDeleted": 661,
+    "totalCommits": 10
   },
   "pendingFiles": [
     {
@@ -86,40 +86,20 @@
       "lastModified": "2026-05-30T05:45:57.783Z"
     },
     {
-      "path": "hisi-dev-tool-frontend/src/views/project/ProjectList.vue",
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/call/PythonCallGraphResolver.java",
       "tool": "Edit",
-      "operations": 6,
-      "timestamp": "2026-05-30T06:14:03.717Z",
-      "lastModified": "2026-05-30T06:17:01.864Z",
-      "lastTool": "Edit"
+      "operations": 1,
+      "timestamp": "2026-05-30T08:50:24.741Z",
+      "lastModified": "2026-05-30T08:50:24.741Z"
     },
     {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool-frontend/src/views/project/ProjectList.vue",
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/call/PythonCallGraphResolver.java",
       "tool": "Edit",
       "aiTool": "claude-code",
       "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
-      "operations": 6,
-      "timestamp": "2026-05-30T06:14:04.183Z",
-      "lastModified": "2026-05-30T06:17:01.925Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "hisi-dev-tool-frontend/src/views/knowledge-graph/KnowledgeGraphView.vue",
-      "tool": "Edit",
-      "operations": 5,
-      "timestamp": "2026-05-30T06:26:44.881Z",
-      "lastModified": "2026-05-30T06:30:28.078Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool-frontend/src/views/knowledge-graph/KnowledgeGraphView.vue",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
-      "operations": 5,
-      "timestamp": "2026-05-30T06:26:44.950Z",
-      "lastModified": "2026-05-30T06:30:28.779Z",
-      "lastTool": "Edit"
+      "operations": 1,
+      "timestamp": "2026-05-30T08:50:24.828Z",
+      "lastModified": "2026-05-30T08:50:24.828Z"
     }
   ],
   "repoPath": "D:/hisi-code-analyser/codeKnowledge1"
