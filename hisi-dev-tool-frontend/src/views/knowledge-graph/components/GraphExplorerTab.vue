@@ -144,7 +144,7 @@ async function loadEntryTypes() {
 }
 
 function handleEntryClick(entry: EntryPoint) {
-  handleSelectMethod(entry.nodeId)
+  handleSelectMethod(entry.methodNodeId || entry.nodeId)
 }
 
 // ============================================================
