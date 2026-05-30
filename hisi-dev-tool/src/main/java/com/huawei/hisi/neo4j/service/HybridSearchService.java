@@ -622,6 +622,34 @@ public class HybridSearchService {
     }
 
     /**
+     * 从查询文本中提取有检索价值的关键术语。
+     * 规则：长度2-20的中文/英文/驼峰片段，排除常见停用词。
+     */
+    private List<String> extractSearchKeywords(String query) {
+        if (query == null || query.isBlank()) return Collections.emptyList();
+        // 按空格/标点拆分，保留有检索价值的片段
+        String[] tokens = query.split("[\\s，,。.；;、！!？?（）()\\[\\]【】{}\"'<>《》]+");
+        List<String> keywords = new ArrayList<>();
+        Set<String> stopWords = Set.of(
+                "的", "了", "在", "是", "和", "与", "及", "或", "不", "有", "无",
+                "从", "到", "向", "上", "下", "中", "后", "前", "时", "当",
+                "the", "a", "an", "is", "are", "was", "and", "or", "not", "in", "on", "at", "to", "for"
+        );
+        for (String token : tokens) {
+            String t = token.trim();
+            // 跳过太短/太长/停用词
+            if (t.length() < 2 || t.length() > 30) continue;
+            if (stopWords.contains(t.toLowerCase())) continue;
+            // 保留中文片段(>=2字)、英文/驼峰片段(>=3字符)、混合片段
+            if (t.matches(".*[\\u4e00-\\u9fa5].*") || t.length() >= 3) {
+                keywords.add(t);
+            }
+        }
+        // 最多取前5个关键词，避免过多查询
+        return keywords.stream().limit(5).collect(Collectors.toList());
+    }
+
+    /**
      * SQL_SNIPPET 搜索策略 (带分数)
      * sqlEmbedding 向量检索 -> EXECUTES_SQL 批量反查
      */
@@ -1492,11 +1520,8 @@ public class HybridSearchService {
         return sql.substring(0, maxLength) + "...";
     }
 
-    // ==================== Intent-Aware Post-Filter Support ====================
-
     /**
-     * Check whether a method node has any of the given annotations.
-     * Uses the ANNOTATION search path internally (methodBody/comment CONTAINS).
+     * Find nodes with a specific annotation by checking methodBody and comment.
      *
      * @param nodeIds    method node IDs to check
      * @param annotation the annotation to look for (with or without @)
@@ -1525,12 +1550,12 @@ public class HybridSearchService {
     }
 
     /**
-     * Batch-check annotations for a set of nodeIds against multiple annotation patterns.
-     * Returns nodeId → set of matched annotation strings.
+     * Batch check annotations for a list of node IDs.
+     * Used for annotation bonus in intent-aware search.
      *
-     * @param nodeIds     method node IDs to check
+     * @param nodeIds     list of node IDs to check
      * @param annotations annotations to look for
-     * @return map of nodeId → matched annotations (only entries with at least one match)
+     * @return map of nodeId -> set of matched annotations
      */
     public Map<String, Set<String>> batchCheckAnnotations(List<String> nodeIds, String[] annotations) {
         if (nodeIds == null || nodeIds.isEmpty() || annotations == null || annotations.length == 0) {
@@ -1551,20 +1576,20 @@ public class HybridSearchService {
      * Used for callee weight propagation in intent-aware search.
      *
      * @param nodeIds source node IDs
-     * @return map of source nodeId → list of callee nodeIds
+     * @return map of source nodeId -> list of callee nodeIds
      */
     public Map<String, List<String>> get1HopCallees(List<String> nodeIds) {
         if (nodeIds == null || nodeIds.isEmpty()) {
             return Collections.emptyMap();
         }
         try {
-            List<CalleeWithRelationBySource> callees = methodNodeRepository.findCalleesByNodeIds(nodeIds);
+            List<Neo4jMethodNodeRepository.CalleeWithRelationBySource> callees = methodNodeRepository.findCalleesByNodeIds(nodeIds);
             return callees.stream()
                     .filter(c -> c.calleeId() != null)
                     .collect(Collectors.groupingBy(
-                            CalleeWithRelationBySource::sourceNodeId,
+                            Neo4jMethodNodeRepository.CalleeWithRelationBySource::sourceNodeId,
                             Collectors.mapping(
-                                    CalleeWithRelationBySource::calleeId,
+                                    Neo4jMethodNodeRepository.CalleeWithRelationBySource::calleeId,
                                     Collectors.toList()
                             )
                     ));
@@ -1575,12 +1600,11 @@ public class HybridSearchService {
     }
 
     /**
-     * Extract core noun words from a query for required-word filtering.
-     * Strategy: split by whitespace/punctuation, remove stop words and short tokens,
-     * keep Chinese fragments (≥2 chars) and English/technical fragments (≥3 chars).
+     * Extract core nouns from a query for required word filtering.
+     * Delegates to extractSearchKeywords for implementation.
      *
-     * @param query the sub-query text
-     * @return list of core words (at most 5)
+     * @param query user query
+     * @return list of core nouns/keywords
      */
     public List<String> extractCoreNouns(String query) {
         if (query == null || query.isBlank()) return Collections.emptyList();

@@ -488,102 +488,102 @@ export class KnowledgeGraphTools {
   }
 
   async listProjects(): Promise<unknown> {
-    return this.client.get('/api/knowledge-graph/projects');
+    return this.client.get('/api/v2/knowledge-graph/projects');
   }
 
   async status(params: KgStatusParams): Promise<unknown> {
-    return this.client.get('/api/knowledge-graph/status', this.buildQueryParams(
-      { projectPath: params.projectPath },
+    return this.client.get('/api/v2/knowledge-graph/status', this.buildQueryParams(
+      {},
       params
     ));
   }
 
   async methodDetail(params: KgMethodDetailParams): Promise<unknown> {
-    return this.client.get('/api/knowledge-graph/method/detail', this.buildQueryParams(
-      { nodeId: params.nodeId, projectPath: params.projectPath },
+    return this.client.get('/api/v2/knowledge-graph/method/detail', this.buildQueryParams(
+      { nodeId: params.nodeId },
       params
     ));
   }
 
   async methodByClass(params: KgMethodByClassParams): Promise<unknown> {
-    return this.client.get('/api/knowledge-graph/method/by-class', this.buildQueryParams(
-      { className: params.className, projectPath: params.projectPath },
+    return this.client.get('/api/v2/knowledge-graph/method/by-class', this.buildQueryParams(
+      { className: params.className },
       params
     ));
   }
 
   async entryPoints(params: KgEntryPointsParams): Promise<unknown> {
-    const base: Record<string, string> = { projectPath: params.projectPath };
+    const base: Record<string, string> = {};
     if (params.entryType && params.entryType !== 'ALL') {
       base.entryType = params.entryType;
     }
-    return this.client.get('/api/knowledge-graph/entry-points', this.buildQueryParams(base, params));
+    return this.client.get('/api/v2/knowledge-graph/entry-points', this.buildQueryParams(base, params));
   }
 
   async downstream(params: KgDownstreamParams): Promise<unknown> {
-    const base: Record<string, string> = { nodeId: params.nodeId, projectPath: params.projectPath };
+    const base: Record<string, string> = { nodeId: params.nodeId };
     if (params.maxDepth !== undefined) {
       base.maxDepth = String(params.maxDepth);
     }
-    return this.client.get('/api/knowledge-graph/call-chain/downstream', this.buildQueryParams(base, params));
+    return this.client.get('/api/v2/knowledge-graph/call-chain/downstream', this.buildQueryParams(base, params));
   }
 
   async affecting(params: KgAffectingParams): Promise<unknown> {
-    return this.client.get('/api/knowledge-graph/call-chain/affecting', this.buildQueryParams(
-      { className: params.className, methodName: params.methodName, projectPath: params.projectPath },
+    return this.client.get('/api/v2/knowledge-graph/call-chain/affecting', this.buildQueryParams(
+      { className: params.className, methodName: params.methodName },
       params
     ));
   }
 
   async bridges(params: KgBridgesParams): Promise<unknown> {
-    return this.client.get(`/api/knowledge-graph/call-chain/${params.nodeId}/bridges`, this.buildQueryParams(
-      { projectPath: params.projectPath },
+    return this.client.get(`/api/v2/knowledge-graph/call-chain/${params.nodeId}/bridges`, this.buildQueryParams(
+      {},
       params
     ));
   }
 
   async bridgeStats(params: KgBridgeStatsParams): Promise<unknown> {
-    return this.client.get('/api/knowledge-graph/bridge-stats', this.buildQueryParams(
-      { projectPath: params.projectPath },
+    return this.client.get('/api/v2/knowledge-graph/bridge-stats', this.buildQueryParams(
+      {},
       params
     ));
   }
 
   async implementations(params: KgImplementationsParams): Promise<unknown> {
-    return this.client.get('/api/knowledge-graph/implementations', this.buildQueryParams(
-      { interfaceName: params.interfaceName, projectPath: params.projectPath },
+    return this.client.get('/api/v2/knowledge-graph/implementations', this.buildQueryParams(
+      { interfaceName: params.interfaceName },
       params
     ));
   }
 
   async mybatisSql(params: KgMybatisSqlParams): Promise<unknown> {
-    const base: Record<string, string> = { projectPath: params.projectPath };
+    const base: Record<string, string> = {};
     if (params.mapperInterface) {
       base.mapperInterface = params.mapperInterface;
     }
     if (params.statementType) {
       base.statementType = params.statementType;
     }
-    return this.client.get('/api/knowledge-graph/mybatis/sql', this.buildQueryParams(base, params));
+    return this.client.get('/api/v2/knowledge-graph/mybatis/sql', this.buildQueryParams(base, params));
   }
 
   async feignChain(params: KgFeignChainParams): Promise<unknown> {
     return this.client.get(
-      `/api/knowledge-graph/feign/${encodeURIComponent(params.serviceName)}/call-chain`,
-      this.buildQueryParams({ projectPath: params.projectPath }, params)
+      `/api/v2/knowledge-graph/feign/${encodeURIComponent(params.serviceName)}/call-chain`,
+      this.buildQueryParams({}, params)
     );
   }
 
   async mqChain(params: KgMqChainParams): Promise<unknown> {
     return this.client.get(
-      `/api/knowledge-graph/mq/${encodeURIComponent(params.topic)}/call-chain`,
-      this.buildQueryParams({ projectPath: params.projectPath }, params)
+      `/api/v2/knowledge-graph/mq/${encodeURIComponent(params.topic)}/call-chain`,
+      this.buildQueryParams({}, params)
     );
   }
 
   async rootEntries(params: KgRootEntriesParams): Promise<unknown> {
-    return this.client.get('/api/knowledge-graph/root-entries', this.buildQueryParams(
-      { className: params.className, methodName: params.methodName, projectPath: params.projectPath },
+    return this.client.get('/api/v2/knowledge-graph/root-entries', this.buildQueryParams(
+      { className: params.className, methodName: params.methodName },
       params
     ));
   }
@@ -592,12 +592,11 @@ export class KnowledgeGraphTools {
     const base: Record<string, string> = {
       className: params.className,
       methodName: params.methodName,
-      projectPath: params.projectPath,
     };
     if (params.maxDepth !== undefined) {
       base.maxDepth = String(params.maxDepth);
     }
-    return this.client.get('/api/knowledge-graph/callees-tree', this.buildQueryParams(base, params));
+    return this.client.get('/api/v2/knowledge-graph/callees-tree', this.buildQueryParams(base, params));
   }
 }
 

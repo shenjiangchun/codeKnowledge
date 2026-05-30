@@ -189,7 +189,7 @@ proxy:
   username: ${PROXY_USERNAME:}
   password: ${PROXY_PASSWORD:}
   # 不走代理的地址列表（逗号分隔）
-  non-proxy-hosts: ${PROXY_NON_HOSTS:localhost,127.0.0.1}
+  non-proxy-hosts: ${PROXY_NON_HOSTS:localhost,127.0.0.1,*.huawei.com,*.inhuawei.com}
   # 是否禁用 SSL 证书验证（仅用于内网/测试环境）
   disable-ssl-verification: ${PROXY_DISABLE_SSL_VERIFICATION:true}
 

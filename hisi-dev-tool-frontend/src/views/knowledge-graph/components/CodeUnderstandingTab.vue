@@ -158,7 +158,7 @@ const loadStatus = async () => {
   if (!props.projectPath) return
 
   try {
-    const result = await knowledgeGraphApi.getStatus(props.projectPath, props.projectPaths)
+    const result = await knowledgeGraphApi.getStatus(props.projectPaths)
     status.value = result as unknown as KnowledgeGraphStatus
   } catch (error) {
     console.error('Failed to load status:', error)
@@ -172,8 +172,8 @@ const loadEntryPoints = async () => {
   loading.value = true
   try {
     // 加载全部入口点，不按类型过滤（用于下拉选择）
-    const result = await knowledgeGraphApi.getEntryPoints(props.projectPath, undefined, props.projectPaths)
-    entryPoints.value = result as unknown as EntryPoint[]
+    const result = await knowledgeGraphApi.getEntryPoints(props.projectPaths, undefined, 1, 10000)
+    entryPoints.value = (result?.items ?? []) as unknown as EntryPoint[]
   } catch (error: any) {
     ElMessage.error(`加载入口点失败: ${error.message || error}`)
     entryPoints.value = []

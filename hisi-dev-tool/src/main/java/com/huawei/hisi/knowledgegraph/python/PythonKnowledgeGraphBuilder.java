@@ -34,8 +34,10 @@ import com.huawei.hisi.knowledgegraph.python.scanner.PythonMqCall;
 import com.huawei.hisi.knowledgegraph.python.scanner.PythonMqCallScanner;
 import com.huawei.hisi.knowledgegraph.service.storage.Neo4jStorageService;
 import com.huawei.hisi.knowledgegraph.util.KnowledgeGraphCommonUtils;
+import com.huawei.hisi.neo4j.model.DataModelNode;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
+import com.huawei.hisi.neo4j.repository.Neo4jDataModelNodeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.antlr.v4.runtime.CharStreams;
@@ -72,6 +74,8 @@ public class PythonKnowledgeGraphBuilder {
     private final PythonHttpCallScanner pythonHttpCallScanner;
     private final PythonMqCallScanner pythonMqCallScanner;
     private final CeleryTaskScanner celeryTaskScanner;
+    private final PythonDataModelScanner pythonDataModelScanner;
+    private final Neo4jDataModelNodeRepository neo4jDataModelNodeRepository;
 
     /**
      * Parse a single Python file and return one {@link MethodNode} per
@@ -155,6 +159,28 @@ public class PythonKnowledgeGraphBuilder {
             log.info("[Python KG] Saved {} bridge relations (HTTP/MQ)",
                     result.bridgeRelations.size());
         }
+
+        // Scan Python data models and USES_MODEL relations (isolated, no impact on existing logic)
+        try {
+            List<DataModelNode> pyDataModels = pythonDataModelScanner.scanDataModels(
+                    result.allModules, projectPath);
+            if (!pyDataModels.isEmpty()) {
+                Set<String> dmClassNames = pyDataModels.stream()
+                    .map(DataModelNode::getClassName).collect(Collectors.toSet());
+                List<Map<String, Object>> usesRelations =
+                    pythonDataModelScanner.scanUsesModelRelations(
+                        result.allModules, result.methodNodes, projectPath, dmClassNames);
+
+                neo4jDataModelNodeRepository.saveAll(pyDataModels);
+                if (!usesRelations.isEmpty()) {
+                    neo4jDataModelNodeRepository.createUsesModelRelations(usesRelations);
+                }
+                log.info("[Python KG] 数据模型节点: {}, USES_MODEL 关系: {}",
+                        pyDataModels.size(), usesRelations.size());
+            }
+        } catch (Exception e) {
+            log.warn("[Python KG] 数据模型扫描异常（不影响核心图谱）: {}", e.getMessage());
+        }
     }
 
     // ------------------------------------------------------------------
@@ -168,27 +194,73 @@ public class PythonKnowledgeGraphBuilder {
             effectiveExcludes.addAll(excludePaths);
         }
 
+        log.info("[Python KG] Project path: {}", projectPath);
+        log.info("[Python KG] Effective exclude patterns: {}", effectiveExcludes);
+
         Set<Framework> frameworks = PythonFrameworkDetector.detect(projectPath);
         String primaryFramework = pickPrimaryFramework(frameworks);
 
         List<MethodNode> allNodes = new ArrayList<>();
         List<PyModule> allModules = new ArrayList<>();
 
-        try (Stream<Path> walk = Files.walk(Paths.get(projectPath))) {
-            List<Path> pyFiles = walk
+        Path projectDir = Paths.get(projectPath);
+        log.info("[Python KG] Project directory exists? {}", Files.exists(projectDir));
+        if (Files.exists(projectDir)) {
+            log.info("[Python KG] Project directory is directory? {}", Files.isDirectory(projectDir));
+        }
+
+        try (Stream<Path> walk = Files.walk(projectDir)) {
+            // 先收集所有文件，然后逐步过滤，记录每一步的情况
+            List<Path> allFiles = walk.toList();
+            log.info("[Python KG] Total files found during walk: {}", allFiles.size());
+
+            List<Path> regularFiles = allFiles.stream()
                     .filter(Files::isRegularFile)
-                    .filter(p -> p.toString().endsWith(".py"))
-                    .filter(p -> !KnowledgeGraphCommonUtils.shouldExclude(
-                            p.toString(), effectiveExcludes))
                     .toList();
+            log.info("[Python KG] Regular files: {}", regularFiles.size());
+
+            List<Path> pyFilesAll = regularFiles.stream()
+                    .filter(p -> p.toString().endsWith(".py"))
+                    .toList();
+            log.info("[Python KG] All .py files: {}", pyFilesAll.size());
+
+            // 记录被排除的文件
+            List<Path> excludedFiles = new ArrayList<>();
+            List<Path> pyFiles = pyFilesAll.stream()
+                    .filter(p -> {
+                        boolean excluded = KnowledgeGraphCommonUtils.shouldExclude(p.toString(), effectiveExcludes);
+                        if (excluded) {
+                            excludedFiles.add(p);
+                        }
+                        return !excluded;
+                    })
+                    .toList();
+
+            if (!excludedFiles.isEmpty()) {
+                log.info("[Python KG] Excluded files ({}):", excludedFiles.size());
+                for (Path excluded : excludedFiles) {
+                    log.info("[Python KG]   - Excluded: {}", excluded);
+                }
+            }
+
+            log.info("[Python KG] Found {} Python files to parse", pyFiles.size());
+
+            // 记录所有将被解析的文件
+            log.info("[Python KG] Files to parse:");
+            for (Path pyFile : pyFiles) {
+                log.info("[Python KG]   - {}", pyFile);
+            }
 
             for (Path pyFile : pyFiles) {
                 try {
+                    log.info("[Python KG] Parsing file: {}", pyFile);
                     ParsedFile parsed = parseFileInternal(pyFile.toString(), projectPath);
+                    log.info("[Python KG] Parsed file {}: {} top-level functions, {} classes",
+                            pyFile, parsed.module.getTopLevelFunctions().size(), parsed.module.getClasses().size());
                     allNodes.addAll(parsed.nodes());
                     allModules.add(parsed.module());
                 } catch (Exception e) {
-                    log.warn("Failed to parse Python file {}: {}", pyFile, e.getMessage());
+                    log.warn("Failed to parse Python file {}: {}", pyFile, e.getMessage(), e);
                 }
             }
         }
@@ -255,7 +327,8 @@ public class PythonKnowledgeGraphBuilder {
                 Collections.unmodifiableList(allNodes),
                 Collections.unmodifiableList(callRelations),
                 Collections.unmodifiableList(entryPoints),
-                Collections.unmodifiableList(bridgeRelations));
+                Collections.unmodifiableList(bridgeRelations),
+                Collections.unmodifiableList(allModules));
     }
 
     private ParsedFile parseFileInternal(String filePath, String projectPath) throws IOException {
@@ -499,6 +572,7 @@ public class PythonKnowledgeGraphBuilder {
     private record BuildResult(List<MethodNode> methodNodes,
                                List<Map<String, Object>> callRelations,
                                List<EntryPointNode> entryPoints,
-                               List<Map<String, Object>> bridgeRelations) {
+                               List<Map<String, Object>> bridgeRelations,
+                               List<PyModule> allModules) {
     }
 }

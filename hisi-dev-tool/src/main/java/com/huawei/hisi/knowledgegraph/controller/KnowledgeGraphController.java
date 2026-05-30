@@ -25,6 +25,7 @@ import com.huawei.hisi.neo4j.model.SqlNode;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jSqlNodeRepository;
+import com.huawei.hisi.neo4j.repository.Neo4jDataModelNodeRepository;
 import com.huawei.hisi.service.KnowledgeGraphTaskService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -60,6 +61,7 @@ public class KnowledgeGraphController {
     private final Neo4jMethodNodeRepository neo4jMethodNodeRepository;
     private final Neo4jEntryPointNodeRepository neo4jEntryPointNodeRepository;
     private final Neo4jSqlNodeRepository neo4jSqlNodeRepository;
+    private final Neo4jDataModelNodeRepository neo4jDataModelNodeRepository;
 
     private final GitStatusService gitStatusService;
     private final IncrementalUpdateService incrementalUpdateService;
@@ -172,15 +174,35 @@ public class KnowledgeGraphController {
      * 替代旧的 /api/callchain/classes 接口
      */
     @GetMapping("/classes")
-    public ApiResponse<List<String>> getClasses(
+    public ApiResponse<Map<String, Object>> getClasses(
             @RequestParam(required = false) String projectPath,
-            @RequestParam(required = false) List<String> projectPaths) {
+            @RequestParam(required = false) List<String> projectPaths,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int pageSize,
+            @RequestParam(required = false) String keyword) {
         List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
         if (paths.isEmpty()) {
             return ApiResponse.error(400, "projectPath or projectPaths required");
         }
-        List<String> classes = neo4jMethodNodeRepository.findDistinctClassNamesByProjectPaths(paths);
-        return ApiResponse.success(classes);
+
+        long skip = (long) (page - 1) * pageSize;
+        List<String> classes;
+        long total;
+
+        if (keyword != null && !keyword.isBlank()) {
+            classes = neo4jMethodNodeRepository.findDistinctClassNamesByProjectPathsAndKeywordPaged(paths, keyword, skip, pageSize);
+            total = neo4jMethodNodeRepository.countDistinctClassNamesByProjectPathsAndKeyword(paths, keyword);
+        } else {
+            classes = neo4jMethodNodeRepository.findDistinctClassNamesByProjectPathsPaged(paths, skip, pageSize);
+            total = neo4jMethodNodeRepository.countDistinctClassNamesByProjectPaths(paths);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("items", classes);
+        result.put("total", total);
+        result.put("page", page);
+        result.put("pageSize", pageSize);
+        return ApiResponse.success(result);
     }
 
     // ============================================================
@@ -383,6 +405,20 @@ public class KnowledgeGraphController {
         result.put("interfaceImplCount", interfaceImplCount);
         result.put("callChainCount", callChainCount);
         result.put("entryCount", entryCount);
+
+        // DataModel 统计
+        try {
+            long dataModelCount = paths.stream()
+                .mapToLong(neo4jDataModelNodeRepository::countByProjectPath).sum();
+            long usesModelCount = paths.stream()
+                .mapToLong(p -> neo4jDataModelNodeRepository.countUsesModelRelations(p)).sum();
+            result.put("dataModelCount", dataModelCount);
+            result.put("usesModelRelationCount", usesModelCount);
+        } catch (Exception e) {
+            log.debug("[KG Status] DataModel count failed: {}", e.getMessage());
+            result.put("dataModelCount", 0);
+            result.put("usesModelRelationCount", 0);
+        }
 
         // 添加任务信息
         if (latestTask != null) {
@@ -693,21 +729,38 @@ public class KnowledgeGraphController {
     }
 
     /**
-     * 查询入口点列表
+     * 获取项目下所有不同的入口类型列表
      */
-    @GetMapping("/entry-points")
-    public ApiResponse<List<Map<String, Object>>> getEntryPoints(
+    @GetMapping("/entry-types")
+    public ApiResponse<List<String>> getDistinctEntryTypes(
             @RequestParam(required = false) String projectPath,
-            @RequestParam(required = false) List<String> projectPaths,
-            @RequestParam(required = false) String entryType) {
+            @RequestParam(required = false) List<String> projectPaths) {
 
         List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
         if (paths.isEmpty()) {
             return ApiResponse.error(400, "projectPath or projectPaths required");
         }
 
-        List<Map<String, Object>> entryPoints = new ArrayList<>();
-        List<com.huawei.hisi.neo4j.model.EntryPointNode> neo4jEntryPoints;
+        List<String> types = neo4jEntryPointNodeRepository.findDistinctEntryTypesByProjectPaths(paths);
+        return ApiResponse.success(types);
+    }
+
+    /**
+     * 查询入口点列表
+     */
+    @GetMapping("/entry-points")
+    public ApiResponse<Map<String, Object>> getEntryPoints(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths,
+            @RequestParam(required = false) String entryType,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int pageSize) {
+
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) {
+            return ApiResponse.error(400, "projectPath or projectPaths required");
+        }
+
         // Normalize entryType alias: MCP uses "CONTROLLER"/"MQ_LISTENER" but Neo4j stores "HTTP"/"MQ_CONSUMER"
         String resolvedType = entryType;
         if (resolvedType != null) {
@@ -718,12 +771,20 @@ public class KnowledgeGraphController {
                 default -> resolvedType;
             };
         }
+
+        long skip = (long) (page - 1) * pageSize;
+        List<com.huawei.hisi.neo4j.model.EntryPointNode> neo4jEntryPoints;
+        long total;
+
         if (resolvedType != null && !resolvedType.isEmpty()) {
-            neo4jEntryPoints = neo4jEntryPointNodeRepository.findByProjectPathsAndEntryType(paths, resolvedType);
+            neo4jEntryPoints = neo4jEntryPointNodeRepository.findByProjectPathsAndEntryTypePaged(paths, resolvedType, skip, pageSize);
+            total = neo4jEntryPointNodeRepository.countByProjectPathsAndEntryType(paths, resolvedType);
         } else {
-            neo4jEntryPoints = neo4jEntryPointNodeRepository.findByProjectPaths(paths);
+            neo4jEntryPoints = neo4jEntryPointNodeRepository.findByProjectPathsPaged(paths, skip, pageSize);
+            total = neo4jEntryPointNodeRepository.countByProjectPaths(paths);
         }
 
+        List<Map<String, Object>> items = new ArrayList<>();
         for (var ep : neo4jEntryPoints) {
             Map<String, Object> map = new HashMap<>();
             map.put("nodeId", ep.getEntryId());
@@ -732,10 +793,15 @@ public class KnowledgeGraphController {
             map.put("entryInfo", ep.getEntryInfo());
             map.put("methodNodeId", ep.getMethodNodeId());
             map.put("projectPath", ep.getProjectPath());
-            entryPoints.add(map);
+            items.add(map);
         }
 
-        return ApiResponse.success(entryPoints);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("items", items);
+        result.put("total", total);
+        result.put("page", page);
+        result.put("pageSize", pageSize);
+        return ApiResponse.success(result);
     }
 
     /**
@@ -956,14 +1022,15 @@ public class KnowledgeGraphController {
     /**
      * DAG图数据查询
      * GET /api/knowledge-graph/call-chain/graph
-     * 使用Neo4j原生图遍历，性能优化
+     * 使用递归遍历，确保完整的调用链深度
      */
     @GetMapping("/call-chain/graph")
     public ApiResponse<CallChainGraphResponse> getCallChainGraph(
             @RequestParam String entryKey,
             @RequestParam(required = false) String projectPath,
             @RequestParam(required = false) List<String> projectPaths,
-            @RequestParam(defaultValue = "true") boolean includeCycles) {
+            @RequestParam(defaultValue = "true") boolean includeCycles,
+            @RequestParam(defaultValue = "50") int maxDepth) {
         long startTime = System.currentTimeMillis();
         List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
         if (paths.isEmpty()) {
@@ -971,208 +1038,52 @@ public class KnowledgeGraphController {
         }
         String resolvedPath = paths.get(0);
 
-        log.info("[KG Graph] Query: entryKey={}, projectPath={}, includeCycles={}", entryKey, resolvedPath, includeCycles);
+        log.info("[KG Graph] Query: entryKey={}, projectPath={}, includeCycles={}, maxDepth={}", entryKey, resolvedPath, includeCycles, maxDepth);
 
-        // 使用Neo4j原生图遍历（单次查询获取所有节点）
-        int maxDepth = 50; // 可配置的最大深度
+        // 首先找到入口点对应的方法节点
+        List<EntryPointNode> entryPoints = neo4jEntryPointNodeRepository.findByProjectPathAndEntryKey(resolvedPath, entryKey);
+        if (entryPoints.isEmpty()) {
+            log.warn("[KG Graph] EntryPoint not found: entryKey={}, projectPath={}", entryKey, resolvedPath);
+            return ApiResponse.error(404, "未找到入口: " + entryKey);
+        }
 
-        // 使用原生 Neo4j Driver 执行查询（变长路径不支持参数绑定）
+        EntryPointNode entryPoint = entryPoints.get(0);
+        String methodNodeId = entryPoint.getMethodNodeId();
+
+        // 查找起始方法节点
+        Optional<MethodNode> startNodeOpt = neo4jMethodNodeRepository.findByNodeId(methodNodeId);
+        if (startNodeOpt.isEmpty()) {
+            log.warn("[KG Graph] Method node not found: nodeId={}", methodNodeId);
+            return ApiResponse.error(404, "未找到方法节点: " + methodNodeId);
+        }
+
+        MethodNode startNode = startNodeOpt.get();
+
+        // 使用递归遍历构建调用链图（与原来的方式一致）
         List<GraphNode> nodes = new ArrayList<>();
         List<GraphEdge> edges = new ArrayList<>();
-        Map<String, GraphNode> nodeMap = new HashMap<>();
-
-        try (Session session = neo4jDriver.session()) {
-            // 首先诊断：检查EntryPoint是否存在
-            var diagResult = session.run(
-                "MATCH (ep:EntryPoint) WHERE ep.entryKey = $entryKey RETURN ep.entryKey, ep.projectPath, ep.methodNodeId LIMIT 5",
-                Map.of("entryKey", entryKey)
-            );
-            log.info("[KG Graph] Diagnostics - EntryPoints with entryKey={}", entryKey);
-            boolean foundEp = false;
-            while (diagResult.hasNext()) {
-                var rec = diagResult.next();
-                log.info("[KG Graph] Found EntryPoint: projectPath={}, methodNodeId={}",
-                    rec.get("projectPath").asString(),
-                    rec.get("methodNodeId").asString(""));
-                foundEp = true;
-            }
-            if (!foundEp) {
-                // 直接列出数据库中所有 EntryPoint 的 entryKey 和 projectPath
-                var allEpResult = session.run(
-                    "MATCH (ep:EntryPoint) RETURN ep.entryKey as entryKey, ep.projectPath as projectPath LIMIT 10"
-                );
-                log.info("[KG Graph] === All EntryPoints in DB (first 10) ===");
-                Set<String> dbProjectPaths = new HashSet<>();
-                while (allEpResult.hasNext()) {
-                    var rec = allEpResult.next();
-                    String dbPath = rec.get("projectPath").asString("");
-                    dbProjectPaths.add(dbPath);
-                    log.info("[KG Graph]   entryKey='{}', projectPath='{}'",
-                        rec.get("entryKey").asString(""),
-                        dbPath);
-                }
-
-                // 统计总数
-                var countResult = session.run("MATCH (ep:EntryPoint) RETURN count(ep) as total");
-                if (countResult.hasNext()) {
-                    log.info("[KG Graph] Total EntryPoint count: {}", countResult.next().get("total").asLong());
-                }
-
-                log.warn("[KG Graph] === PATH MISMATCH ===");
-                log.warn("[KG Graph] Requested projectPath: '{}'", resolvedPath);
-                log.warn("[KG Graph] DB has projectPaths: {}", dbProjectPaths);
-                log.warn("[KG Graph] Please regenerate knowledge graph with the correct project path!");
-            }
-
-            // 查询节点 - 使用聚合避免重复（每个节点只取最小深度）
-            String nodeQuery = """
-                MATCH (ep:EntryPoint {entryKey: $entryKey, projectPath: $projectPath})
-                WITH ep.methodNodeId as entryMethodId
-                MATCH (entry:Method {nodeId: entryMethodId})
-                MATCH path = (entry)-[:CALLS*0..%d]->(m:Method)
-                WITH m, min(length(path)) as depth
-                RETURN m.nodeId as nodeId, m.className as className,
-                       m.methodName as methodName, m.signature as signature,
-                       m.filePath as filePath, m.startLine as startLine,
-                       m.description as description, depth
-                ORDER BY depth, nodeId
-                """.formatted(maxDepth);
-
-            var nodeResult = session.run(nodeQuery, Map.of(
-                "entryKey", entryKey,
-                "projectPath", resolvedPath
-            ));
-
-            while (nodeResult.hasNext()) {
-                Record record = nodeResult.next();
-                String nodeId = record.get("nodeId").asString();
-                // 避免重复添加
-                if (nodeMap.containsKey(nodeId)) {
-                    continue;
-                }
-                GraphNode graphNode = GraphNode.builder()
-                    .id(nodeId)
-                    .name(record.get("methodName").asString(""))
-                    .className(record.get("className").asString(""))
-                    .depth(record.get("depth").asInt(0))  // 临时深度，后面会重新计算
-                    .inCycle(false)
-                    .signature(record.get("signature").asString(""))
-                    .filePath(record.get("filePath").asString(""))
-                    .startLine(record.get("startLine").asInt(0))
-                    .description(record.get("description").isNull() ? null : record.get("description").asString())
-                    .build();
-                nodes.add(graphNode);
-                nodeMap.put(nodeId, graphNode);
-            }
-
-            if (nodes.isEmpty()) {
-                return ApiResponse.error(404, "未找到入口: " + entryKey);
-            }
-
-            // 查询边 - 使用 DISTINCT 去重
-            String edgeQuery = """
-                MATCH (ep:EntryPoint {entryKey: $entryKey, projectPath: $projectPath})
-                WITH ep.methodNodeId as entryMethodId
-                MATCH (entry:Method {nodeId: entryMethodId})
-                MATCH path = (entry)-[:CALLS*1..%d]->(method:Method)
-                UNWIND relationships(path) as r
-                RETURN DISTINCT startNode(r).nodeId as sourceId,
-                       endNode(r).nodeId as targetId,
-                       r.callType as callType, r.callLine as callLine
-                """.formatted(maxDepth);
-
-            var edgeResult = session.run(edgeQuery, Map.of(
-                "entryKey", entryKey,
-                "projectPath", resolvedPath
-            ));
-
-            while (edgeResult.hasNext()) {
-                Record record = edgeResult.next();
-                String sourceId = record.get("sourceId").asString();
-                String targetId = record.get("targetId").asString();
-                if (sourceId != null && targetId != null) {
-                    GraphEdge edge = GraphEdge.builder()
-                        .source(sourceId)
-                        .target(targetId)
-                        .callType(record.get("callType").asString("DIRECT"))
-                        .callLine(record.get("callLine").asInt(0))
-                        .isCycleEdge(false)
-                        .build();
-                    edges.add(edge);
-                }
-            }
-        }
-
-        // 使用 BFS 重新计算深度
-        Map<String, Integer> correctDepth = new HashMap<>();
-        if (!nodes.isEmpty()) {
-            // 找到入口节点（原始深度为0的节点）
-            String entryNodeId = nodes.get(0).getId();
-            for (GraphNode node : nodes) {
-                if (node.getDepth() == 0) {
-                    entryNodeId = node.getId();
-                    break;
-                }
-            }
-
-            // 构建邻接表
-            Map<String, List<String>> adjacencyList = new HashMap<>();
-            for (GraphEdge edge : edges) {
-                adjacencyList.computeIfAbsent(edge.getSource(), k -> new ArrayList<>()).add(edge.getTarget());
-            }
-
-            // BFS 计算深度
-            java.util.Queue<String> queue = new java.util.LinkedList<>();
-            queue.offer(entryNodeId);
-            correctDepth.put(entryNodeId, 0);
-
-            while (!queue.isEmpty()) {
-                String current = queue.poll();
-                int currentDepth = correctDepth.get(current);
-
-                List<String> callees = adjacencyList.get(current);
-                if (callees != null) {
-                    for (String callee : callees) {
-                        if (!correctDepth.containsKey(callee)) {
-                            correctDepth.put(callee, currentDepth + 1);
-                            queue.offer(callee);
-                        }
-                    }
-                }
-            }
-
-            // 更新节点的深度
-            for (GraphNode node : nodes) {
-                Integer depth = correctDepth.get(node.getId());
-                if (depth != null) {
-                    node.setDepth(depth);
-                }
-            }
-
-            // 统计深度分布
-            Map<Integer, Long> depthDist = nodes.stream()
-                .collect(java.util.stream.Collectors.groupingBy(GraphNode::getDepth, java.util.stream.Collectors.counting()));
-            log.info("[KG Graph] BFS depths: total={}, distribution={}", correctDepth.size(), depthDist);
-        }
-
-        // 检测环
+        Set<String> visitedNodes = new HashSet<>();
         Set<String> nodesInCycle = new HashSet<>();
         List<CallCycleInfo> cycles = new ArrayList<>();
+
+        // 递归遍历调用链
+        buildDownstreamGraph(methodNodeId, resolvedPath, 0, maxDepth, visitedNodes, nodes, edges, nodesInCycle, cycles);
+
+        // 检测环
         if (includeCycles) {
             detectCyclesInGraph(nodes, edges, cycles, nodesInCycle);
         }
 
         long costTime = System.currentTimeMillis() - startTime;
-        log.info("[KG Graph] Complete: nodes={}, edges={}, cycles={}, cost={}ms (native Neo4j traversal)",
+        log.info("[KG Graph] Complete: nodes={}, edges={}, cycles={}, cost={}ms (recursive traversal)",
                 nodes.size(), edges.size(), cycles.size(), costTime);
 
         // 构建响应
-        GraphNode firstNode = nodes.isEmpty() ? null : nodes.get(0);
         CallChainGraphResponse response = CallChainGraphResponse.builder()
-            .entryId(firstNode != null ? firstNode.getId() : null)
-            .entryType("HTTP") // 从EntryPoint获取
+            .entryId(methodNodeId)
+            .entryType(entryPoint.getEntryType())
             .entryKey(entryKey)
-            .maxDepth(nodes.stream().mapToInt(GraphNode::getDepth).max().orElse(0))
+            .maxDepth(nodes.stream().mapToInt(n -> n.getDepth() != null ? n.getDepth() : 0).max().orElse(0))
             .totalNodes(nodes.size())
             .nodes(nodes)
             .edges(edges)
@@ -1535,6 +1446,52 @@ public class KnowledgeGraphController {
             ).list(record -> record.get("name").asString());
         }
         return ApiResponse.success(interfaces);
+    }
+
+    /**
+     * 模糊搜索方法（按类名或方法名）
+     */
+    @GetMapping("/method/search")
+    public ApiResponse<List<Map<String, Object>>> searchMethods(
+            @RequestParam String keyword,
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths,
+            @RequestParam(defaultValue = "50") int limit) {
+
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) {
+            return ApiResponse.error(400, "projectPath or projectPaths required");
+        }
+
+        List<MethodNode> byMethod = neo4jMethodNodeRepository
+                .findByProjectPathsAndMethodNameContaining(paths, keyword);
+        List<MethodNode> byClass = neo4jMethodNodeRepository
+                .findByProjectPathsAndClassNameContaining(paths, keyword);
+
+        Set<String> seen = new HashSet<>();
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (MethodNode node : byMethod) {
+            if (seen.add(node.getNodeId()) && results.size() < limit) {
+                results.add(toMethodSummary(node));
+            }
+        }
+        for (MethodNode node : byClass) {
+            if (seen.add(node.getNodeId()) && results.size() < limit) {
+                results.add(toMethodSummary(node));
+            }
+        }
+        return ApiResponse.success(results);
+    }
+
+    private Map<String, Object> toMethodSummary(MethodNode node) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("nodeId", node.getNodeId());
+        map.put("className", node.getClassName());
+        map.put("methodName", node.getMethodName());
+        map.put("signature", node.getSignature());
+        map.put("filePath", node.getFilePath());
+        map.put("description", node.getDescription());
+        return map;
     }
 
     /**

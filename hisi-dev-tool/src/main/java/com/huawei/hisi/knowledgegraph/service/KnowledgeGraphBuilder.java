@@ -18,13 +18,16 @@ import com.huawei.hisi.scanner.HttpCallScanner;
 import com.huawei.hisi.scanner.MQEndpointScanner;
 import com.huawei.hisi.scanner.ProxyClassScanner;
 import com.huawei.hisi.knowledgegraph.scanner.MyBatisXmlScanner;
+import com.huawei.hisi.knowledgegraph.scanner.JavaDataModelScanner;
 import com.huawei.hisi.service.CodeAnalysisCoreService;
+import com.huawei.hisi.neo4j.model.DataModelNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.SqlNode;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jSqlNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jGenerationCheckpointRepository;
+import com.huawei.hisi.neo4j.repository.Neo4jDataModelNodeRepository;
 import com.huawei.hisi.knowledgegraph.python.PythonKnowledgeGraphBuilder;
 import com.huawei.hisi.knowledgegraph.util.ProjectLanguageDetector;
 import com.huawei.hisi.knowledgegraph.util.ProjectLanguageDetector.Language;
@@ -91,6 +94,12 @@ public class KnowledgeGraphBuilder {
     // Neo4j 增量刷新 Checkpoint 仓库
     private final Neo4jGenerationCheckpointRepository checkpointRepository;
 
+    // 数据模型扫描器
+    private final JavaDataModelScanner javaDataModelScanner;
+
+    // Neo4j 数据模型节点 Repository
+    private final Neo4jDataModelNodeRepository neo4jDataModelNodeRepository;
+
     public KnowledgeGraphBuilder(
             CodeAnalysisCoreService coreService,
             GlobalAnalysisCache globalCache,
@@ -108,7 +117,9 @@ public class KnowledgeGraphBuilder {
             GenerationTaskRepository generationTaskRepository,
             GitStatusService gitStatusService,
             PythonKnowledgeGraphBuilder pythonKnowledgeGraphBuilder,
-            Neo4jGenerationCheckpointRepository checkpointRepository) {
+            Neo4jGenerationCheckpointRepository checkpointRepository,
+            JavaDataModelScanner javaDataModelScanner,
+            Neo4jDataModelNodeRepository neo4jDataModelNodeRepository) {
         this.coreService = coreService;
         this.globalCache = globalCache;
         this.storageService = storageService;
@@ -126,6 +137,8 @@ public class KnowledgeGraphBuilder {
         this.gitStatusService = gitStatusService;
         this.pythonKnowledgeGraphBuilder = pythonKnowledgeGraphBuilder;
         this.checkpointRepository = checkpointRepository;
+        this.javaDataModelScanner = javaDataModelScanner;
+        this.neo4jDataModelNodeRepository = neo4jDataModelNodeRepository;
     }
 
     /**
@@ -401,6 +414,41 @@ public class KnowledgeGraphBuilder {
             neo4jSqlNodeRepository.createExecutesSqlRelations(executesSqlRelations);
         }
 
+        // 13. 扫描数据模型节点和 USES_MODEL 关系（独立 Pass 3，不影响已有逻辑）
+        int dataModelCount = 0;
+        int usesModelCount = 0;
+        try {
+            List<DataModelNode> dataModelNodes = new ArrayList<>();
+            for (File javaFile : javaFiles) {
+                CompilationUnit cu = coreService.parseFile(javaFile, javaParser);
+                if (cu == null) continue;
+                dataModelNodes.addAll(javaDataModelScanner.scanDataModels(cu, javaFile.getAbsolutePath(), projectPath));
+            }
+
+            Set<String> dataModelClassNames = dataModelNodes.stream()
+                .map(DataModelNode::getClassName).collect(Collectors.toSet());
+
+            List<Map<String, Object>> usesModelRelations = new ArrayList<>();
+            if (!dataModelClassNames.isEmpty()) {
+                for (File javaFile : javaFiles) {
+                    CompilationUnit cu = coreService.parseFile(javaFile, javaParser);
+                    if (cu == null) continue;
+                    usesModelRelations.addAll(
+                        javaDataModelScanner.scanUsesModelRelations(cu, projectPath, dataModelClassNames, methodSignatureToNodeId));
+                }
+
+                neo4jDataModelNodeRepository.saveAll(dataModelNodes);
+                if (!usesModelRelations.isEmpty()) {
+                    neo4jDataModelNodeRepository.createUsesModelRelations(usesModelRelations);
+                }
+                dataModelCount = dataModelNodes.size();
+                usesModelCount = usesModelRelations.size();
+                log.info("[KG] 数据模型节点: {}, USES_MODEL 关系: {}", dataModelCount, usesModelCount);
+            }
+        } catch (Exception e) {
+            log.warn("[KG] 数据模型扫描异常（不影响核心图谱）: {}", e.getMessage());
+        }
+
         long endTime = System.currentTimeMillis();
         Map<String, Object> result = new HashMap<>();
         result.put("methodNodeCount", allMethodNodes.size());
@@ -418,6 +466,8 @@ public class KnowledgeGraphBuilder {
             "FEIGN_BRIDGE", feignBridgeCount
         ));
         result.put("costTimeMs", endTime - startTime);
+        result.put("dataModelCount", dataModelCount);
+        result.put("usesModelCount", usesModelCount);
 
         // 知识图谱生成完成后，异步启动向量生成
         log.info("知识图谱生成完成，启动向量生成: {}", projectPath);
@@ -1589,6 +1639,9 @@ public class KnowledgeGraphBuilder {
     private void saveGenerationLog(String projectPath, int methodCount, int callRelationCount,
                                    int entryPointCount, int implCount, long startTime) {
         try {
+            // Normalize path to ensure consistency
+            String normalizedProjectPath = com.huawei.hisi.knowledgegraph.util.ProjectPathResolver.normalize(projectPath);
+
             long costTimeMs = System.currentTimeMillis() - startTime;
             long nowEpoch = java.time.Instant.now().getEpochSecond();
             long startEpoch = nowEpoch - (costTimeMs / 1000);
@@ -1597,7 +1650,7 @@ public class KnowledgeGraphBuilder {
             String commitHash = null;
             try {
                 com.huawei.hisi.knowledgegraph.model.GitStatus gitStatus =
-                    gitStatusService.getGitStatus(projectPath);
+                    gitStatusService.getGitStatus(normalizedProjectPath);
                 commitHash = gitStatus.getCommitHash();
             } catch (Exception e) {
                 this.log.warn("获取 Git commit hash 失败: {}", e.getMessage());
@@ -1606,7 +1659,7 @@ public class KnowledgeGraphBuilder {
             // Store commit hash in errorMessage field (repurposed for KG_LOG metadata)
             GenerationTask logTask = GenerationTask.builder()
                 .taskType("KG_LOG")
-                .projectPath(projectPath)
+                .projectPath(normalizedProjectPath)
                 .status("COMPLETED")
                 .totalCount(methodCount)
                 .progress(methodCount)
@@ -1618,15 +1671,15 @@ public class KnowledgeGraphBuilder {
                 .build();
 
             generationTaskRepository.insert(logTask);
-            this.log.info("知识图谱生成日志已保存: projectPath={}, commitHash={}", projectPath, commitHash);
+            this.log.info("知识图谱生成日志已保存: projectPath={}, commitHash={}", normalizedProjectPath, commitHash);
 
             // Also create/update Neo4j checkpoint for IncrementalRefreshService (V2)
             if (commitHash != null) {
                 try {
-                    String branch = gitStatusService.getCurrentBranch(projectPath);
-                    checkpointRepository.upsertCheckpoint(projectPath, commitHash, branch);
+                    String branch = gitStatusService.getCurrentBranch(normalizedProjectPath);
+                    checkpointRepository.upsertCheckpoint(normalizedProjectPath, commitHash, branch);
                     this.log.info("增量刷新 checkpoint 已保存: projectPath={}, commit={}, branch={}",
-                            projectPath, commitHash, branch);
+                            normalizedProjectPath, commitHash, branch);
                 } catch (Exception ce) {
                     this.log.warn("保存增量刷新 checkpoint 失败: {}", ce.getMessage());
                 }
@@ -1637,6 +1690,14 @@ public class KnowledgeGraphBuilder {
     }
 
     private void cleanOldData(String projectPath) {
+        // 0. 清理 DataModel 节点和 USES_MODEL 关系
+        try {
+            neo4jDataModelNodeRepository.deleteUsesModelRelationsByProjectPath(projectPath);
+            neo4jDataModelNodeRepository.deleteByProjectPath(projectPath);
+        } catch (Exception e) {
+            log.warn("[Neo4j] 清理 DataModel 数据异常: {}", e.getMessage());
+        }
+
         // 1. 清理 Neo4j 核心图数据（方法节点、入口点、调用关系、向量和描述）
         log.info("[Neo4j] 清理旧数据: {}", projectPath);
         storageService.cleanProjectData(projectPath);

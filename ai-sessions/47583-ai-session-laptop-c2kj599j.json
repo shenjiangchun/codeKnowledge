@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "claude-opus-4-6-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-05-26T04:12:20.333Z",
+  "lastUpdated": "2026-05-26T06:36:00.103Z",
   "stats": {
     "totalOperations": 903,
     "totalFilesEdited": 452,
-    "totalAiLines": 27110,
-    "totalAiLinesDeleted": 1883,
-    "totalCommits": 66
+    "totalAiLines": 27259,
+    "totalAiLinesDeleted": 1895,
+    "totalCommits": 67
   },
   "pendingFiles": [
     {
@@ -751,14 +751,6 @@
       "lastModified": "2026-05-22T06:32:21.777Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/PythonKnowledgeGraphBuilder.java",
-      "tool": "Edit",
-      "operations": 5,
-      "timestamp": "2026-05-22T06:32:27.900Z",
-      "lastModified": "2026-05-26T03:57:22.578Z",
-      "lastTool": "Edit"
-    },
-    {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/docs/plans/2026-05-22-requirement-analysis-master.md",
       "tool": "Write",
       "operations": 1,
@@ -795,14 +787,6 @@
       "operations": 2,
       "timestamp": "2026-05-22T07:07:16.070Z",
       "lastModified": "2026-05-22T07:07:33.641Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/call/PythonCallGraphResolver.java",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-05-22T07:56:31.176Z",
-      "lastModified": "2026-05-22T07:56:44.913Z",
       "lastTool": "Edit"
     },
     {

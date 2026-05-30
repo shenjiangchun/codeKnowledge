@@ -53,7 +53,7 @@ watch(
       const result = await knowledgeGraphApi.getCalleesTree(
         parsed.className,
         parsed.methodName,
-        store.selectedProject.projectPath,
+        [store.selectedProject.projectPath],
       ) as unknown as CalleeTreeResponse
       callTree.value = buildTree(result)
     } catch {

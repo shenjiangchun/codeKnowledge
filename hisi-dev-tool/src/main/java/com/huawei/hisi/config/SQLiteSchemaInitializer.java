@@ -176,6 +176,48 @@ public class SQLiteSchemaInitializer {
 
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_apm_test_case_project ON apm_test_case(project_path)");
 
-        log.info("[SQLite] Schema initialization complete - 10 tables ensured");
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS glossary_term (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_path VARCHAR(500) NOT NULL,
+                wrong_term   VARCHAR(100) NOT NULL,
+                correct_term VARCHAR(100) NOT NULL,
+                context      VARCHAR(200),
+                created_at   INTEGER DEFAULT (strftime('%s','now')),
+                updated_at   INTEGER DEFAULT (strftime('%s','now'))
+            )
+            """);
+
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_glossary_project ON glossary_term(project_path)");
+
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS remote_project (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                name                TEXT    NOT NULL,
+                git_url             TEXT    NOT NULL,
+                username            TEXT,
+                encrypted_password  TEXT,
+                branch              TEXT    DEFAULT 'main',
+                local_path          TEXT,
+                clone_status        TEXT    DEFAULT 'PENDING',
+                last_sync_at        INTEGER,
+                created_at          INTEGER DEFAULT (strftime('%s','now'))
+            )
+            """);
+
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS kg_schedule (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_path    TEXT    NOT NULL,
+                cron_expression TEXT    NOT NULL,
+                task_type       TEXT    NOT NULL,
+                enabled         INTEGER DEFAULT 1,
+                last_run_at     INTEGER,
+                next_run_at     INTEGER,
+                created_at      INTEGER DEFAULT (strftime('%s','now'))
+            )
+            """);
+
+        log.info("[SQLite] Schema initialization complete - 13 tables ensured");
     }
 }

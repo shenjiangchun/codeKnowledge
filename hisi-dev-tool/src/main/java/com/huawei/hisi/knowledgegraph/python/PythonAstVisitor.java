@@ -12,6 +12,7 @@ import com.huawei.hisi.knowledgegraph.python.model.PyFunction;
 import com.huawei.hisi.knowledgegraph.python.model.PyImport;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser;
+import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser.Async_funcdefContext;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser.Atom_exprContext;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser.ClassdefContext;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser.DecoratedContext;
@@ -136,9 +137,9 @@ public class PythonAstVisitor extends Python3ParserBaseVisitor<Void> {
 
         List<String> params = new ArrayList<>();
         if (ctx.parameters() != null && ctx.parameters().typedargslist() != null) {
-            ctx.parameters().typedargslist().tfpdef().forEach(tfp -> {
-                if (tfp != null && tfp.name() != null) {
-                    params.add(tfp.name().getText());
+            ctx.parameters().typedargslist().typedelem().forEach(elem -> {
+                if (elem.tfpdef() != null && elem.tfpdef().name() != null) {
+                    params.add(elem.tfpdef().name().getText());
                 }
             });
         }
@@ -174,6 +175,15 @@ public class PythonAstVisitor extends Python3ParserBaseVisitor<Void> {
             functionQualNameStack.pop();
         }
         return null;
+    }
+
+    @Override
+    public Void visitAsync_funcdef(Async_funcdefContext ctx) {
+        if (ctx.funcdef() == null) {
+            return null;
+        }
+        // Delegate directly to visitFuncdef - it already handles both top-level and method cases
+        return visitFuncdef(ctx.funcdef());
     }
 
     @Override

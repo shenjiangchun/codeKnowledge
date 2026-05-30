@@ -173,4 +173,61 @@ public interface Neo4jEntryPointNodeRepository extends Neo4jRepository<EntryPoin
         RETURN entry
         """)
     List<EntryPointNode> findByProjectPathsAndEntryType(@Param("projectPaths") List<String> projectPaths, @Param("entryType") String entryType);
+
+    /**
+     * 分页查询多个项目的入口点
+     */
+    @Query("""
+        MATCH (entry:EntryPoint)
+        WHERE entry.projectPath IN $projectPaths
+        RETURN entry
+        ORDER BY entry.entryKey
+        SKIP $skip LIMIT $limit
+        """)
+    List<EntryPointNode> findByProjectPathsPaged(
+        @Param("projectPaths") List<String> projectPaths,
+        @Param("skip") long skip,
+        @Param("limit") int limit
+    );
+
+    /**
+     * 分页按类型查询多个项目的入口点
+     */
+    @Query("""
+        MATCH (entry:EntryPoint)
+        WHERE entry.projectPath IN $projectPaths AND entry.entryType = $entryType
+        RETURN entry
+        ORDER BY entry.entryKey
+        SKIP $skip LIMIT $limit
+        """)
+    List<EntryPointNode> findByProjectPathsAndEntryTypePaged(
+        @Param("projectPaths") List<String> projectPaths,
+        @Param("entryType") String entryType,
+        @Param("skip") long skip,
+        @Param("limit") int limit
+    );
+
+    /**
+     * 按类型统计多个项目的入口点数量
+     */
+    @Query("""
+        MATCH (entry:EntryPoint)
+        WHERE entry.projectPath IN $projectPaths AND entry.entryType = $entryType
+        RETURN count(entry)
+        """)
+    long countByProjectPathsAndEntryType(
+        @Param("projectPaths") List<String> projectPaths,
+        @Param("entryType") String entryType
+    );
+
+    /**
+     * 获取多个项目下所有不同的入口类型
+     */
+    @Query("""
+        MATCH (entry:EntryPoint)
+        WHERE entry.projectPath IN $projectPaths
+        RETURN DISTINCT entry.entryType
+        ORDER BY entry.entryType
+        """)
+    List<String> findDistinctEntryTypesByProjectPaths(@Param("projectPaths") List<String> projectPaths);
 }

@@ -107,7 +107,7 @@ const handleClassChange = async (value: string) => {
     if (appStore.projectDir && props.project && !props.project.includes(':') && !props.project.startsWith('/')) {
       projectPath = `${appStore.projectDir}\\${props.project}`
     }
-    const res = await knowledgeGraphApi.getMethodsByClass(value, projectPath)
+    const res = await knowledgeGraphApi.getMethodsByClass(value, [projectPath])
     // 转换为组件期望的格式
     methods.value = (res || []).map((m: any) => ({
       methodName: m.methodName,
@@ -140,9 +140,9 @@ const loadClasses = async () => {
     if (appStore.projectDir && !props.project?.includes(':') && !props.project?.startsWith('/')) {
       projectPath = `${appStore.projectDir}\\${props.project}`
     }
-    const res = await knowledgeGraphApi.getClasses(projectPath)
+    const res = await knowledgeGraphApi.getClasses([projectPath], 1, 10000)
     // 转换为组件期望的格式
-    classes.value = (res || []).map((c: string) => ({
+    classes.value = (res?.items || []).map((c: string) => ({
       className: c,
       methodCount: 0 // 不显示方法数量了
     }))

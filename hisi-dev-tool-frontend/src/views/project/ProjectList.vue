@@ -30,172 +30,269 @@
     />
 
     <el-card>
-      <template #header>
-        <div class="card-header">
-          <span>项目管理</span>
-          <div class="header-buttons">
-            <el-button
-              type="warning"
-              @click="handleUpdateAll"
-              :loading="updatingAll"
-              :disabled="!appStore.projectDirConfigured"
-            >
-              <el-icon><Refresh /></el-icon>
-              一键更新所有仓库
-            </el-button>
-            <el-button
-              type="success"
-              @click="handleScan"
-              :loading="scanning"
-              :disabled="!appStore.projectDirConfigured"
-            >
-              <el-icon><FolderOpened /></el-icon>
-              扫描仓库
-            </el-button>
-            <el-button @click="openKgExcludeDialog">
-              <el-icon><Setting /></el-icon>
-              图谱屏蔽目录
-            </el-button>
-            <el-button type="primary" @click="showCloneDialog = true">
-              <el-icon><Plus /></el-icon>
-              克隆项目
-            </el-button>
-            <el-button
-              type="warning"
-              @click="handleCrossServiceBuild"
-              :disabled="selectedProjectsWithKg.length < 2"
-              :loading="crossServiceBuilding"
-            >
-              跨服务依赖构建 ({{ selectedProjectsWithKg.length }})
-            </el-button>
-            <el-button
-              type="primary"
-              @click="handleConfirmMultiSelect"
-              :disabled="selectedProjects.length === 0"
-            >
-              <el-icon><Select /></el-icon>
-              确认选择 ({{ selectedProjects.length }})
-            </el-button>
+      <el-tabs v-model="activeTab" @tab-change="handleTabChange">
+        <!-- ========== 本地项目 Tab ========== -->
+        <el-tab-pane label="本地项目" name="local">
+          <div class="card-header tab-header">
+            <span>项目管理</span>
+            <div class="header-buttons">
+              <el-button
+                type="warning"
+                @click="handleUpdateAll"
+                :loading="updatingAll"
+                :disabled="!appStore.projectDirConfigured"
+              >
+                <el-icon><Refresh /></el-icon>
+                一键更新所有仓库
+              </el-button>
+              <el-button
+                type="success"
+                @click="handleScan"
+                :loading="scanning"
+                :disabled="!appStore.projectDirConfigured"
+              >
+                <el-icon><FolderOpened /></el-icon>
+                扫描仓库
+              </el-button>
+              <el-button @click="openKgExcludeDialog">
+                <el-icon><Setting /></el-icon>
+                图谱屏蔽目录
+              </el-button>
+              <el-button @click="openGlossaryDialog">
+                <el-icon><EditPen /></el-icon>
+                术语配置
+              </el-button>
+              <el-button type="primary" @click="showCloneDialog = true">
+                <el-icon><Plus /></el-icon>
+                克隆项目
+              </el-button>
+              <el-button
+                type="warning"
+                @click="handleCrossServiceBuild"
+                :disabled="selectedProjectsWithKg.length < 2"
+                :loading="crossServiceBuilding"
+              >
+                跨服务依赖构建 ({{ selectedProjectsWithKg.length }})
+              </el-button>
+              <el-button
+                type="primary"
+                @click="handleConfirmMultiSelect"
+                :disabled="selectedProjects.length === 0"
+              >
+                <el-icon><Select /></el-icon>
+                确认选择 ({{ selectedProjects.length }})
+              </el-button>
+            </div>
           </div>
-        </div>
-      </template>
-      <el-table :data="projects" v-loading="loading" stripe @selection-change="handleSelectionChange">
-        <el-table-column type="selection" width="55" />        <el-table-column prop="name" label="项目名称">
-          <template #default="{ row }">
-            <div class="project-name-cell">
-              <span>{{ row.name }}</span>
-              <el-tag v-if="appStore.selectedProjectNames.includes(row.name)" type="success" size="small">
-                已选择
-              </el-tag>
+          <el-table :data="projects" v-loading="loading" stripe @selection-change="handleSelectionChange">
+            <el-table-column type="selection" width="55" />
+            <el-table-column prop="name" label="项目名称">
+              <template #default="{ row }">
+                <div class="project-name-cell">
+                  <span>{{ row.name }}</span>
+                  <el-tag v-if="appStore.selectedProjectNames.includes(row.name)" type="success" size="small">
+                    已选择
+                  </el-tag>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column prop="branch" label="分支" width="100" />
+            <el-table-column prop="remoteUrl" label="远程地址" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ row.remoteUrl || row.url || '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="120">
+              <template #default="{ row }">
+                <el-tag :type="getStatusType(row)">{{ getStatusText(row) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="来源" width="80" align="center">
+              <template #default="{ row }">
+                <el-tag :type="row.source === 'scanned' ? 'primary' : 'info'" size="small">
+                  {{ row.source === 'scanned' ? '扫描' : '克隆' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="图谱状态" width="120" align="center">
+              <template #default="{ row }">
+                <div class="status-indicator">
+                  <span
+                    class="status-dot"
+                    :class="getKnowledgeGraphStatusClass(getProjectKnowledgeGraphStatus(row.path))"
+                    :title="getKnowledgeGraphStatusTooltip(row.path)"
+                  ></span>
+                  <span class="status-text">{{ getKnowledgeGraphStatusText(getProjectKnowledgeGraphStatus(row.path)) }}</span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="向量状态" width="120" align="center">
+              <template #default="{ row }">
+                <div class="vector-status">
+                  <div class="status-indicator">
+                    <span
+                      class="status-dot"
+                      :class="getVectorStatusClass(getProjectVectorStatus(row.path))"
+                      :title="getVectorStatusTooltip(row.path)"
+                    ></span>
+                    <span class="status-text">{{ getVectorStatusText(getProjectVectorStatus(row.path)) }}</span>
+                  </div>
+                  <span v-if="getProjectVectorProgress(row.path)" class="progress-text">
+                    {{ getProjectVectorProgress(row.path)!.processed }}/{{ getProjectVectorProgress(row.path)!.total }}
+                  </span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column prop="lastCommitMessage" label="最近提交" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span v-if="row.lastCommitMessage">{{ row.lastCommitMessage }}</span>
+                <span v-else class="text-muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="450">
+              <template #default="{ row }">
+                <el-button
+                  type="primary"
+                  link
+                  @click="handleSelect(row)"
+                  :disabled="!appStore.projectDirConfigured"
+                >
+                  <el-icon><Select /></el-icon>
+                  选择
+                </el-button>
+                <el-button
+                  type="info"
+                  link
+                  @click="showCommitDialog(row)"
+                  :disabled="!appStore.projectDirConfigured"
+                >
+                  <el-icon><Document /></el-icon>
+                  提交分析
+                </el-button>
+                <el-button
+                  type="success"
+                  link
+                  @click="handleGenerateKnowledgeGraph(row)"
+                  :loading="generatingKnowledgeGraph.has(row.path)"
+                  :disabled="isKnowledgeGraphButtonDisabled(row.path)"
+                >
+                  <el-icon><DataAnalysis /></el-icon>
+                  生成图谱
+                </el-button>
+                <el-button
+                  type="primary"
+                  link
+                  @click="handleGenerateVector(row)"
+                  :loading="isVectorGenerating(row.path)"
+                  :disabled="isVectorButtonDisabled(row.path)"
+                >
+                  <el-icon><Collection /></el-icon>
+                  描述&amp;向量
+                </el-button>
+                <GitOperations
+                  v-if="hasGit(row) && appStore.projectDirConfigured"
+                  :project-path="getProjectPath(row.name)"
+                />
+                <el-button type="primary" link @click="handlePull(row)">拉取</el-button>
+                <el-button type="info" link @click="handleRefreshProject(row)" :disabled="!appStore.projectDirConfigured">
+                  <el-icon><Refresh /></el-icon>
+                  图谱刷新
+                </el-button>
+                <el-button type="danger" link @click="handleDelete(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+
+        <!-- ========== 远端项目 Tab ========== -->
+        <el-tab-pane label="远端项目" name="remote">
+          <div class="card-header tab-header">
+            <span>远端项目管理</span>
+            <div class="header-buttons">
+              <el-button type="primary" @click="handleAddRemote">
+                <el-icon><Plus /></el-icon>
+                添加远端项目
+              </el-button>
+              <el-button @click="loadRemoteProjects">
+                <el-icon><Refresh /></el-icon>
+                刷新列表
+              </el-button>
+              <el-button
+                type="primary"
+                @click="handleRemoteConfirmMultiSelect"
+                :disabled="selectedRemoteProjects.length === 0"
+              >
+                <el-icon class="check-icon">
+                  <svg data-v-20d88a06 xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+                    <path fill="currentColor" d="M77.248 415.04a64 64 0 0 1 90.496 0l226.304 226.304L846.528 188.8a64 64 0 1 1 90.56 90.496l-543.04 543.04-316.8-316.8a64 64 0 0 1 0-90.496"></path>
+                  </svg>
+                </el-icon>
+                查看图谱
+              </el-button>
             </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="branch" label="分支" width="100" />
-        <el-table-column prop="remoteUrl" label="远程地址" show-overflow-tooltip>
-          <template #default="{ row }">
-            {{ row.remoteUrl || row.url || '-' }}
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="120">
-          <template #default="{ row }">
-            <el-tag :type="getStatusType(row)">{{ getStatusText(row) }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="来源" width="80" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.source === 'scanned' ? 'primary' : 'info'" size="small">
-              {{ row.source === 'scanned' ? '扫描' : '克隆' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="图谱状态" width="120" align="center">
-          <template #default="{ row }">
-            <div class="status-indicator">
-              <span
-                class="status-dot"
-                :class="getKnowledgeGraphStatusClass(getProjectKnowledgeGraphStatus(row.path))"
-                :title="getKnowledgeGraphStatusTooltip(row.path)"
-              ></span>
-              <span class="status-text">{{ getKnowledgeGraphStatusText(getProjectKnowledgeGraphStatus(row.path)) }}</span>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="向量状态" width="120" align="center">
-          <template #default="{ row }">
-            <div class="vector-status">
-              <div class="status-indicator">
-                <span
-                  class="status-dot"
-                  :class="getVectorStatusClass(getProjectVectorStatus(row.path))"
-                  :title="getVectorStatusTooltip(row.path)"
-                ></span>
-                <span class="status-text">{{ getVectorStatusText(getProjectVectorStatus(row.path)) }}</span>
-              </div>
-              <span v-if="getProjectVectorProgress(row.path)" class="progress-text">
-                {{ getProjectVectorProgress(row.path)!.processed }}/{{ getProjectVectorProgress(row.path)!.total }}
-              </span>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="lastCommitMessage" label="最近提交" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span v-if="row.lastCommitMessage">{{ row.lastCommitMessage }}</span>
-            <span v-else class="text-muted">-</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="450">
-          <template #default="{ row }">
-            <el-button
-              type="primary"
-              link
-              @click="handleSelect(row)"
-              :disabled="!appStore.projectDirConfigured"
-            >
-              <el-icon><Select /></el-icon>
-              选择
-            </el-button>
-            <el-button
-              type="info"
-              link
-              @click="showCommitDialog(row)"
-              :disabled="!appStore.projectDirConfigured"
-            >
-              <el-icon><Document /></el-icon>
-              提交分析
-            </el-button>
-            <el-button
-              type="success"
-              link
-              @click="handleGenerateKnowledgeGraph(row)"
-              :loading="generatingKnowledgeGraph.has(row.path)"
-              :disabled="isKnowledgeGraphButtonDisabled(row.path)"
-            >
-              <el-icon><DataAnalysis /></el-icon>
-              生成图谱
-            </el-button>
-            <el-button
-              type="primary"
-              link
-              @click="handleGenerateVector(row)"
-              :loading="isVectorGenerating(row.path)"
-              :disabled="isVectorButtonDisabled(row.path)"
-            >
-              <el-icon><Collection /></el-icon>
-              描述&amp;向量
-            </el-button>
-            <GitOperations
-              v-if="hasGit(row) && appStore.projectDirConfigured"
-              :project-path="getProjectPath(row.name)"
-            />
-            <el-button type="primary" link @click="handlePull(row)">拉取</el-button>
-            <el-button type="info" link @click="handleRefreshProject(row)" :disabled="!appStore.projectDirConfigured">
-              <el-icon><Refresh /></el-icon>
-              图谱刷新
-            </el-button>
-            <el-button type="danger" link @click="handleDelete(row)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+          </div>
+          <el-table :data="remoteProjects" v-loading="remoteLoading" stripe @selection-change="handleRemoteSelectionChange">
+            <el-table-column type="selection" width="55" />
+            <el-table-column prop="name" label="项目名称" min-width="120" />
+            <el-table-column prop="gitUrl" label="Git地址" min-width="200" show-overflow-tooltip />
+            <el-table-column prop="branch" label="分支" width="100" />
+            <el-table-column label="克隆状态" width="110" align="center">
+              <template #default="{ row }">
+                <el-tag :type="remoteCloneStatusType(row.cloneStatus)" size="small">
+                  {{ remoteCloneStatusText(row.cloneStatus) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="最后同步" width="170">
+              <template #default="{ row }">
+                {{ row.lastSyncAt ? formatTimestamp(row.lastSyncAt) : '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="420">
+              <template #default="{ row }">
+                <el-button type="primary" link @click="handleEditRemote(row)">编辑</el-button>
+                <el-button
+                  v-if="row.cloneStatus !== 'CLONED'"
+                  type="success"
+                  link
+                  @click="handleCloneRemote(row)"
+                  :disabled="row.cloneStatus === 'CLONING'"
+                >
+                  克隆
+                </el-button>
+                <el-button
+                  v-else
+                  type="success"
+                  link
+                  @click="handlePullRemote(row)"
+                >
+                  拉取
+                </el-button>
+                <el-button
+                  type="success"
+                  link
+                  @click="handleRemoteGenerateKg(row)"
+                  :disabled="row.cloneStatus !== 'CLONED'"
+                >
+                  <el-icon><DataAnalysis /></el-icon>
+                  生成图谱
+                </el-button>
+                <el-button
+                  type="primary"
+                  link
+                  @click="handleRemoteGenerateVector(row)"
+                  :disabled="row.cloneStatus !== 'CLONED'"
+                >
+                  <el-icon><Collection /></el-icon>
+                  描述&amp;向量
+                </el-button>
+                <el-button type="info" link @click="openScheduleDialog(row)">定时任务配置</el-button>
+                <el-button type="danger" link @click="handleDeleteRemote(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
     </el-card>
 
     <!-- Clone Dialog -->
@@ -326,18 +423,155 @@
       </template>
     </el-dialog>
 
+    <!-- Remote Project Add/Edit Dialog -->
+    <el-dialog v-model="showRemoteDialog" :title="remoteIsEdit ? '编辑远端项目' : '添加远端项目'" width="500px">
+      <el-form :model="remoteForm" label-width="100px">
+        <el-form-item label="项目名称" required>
+          <el-input v-model="remoteForm.name" placeholder="项目名称" />
+        </el-form-item>
+        <el-form-item label="Git地址" required>
+          <el-input v-model="remoteForm.gitUrl" placeholder="https://github.com/xxx/xxx.git" />
+        </el-form-item>
+        <el-form-item label="用户名">
+          <el-input v-model="remoteForm.username" placeholder="可选，私有仓库需要" />
+        </el-form-item>
+        <el-form-item label="密码">
+          <el-input v-model="remoteForm.password" type="password" show-password placeholder="可选，私有仓库需要" />
+        </el-form-item>
+        <el-form-item label="分支">
+          <el-input v-model="remoteForm.branch" placeholder="默认: main" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showRemoteDialog = false">取消</el-button>
+        <el-button type="primary" @click="handleRemoteSubmit" :loading="remoteSubmitting">
+          {{ remoteIsEdit ? '保存' : '创建' }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Schedule Config Dialog -->
+    <el-dialog v-model="showScheduleDialog" title="定时任务配置" width="500px">
+      <el-form :model="scheduleForm" label-width="100px">
+        <el-form-item label="Cron表达式" required>
+          <el-input v-model="scheduleForm.cronExpression" placeholder="例如: 0 0 2 * * ? (每天凌晨2点)" />
+        </el-form-item>
+        <el-form-item label="任务类型">
+          <el-radio-group v-model="scheduleForm.taskType">
+            <el-radio value="FULL">全量</el-radio>
+            <el-radio value="INCREMENTAL">增量</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="scheduleEditId !== null" label="启用">
+          <el-switch v-model="scheduleForm.enabled" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showScheduleDialog = false">取消</el-button>
+        <el-button type="primary" @click="handleScheduleSubmit" :loading="scheduleLoading">
+          {{ scheduleEditId !== null ? '保存' : '创建' }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Glossary Term Management Dialog -->
+    <el-dialog v-model="showGlossaryDialog" title="术语配置" width="700px" destroy-on-close>
+      <div class="glossary-hint">
+        配置项目术语对照表，生成语义描述时 LLM 将自动遵守术语规范。建议在生成知识图谱描述前完成配置。
+      </div>
+      <div class="glossary-project-select">
+        <span>项目：</span>
+        <el-select
+          v-model="glossaryProjectPath"
+          placeholder="选择项目"
+          filterable
+          style="width: 400px"
+          @change="onGlossaryProjectChange"
+        >
+          <el-option
+            v-for="p in projects"
+            :key="p.path"
+            :label="p.name"
+            :value="normalizePath(p.path)"
+          />
+        </el-select>
+        <el-button type="primary" size="small" @click="openGlossaryAdd" :disabled="!glossaryProjectPath">
+          <el-icon><Plus /></el-icon>
+          新增
+        </el-button>
+      </div>
+      <el-table :data="glossaryTerms" v-loading="glossaryLoading" empty-text="暂无术语，点击「新增」添加" stripe max-height="350">
+        <el-table-column prop="wrongTerm" label="错误术语" width="140">
+          <template #default="{ row }">
+            <el-tag type="danger" effect="plain">{{ row.wrongTerm }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="" width="40" align="center">
+          <template #default>→</template>
+        </el-table-column>
+        <el-table-column prop="correctTerm" label="正确术语" width="140">
+          <template #default="{ row }">
+            <el-tag type="success" effect="plain">{{ row.correctTerm }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="context" label="说明" min-width="150" show-overflow-tooltip />
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openGlossaryEdit(row)">编辑</el-button>
+            <el-button link type="danger" @click="handleGlossaryDelete(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <!-- Glossary Add/Edit Sub-Dialog -->
+      <el-dialog
+        v-model="showGlossaryForm"
+        :title="glossaryIsEdit ? '编辑术语' : '新增术语'"
+        width="420px"
+        append-to-body
+        destroy-on-close
+      >
+        <el-form :model="glossaryForm" label-width="80px" @submit.prevent="handleGlossarySubmit">
+          <el-form-item label="错误术语" required>
+            <el-input v-model="glossaryForm.wrongTerm" placeholder="LLM 可能错误使用的术语" />
+          </el-form-item>
+          <el-form-item label="正确术语" required>
+            <el-input v-model="glossaryForm.correctTerm" placeholder="应该使用的正确术语" />
+          </el-form-item>
+          <el-form-item label="说明">
+            <el-input v-model="glossaryForm.context" placeholder="可选，如适用场景说明" />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="showGlossaryForm = false">取消</el-button>
+          <el-button type="primary" @click="handleGlossarySubmit" :loading="glossarySubmitting">
+            {{ glossaryIsEdit ? '保存' : '创建' }}
+          </el-button>
+        </template>
+      </el-dialog>
+
+      <template #footer>
+        <el-button @click="showGlossaryDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, Select, FolderOpened, Document, Refresh, Loading, DataAnalysis, Collection, Setting } from '@element-plus/icons-vue'
+import { Plus, Select, FolderOpened, Document, Refresh, Loading, DataAnalysis, Collection, Setting, EditPen, View } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { projectApi } from '@/api/project'
 import { gitApi, type GitCommit, type UpdateAllResponse } from '@/api/git'
 import { knowledgeGraphApi, type KnowledgeGraphTask } from '@/api/knowledgeGraph'
 import { getVectorGenerationStatusBatch, startVectorGeneration, type VectorGenerationTask } from '@/api/vectorGeneration'
+import { glossaryApi } from '@/api/glossary'
+import type { GlossaryTerm } from '@/types/glossary'
+import { listRemoteProjects, createRemoteProject, updateRemoteProject, deleteRemoteProject, cloneRemoteProject, pullRemoteProject } from '@/api/remote-project'
+import { listKgSchedules, createKgSchedule, updateKgSchedule } from '@/api/kg-schedule'
+import type { RemoteProject, CreateRemoteProjectRequest, UpdateRemoteProjectRequest } from '@/types/remote-project'
 import { useAppStore } from '@/stores/app'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import ProjectDirConfig from '@/components/ProjectDirConfig.vue'
@@ -457,6 +691,119 @@ const saveKgExcludePaths = () => {
   }
   showKgExcludeDialog.value = false
   ElMessage.success('已保存屏蔽目录配置')
+}
+
+// ============================================================
+// Glossary Term Management
+// ============================================================
+const showGlossaryDialog = ref(false)
+const glossaryTerms = ref<GlossaryTerm[]>([])
+const glossaryLoading = ref(false)
+const glossarySubmitting = ref(false)
+const showGlossaryForm = ref(false)
+const glossaryIsEdit = ref(false)
+const glossaryEditId = ref<number | null>(null)
+const glossaryForm = ref({ wrongTerm: '', correctTerm: '', context: '' })
+const glossaryProjectPath = ref('')
+
+const openGlossaryDialog = () => {
+  const selected = appStore.selectedProjects
+  if (selected.length === 1) {
+    glossaryProjectPath.value = normalizePath(selected[0].path)
+  } else if (projects.value.length > 0 && selected.length === 0) {
+    glossaryProjectPath.value = ''
+  } else if (selected.length > 1) {
+    glossaryProjectPath.value = normalizePath(selected[0].path)
+  }
+  showGlossaryDialog.value = true
+  if (glossaryProjectPath.value) {
+    loadGlossaryTerms()
+  }
+}
+
+const loadGlossaryTerms = async () => {
+  if (!glossaryProjectPath.value) return
+  glossaryLoading.value = true
+  try {
+    glossaryTerms.value = await glossaryApi.list(glossaryProjectPath.value) as unknown as GlossaryTerm[]
+  } catch {
+    ElMessage.error('加载术语列表失败')
+  } finally {
+    glossaryLoading.value = false
+  }
+}
+
+const onGlossaryProjectChange = () => {
+  glossaryTerms.value = []
+  if (glossaryProjectPath.value) {
+    loadGlossaryTerms()
+  }
+}
+
+const openGlossaryAdd = () => {
+  glossaryIsEdit.value = false
+  glossaryEditId.value = null
+  glossaryForm.value = { wrongTerm: '', correctTerm: '', context: '' }
+  showGlossaryForm.value = true
+}
+
+const openGlossaryEdit = (term: GlossaryTerm) => {
+  glossaryIsEdit.value = true
+  glossaryEditId.value = term.id!
+  glossaryForm.value = {
+    wrongTerm: term.wrongTerm,
+    correctTerm: term.correctTerm,
+    context: term.context || ''
+  }
+  showGlossaryForm.value = true
+}
+
+const handleGlossarySubmit = async () => {
+  if (!glossaryForm.value.wrongTerm.trim() || !glossaryForm.value.correctTerm.trim()) {
+    ElMessage.warning('错误术语和正确术语不能为空')
+    return
+  }
+  if (!glossaryProjectPath.value) {
+    ElMessage.warning('请先选择项目')
+    return
+  }
+  glossarySubmitting.value = true
+  try {
+    const payload: GlossaryTerm = {
+      projectPath: glossaryProjectPath.value,
+      wrongTerm: glossaryForm.value.wrongTerm.trim(),
+      correctTerm: glossaryForm.value.correctTerm.trim(),
+      context: glossaryForm.value.context.trim() || undefined
+    }
+    if (glossaryIsEdit.value && glossaryEditId.value != null) {
+      await glossaryApi.update(glossaryEditId.value, payload)
+      ElMessage.success('术语已更新')
+    } else {
+      await glossaryApi.create(payload)
+      ElMessage.success('术语已创建')
+    }
+    showGlossaryForm.value = false
+    await loadGlossaryTerms()
+  } catch {
+    ElMessage.error(glossaryIsEdit.value ? '更新失败' : '创建失败')
+  } finally {
+    glossarySubmitting.value = false
+  }
+}
+
+const handleGlossaryDelete = async (term: GlossaryTerm) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除术语「${term.wrongTerm} → ${term.correctTerm}」？`,
+      '删除确认',
+      { type: 'warning' }
+    )
+    await glossaryApi.delete(term.id!)
+    ElMessage.success('已删除')
+    await loadGlossaryTerms()
+  } catch {
+    // user cancelled
+  }
 }
 
 // Knowledge graph task status map
@@ -1210,10 +1557,15 @@ const handleGenerateVector = async (row: GitRepositoryInfo) => {
 // Multi-select & Cross-service Build
 // ============================================================
 const selectedProjects = ref<any[]>([])
+const selectedRemoteProjects = ref<any[]>([])
 const crossServiceBuilding = ref(false)
 
 function handleSelectionChange(selection: any[]) {
   selectedProjects.value = selection
+}
+
+function handleRemoteSelectionChange(selection: any[]) {
+  selectedRemoteProjects.value = selection
 }
 
 /** 确认多选：将表格勾选的项目设置为全局选中 */
@@ -1226,6 +1578,25 @@ function handleConfirmMultiSelect() {
   appStore.selectProjects(projects)
   const names = projects.map(p => p.name)
   ElMessage.success(`已选择 ${names.length} 个项目: ${names.join(', ')}`)
+}
+
+/** 远端项目查看图谱：跳转到知识图谱页面 */
+function handleRemoteConfirmMultiSelect() {
+  if (selectedRemoteProjects.value.length === 0) {
+    ElMessage.warning('请先在表格中勾选项目')
+    return
+  }
+  // 筛选已克隆的项目
+  const clonedProjects = selectedRemoteProjects.value.filter((p: any) => p.cloneStatus === 'CLONED')
+  if (clonedProjects.length === 0) {
+    ElMessage.warning('请选择已克隆的项目')
+    return
+  }
+  // 转换为项目信息
+  const projects = clonedProjects.map((p: any) => ({ name: p.name, path: p.localPath }))
+  appStore.selectProjects(projects)
+  // 跳转到知识图谱页面
+  router.push('/knowledge-graph')
 }
 
 const selectedProjectsWithKg = computed(() =>
@@ -1260,6 +1631,226 @@ async function handleRefreshProject(project: { path: string }) {
     }
   }
 }
+
+// ============================================================
+// Tabs
+// ============================================================
+const activeTab = ref('local')
+let remoteLoaded = false
+
+const handleTabChange = (tab: string | number) => {
+  if (tab === 'remote' && !remoteLoaded) {
+    loadRemoteProjects()
+  }
+}
+
+// ============================================================
+// Remote Projects
+// ============================================================
+const remoteProjects = ref<RemoteProject[]>([])
+const remoteLoading = ref(false)
+const showRemoteDialog = ref(false)
+const remoteIsEdit = ref(false)
+const remoteEditId = ref<number | null>(null)
+const remoteSubmitting = ref(false)
+const remoteForm = ref<CreateRemoteProjectRequest & { password?: string }>({
+  name: '',
+  gitUrl: '',
+  username: '',
+  password: '',
+  branch: 'main'
+})
+
+const remoteCloneStatusType = (status: string) => {
+  const map: Record<string, string> = {
+    PENDING: 'info',
+    CLONING: 'warning',
+    CLONED: 'success',
+    FAILED: 'danger'
+  }
+  return map[status] || 'info'
+}
+
+const remoteCloneStatusText = (status: string) => {
+  const map: Record<string, string> = {
+    PENDING: '未克隆',
+    CLONING: '克隆中',
+    CLONED: '已克隆',
+    FAILED: '失败'
+  }
+  return map[status] || status
+}
+
+const formatTimestamp = (ts: number): string => {
+  return new Date(ts).toLocaleString('zh-CN')
+}
+
+const loadRemoteProjects = async () => {
+  remoteLoading.value = true
+  try {
+    remoteProjects.value = await listRemoteProjects() as unknown as RemoteProject[]
+    remoteLoaded = true
+  } catch {
+    ElMessage.error('加载远端项目列表失败')
+  } finally {
+    remoteLoading.value = false
+  }
+}
+
+const handleAddRemote = () => {
+  remoteIsEdit.value = false
+  remoteEditId.value = null
+  remoteForm.value = { name: '', gitUrl: '', username: '', password: '', branch: 'main' }
+  showRemoteDialog.value = true
+}
+
+const handleEditRemote = (row: RemoteProject) => {
+  remoteIsEdit.value = true
+  remoteEditId.value = row.id
+  remoteForm.value = {
+    name: row.name,
+    gitUrl: row.gitUrl,
+    username: row.username || '',
+    password: '',
+    branch: row.branch
+  }
+  showRemoteDialog.value = true
+}
+
+const handleRemoteSubmit = async () => {
+  if (!remoteForm.value.name.trim() || !remoteForm.value.gitUrl.trim()) {
+    ElMessage.warning('项目名称和Git地址不能为空')
+    return
+  }
+  remoteSubmitting.value = true
+  try {
+    const payload: CreateRemoteProjectRequest = {
+      name: remoteForm.value.name.trim(),
+      gitUrl: remoteForm.value.gitUrl.trim(),
+      username: remoteForm.value.username?.trim() || undefined,
+      password: remoteForm.value.password?.trim() || undefined,
+      branch: remoteForm.value.branch.trim() || 'main'
+    }
+    if (remoteIsEdit.value && remoteEditId.value != null) {
+      await updateRemoteProject(remoteEditId.value, payload as UpdateRemoteProjectRequest)
+      ElMessage.success('远端项目已更新')
+    } else {
+      await createRemoteProject(payload)
+      ElMessage.success('远端项目已创建')
+    }
+    showRemoteDialog.value = false
+    await loadRemoteProjects()
+  } catch {
+    ElMessage.error(remoteIsEdit.value ? '更新失败' : '创建失败')
+  } finally {
+    remoteSubmitting.value = false
+  }
+}
+
+const handleCloneRemote = async (row: RemoteProject) => {
+  try {
+    await cloneRemoteProject(row.id)
+    ElMessage.success(`开始克隆: ${row.name}`)
+    await loadRemoteProjects()
+  } catch {
+    ElMessage.error('克隆请求失败')
+  }
+}
+
+const handlePullRemote = async (row: RemoteProject) => {
+  try {
+    await pullRemoteProject(row.id)
+    ElMessage.success(`拉取成功: ${row.name}`)
+    await loadRemoteProjects()
+  } catch {
+    ElMessage.error('拉取失败')
+  }
+}
+
+const handleDeleteRemote = async (row: RemoteProject) => {
+  try {
+    await ElMessageBox.confirm(`确定要删除远端项目 ${row.name} 吗？`, '确认删除', { type: 'warning' })
+    await deleteRemoteProject(row.id)
+    ElMessage.success('已删除')
+    await loadRemoteProjects()
+  } catch {
+    // user cancelled or error
+  }
+}
+
+const handleRemoteGenerateKg = (row: RemoteProject) => {
+  handleGenerateKnowledgeGraph({ name: row.name, path: row.localPath } as GitRepositoryInfo)
+}
+
+const handleRemoteGenerateVector = (row: RemoteProject) => {
+  handleGenerateVector({ name: row.name, path: row.localPath } as GitRepositoryInfo)
+}
+
+// ============================================================
+// Schedule Config
+// ============================================================
+const showScheduleDialog = ref(false)
+const scheduleProjectPath = ref('')
+const scheduleEditId = ref<number | null>(null)
+const scheduleLoading = ref(false)
+const scheduleForm = ref({
+  cronExpression: '',
+  taskType: 'FULL' as 'FULL' | 'INCREMENTAL',
+  enabled: true
+})
+
+const openScheduleDialog = async (row: RemoteProject) => {
+  scheduleProjectPath.value = row.localPath
+  scheduleEditId.value = null
+  scheduleForm.value = { cronExpression: '', taskType: 'FULL', enabled: true }
+  showScheduleDialog.value = true
+
+  try {
+    const schedules = await listKgSchedules() as unknown as Array<{ id: number; projectPath: string; cronExpression: string; taskType: 'FULL' | 'INCREMENTAL'; enabled: boolean }>
+    const match = schedules.find(s => normalizePath(s.projectPath) === normalizePath(row.localPath))
+    if (match) {
+      scheduleEditId.value = match.id
+      scheduleForm.value = {
+        cronExpression: match.cronExpression,
+        taskType: match.taskType,
+        enabled: match.enabled
+      }
+    }
+  } catch {
+    // no existing schedule, form stays empty
+  }
+}
+
+const handleScheduleSubmit = async () => {
+  if (!scheduleForm.value.cronExpression.trim()) {
+    ElMessage.warning('Cron表达式不能为空')
+    return
+  }
+  scheduleLoading.value = true
+  try {
+    if (scheduleEditId.value != null) {
+      await updateKgSchedule(scheduleEditId.value, {
+        projectPath: scheduleProjectPath.value,
+        cronExpression: scheduleForm.value.cronExpression.trim(),
+        taskType: scheduleForm.value.taskType,
+        enabled: scheduleForm.value.enabled
+      })
+      ElMessage.success('定时任务已更新')
+    } else {
+      await createKgSchedule({
+        projectPath: scheduleProjectPath.value,
+        cronExpression: scheduleForm.value.cronExpression.trim(),
+        taskType: scheduleForm.value.taskType
+      })
+      ElMessage.success('定时任务已创建')
+    }
+    showScheduleDialog.value = false
+  } catch {
+    ElMessage.error('保存定时任务失败')
+  } finally {
+    scheduleLoading.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -1282,6 +1873,14 @@ async function handleRefreshProject(project: { path: string }) {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.check-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
 }
 
 .text-muted {
@@ -1463,5 +2062,24 @@ async function handleRefreshProject(project: { path: string }) {
 
 .kg-exclude-tag {
   margin: 0;
+}
+
+.glossary-hint {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+
+.glossary-project-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.tab-header {
+  margin-bottom: 16px;
 }
 </style>

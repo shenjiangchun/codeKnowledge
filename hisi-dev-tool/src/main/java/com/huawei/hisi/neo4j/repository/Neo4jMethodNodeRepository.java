@@ -1672,6 +1672,64 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     List<String> findDistinctClassNamesByProjectPaths(@Param("projectPaths") List<String> projectPaths);
 
     /**
+     * 分页查询类名 distinct（按项目路径列表）
+     */
+    @Query("""
+        MATCH (m:Method)
+        WHERE m.projectPath IN $projectPaths AND m.className IS NOT NULL
+        RETURN DISTINCT m.className as className
+        ORDER BY className
+        SKIP $skip LIMIT $limit
+        """)
+    List<String> findDistinctClassNamesByProjectPathsPaged(
+        @Param("projectPaths") List<String> projectPaths,
+        @Param("skip") long skip,
+        @Param("limit") int limit
+    );
+
+    /**
+     * 统计类名 distinct 数量（按项目路径列表）
+     */
+    @Query("""
+        MATCH (m:Method)
+        WHERE m.projectPath IN $projectPaths AND m.className IS NOT NULL
+        RETURN count(DISTINCT m.className)
+        """)
+    long countDistinctClassNamesByProjectPaths(@Param("projectPaths") List<String> projectPaths);
+
+    /**
+     * 分页按关键字查询类名 distinct（按项目路径列表）
+     */
+    @Query("""
+        MATCH (m:Method)
+        WHERE m.projectPath IN $projectPaths AND m.className IS NOT NULL
+          AND m.className CONTAINS $keyword
+        RETURN DISTINCT m.className as className
+        ORDER BY className
+        SKIP $skip LIMIT $limit
+        """)
+    List<String> findDistinctClassNamesByProjectPathsAndKeywordPaged(
+        @Param("projectPaths") List<String> projectPaths,
+        @Param("keyword") String keyword,
+        @Param("skip") long skip,
+        @Param("limit") int limit
+    );
+
+    /**
+     * 按关键字统计类名 distinct 数量（按项目路径列表）
+     */
+    @Query("""
+        MATCH (m:Method)
+        WHERE m.projectPath IN $projectPaths AND m.className IS NOT NULL
+          AND m.className CONTAINS $keyword
+        RETURN count(DISTINCT m.className)
+        """)
+    long countDistinctClassNamesByProjectPathsAndKeyword(
+        @Param("projectPaths") List<String> projectPaths,
+        @Param("keyword") String keyword
+    );
+
+    /**
      * 删除指定项目路径之间的跨服务调用关系
      * 匹配 :CALLS 关系中 callType='EXTERNAL_CALL' 的边（由 LinkStrategy 创建）
      */

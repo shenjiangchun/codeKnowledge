@@ -328,6 +328,9 @@ function formatNodeOutput(nodeKey: DagNodeKey, output: Record<string, unknown>):
     case 'tech_plan':
       // TechPlan uses a specialized view; fallback to markdown_report or JSON
       return asString(output['markdown_report']) ?? JSON.stringify(output, null, 2)
+    default:
+      // Exhaustive check for TypeScript
+      return JSON.stringify(output, null, 2)
   }
 }
 

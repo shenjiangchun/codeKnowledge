@@ -18,6 +18,7 @@ import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSol
 import com.huawei.hisi.cache.GlobalAnalysisCache;
 import com.huawei.hisi.config.AnalysisFeatureConfig;
 import com.huawei.hisi.knowledgegraph.model.CallTarget;
+import com.huawei.hisi.knowledgegraph.util.KnowledgeGraphCommonUtils;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.knowledgegraph.util.MethodBodyCompressor;
 import lombok.RequiredArgsConstructor;
@@ -120,31 +121,12 @@ public class CodeAnalysisCoreService {
         List<String> effective = (excludePaths == null || excludePaths.isEmpty())
                 ? new ArrayList<>(EXCLUDED_SCAN_DIRS)
                 : excludePaths;
-        // 归一化：统一用正斜杠比对
-        List<String> normalized = effective.stream()
-                .filter(s -> s != null && !s.isBlank())
-                .map(s -> s.trim().replace('\\', '/'))
-                .collect(Collectors.toList());
 
         try {
             return Files.walk(Paths.get(projectPath))
                 .filter(Files::isRegularFile)
                 .filter(p -> p.toString().endsWith(".java"))
-                .filter(p -> {
-                    String pathStr = p.toString().replace('\\', '/');
-                    for (String seg : normalized) {
-                        // 匹配 "/<seg>/" 或 "/<seg>" 结尾，支持 "src/test/" 这种复合片段
-                        if (pathStr.contains("/" + seg + "/")
-                                || pathStr.endsWith("/" + seg)
-                                || pathStr.contains("/" + seg)) {
-                            // 仅当 seg 以 / 结尾或紧跟 / 时才算匹配片段
-                            if (seg.endsWith("/") || pathStr.contains("/" + seg + "/") || pathStr.endsWith("/" + seg)) {
-                                return false;
-                            }
-                        }
-                    }
-                    return true;
-                })
+                .filter(p -> !KnowledgeGraphCommonUtils.shouldExclude(p.toString(), effective))
                 .map(Path::toFile)
                 .collect(Collectors.toList());
         } catch (Exception e) {

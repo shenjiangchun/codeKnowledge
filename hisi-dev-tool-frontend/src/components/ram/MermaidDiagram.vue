@@ -41,10 +41,11 @@ async function renderDiagram() {
     svgHtml.value = svg
     error.value = ''
   } catch (e: unknown) {
+    const errorId = `${containerId}-${renderCount}`
     error.value = e instanceof Error ? e.message : '图表渲染失败'
     svgHtml.value = ''
     // Mermaid leaves a broken DOM element on failure; clean it up
-    const broken = document.getElementById(id)
+    const broken = document.getElementById(errorId)
     if (broken) broken.remove()
   }
 }

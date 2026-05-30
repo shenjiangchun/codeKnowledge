@@ -1,44 +1,46 @@
-# Build outputs
-**/target/
-**/dist/
-**/build/
-**/out/
-
-# Node
-**/node_modules/
-**/npm-debug.log*
-**/.npm
-**/playwright-report/
-**/test-results/
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
 
 # IDE
-**/.idea/
-**/.vscode/
-**/*.iml
-**/*.ipr
-**/*.iws
-
-# Logs
-**/logs/
-**/*.log
-**/hs_err_pid*.log
-**/startup.log
-**/app.log
-
-# Env / local (protect secrets: API keys, passwords, tokens)
-**/.env
-**/.env.*
-!**/.env.*.example
-**/application-local.yml
-**/application-local.yaml
-**/.worktrees/
-/.worktrees/
-/.wiki-staging/
+.idea/
+*.iml
+.vscode/
+.settings/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Misc artifacts
-**/classpath.txt
-**/playwright-test-*.tgz
+# Logs
+logs/
+*.log
+
+# Agent deliverables (internal)
+.agent-deliverables/
+
+# Git worktrees
+.worktrees/
+
+# Environment variables
+.env
+.env.local
+.env.neo4j
+
+# Neo4j volumes (local data)
+neo4j-data/
+neo4j-backup/
+models/
+
+.codeai
+.claude
+.gitignore
+
+# Generated JS files from Vue/TypeScript
+*.vue.js
+*.js
+!*.spec.js
+!*.test.js
+remote-repos/
+ai-sessions/
+src/main/resources/application-local.yml

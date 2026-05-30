@@ -68,6 +68,7 @@ export interface RootEntriesResponse {
 
 export interface EntryPoint {
   nodeId: string
+  methodNodeId: string
   entryType: string
   entryKey: string
   entryInfo: string
@@ -113,6 +114,14 @@ export interface MethodNode {
   caughtExceptions: string[]
   methodBody: string
   projectPath: string
+  description?: string
+}
+
+export interface PageResult<T> {
+  items: T[]
+  total: number
+  page: number
+  pageSize: number
 }
 
 export interface CallChainNode {
@@ -357,36 +366,23 @@ export interface CallChainGraphData {
 
 export const knowledgeGraphApi = {
   // ============================================================
-  // 项目与类查询接口（替代旧 callchain 接口）
+  // 项目与类查询接口 — V2（projectPaths 必填）
   // ============================================================
 
-  /**
-   * 获取所有已生成知识图谱的项目路径列表
-   * 替代旧的 callChainApi.getProjects()
-   */
   getProjects() {
-    return request.get<string[]>('/knowledge-graph/projects')
+    return request.get<string[]>('/v2/knowledge-graph/projects')
   },
 
-  /**
-   * 获取项目下的所有类名列表
-   * 替代旧的 callChainApi.getClasses()
-   */
-  getClasses(projectPath: string, projectPaths?: string[]) {
-    return request.get<string[]>('/knowledge-graph/classes', {
-      params: { projectPath, projectPaths }
+  getClasses(projectPaths: string[], page = 1, pageSize = 50, keyword?: string) {
+    return request.get<PageResult<string>>('/v2/knowledge-graph/classes', {
+      params: { projectPaths, page, pageSize, keyword }
     })
   },
 
   // ============================================================
-  // 任务管理接口（异步生成）
+  // 任务管理接口（V1，写操作保持 projectPath）
   // ============================================================
 
-  /**
-   * 启动知识图谱生成任务（异步）
-   * @param projectPath 项目路径
-   * @param excludePaths 屏蔽目录列表（可选）
-   */
   startGenerateTask(projectPath: string, excludePaths?: string[]) {
     const params: Record<string, string> = { projectPath }
     if (excludePaths && excludePaths.length > 0) {
@@ -395,17 +391,11 @@ export const knowledgeGraphApi = {
     return request.post<KnowledgeGraphTask>('/knowledge-graph/tasks/generate', null, { params })
   },
 
-  /**
-   * 批量查询任务状态
-   */
   getTaskStatus(projectPaths?: string[]) {
     const params = projectPaths ? { projectPaths: projectPaths.join(',') } : {}
     return request.get<KnowledgeGraphTask[]>('/knowledge-graph/tasks/status', { params })
   },
 
-  /**
-   * 获取单个项目的最新任务
-   */
   getLatestTask(projectPath: string) {
     return request.get<KnowledgeGraphTask>('/knowledge-graph/tasks/latest', {
       params: { projectPath }
@@ -413,64 +403,60 @@ export const knowledgeGraphApi = {
   },
 
   // ============================================================
-  // 同步生成接口（保留，供简单场景使用）
+  // 同步生成接口（V1，写操作保持 projectPath）
   // ============================================================
 
-  /**
-   * 生成知识图谱（同步，阻塞请求）
-   */
   generate(projectPath: string) {
     return request.post<GenerateResult>('/knowledge-graph/generate', { projectPath })
   },
 
-  /**
-   * 获取知识图谱状态
-   */
-  getStatus(projectPath: string, projectPaths?: string[]) {
-    return request.get<KnowledgeGraphStatus>('/knowledge-graph/status', {
-      params: { projectPath, projectPaths }
-    })
-  },
+  // ============================================================
+  // 状态查询 — V2
+  // ============================================================
 
-  /**
-   * 批量获取多项目知识图谱状态
-   */
-  getBatchStatus(projectPaths: string[]) {
-    return request.get<KnowledgeGraphStatus[]>('/knowledge-graph/status/batch', {
+  getStatus(projectPaths: string[]) {
+    return request.get<KnowledgeGraphStatus>('/v2/knowledge-graph/status', {
       params: { projectPaths }
     })
   },
 
-  /**
-   * 查询方法的上游信息（根入口 + 直接调用方，合并接口）
-   */
-  getRootEntries(className: string, methodName: string, projectPath: string, projectPaths?: string[]) {
-    return request.get<RootEntriesResponse>('/knowledge-graph/root-entries', {
-      params: { className, methodName, projectPath, projectPaths }
+  getBatchStatus(projectPaths: string[]) {
+    return request.get<KnowledgeGraphStatus[]>('/v2/knowledge-graph/status/batch', {
+      params: { projectPaths }
     })
   },
 
-  /**
-   * 查询方法的完整下游调用树（递归图，nodes+edges+depth）
-   */
-  getCalleesTree(className: string, methodName: string, projectPath: string, maxDepth?: number, projectPaths?: string[]) {
-    return request.get<CallChainGraphData>('/knowledge-graph/callees-tree', {
-      params: { className, methodName, projectPath, projectPaths, maxDepth }
+  // ============================================================
+  // 调用链 & 入口查询 — V2
+  // ============================================================
+
+  getRootEntries(className: string, methodName: string, projectPaths: string[]) {
+    return request.get<RootEntriesResponse>('/v2/knowledge-graph/root-entries', {
+      params: { className, methodName, projectPaths }
     })
   },
 
-  /**
-   * 查询入口点列表
-   */
-  getEntryPoints(projectPath: string, entryType?: string, projectPaths?: string[]) {
-    return request.get<EntryPoint[]>('/knowledge-graph/entry-points', {
-      params: { projectPath, entryType, projectPaths }
+  getCalleesTree(className: string, methodName: string, projectPaths: string[], maxDepth?: number) {
+    return request.get<CallChainGraphData>('/v2/knowledge-graph/callees-tree', {
+      params: { className, methodName, projectPaths, maxDepth }
+    })
+  },
+
+  getEntryTypes(projectPaths: string[]) {
+    return request.get<string[]>('/v2/knowledge-graph/entry-types', {
+      params: { projectPaths }
+    })
+  },
+
+  getEntryPoints(projectPaths: string[], entryType?: string, page = 1, pageSize = 20) {
+    return request.get<PageResult<EntryPoint>>('/v2/knowledge-graph/entry-points', {
+      params: { projectPaths, entryType, page, pageSize }
     })
   },
 
   /**
    * 解析 DTO 类的字段 schema（用于 APM 调试 RequestBody 表单）
-   * className 支持简单名或全限定名；解析失败返回 null。
+   * 保持 V1 —— 不在图谱总览页面使用
    */
   getTypeSchema(className: string, projectPath: string) {
     return request.get<DtoSchema | null>('/knowledge-graph/type/schema', {
@@ -479,123 +465,93 @@ export const knowledgeGraphApi = {
   },
 
   // ============================================================
-  // 调用链查询（替代调用链分析功能）
+  // 调用链查询 — V2
   // ============================================================
 
-  /**
-   * 根据入口标识查询完整调用链（如 URI）
-   */
-  getCallChainByKey(entryKey: string, projectPath: string, projectPaths?: string[]) {
-    return request.get<CallChainView>('/knowledge-graph/call-chain/by-key', {
-      params: { entryKey, projectPath, projectPaths }
+  getCallChainByKey(entryKey: string, projectPaths: string[]) {
+    return request.get<CallChainView>('/v2/knowledge-graph/call-chain/by-key', {
+      params: { entryKey, projectPaths }
     })
   },
 
-  /**
-   * 根据入口类型查询所有调用链
-   */
-  getCallChainsByType(entryType: string, projectPath: string, projectPaths?: string[]) {
-    return request.get<CallChainView[]>('/knowledge-graph/call-chain/by-type', {
-      params: { entryType, projectPath, projectPaths }
+  getCallChainsByType(entryType: string, projectPaths: string[]) {
+    return request.get<CallChainView[]>('/v2/knowledge-graph/call-chain/by-type', {
+      params: { entryType, projectPaths }
     })
   },
 
-  /**
-   * 反向查询：哪些入口会调用指定方法
-   */
-  getCallChainsAffecting(className: string, methodName: string, projectPath: string, projectPaths?: string[]) {
-    return request.get<CallChainView[]>('/knowledge-graph/call-chain/affecting', {
-      params: { className, methodName, projectPath, projectPaths }
+  getCallChainsAffecting(className: string, methodName: string, projectPaths: string[]) {
+    return request.get<CallChainView[]>('/v2/knowledge-graph/call-chain/affecting', {
+      params: { className, methodName, projectPaths }
     })
   },
 
-  /**
-   * 查询接口的所有实现类
-   */
-  getImplementations(interfaceName: string, projectPath: string, projectPaths?: string[]) {
-    return request.get<string[]>('/knowledge-graph/implementations', {
-      params: { interfaceName, projectPath, projectPaths }
+  getImplementations(interfaceName: string, projectPaths: string[]) {
+    return request.get<string[]>('/v2/knowledge-graph/implementations', {
+      params: { interfaceName, projectPaths }
     })
   },
 
-  /**
-   * 查询类实现的所有接口
-   */
-  getInterfaces(className: string, projectPath: string, projectPaths?: string[]) {
-    return request.get<string[]>('/knowledge-graph/interfaces', {
-      params: { className, projectPath, projectPaths }
+  getInterfaces(className: string, projectPaths: string[]) {
+    return request.get<string[]>('/v2/knowledge-graph/interfaces', {
+      params: { className, projectPaths }
     })
   },
 
-  /**
-   * 查询方法详情（包含方法体）
-   */
-  getMethodDetail(nodeId: string, projectPath: string, projectPaths?: string[]) {
-    return request.get<MethodNode>('/knowledge-graph/method/detail', {
-      params: { nodeId, projectPath, projectPaths }
+  getMethodDetail(nodeId: string, projectPaths: string[]) {
+    return request.get<MethodNode>('/v2/knowledge-graph/method/detail', {
+      params: { nodeId, projectPaths }
     })
   },
 
-  /**
-   * 按类名查询所有方法
-   */
-  getMethodsByClass(className: string, projectPath: string, projectPaths?: string[]) {
-    return request.get<MethodNode[]>('/knowledge-graph/method/by-class', {
-      params: { className, projectPath, projectPaths }
+  getMethodsByClass(className: string, projectPaths: string[]) {
+    return request.get<MethodNode[]>('/v2/knowledge-graph/method/by-class', {
+      params: { className, projectPaths }
+    })
+  },
+
+  searchMethods(keyword: string, projectPaths: string[], limit = 50) {
+    return request.get<MethodNode[]>('/v2/knowledge-graph/method/search', {
+      params: { keyword, projectPaths, limit }
     })
   },
 
   // ============================================================
-  // 调用链图数据接口
+  // 调用链图数据接口 — V2
   // ============================================================
 
-  /**
-   * 向下调用链查询
-   */
-  getDownstreamChain(nodeId: string, projectPath: string, maxDepth?: number, projectPaths?: string[]) {
-    const params: Record<string, string | number | string[]> = { nodeId, projectPath }
+  getDownstreamChain(nodeId: string, projectPaths: string[], maxDepth?: number) {
+    const params: Record<string, string | number | string[]> = { nodeId, projectPaths }
     if (maxDepth !== undefined) {
       params.maxDepth = maxDepth
     }
-    if (projectPaths) {
-      params.projectPaths = projectPaths
-    }
-    return request.get<CallChainView>('/knowledge-graph/call-chain/downstream', {
+    return request.get<CallChainView>('/v2/knowledge-graph/call-chain/downstream', {
       params
     })
   },
 
-  /**
-   * 获取DAG图数据
-   */
-  getCallChainGraph(entryKey: string, projectPath: string, includeCycles?: boolean, projectPaths?: string[]) {
-    const params: Record<string, string | boolean | string[]> = { entryKey, projectPath }
+  getCallChainGraph(entryKey: string, projectPaths: string[], includeCycles?: boolean, maxDepth?: number) {
+    const params: Record<string, string | boolean | string[] | number> = { entryKey, projectPaths }
     if (includeCycles !== undefined) {
       params.includeCycles = includeCycles
     }
-    if (projectPaths) {
-      params.projectPaths = projectPaths
+    if (maxDepth !== undefined) {
+      params.maxDepth = maxDepth
     }
-    return request.get<CallChainGraphData>('/knowledge-graph/call-chain/graph', {
+    return request.get<CallChainGraphData>('/v2/knowledge-graph/call-chain/graph', {
       params
     })
   },
 
-  /**
-   * 环检测
-   */
-  detectCycles(projectPath: string, entryKey?: string, nodeId?: string, projectPaths?: string[]) {
-    const params: Record<string, string | string[]> = { projectPath }
+  detectCycles(projectPaths: string[], entryKey?: string, nodeId?: string) {
+    const params: Record<string, string | string[]> = { projectPaths }
     if (entryKey !== undefined) {
       params.entryKey = entryKey
     }
     if (nodeId !== undefined) {
       params.nodeId = nodeId
     }
-    if (projectPaths) {
-      params.projectPaths = projectPaths
-    }
-    return request.get<CallCycleInfo[]>('/knowledge-graph/call-chain/cycles', {
+    return request.get<CallCycleInfo[]>('/v2/knowledge-graph/cycles/detect', {
       params
     })
   },
@@ -604,123 +560,83 @@ export const knowledgeGraphApi = {
   // MyBatis 相关接口
   // ============================================================
 
-  /**
-   * 扫描项目中的 MyBatis Mapper
-   */
   scanMyBatis(projectPath: string) {
     return request.post<MyBatisScanResult>('/knowledge-graph/mybatis/scan', {
       projectPath
     })
   },
 
-  /**
-   * 获取 MyBatis Mapper 列表
-   */
-  getMyBatisMappers(projectPath: string, projectPaths?: string[]) {
-    return request.get<MyBatisMapperNode[]>('/knowledge-graph/mybatis/mappers', {
-      params: { projectPath, projectPaths }
+  getMyBatisMappers(projectPaths: string[]) {
+    return request.get<MyBatisMapperNode[]>('/v2/knowledge-graph/mybatis/mappers', {
+      params: { projectPaths }
     })
   },
 
-  /**
-   * 获取 MyBatis SQL 语句列表
-   */
-  getMyBatisSqlStatements(projectPath: string, mapperInterface?: string, statementType?: string, projectPaths?: string[]) {
-    const params: Record<string, string | string[]> = { projectPath }
+  getMyBatisSqlStatements(projectPaths: string[], mapperInterface?: string, statementType?: string) {
+    const params: Record<string, string | string[]> = { projectPaths }
     if (mapperInterface !== undefined) {
       params.mapperInterface = mapperInterface
     }
     if (statementType !== undefined) {
       params.statementType = statementType
     }
-    if (projectPaths) {
-      params.projectPaths = projectPaths
-    }
-    return request.get<MyBatisSqlNode[]>('/knowledge-graph/mybatis/sql-statements', {
+    return request.get<MyBatisSqlNode[]>('/v2/knowledge-graph/mybatis/sql', {
       params
     })
   },
 
   // ============================================================
-  // 业务流程生成接口
+  // 业务流程生成接口（V1，POST）
   // ============================================================
 
-  /**
-   * 生成业务流程图
-   */
   generateBusinessFlow(data: BusinessFlowRequest) {
     return request.post<BusinessFlowResponse>('/knowledge-graph/business-flow/generate', data)
   },
 
   // ============================================================
-  // 单元测试生成接口
+  // 单元测试生成接口（V1，POST）
   // ============================================================
 
-  /**
-   * 生成单元测试
-   */
   generateUnitTest(data: UnitTestRequest) {
     return request.post<UnitTestResponse>('/knowledge-graph/unit-test/generate', data)
   },
 
   // ============================================================
-  // 桥接关系查询接口
+  // 桥接关系查询接口 — V2
   // ============================================================
 
-  /**
-   * 获取方法的桥接关系
-   */
-  getMethodBridges(nodeId: string, projectPath: string, projectPaths?: string[]) {
-    return request.get<BridgeRelation[]>('/knowledge-graph/bridges/method', {
-      params: { nodeId, projectPath, projectPaths }
+  getMethodBridges(nodeId: string, projectPaths: string[]) {
+    return request.get<BridgeRelation[]>(`/v2/knowledge-graph/call-chain/${nodeId}/bridges`, {
+      params: { projectPaths }
+    })
+  },
+
+  getMapperSql(mapperInterface: string, projectPaths: string[]) {
+    return request.get<MapperSqlDetail[]>(`/v2/knowledge-graph/mapper/${mapperInterface}/sql`, {
+      params: { projectPaths }
+    })
+  },
+
+  getFeignCallChain(serviceName: string, projectPaths: string[]) {
+    return request.get<FeignCallChain[]>(`/v2/knowledge-graph/feign/${serviceName}/call-chain`, {
+      params: { projectPaths }
+    })
+  },
+
+  getMQCallChain(topic: string, projectPaths: string[]) {
+    return request.get<MQCallChain[]>(`/v2/knowledge-graph/mq/${topic}/call-chain`, {
+      params: { projectPaths }
+    })
+  },
+
+  getBridgeStats(projectPaths: string[]) {
+    return request.get<BridgeStats>('/v2/knowledge-graph/bridge-stats', {
+      params: { projectPaths }
     })
   },
 
   /**
-   * 获取 Mapper SQL 详情
-   */
-  getMapperSql(mapperInterface: string, projectPath: string, methodName?: string, projectPaths?: string[]) {
-    const params: Record<string, string | string[]> = { mapperInterface, projectPath }
-    if (methodName) {
-      params.methodName = methodName
-    }
-    if (projectPaths) {
-      params.projectPaths = projectPaths
-    }
-    return request.get<MapperSqlDetail[]>('/knowledge-graph/bridges/mapper-sql', {
-      params
-    })
-  },
-
-  /**
-   * 获取 Feign 调用链
-   */
-  getFeignCallChain(serviceName: string, projectPath: string, projectPaths?: string[]) {
-    return request.get<FeignCallChain[]>('/knowledge-graph/bridges/feign-chain', {
-      params: { serviceName, projectPath, projectPaths }
-    })
-  },
-
-  /**
-   * 获取 MQ 调用链
-   */
-  getMQCallChain(topic: string, projectPath: string, projectPaths?: string[]) {
-    return request.get<MQCallChain[]>('/knowledge-graph/bridges/mq-chain', {
-      params: { topic, projectPath, projectPaths }
-    })
-  },
-
-  /**
-   * 获取项目桥接统计
-   */
-  getBridgeStats(projectPath: string, projectPaths?: string[]) {
-    return request.get<BridgeStats>('/knowledge-graph/bridge-stats', {
-      params: { projectPath, projectPaths }
-    })
-  },
-
-  /**
-   * 获取入口点桥接关系
+   * 获取入口点桥接关系 — 保持 V1（未纳入 V2 控制器）
    */
   getEntryBridges(entryKey: string, projectPath: string, projectPaths?: string[]) {
     return request.get<BridgeRelation[]>('/knowledge-graph/bridges/entry', {
@@ -728,10 +644,7 @@ export const knowledgeGraphApi = {
     })
   },
 
-  /**
-   * 按类型查询桥接关系列表
-   */
-  getBridgesByType(bridgeType: string, projectPath: string, projectPaths?: string[]) {
+  getBridgesByType(bridgeType: string, projectPaths: string[]) {
     return request.get<Array<{
       callerClassName: string
       callerMethodName: string
@@ -742,36 +655,31 @@ export const knowledgeGraphApi = {
       targetService: string | null
       targetEndpoint: string | null
       sqlId: string | null
-    }>>('/knowledge-graph/bridges/by-type', {
-      params: { bridgeType, projectPath, projectPaths }
+    }>>('/v2/knowledge-graph/bridges/by-type', {
+      params: { bridgeType, projectPaths }
     })
   },
 
   // ============================================================
-  // Git 状态和增量生成接口
+  // Git 状态 — V2
   // ============================================================
 
-  /**
-   * 获取 Git 状态
-   */
-  getGitStatus(projectPath: string) {
-    return request.get<GitStatus>('/knowledge-graph/git-status', {
-      params: { projectPath }
+  getGitStatus(projectPaths: string[]) {
+    return request.get<GitStatus>('/v2/knowledge-graph/git-status', {
+      params: { projectPaths }
     })
   },
 
-  /**
-   * 增量生成知识图谱
-   */
+  // ============================================================
+  // 写操作 — V1（保持 projectPath）
+  // ============================================================
+
   incrementalGenerate(projectPath: string) {
     return request.post<KnowledgeGraphTask>('/knowledge-graph/incremental', {
       projectPath
     })
   },
 
-  // ============================================================
-  // 跨服务依赖构建接口
-  // ============================================================
   crossServiceBuild(projectPaths: string[]) {
     return request.post<{ taskId: number }>('/knowledge-graph/cross-service/build', { projectPaths })
   },

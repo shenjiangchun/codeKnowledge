@@ -43,6 +43,13 @@
             >
               生成向量
             </el-button>
+            <!-- 术语配置按钮 -->
+            <el-button
+              @click="showGlossaryDialog = true"
+              :disabled="!projectPath"
+            >
+              术语配置
+            </el-button>
             <!-- 补齐缺失向量按钮 -->
             <el-button
               v-if="missingInfo && missingInfo.missingCount > 0"
@@ -151,6 +158,14 @@
           />
           <el-empty v-else description="请先选择项目" />
         </el-tab-pane>
+        <el-tab-pane label="图谱探索" name="explorer">
+          <GraphExplorerTab
+            v-if="projectPath"
+            :project-path="projectPath"
+            :project-paths="projectPaths"
+          />
+          <el-empty v-else description="请先选择项目" />
+        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -194,21 +209,96 @@
         </el-button>
       </div>
     </el-drawer>
+
+    <!-- 术语管理对话框 -->
+    <el-dialog
+      v-model="showGlossaryDialog"
+      title="术语配置"
+      width="700px"
+      destroy-on-close
+    >
+      <p style="color: #909399; margin: 0 0 16px 0; font-size: 13px;">
+        配置术语对照表后，LLM 生成语义描述时将自动遵守术语规范（重新生成向量后生效）
+      </p>
+
+      <div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
+        <el-button type="primary" size="small" @click="glossaryShowForm = true">
+          <el-icon><Plus /></el-icon>
+          新增术语
+        </el-button>
+      </div>
+
+      <el-table :data="glossaryTerms" v-loading="glossaryLoading" empty-text="暂无术语" stripe size="small">
+        <el-table-column prop="wrongTerm" label="错误术语" width="140">
+          <template #default="{ row }">
+            <el-tag type="danger" effect="plain" size="small">{{ row.wrongTerm }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="" width="40" align="center">
+          <template #default>→</template>
+        </el-table-column>
+        <el-table-column prop="correctTerm" label="正确术语" width="140">
+          <template #default="{ row }">
+            <el-tag type="success" effect="plain" size="small">{{ row.correctTerm }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="context" label="说明" min-width="150" show-overflow-tooltip />
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="glossaryEditRow(row)">编辑</el-button>
+            <el-button link type="danger" size="small" @click="glossaryDeleteRow(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <!-- 术语新增/编辑子对话框 -->
+    <el-dialog
+      v-model="glossaryShowForm"
+      :title="glossaryEditingId ? '编辑术语' : '新增术语'"
+      width="420px"
+      append-to-body
+      destroy-on-close
+    >
+      <el-form :model="glossaryForm" label-width="80px">
+        <el-form-item label="错误术语" required>
+          <el-input v-model="glossaryForm.wrongTerm" placeholder="LLM 可能错误使用的术语" />
+        </el-form-item>
+        <el-form-item label="正确术语" required>
+          <el-input v-model="glossaryForm.correctTerm" placeholder="应该使用的正确术语" />
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="glossaryForm.context" placeholder="可选，如适用场景" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="glossaryShowForm = false">取消</el-button>
+        <el-button type="primary" @click="glossarySubmit" :loading="glossarySubmitting">
+          {{ glossaryEditingId ? '保存' : '创建' }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import { projectApi } from '@/api/project'
 import { knowledgeGraphApi, type KnowledgeGraphStatus, type GitStatus } from '@/api/knowledgeGraph'
 import { getVectorGenerationStatus, startVectorGeneration, getMissingEmbeddings, refreshMissing, type VectorGenerationTask, type MissingEmbeddingInfo } from '@/api/vectorGeneration'
+import { glossaryApi } from '@/api/glossary'
+import { listRemoteProjects } from '@/api/remote-project'
+import type { GlossaryTerm } from '@/types/glossary'
+import type { RemoteProject } from '@/types/remote-project'
 import { useAppStore } from '@/stores/app'
 import CodeUnderstandingTab from './components/CodeUnderstandingTab.vue'
 import SemanticSearchPanel from './components/SemanticSearchPanel.vue'
 import MethodReferenceGraph from '@/views/call-chain/MethodReferenceGraph.vue'
 import CrossServiceBridgeTab from './components/CrossServiceBridgeTab.vue'
+import GraphExplorerTab from './components/GraphExplorerTab.vue'
 
 const route = useRoute()
 const appStore = useAppStore()
@@ -393,15 +483,39 @@ const stopVectorPolling = () => {
 // 加载项目列表
 const loadProjects = async () => {
   try {
-    // 使用与项目管理页面相同的 API 获取项目列表（包含完整路径）
-    const res = await projectApi.scanGitRepos()
-    const scannedRepos = Array.isArray(res) ? res : []
+    // 并行加载本地项目和远端项目
+    const [localRes, remoteRes] = await Promise.all([
+      projectApi.scanGitRepos(),
+      listRemoteProjects().catch(() => []) // 远端项目加载失败不影响
+    ])
+
+    const scannedRepos = Array.isArray(localRes) ? localRes : []
+    const remoteProjects = Array.isArray(remoteRes) ? remoteRes : []
 
     // 直接使用后端返回的项目信息（包含正确的 path）
-    projects.value = scannedRepos.map((repo: any) => ({
+    const localProjects: ProjectInfo[] = scannedRepos.map((repo: any) => ({
       name: repo.name,
       path: repo.path
     }))
+
+    // 将已克隆的远端项目也加入项目列表
+    const remoteProjectsCloned: ProjectInfo[] = remoteProjects
+      .filter((rp: RemoteProject) => rp.cloneStatus === 'CLONED' && rp.localPath)
+      .map((rp: RemoteProject) => ({
+        name: rp.name,
+        path: rp.localPath
+      }))
+
+    // 合并去重（以 name 为 key）
+    const nameMap = new Map<string, ProjectInfo>()
+    localProjects.forEach(p => nameMap.set(p.name, p))
+    remoteProjectsCloned.forEach(p => {
+      if (!nameMap.has(p.name)) {
+        nameMap.set(p.name, p)
+      }
+    })
+
+    projects.value = Array.from(nameMap.values())
 
     // 如果当前没有选中，自动选择 store 中已选项目
     if (selectedProjectNames.value.length === 0 && appStore.selectedProjectNames.length > 0) {
@@ -423,7 +537,7 @@ const loadGraphStatus = async () => {
 
   try {
     // 使用多项目合并查询，传入所有 projectPaths
-    const result = await knowledgeGraphApi.getStatus(projectPaths.value[0], projectPaths.value)
+    const result = await knowledgeGraphApi.getStatus(projectPaths.value)
     graphStatus.value = result as unknown as KnowledgeGraphStatus
   } catch (error) {
     console.error('[KnowledgeGraph] Failed to load graph status:', error)
@@ -469,7 +583,7 @@ const handleProjectChange = () => {
 const loadGitStatus = async () => {
   if (!projectPath.value) return
   try {
-    const status = await knowledgeGraphApi.getGitStatus(projectPath.value)
+    const status = await knowledgeGraphApi.getGitStatus([projectPath.value])
     gitStatus.value = status as unknown as GitStatus
   } catch (error) {
     console.error('[KnowledgeGraph] Failed to load git status:', error)
@@ -483,7 +597,7 @@ const handleFullGenerate = async () => {
 
   // 检查 Git 状态
   try {
-    const status = await knowledgeGraphApi.getGitStatus(projectPath.value)
+    const status = await knowledgeGraphApi.getGitStatus([projectPath.value])
     const gitStatusData = status as unknown as GitStatus
 
     if (gitStatusData.hasUncommittedChanges) {
@@ -525,7 +639,7 @@ const handleIncrementalGenerate = async () => {
 
   // 检查 Git 状态
   try {
-    const status = await knowledgeGraphApi.getGitStatus(projectPath.value)
+    const status = await knowledgeGraphApi.getGitStatus([projectPath.value])
     const gitStatusData = status as unknown as GitStatus
 
     if (gitStatusData.hasUncommittedChanges) {
@@ -648,8 +762,91 @@ function handleViewCallChain(result: any) {
   })
 }
 
-onMounted(() => {
-  loadProjects()
+// ==================== 术语管理 ====================
+const showGlossaryDialog = ref(false)
+const glossaryTerms = ref<GlossaryTerm[]>([])
+const glossaryLoading = ref(false)
+const glossaryShowForm = ref(false)
+const glossarySubmitting = ref(false)
+const glossaryEditingId = ref<number | null>(null)
+const glossaryForm = ref({ wrongTerm: '', correctTerm: '', context: '' })
+
+const loadGlossaryTerms = async () => {
+  if (!projectPath.value) return
+  glossaryLoading.value = true
+  try {
+    glossaryTerms.value = await glossaryApi.list(projectPath.value) as unknown as GlossaryTerm[]
+  } catch {
+    ElMessage.error('加载术语列表失败')
+  } finally {
+    glossaryLoading.value = false
+  }
+}
+
+watch(showGlossaryDialog, (visible) => {
+  if (visible) loadGlossaryTerms()
+})
+
+const glossaryEditRow = (row: GlossaryTerm) => {
+  glossaryEditingId.value = row.id!
+  glossaryForm.value = {
+    wrongTerm: row.wrongTerm,
+    correctTerm: row.correctTerm,
+    context: row.context || ''
+  }
+  glossaryShowForm.value = true
+}
+
+const glossaryDeleteRow = async (row: GlossaryTerm) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除「${row.wrongTerm} → ${row.correctTerm}」？`,
+      '删除确认',
+      { type: 'warning' }
+    )
+    await glossaryApi.delete(row.id!)
+    ElMessage.success('已删除')
+    await loadGlossaryTerms()
+  } catch {
+    // cancelled
+  }
+}
+
+const glossarySubmit = async () => {
+  if (!glossaryForm.value.wrongTerm.trim() || !glossaryForm.value.correctTerm.trim()) {
+    ElMessage.warning('错误术语和正确术语不能为空')
+    return
+  }
+  glossarySubmitting.value = true
+  try {
+    const payload: GlossaryTerm = {
+      projectPath: projectPath.value,
+      wrongTerm: glossaryForm.value.wrongTerm.trim(),
+      correctTerm: glossaryForm.value.correctTerm.trim(),
+      context: glossaryForm.value.context.trim() || undefined
+    }
+    if (glossaryEditingId.value) {
+      await glossaryApi.update(glossaryEditingId.value, payload)
+      ElMessage.success('术语已更新')
+    } else {
+      await glossaryApi.create(payload)
+      ElMessage.success('术语已创建')
+    }
+    glossaryShowForm.value = false
+    glossaryEditingId.value = null
+    glossaryForm.value = { wrongTerm: '', correctTerm: '', context: '' }
+    await loadGlossaryTerms()
+  } catch {
+    ElMessage.error('保存失败')
+  } finally {
+    glossarySubmitting.value = false
+  }
+}
+
+onMounted(async () => {
+  // 先加载项目列表
+  await loadProjects()
+  // 项目列表加载完成后，再加载图谱数据
   if (projectPath.value) {
     loadGraphStatus()
     loadGitStatus()
@@ -665,11 +862,24 @@ onUnmounted(() => {
   stopVectorPolling()
 })
 
+// 当项目路径变化时重新加载数据
+watch(projectPaths, (newPaths) => {
+  if (newPaths.length > 0) {
+    loadGraphStatus()
+    loadGitStatus()
+    loadVectorStatus()
+    loadMissingInfo()
+  }
+}, { deep: true })
+
 // 当 store 选中项目变化时，同步到本地
 watch(() => appStore.selectedProjectNames, (newNames) => {
   if (newNames.length > 0) {
     selectedProjectNames.value = [...newNames]
-    handleProjectChange()
+    // 等待 nextTick 确保 projectPaths 计算完成
+    nextTick(() => {
+      handleProjectChange()
+    })
   }
 })
 </script>

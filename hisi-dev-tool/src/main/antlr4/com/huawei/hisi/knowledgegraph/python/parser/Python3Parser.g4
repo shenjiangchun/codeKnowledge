@@ -77,7 +77,7 @@ async_funcdef
     ;
 
 funcdef
-    : 'def' name parameters ('->' test)? ':' block
+    : 'def' name type_params? parameters ('->' test)? ':' block
     ;
 
 parameters
@@ -85,16 +85,14 @@ parameters
     ;
 
 typedargslist
-    : (
-        tfpdef ('=' test)? (',' tfpdef ('=' test)?)* (
-            ',' (
-                '*' tfpdef? (',' tfpdef ('=' test)?)* (',' ('**' tfpdef ','?)?)?
-                | '**' tfpdef ','?
-            )?
-        )?
-        | '*' tfpdef? (',' tfpdef ('=' test)?)* (',' ('**' tfpdef ','?)?)?
-        | '**' tfpdef ','?
-    )
+    : typedelem (',' typedelem)* ','?
+    ;
+
+typedelem
+    : tfpdef ('=' test)?
+    | '*' tfpdef?
+    | '**' tfpdef
+    | '/'
     ;
 
 tfpdef
@@ -102,16 +100,14 @@ tfpdef
     ;
 
 varargslist
-    : (
-        vfpdef ('=' test)? (',' vfpdef ('=' test)?)* (
-            ',' (
-                '*' vfpdef? (',' vfpdef ('=' test)?)* (',' ('**' vfpdef ','?)?)?
-                | '**' vfpdef (',')?
-            )?
-        )?
-        | '*' vfpdef? (',' vfpdef ('=' test)?)* (',' ('**' vfpdef ','?)?)?
-        | '**' vfpdef ','?
-    )
+    : varelem (',' varelem)* ','?
+    ;
+
+varelem
+    : vfpdef ('=' test)?
+    | '*' vfpdef?
+    | '**' vfpdef
+    | '/'
     ;
 
 vfpdef
@@ -129,7 +125,8 @@ simple_stmts
 
 simple_stmt
     : (
-        expr_stmt
+        type_stmt
+        | expr_stmt
         | del_stmt
         | pass_stmt
         | flow_stmt
@@ -263,6 +260,20 @@ assert_stmt
     : 'assert' test (',' test)?
     ;
 
+type_stmt
+    : 'type' name type_params? '=' expr
+    ;
+
+type_params
+    : '[' type_param (',' type_param)* ','? ']'
+    ;
+
+type_param
+    : name (':' expr)?
+    | '*' name (':' expr)?
+    | '**' name (':' expr)?
+    ;
+
 compound_stmt
     : if_stmt
     | while_stmt
@@ -296,13 +307,15 @@ try_stmt
     : (
         'try' ':' block (
             (except_clause ':' block)+ ('else' ':' block)? ('finally' ':' block)?
+            | (except_star_clause ':' block)+ ('else' ':' block)? ('finally' ':' block)?
             | 'finally' ':' block
         )
     )
     ;
 
 with_stmt
-    : 'with' with_item (',' with_item)* ':' block
+    : 'with' '(' with_item (',' with_item)* ','? ')' ':' block
+    | 'with' with_item (',' with_item)* ':' block
     ;
 
 with_item
@@ -312,6 +325,10 @@ with_item
 // NB compile.c makes sure that the default except clause is last
 except_clause
     : 'except' (test ('as' name)?)?
+    ;
+
+except_star_clause
+    : 'except' '*' test ('as' name)?
     ;
 
 block
@@ -506,7 +523,8 @@ keyword_pattern
     ;
 
 test
-    : or_test ('if' or_test 'else' test)?
+    : name ':=' test
+    | or_test ('if' or_test 'else' test)?
     | lambdef
     ;
 
@@ -601,6 +619,8 @@ name
     : NAME
     | '_'
     | 'match'
+    | 'type'
+    | 'case'
     ;
 
 testlist_comp
@@ -642,7 +662,7 @@ dictorsetmaker
     ;
 
 classdef
-    : 'class' name ('(' arglist? ')')? ':' block
+    : 'class' name type_params? ('(' arglist? ')')? ':' block
     ;
 
 arglist

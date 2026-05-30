@@ -181,13 +181,13 @@ public class MyBatisXmlScanner {
         }
 
         // 默认屏蔽目录（含 .worktrees）+ 用户自定义
-        Set<String> excludedDirs = new HashSet<>(
+        List<String> effectiveExcludes = new ArrayList<>(
                 com.huawei.hisi.service.CodeAnalysisCoreService.EXCLUDED_SCAN_DIRS);
-        excludedDirs.add("bin");
+        effectiveExcludes.add("bin");
         if (excludePaths != null) {
             for (String s : excludePaths) {
                 if (s != null && !s.isBlank()) {
-                    excludedDirs.add(s.trim().replace('\\', '/'));
+                    effectiveExcludes.add(s.trim());
                 }
             }
         }
@@ -196,18 +196,8 @@ public class MyBatisXmlScanner {
             return stream
                     .filter(Files::isRegularFile)
                     .filter(p -> p.toString().endsWith(".xml"))
-                    .filter(p -> {
-                        // 检查路径中是否包含排除的目录
-                        String pathStr = p.toString().replace('\\', '/');
-                        for (String excluded : excludedDirs) {
-                            // 支持 "src/test/" 这种带斜杠的复合片段以及单段 "target"
-                            String seg = excluded.endsWith("/") ? excluded.substring(0, excluded.length() - 1) : excluded;
-                            if (pathStr.contains("/" + seg + "/") || pathStr.endsWith("/" + seg)) {
-                                return false;
-                            }
-                        }
-                        return true;
-                    })
+                    .filter(p -> !com.huawei.hisi.knowledgegraph.util.KnowledgeGraphCommonUtils
+                            .shouldExclude(p.toString(), effectiveExcludes))
                     .collect(Collectors.toList());
         }
     }
