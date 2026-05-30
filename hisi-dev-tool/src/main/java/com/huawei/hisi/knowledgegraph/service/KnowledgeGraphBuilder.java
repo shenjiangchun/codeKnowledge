@@ -1589,6 +1589,9 @@ public class KnowledgeGraphBuilder {
     private void saveGenerationLog(String projectPath, int methodCount, int callRelationCount,
                                    int entryPointCount, int implCount, long startTime) {
         try {
+            // Normalize path to ensure consistency
+            String normalizedProjectPath = com.huawei.hisi.knowledgegraph.util.ProjectPathResolver.normalize(projectPath);
+
             long costTimeMs = System.currentTimeMillis() - startTime;
             long nowEpoch = java.time.Instant.now().getEpochSecond();
             long startEpoch = nowEpoch - (costTimeMs / 1000);
@@ -1597,7 +1600,7 @@ public class KnowledgeGraphBuilder {
             String commitHash = null;
             try {
                 com.huawei.hisi.knowledgegraph.model.GitStatus gitStatus =
-                    gitStatusService.getGitStatus(projectPath);
+                    gitStatusService.getGitStatus(normalizedProjectPath);
                 commitHash = gitStatus.getCommitHash();
             } catch (Exception e) {
                 this.log.warn("获取 Git commit hash 失败: {}", e.getMessage());
@@ -1606,7 +1609,7 @@ public class KnowledgeGraphBuilder {
             // Store commit hash in errorMessage field (repurposed for KG_LOG metadata)
             GenerationTask logTask = GenerationTask.builder()
                 .taskType("KG_LOG")
-                .projectPath(projectPath)
+                .projectPath(normalizedProjectPath)
                 .status("COMPLETED")
                 .totalCount(methodCount)
                 .progress(methodCount)
@@ -1618,15 +1621,15 @@ public class KnowledgeGraphBuilder {
                 .build();
 
             generationTaskRepository.insert(logTask);
-            this.log.info("知识图谱生成日志已保存: projectPath={}, commitHash={}", projectPath, commitHash);
+            this.log.info("知识图谱生成日志已保存: projectPath={}, commitHash={}", normalizedProjectPath, commitHash);
 
             // Also create/update Neo4j checkpoint for IncrementalRefreshService (V2)
             if (commitHash != null) {
                 try {
-                    String branch = gitStatusService.getCurrentBranch(projectPath);
-                    checkpointRepository.upsertCheckpoint(projectPath, commitHash, branch);
+                    String branch = gitStatusService.getCurrentBranch(normalizedProjectPath);
+                    checkpointRepository.upsertCheckpoint(normalizedProjectPath, commitHash, branch);
                     this.log.info("增量刷新 checkpoint 已保存: projectPath={}, commit={}, branch={}",
-                            projectPath, commitHash, branch);
+                            normalizedProjectPath, commitHash, branch);
                 } catch (Exception ce) {
                     this.log.warn("保存增量刷新 checkpoint 失败: {}", ce.getMessage());
                 }

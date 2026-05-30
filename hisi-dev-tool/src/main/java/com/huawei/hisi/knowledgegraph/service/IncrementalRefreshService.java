@@ -55,16 +55,20 @@ public class IncrementalRefreshService {
     public RefreshResult refresh(String projectPath) throws IOException {
         Objects.requireNonNull(projectPath, "projectPath");
 
+        // Normalize path to ensure consistency (反斜杠→正斜杠)
+        String normalizedProjectPath = com.huawei.hisi.knowledgegraph.util.ProjectPathResolver.normalize(projectPath);
+        log.info("[IncrementalRefresh] Normalized path: {} -> {}", projectPath, normalizedProjectPath);
+
         // 1. Find checkpoint — if none, throw NoCheckpointException (caller maps to 409)
         GenerationCheckpointNode checkpoint = checkpointRepository
-                .findByProjectPath(projectPath)
-                .orElseThrow(() -> new NoCheckpointException(projectPath));
+                .findByProjectPath(normalizedProjectPath)
+                .orElseThrow(() -> new NoCheckpointException(normalizedProjectPath));
 
         // 2. Assert working directory is clean — throws WorkingDirDirtyException (caller maps to 412)
-        gitStatusService.assertClean(projectPath);
+        gitStatusService.assertClean(normalizedProjectPath);
 
         // 3. Get current commit
-        String currentCommit = gitStatusService.getCurrentCommitHash(projectPath);
+        String currentCommit = gitStatusService.getCurrentCommitHash(normalizedProjectPath);
         String lastCommit = checkpoint.getLastCommit();
 
         // 4. If same commit -> noop
@@ -74,30 +78,30 @@ public class IncrementalRefreshService {
 
         // 5. Get changed files via JGit diff
         List<String> changedFiles = gitStatusService.getChangedFilesJgit(
-                projectPath, lastCommit, currentCommit);
+                normalizedProjectPath, lastCommit, currentCommit);
         if (changedFiles.isEmpty()) {
             return RefreshResult.noop();
         }
 
         // 6. Delete existing nodes for each changed file
         for (String file : changedFiles) {
-            vectorWriter.deleteByFilePath(file, projectPath);
+            vectorWriter.deleteByFilePath(file, normalizedProjectPath);
         }
         int deleted = changedFiles.size();
 
         // 7. Rebuild method nodes for changed files that still exist on disk
-        int rebuilt = rebuildMethodNodes(projectPath, changedFiles);
+        int rebuilt = rebuildMethodNodes(normalizedProjectPath, changedFiles);
 
         // 8. Cross-service linking (best-effort)
         try {
-            crossServiceLinker.link(List.of(projectPath));
+            crossServiceLinker.link(List.of(normalizedProjectPath));
         } catch (Exception e) {
             log.warn("Cross-service re-linking failed: {}", e.getMessage());
         }
 
         // 9. Update checkpoint
-        String currentBranch = gitStatusService.getCurrentBranch(projectPath);
-        checkpointRepository.upsertCheckpoint(projectPath, currentCommit, currentBranch);
+        String currentBranch = gitStatusService.getCurrentBranch(normalizedProjectPath);
+        checkpointRepository.upsertCheckpoint(normalizedProjectPath, currentCommit, currentBranch);
 
         return new RefreshResult(false, changedFiles.size(), deleted, rebuilt);
     }
