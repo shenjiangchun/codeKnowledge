@@ -6,6 +6,7 @@ import com.huawei.hisi.knowledgegraph.model.MethodOverride;
 import com.huawei.hisi.knowledgegraph.model.ProxyRelation;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
+import com.huawei.hisi.neo4j.repository.Neo4jDataModelNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
 
     private final Neo4jMethodNodeRepository methodNodeRepository;
     private final Neo4jEntryPointNodeRepository entryPointRepository;
+    private final Neo4jDataModelNodeRepository dataModelNodeRepository;
 
     // ==================== 方法节点操作 ====================
 
@@ -319,6 +321,13 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
     @Transactional(transactionManager = "neo4jTransactionManager")
     public void cleanProjectData(String projectPath) {
         log.info("[Neo4j] 清理项目数据: {}", projectPath);
+        // 清理 DataModel 节点和 USES_MODEL 关系
+        try {
+            dataModelNodeRepository.deleteUsesModelRelationsByProjectPath(projectPath);
+            dataModelNodeRepository.deleteByProjectPath(projectPath);
+        } catch (Exception e) {
+            log.warn("[Neo4j] 清理 DataModel 数据异常: {}", e.getMessage());
+        }
         // 清理关系（按照从特殊到一般的顺序）
         methodNodeRepository.deleteExtendsRelationsByProjectPath(projectPath);
         methodNodeRepository.deleteOverrideRelationsByProjectPath(projectPath);
