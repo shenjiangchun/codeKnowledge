@@ -713,6 +713,23 @@ public class KnowledgeGraphController {
     }
 
     /**
+     * 获取项目下所有不同的入口类型列表
+     */
+    @GetMapping("/entry-types")
+    public ApiResponse<List<String>> getDistinctEntryTypes(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths) {
+
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) {
+            return ApiResponse.error(400, "projectPath or projectPaths required");
+        }
+
+        List<String> types = neo4jEntryPointNodeRepository.findDistinctEntryTypesByProjectPaths(paths);
+        return ApiResponse.success(types);
+    }
+
+    /**
      * 查询入口点列表
      */
     @GetMapping("/entry-points")
