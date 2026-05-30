@@ -12,6 +12,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -24,7 +25,7 @@ class ImpactRingResolverTest {
     KgMcpClient kg;
 
     @Test
-    void resolve_collectsUpstreamDownstreamBridgesAndCrossService() {
+    void resolve_collectsRootEntryAncestorsDownstreamBridgesAndCrossService() {
         // ModifiedRing with one parseable nodeId
         CallTreeNode tree = new CallTreeNode("com.foo.Bar#method", "com.foo.Bar", "method", 0, List.of());
         ModifiedRing modified = new ModifiedRing(List.of(tree));
@@ -34,7 +35,8 @@ class ImpactRingResolverTest {
         Bridge feignBridge = new Bridge("br1", "FEIGN_CLIENT", "order-service");
         Bridge feignChainBridge = new Bridge("br-feign-chain", "FEIGN", "order-service");
 
-        when(kg.affecting(anyString(), anyString(), anyString(), anyInt())).thenReturn(List.of(up));
+        // Upstream now uses rootEntryAncestors (returns root entry points, not intermediate callers)
+        when(kg.rootEntryAncestors(any(List.class), anyString(), anyInt())).thenReturn(List.of(up));
         when(kg.downstream(eq("com.foo.Bar#method"), anyString(), anyInt())).thenReturn(List.of(down));
         when(kg.bridges(eq("com.foo.Bar#method"), anyString())).thenReturn(List.of(feignBridge));
         when(kg.feignChain(eq("order-service"), anyString())).thenReturn(List.of(feignChainBridge));

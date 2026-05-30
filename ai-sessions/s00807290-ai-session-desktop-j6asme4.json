@@ -1,15 +1,15 @@
 {
   "developer": "s00807290",
   "hostname": "desktop-j6asme4",
-  "model": "claude-code",
+  "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
   "firstSeen": "2026-05-30T01:37:45.023Z",
-  "lastUpdated": "2026-05-30T02:33:08.965Z",
+  "lastUpdated": "2026-05-30T03:11:50.812Z",
   "stats": {
-    "totalOperations": 27,
-    "totalFilesEdited": 18,
-    "totalAiLines": 414,
-    "totalAiLinesDeleted": 43,
-    "totalCommits": 1
+    "totalOperations": 41,
+    "totalFilesEdited": 30,
+    "totalAiLines": 978,
+    "totalAiLinesDeleted": 354,
+    "totalCommits": 2
   },
   "pendingFiles": [
     {
@@ -111,24 +111,6 @@
       "lastTool": "Edit"
     },
     {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/service/HybridSearchService.java",
-      "tool": "Edit",
-      "operations": 3,
-      "timestamp": "2026-05-30T01:56:55.949Z",
-      "lastModified": "2026-05-30T02:01:29.923Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/service/HybridSearchService.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
-      "operations": 3,
-      "timestamp": "2026-05-30T01:56:56.542Z",
-      "lastModified": "2026-05-30T02:01:30.001Z",
-      "lastTool": "Edit"
-    },
-    {
       "path": "hisi-dev-tool-frontend/src/components/ram/MermaidDiagram.vue",
       "tool": "Edit",
       "operations": 1,
@@ -136,11 +118,102 @@
       "lastModified": "2026-05-30T02:25:02.730Z"
     },
     {
-      "path": "hisi-dev-tool-frontend/src/components/ram/ImpactOutputView.vue",
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/controller/RemoteProjectController.java",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-05-30T02:54:37.865Z",
+      "lastModified": "2026-05-30T02:55:25.862Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/controller/RemoteProjectController.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
+      "operations": 2,
+      "timestamp": "2026-05-30T02:54:38.050Z",
+      "lastModified": "2026-05-30T02:55:25.981Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/service/RemoteProjectService.java",
       "tool": "Edit",
       "operations": 1,
-      "timestamp": "2026-05-30T02:25:51.770Z",
-      "lastModified": "2026-05-30T02:25:51.770Z"
+      "timestamp": "2026-05-30T02:55:05.161Z",
+      "lastModified": "2026-05-30T02:55:05.161Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/service/RemoteProjectService.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
+      "operations": 1,
+      "timestamp": "2026-05-30T02:55:05.270Z",
+      "lastModified": "2026-05-30T02:55:05.270Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/config/CorsConfig.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-30T03:01:43.165Z",
+      "lastModified": "2026-05-30T03:01:43.165Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/config/CorsConfig.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
+      "operations": 1,
+      "timestamp": "2026-05-30T03:01:44.590Z",
+      "lastModified": "2026-05-30T03:01:44.590Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/controller/KnowledgeGraphController.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-30T03:05:11.447Z",
+      "lastModified": "2026-05-30T03:05:11.447Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/controller/KnowledgeGraphController.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
+      "operations": 1,
+      "timestamp": "2026-05-30T03:05:11.520Z",
+      "lastModified": "2026-05-30T03:05:11.520Z"
+    },
+    {
+      "path": "hisi-dev-tool-frontend/src/api/knowledgeGraph.ts",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-30T03:05:58.271Z",
+      "lastModified": "2026-05-30T03:05:58.271Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool-frontend/src/api/knowledgeGraph.ts",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
+      "operations": 1,
+      "timestamp": "2026-05-30T03:05:58.335Z",
+      "lastModified": "2026-05-30T03:05:58.335Z"
+    },
+    {
+      "path": "hisi-dev-tool-frontend/vite.config.ts",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-05-30T03:11:50.622Z",
+      "lastModified": "2026-05-30T03:11:50.622Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool-frontend/vite.config.ts",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
+      "operations": 1,
+      "timestamp": "2026-05-30T03:11:50.812Z",
+      "lastModified": "2026-05-30T03:11:50.812Z"
     }
   ],
   "repoPath": "D:/hisi-code-analyser/codeKnowledge1"

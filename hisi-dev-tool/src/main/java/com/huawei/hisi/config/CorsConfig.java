@@ -38,8 +38,9 @@ public class CorsConfig {
                 .filter(s -> !s.isEmpty())
                 .toArray(String[]::new);
 
+        // 使用允许的源模式而不是精确匹配，支持内网访问
         for (String origin : origins) {
-            config.addAllowedOrigin(origin);
+            config.addAllowedOriginPattern(origin);
         }
 
         // 允许所有请求头

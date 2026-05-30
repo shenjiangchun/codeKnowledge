@@ -1,5 +1,6 @@
 package com.huawei.hisi.ram.nodes.impact;
 
+import com.huawei.hisi.neo4j.model.SubQuery;
 import com.huawei.hisi.ram.kg.KgMcpClient;
 import com.huawei.hisi.ram.kg.dto.Entry;
 import com.huawei.hisi.ram.kg.dto.Impl;
@@ -14,9 +15,9 @@ import java.util.List;
 /**
  * Resolves the innermost {@link InvolvedRing} for a query.
  *
- * <p>Uses {@link QueryDecomposer} to split the intent into focused sub-queries,
- * then {@link MultiQuerySearcher} to execute multi-path recall with RRF fusion
- * — replacing the previous single-shot hybrid search.</p>
+ * <p>Uses {@link QueryDecomposer} to split the intent into focused,
+ * intent-aware sub-queries, then {@link MultiQuerySearcher} to execute
+ * multi-path recall with weighted RRF fusion across all project paths.</p>
  */
 @Component
 public class InvolvedRingResolver {
@@ -38,25 +39,61 @@ public class InvolvedRingResolver {
         this.searcher = searcher;
     }
 
-    public InvolvedRing resolve(String query, String projectPath) {
-        // 1. Decompose intent → sub-queries, then multi-path search + RRF
-        List<String> subQueries = decomposer.decompose(query);
-        log.info("[InvolvedRingResolver] decomposed intent into {} sub-queries", subQueries.size());
+    /**
+     * Resolve with pre-resolved project paths (recommended).
+     * Callers should use {@link KgMcpClient#resolveProjectPaths} to resolve
+     * LLM-provided hints into actual Neo4j projectPaths before calling this.
+     */
+    public InvolvedRing resolve(String query, List<String> projectPaths) {
+        if (projectPaths == null || projectPaths.isEmpty()) {
+            log.warn("[InvolvedRingResolver] no project paths provided");
+            return new InvolvedRing(List.of(), List.of(), List.of());
+        }
 
-        List<Seed> seeds = searcher.search(subQueries, projectPath,
+        log.info("[InvolvedRingResolver] searching across {} project paths: {}", projectPaths.size(), projectPaths);
+
+        // 1. Decompose intent → intent-aware sub-queries, then multi-path search + weighted RRF
+        List<SubQuery> subQueries = decomposer.decompose(query);
+        log.info("[InvolvedRingResolver] decomposed intent into {} sub-queries (types: {})",
+                subQueries.size(),
+                subQueries.stream().map(sq -> sq.intentType().name()).toList());
+
+        List<Seed> seeds = searcher.search(subQueries, projectPaths,
                 PER_QUERY_LIMIT, DEFAULT_SEED_LIMIT);
-        log.info("[InvolvedRingResolver] RRF produced {} seeds", seeds.size());
+        log.info("[InvolvedRingResolver] weighted RRF produced {} seeds", seeds.size());
 
-        // 2. Entry points (unchanged)
-        List<Entry> entries = kg.entryPoints(projectPath, "ALL");
+        // 2. Entry points — search across all project paths
+        List<Entry> entries = new ArrayList<>();
+        for (String path : projectPaths) {
+            try {
+                List<Entry> pathEntries = kg.entryPoints(path, "ALL");
+                if (pathEntries != null) entries.addAll(pathEntries);
+            } catch (Exception e) {
+                log.debug("[InvolvedRingResolver] entryPoints failed for path={}: {}", path, e.getMessage());
+            }
+        }
 
-        // 3. Interface implementations for each seed (unchanged)
+        // 3. Interface implementations for each seed
         List<Impl> allImpls = new ArrayList<>();
         for (Seed seed : seeds) {
             if (seed == null || seed.nodeId() == null) continue;
-            List<Impl> impls = kg.implementations(seed.nodeId(), projectPath);
-            if (impls != null) allImpls.addAll(impls);
+            for (String path : projectPaths) {
+                try {
+                    List<Impl> impls = kg.implementations(seed.nodeId(), path);
+                    if (impls != null) allImpls.addAll(impls);
+                } catch (Exception e) {
+                    log.debug("[InvolvedRingResolver] implementations failed for nodeId={}, path={}: {}",
+                            seed.nodeId(), path, e.getMessage());
+                }
+            }
         }
         return new InvolvedRing(seeds, entries, allImpls);
+    }
+
+    /**
+     * Backward-compatible single-path overload.
+     */
+    public InvolvedRing resolve(String query, String projectPath) {
+        return resolve(query, List.of(projectPath));
     }
 }
