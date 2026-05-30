@@ -168,27 +168,73 @@ public class PythonKnowledgeGraphBuilder {
             effectiveExcludes.addAll(excludePaths);
         }
 
+        log.info("[Python KG] Project path: {}", projectPath);
+        log.info("[Python KG] Effective exclude patterns: {}", effectiveExcludes);
+
         Set<Framework> frameworks = PythonFrameworkDetector.detect(projectPath);
         String primaryFramework = pickPrimaryFramework(frameworks);
 
         List<MethodNode> allNodes = new ArrayList<>();
         List<PyModule> allModules = new ArrayList<>();
 
-        try (Stream<Path> walk = Files.walk(Paths.get(projectPath))) {
-            List<Path> pyFiles = walk
+        Path projectDir = Paths.get(projectPath);
+        log.info("[Python KG] Project directory exists? {}", Files.exists(projectDir));
+        if (Files.exists(projectDir)) {
+            log.info("[Python KG] Project directory is directory? {}", Files.isDirectory(projectDir));
+        }
+
+        try (Stream<Path> walk = Files.walk(projectDir)) {
+            // 先收集所有文件，然后逐步过滤，记录每一步的情况
+            List<Path> allFiles = walk.toList();
+            log.info("[Python KG] Total files found during walk: {}", allFiles.size());
+
+            List<Path> regularFiles = allFiles.stream()
                     .filter(Files::isRegularFile)
-                    .filter(p -> p.toString().endsWith(".py"))
-                    .filter(p -> !KnowledgeGraphCommonUtils.shouldExclude(
-                            p.toString(), effectiveExcludes))
                     .toList();
+            log.info("[Python KG] Regular files: {}", regularFiles.size());
+
+            List<Path> pyFilesAll = regularFiles.stream()
+                    .filter(p -> p.toString().endsWith(".py"))
+                    .toList();
+            log.info("[Python KG] All .py files: {}", pyFilesAll.size());
+
+            // 记录被排除的文件
+            List<Path> excludedFiles = new ArrayList<>();
+            List<Path> pyFiles = pyFilesAll.stream()
+                    .filter(p -> {
+                        boolean excluded = KnowledgeGraphCommonUtils.shouldExclude(p.toString(), effectiveExcludes);
+                        if (excluded) {
+                            excludedFiles.add(p);
+                        }
+                        return !excluded;
+                    })
+                    .toList();
+
+            if (!excludedFiles.isEmpty()) {
+                log.info("[Python KG] Excluded files ({}):", excludedFiles.size());
+                for (Path excluded : excludedFiles) {
+                    log.info("[Python KG]   - Excluded: {}", excluded);
+                }
+            }
+
+            log.info("[Python KG] Found {} Python files to parse", pyFiles.size());
+
+            // 记录所有将被解析的文件
+            log.info("[Python KG] Files to parse:");
+            for (Path pyFile : pyFiles) {
+                log.info("[Python KG]   - {}", pyFile);
+            }
 
             for (Path pyFile : pyFiles) {
                 try {
+                    log.info("[Python KG] Parsing file: {}", pyFile);
                     ParsedFile parsed = parseFileInternal(pyFile.toString(), projectPath);
+                    log.info("[Python KG] Parsed file {}: {} top-level functions, {} classes",
+                            pyFile, parsed.module.getTopLevelFunctions().size(), parsed.module.getClasses().size());
                     allNodes.addAll(parsed.nodes());
                     allModules.add(parsed.module());
                 } catch (Exception e) {
-                    log.warn("Failed to parse Python file {}: {}", pyFile, e.getMessage());
+                    log.warn("Failed to parse Python file {}: {}", pyFile, e.getMessage(), e);
                 }
             }
         }

@@ -117,8 +117,8 @@ public class PythonCallGraphResolver {
     private record ResolutionContext(PyModule module,
                                      Map<String, PyModule> moduleIndex,
                                      Map<String, PyImport> importsBySymbol,
-                                     Map<String, PyFunction> topLevelByName,
-                                     Map<String, PyClass> classesByName) {
+                                     Map<String, List<PyFunction>> topLevelByName,
+                                     Map<String, List<PyClass>> classesByName) {
     }
 
     /**
@@ -214,10 +214,11 @@ public class PythonCallGraphResolver {
         if (enclosingClass == null) {
             return null;
         }
-        PyClass owner = ctx.classesByName().get(enclosingClass);
-        if (owner == null) {
+        List<PyClass> candidates = ctx.classesByName().get(enclosingClass);
+        if (candidates == null || candidates.isEmpty()) {
             return null;
         }
+        PyClass owner = candidates.get(0);
         PyFunction method = findMethod(owner, methodName);
         if (method == null) {
             return null;
@@ -229,10 +230,12 @@ public class PythonCallGraphResolver {
     /** Plain {@code foo()} → top-level function in the current module. */
     private Map<String, Object> resolveDirectCall(PyCall call, String callerNodeId,
                                                   String name, ResolutionContext ctx) {
-        PyFunction local = ctx.topLevelByName().get(name);
-        if (local == null) {
+        List<PyFunction> candidates = ctx.topLevelByName().get(name);
+        if (candidates == null || candidates.isEmpty()) {
             return null;
         }
+        // TODO: Handle multiple candidates (overloads) - for now pick first
+        PyFunction local = candidates.get(0);
         String calleeId = topLevelNodeId(ctx.module().getModulePath(), local);
         return edge(callerNodeId, calleeId, CALL_TYPE_DIRECT, call.getLineNumber(), false);
     }
@@ -264,13 +267,15 @@ public class PythonCallGraphResolver {
             if (target != null) {
                 absModuleName = submoduleCandidate;
                 if (parts.length >= 2) {
-                    PyFunction func = findTopLevel(target, parts[1]);
-                    if (func != null) {
+                    List<PyFunction> funcs = findTopLevel(target, parts[1]);
+                    if (!funcs.isEmpty()) {
+                        PyFunction func = funcs.get(0);  // TODO: Handle multiple candidates
                         return edge(callerNodeId, topLevelNodeId(target.getModulePath(), func),
                                 CALL_TYPE_IMPORT, call.getLineNumber(), false);
                     }
-                    PyClass cls = findClass(target, parts[1]);
-                    if (cls != null && parts.length >= 3) {
+                    List<PyClass> clses = findClass(target, parts[1]);
+                    if (!clses.isEmpty() && parts.length >= 3) {
+                        PyClass cls = clses.get(0);  // TODO: Handle multiple candidates
                         PyFunction method = findMethod(cls, parts[2]);
                         return method == null ? null : edge(
                                 callerNodeId, methodNodeId(target.getModulePath(), cls.getName(), method),
@@ -288,26 +293,33 @@ public class PythonCallGraphResolver {
             if (!imp.isFromImport() || imp.getSymbol() == null) {
                 return null;
             }
-            PyFunction func = findTopLevel(target, imp.getSymbol());
-            return func == null ? null : edge(
-                    callerNodeId, topLevelNodeId(target.getModulePath(), func),
+            List<PyFunction> funcs = findTopLevel(target, imp.getSymbol());
+            if (funcs.isEmpty()) {
+                return null;
+            }
+            PyFunction func = funcs.get(0);  // TODO: Handle multiple candidates
+            return edge(callerNodeId, topLevelNodeId(target.getModulePath(), func),
                     CALL_TYPE_IMPORT, call.getLineNumber(), false);
         }
 
         if (!imp.isFromImport()) {
-            PyFunction func = findTopLevel(target, parts[1]);
-            return func == null ? null : edge(
-                    callerNodeId, topLevelNodeId(target.getModulePath(), func),
+            List<PyFunction> funcs = findTopLevel(target, parts[1]);
+            if (funcs.isEmpty()) {
+                return null;
+            }
+            PyFunction func = funcs.get(0);  // TODO: Handle multiple candidates
+            return edge(callerNodeId, topLevelNodeId(target.getModulePath(), func),
                     CALL_TYPE_IMPORT, call.getLineNumber(), false);
         }
 
         if (imp.getSymbol() == null) {
             return null;
         }
-        PyClass cls = findClass(target, imp.getSymbol());
-        if (cls == null) {
+        List<PyClass> clses = findClass(target, imp.getSymbol());
+        if (clses.isEmpty()) {
             return null;
         }
+        PyClass cls = clses.get(0);  // TODO: Handle multiple candidates
         PyFunction method = findMethod(cls, parts[1]);
         return method == null ? null : edge(
                 callerNodeId, methodNodeId(target.getModulePath(), cls.getName(), method),
@@ -317,10 +329,12 @@ public class PythonCallGraphResolver {
     /** {@code LocalClass.method()} where {@code LocalClass} is defined in the current module. */
     private Map<String, Object> resolveLocalClassCall(PyCall call, String callerNodeId,
                                                       String[] parts, ResolutionContext ctx) {
-        PyClass local = ctx.classesByName().get(parts[0]);
-        if (local == null) {
+        List<PyClass> candidates = ctx.classesByName().get(parts[0]);
+        if (candidates == null || candidates.isEmpty()) {
             return null;
         }
+        // TODO: Handle multiple candidates - for now pick first
+        PyClass local = candidates.get(0);
         PyFunction method = findMethod(local, parts[1]);
         if (method == null) {
             return null;
@@ -361,7 +375,7 @@ public class PythonCallGraphResolver {
         return null;
     }
 
-    private String enclosingClassOf(PyCall call, Map<String, PyClass> classesByName) {
+    private String enclosingClassOf(PyCall call, Map<String, List<PyClass>> classesByName) {
         String enclosing = call.getEnclosingFunction();
         if (enclosing == null) {
             return null;
@@ -497,24 +511,24 @@ public class PythonCallGraphResolver {
         return firstDot < 0 ? mod : mod.substring(0, firstDot);
     }
 
-    private Map<String, PyFunction> indexTopLevelFunctions(List<PyFunction> functions) {
+    private Map<String, List<PyFunction>> indexTopLevelFunctions(List<PyFunction> functions) {
         if (functions == null || functions.isEmpty()) {
             return Collections.emptyMap();
         }
-        Map<String, PyFunction> out = new HashMap<>();
+        Map<String, List<PyFunction>> out = new HashMap<>();
         for (PyFunction f : functions) {
-            out.put(f.getName(), f);
+            out.computeIfAbsent(f.getName(), k -> new ArrayList<>()).add(f);
         }
         return out;
     }
 
-    private Map<String, PyClass> indexClasses(List<PyClass> classes) {
+    private Map<String, List<PyClass>> indexClasses(List<PyClass> classes) {
         if (classes == null || classes.isEmpty()) {
             return Collections.emptyMap();
         }
-        Map<String, PyClass> out = new HashMap<>();
+        Map<String, List<PyClass>> out = new HashMap<>();
         for (PyClass c : classes) {
-            out.put(c.getName(), c);
+            out.computeIfAbsent(c.getName(), k -> new ArrayList<>()).add(c);
         }
         return out;
     }
@@ -528,22 +542,24 @@ public class PythonCallGraphResolver {
         return null;
     }
 
-    private PyFunction findTopLevel(PyModule module, String name) {
+    private List<PyFunction> findTopLevel(PyModule module, String name) {
+        List<PyFunction> result = new ArrayList<>();
         for (PyFunction f : module.getTopLevelFunctions()) {
             if (f.getName().equals(name)) {
-                return f;
+                result.add(f);
             }
         }
-        return null;
+        return result;
     }
 
-    private PyClass findClass(PyModule module, String name) {
+    private List<PyClass> findClass(PyModule module, String name) {
+        List<PyClass> result = new ArrayList<>();
         for (PyClass c : module.getClasses()) {
             if (c.getName().equals(name)) {
-                return c;
+                result.add(c);
             }
         }
-        return null;
+        return result;
     }
 
     // ---------------------------------------------------------------------

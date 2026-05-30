@@ -1,5 +1,6 @@
 package com.huawei.hisi.knowledgegraph.util;
 
+import lombok.extern.slf4j.Slf4j;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -12,6 +13,7 @@ import java.util.regex.Pattern;
  * call them without depending on the Java builder. The builder retains
  * its own internal versions; this class is purely additive.
  */
+@Slf4j
 public final class KnowledgeGraphCommonUtils {
 
     private KnowledgeGraphCommonUtils() {
@@ -33,8 +35,7 @@ public final class KnowledgeGraphCommonUtils {
      * Returns {@code true} if {@code filePath} matches any pattern in
      * {@code excludePaths}. Patterns may be either:
      * <ul>
-     *   <li>a literal substring (case-sensitive {@code contains} match
-     *       against the normalized file path), or</li>
+     *   <li>a directory name or file name (exact match on path segments), or</li>
      *   <li>a glob containing {@code *} (single segment) or {@code **}
      *       (any number of segments) — converted to a regex and full-matched</li>
      * </ul>
@@ -52,10 +53,19 @@ public final class KnowledgeGraphCommonUtils {
             if (pattern.indexOf('*') >= 0) {
                 String regex = globToRegex(pattern);
                 if (Pattern.matches(regex, normalized)) {
+                    log.debug("[shouldExclude] File '{}' excluded by glob pattern '{}' (regex: '{}')", normalized, pattern, regex);
                     return true;
                 }
-            } else if (normalized.contains(pattern)) {
-                return true;
+            } else {
+                // For non-glob patterns, match as path segments rather than arbitrary substrings
+                // Match: "/pattern/", "/pattern" at end, or "^pattern/" at start
+                String segmentPattern = "/" + pattern + "/";
+                String endPattern = "/" + pattern;
+                String startPattern = pattern + "/";
+                if (normalized.contains(segmentPattern) || normalized.endsWith(endPattern) || normalized.startsWith(startPattern)) {
+                    log.debug("[shouldExclude] File '{}' excluded by path segment pattern '{}'", normalized, pattern);
+                    return true;
+                }
             }
         }
         return false;

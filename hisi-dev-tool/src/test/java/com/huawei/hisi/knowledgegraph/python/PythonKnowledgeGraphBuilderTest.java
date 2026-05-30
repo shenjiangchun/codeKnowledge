@@ -153,6 +153,43 @@ class PythonKnowledgeGraphBuilderTest {
     }
 
     @Test
+    @DisplayName("parseFile: top-level async function produces single node")
+    void parseFile_topLevelAsyncFunction(@TempDir Path dir) throws IOException {
+        Path file = writePy(dir, "fetch.py", "async def fetch_data(url):\n    return await get(url)\n");
+
+        List<MethodNode> nodes = builder.parseFile(file.toString(), dir.toString());
+
+        assertThat(nodes).hasSize(1);
+        MethodNode node = nodes.get(0);
+        assertThat(node.getMethodName()).isEqualTo("fetch_data");
+        assertThat(node.getClassName()).isEqualTo("fetch_data");
+        assertThat(node.getLanguage()).isEqualTo("python");
+        assertThat(node.getSignature()).isEqualTo("fetch_data(url)");
+    }
+
+    @Test
+    @DisplayName("parseFile: class with async and sync methods")
+    void parseFile_classWithAsyncMethods(@TempDir Path dir) throws IOException {
+        String src = String.join("\n",
+                "class DataFetcher:",
+                "    async def fetch(self, url):",
+                "        pass",
+                "    def sync_fetch(self, url):",
+                "        pass",
+                "");
+        Path file = writePy(dir, "fetcher.py", src);
+
+        List<MethodNode> nodes = builder.parseFile(file.toString(), dir.toString());
+
+        assertThat(nodes).hasSize(2);
+        assertThat(nodes).allMatch(n -> "DataFetcher".equals(n.getClassName()));
+        assertThat(nodes).extracting(MethodNode::getMethodName)
+                .containsExactlyInAnyOrder("fetch", "sync_fetch");
+        assertThat(nodes).extracting(MethodNode::getSignature)
+                .containsExactlyInAnyOrder("DataFetcher.fetch(self,url)", "DataFetcher.sync_fetch(self,url)");
+    }
+
+    @Test
     @DisplayName("toModulePath: __init__.py stripped to package name")
     void toModulePath_initPy_stripsInit() {
         assertThat(PythonKnowledgeGraphBuilder.toModulePath("app/api/__init__.py"))
