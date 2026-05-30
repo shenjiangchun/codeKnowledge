@@ -25,6 +25,7 @@ import com.huawei.hisi.neo4j.model.SqlNode;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jSqlNodeRepository;
+import com.huawei.hisi.neo4j.repository.Neo4jDataModelNodeRepository;
 import com.huawei.hisi.service.KnowledgeGraphTaskService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -60,6 +61,7 @@ public class KnowledgeGraphController {
     private final Neo4jMethodNodeRepository neo4jMethodNodeRepository;
     private final Neo4jEntryPointNodeRepository neo4jEntryPointNodeRepository;
     private final Neo4jSqlNodeRepository neo4jSqlNodeRepository;
+    private final Neo4jDataModelNodeRepository neo4jDataModelNodeRepository;
 
     private final GitStatusService gitStatusService;
     private final IncrementalUpdateService incrementalUpdateService;
@@ -403,6 +405,20 @@ public class KnowledgeGraphController {
         result.put("interfaceImplCount", interfaceImplCount);
         result.put("callChainCount", callChainCount);
         result.put("entryCount", entryCount);
+
+        // DataModel 统计
+        try {
+            long dataModelCount = paths.stream()
+                .mapToLong(neo4jDataModelNodeRepository::countByProjectPath).sum();
+            long usesModelCount = paths.stream()
+                .mapToLong(p -> neo4jDataModelNodeRepository.countUsesModelRelations(p)).sum();
+            result.put("dataModelCount", dataModelCount);
+            result.put("usesModelRelationCount", usesModelCount);
+        } catch (Exception e) {
+            log.debug("[KG Status] DataModel count failed: {}", e.getMessage());
+            result.put("dataModelCount", 0);
+            result.put("usesModelRelationCount", 0);
+        }
 
         // 添加任务信息
         if (latestTask != null) {
