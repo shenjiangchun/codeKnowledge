@@ -69,3 +69,8 @@ export interface SessionInfoResponse {
 export function getRamSession(sessionId: string): Promise<SessionInfoResponse> {
   return request.get(`/ram/sessions/${sessionId}`)
 }
+
+/** Trigger the tech_plan node manually for a session. */
+export function executeTechPlan(sessionId: string): Promise<Record<string, unknown>> {
+  return request.post(`/ram/sessions/${sessionId}/nodes/tech-plan`)
+}

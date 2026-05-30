@@ -952,6 +952,35 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     List<String> findDistinctProjectPaths();
 
     /**
+     * Find distinct projectPaths that contain methods belonging to the given className.
+     * Used to resolve real Neo4j projectPaths from LLM-provided class names or file paths.
+     */
+    @Query("""
+        MATCH (m:Method)
+        WHERE m.className STARTS WITH $className
+           OR m.className = $className
+        RETURN DISTINCT m.projectPath as projectPath
+        ORDER BY projectPath
+        """)
+    List<String> findProjectPathsByClassName(@Param("className") String className);
+
+    /**
+     * Find distinct projectPaths where the given path starts with projectPath,
+     * or projectPath starts with the given path.
+     * Handles file paths that are deeper than the stored projectPath.
+     */
+    @Query("""
+        MATCH (m:Method)
+        WHERE m.projectPath IS NOT NULL
+          AND ($path STARTS WITH m.projectPath
+               OR m.projectPath STARTS WITH $path)
+        RETURN DISTINCT m.projectPath as projectPath
+        ORDER BY SIZE(m.projectPath) DESC
+        LIMIT 5
+        """)
+    List<String> findProjectPathsByPathPrefix(@Param("path") String path);
+
+    /**
      * 获取项目路径下所有不同的类名
      * 用于替代旧的 callchain/classes 接口
      */
@@ -1907,4 +1936,20 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
         DELETE r
         """)
     void deleteProxyRelationsByProjectPath(@Param("projectPath") String projectPath);
+
+    /**
+     * 按项目路径列表 + 短类名（ENDS WITH） + 方法名精确匹配。
+     * 用于 LLM 输出短类名（如 RequireStatusServiceImpl）时的模糊查找。
+     */
+    @Query("""
+        MATCH (m:Method)
+        WHERE m.projectPath IN $projectPaths
+          AND m.className ENDS WITH $shortClassName AND m.methodName = $methodName
+        RETURN m
+        """)
+    List<MethodNode> findByProjectPathsAndShortClassNameAndMethodName(
+        @Param("projectPaths") List<String> projectPaths,
+        @Param("shortClassName") String shortClassName,
+        @Param("methodName") String methodName
+    );
 }

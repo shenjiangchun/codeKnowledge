@@ -3,13 +3,13 @@
   "hostname": "desktop-j6asme4",
   "model": "claude-code",
   "firstSeen": "2026-05-30T01:37:45.023Z",
-  "lastUpdated": "2026-05-30T03:16:34.704Z",
+  "lastUpdated": "2026-05-30T03:17:07.660Z",
   "stats": {
     "totalOperations": 41,
     "totalFilesEdited": 30,
-    "totalAiLines": 980,
-    "totalAiLinesDeleted": 355,
-    "totalCommits": 3
+    "totalAiLines": 1222,
+    "totalAiLinesDeleted": 390,
+    "totalCommits": 4
   },
   "pendingFiles": [
     {
@@ -77,22 +77,6 @@
       "lastModified": "2026-05-30T01:47:25.550Z"
     },
     {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/service/MultiQueryHybridSearchService.java",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-05-30T01:47:26.177Z",
-      "lastModified": "2026-05-30T01:47:26.177Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/service/MultiQueryHybridSearchService.java",
-      "tool": "Write",
-      "aiTool": "claude-code",
-      "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
-      "operations": 1,
-      "timestamp": "2026-05-30T01:47:26.274Z",
-      "lastModified": "2026-05-30T01:47:26.274Z"
-    },
-    {
       "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/repository/Neo4jMethodNodeRepository.java",
       "tool": "Edit",
       "operations": 2,
@@ -150,38 +134,6 @@
       "operations": 1,
       "timestamp": "2026-05-30T02:55:05.270Z",
       "lastModified": "2026-05-30T02:55:05.270Z"
-    },
-    {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/controller/KnowledgeGraphController.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-05-30T03:05:11.447Z",
-      "lastModified": "2026-05-30T03:05:11.447Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/controller/KnowledgeGraphController.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
-      "operations": 1,
-      "timestamp": "2026-05-30T03:05:11.520Z",
-      "lastModified": "2026-05-30T03:05:11.520Z"
-    },
-    {
-      "path": "hisi-dev-tool-frontend/src/api/knowledgeGraph.ts",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-05-30T03:05:58.271Z",
-      "lastModified": "2026-05-30T03:05:58.271Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool-frontend/src/api/knowledgeGraph.ts",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
-      "operations": 1,
-      "timestamp": "2026-05-30T03:05:58.335Z",
-      "lastModified": "2026-05-30T03:05:58.335Z"
     },
     {
       "path": "hisi-dev-tool-frontend/vite.config.ts",
