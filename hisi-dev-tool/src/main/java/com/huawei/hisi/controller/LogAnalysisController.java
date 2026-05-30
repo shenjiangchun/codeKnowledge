@@ -1,0 +1,248 @@
+package com.huawei.hisi.controller;
+
+import com.huawei.hisi.model.*;
+import com.huawei.hisi.repository.LogAnalysisRepository;
+import com.huawei.hisi.repository.LogAnalysisRepository.LogAnalysisReportEntity;
+import com.huawei.hisi.service.LogAnalysisExecutor;
+import com.huawei.hisi.service.LogCloudService;
+import com.huawei.hisi.utils.SnowflakeIdGenerator;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 日志分析控制器
+ * 支持异步任务提交和状态查询
+ */
+@Slf4j
+@RestController
+@RequestMapping("/api/log")
+@RequiredArgsConstructor
+@Validated
+public class LogAnalysisController {
+
+    private final LogCloudService logCloudService;
+    private final SnowflakeIdGenerator snowflakeIdGenerator;
+    private final LogAnalysisRepository repository;
+    private final LogAnalysisExecutor logAnalysisExecutor;
+
+    // 默认用户 ID
+    private static final String DEFAULT_USER_ID = "sys_admin";
+
+    /**
+     * 查询日志
+     * POST /api/log/query
+     */
+    @PostMapping("/query")
+    public ApiResponse<Object> queryLogs(@RequestBody LogQueryDto query) {
+        try {
+            List<LogEntry> logs = logCloudService.queryLogs(query);
+            Map<String, Object> data = new HashMap<>();
+            data.put("total", logs.size());
+            data.put("logs", logs);
+            return ApiResponse.success(data);
+        } catch (Exception e) {
+            return ApiResponse.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 提交日志分析任务（异步）
+     * POST /api/log/analyze
+     *
+     * @param request 日志分析请求
+     * @return 任务 ID 和状态
+     */
+    @PostMapping("/analyze")
+    public ApiResponse<AnalyzeTaskResponse> analyze(@Valid @RequestBody LogAnalyzeRequest request) {
+        try {
+            // 1. 检查请求是否为空
+            if (request == null) {
+                return ApiResponse.error(400, "请求参数不能为空");
+            }
+
+            // 业务逻辑验证：message 或 stackTrace 至少提供一个
+            if (request.getMessage() == null && request.getStackTrace() == null) {
+                return ApiResponse.error(400, "请求参数不能为空，需要提供日志消息或堆栈信息");
+            }
+
+            // 2. 确保表存在
+            // Table initialization handled by repository @PostConstruct
+
+            // 3. 生成报告 ID（雪花算法）
+            Long reportId = snowflakeIdGenerator.nextId();
+            log.info("生成新的分析任务 (reportId={})", reportId);
+
+            // 4. 获取用户 ID（默认为 sys_admin）
+            String userId = request.getUserId() != null ? request.getUserId() : DEFAULT_USER_ID;
+
+            // 5. 创建报告实体
+            LogAnalysisReportEntity report = new LogAnalysisReportEntity();
+            report.setReportId(reportId);
+            report.setUserId(userId);
+            report.setStatus("pending");
+            report.setLogMessage(request.getMessage());
+            report.setLogStackTrace(request.getStackTrace());
+            report.setFilteredStackTrace(null); // 由分析服务填充
+            report.setErrorType(request.getErrorType());
+            report.setTraceId(request.getTraceId());
+            report.setServiceName(request.getServiceName());
+            report.setCreatedAt(LocalDateTime.now());
+            report.setUpdatedAt(LocalDateTime.now());
+
+            // 6. 保存报告（状态为 pending）
+            repository.save(report);
+            log.info("分析报告已保存 (reportId={}, status=pending)", reportId);
+
+            // 7. 触发异步分析任务
+            logAnalysisExecutor.executeAnalysis(reportId);
+            log.info("异步分析任务已提交 (reportId={})", reportId);
+
+            // 8. 立即返回任务 ID
+            AnalyzeTaskResponse response = new AnalyzeTaskResponse();
+            response.setReportId(reportId);
+            response.setStatus("pending");
+            response.setCreatedAt(LocalDateTime.now());
+
+            return ApiResponse.success(response);
+
+        } catch (Exception e) {
+            log.error("提交分析任务失败", e);
+            return ApiResponse.error("提交分析任务失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 查询分析任务列表
+     * GET /api/log/reports
+     *
+     * @param userId 用户 ID（可选，默认为 sys_admin）
+     * @param status 状态过滤（可选）
+     * @param page   页码（可选，默认 1）
+     * @param pageSize 每页大小（可选，默认 10）
+     * @return 任务列表
+     */
+    @GetMapping("/reports")
+    public ApiResponse<ReportListResponse> getReports(
+            @RequestParam(required = false) String userId,
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize) {
+
+        try {
+            String finalUserId = userId != null ? userId : DEFAULT_USER_ID;
+
+            List<LogAnalysisReportEntity> reports;
+
+            // 如果指定了状态，按状态查询
+            if (status != null && !status.isEmpty()) {
+                reports = repository.findByUserIdAndStatus(finalUserId, status);
+            } else {
+                // 否则分页查询所有
+                var paginated = repository.findByUserIdPagination(finalUserId, page, pageSize);
+                reports = paginated.getList();
+
+                // 构建完整响应
+                ReportListResponse response = new ReportListResponse();
+                response.setTotal(paginated.getTotal());
+                response.setPage(page);
+                response.setPageSize(pageSize);
+                response.setList(ReportListResponse.fromEntities(reports));
+
+                return ApiResponse.success(response);
+            }
+
+            // 按状态查询时返回全部匹配结果
+            ReportListResponse response = new ReportListResponse();
+            response.setTotal(reports.size());
+            response.setPage(1);
+            response.setPageSize(reports.size());
+            response.setList(ReportListResponse.fromEntities(reports));
+
+            return ApiResponse.success(response);
+
+        } catch (Exception e) {
+            log.error("查询任务列表失败", e);
+            return ApiResponse.error("查询任务列表失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取分析报告详情
+     * GET /api/log/report/{id}
+     *
+     * @param reportId 报告 ID
+     * @return 分析报告详情
+     */
+    @GetMapping("/report/{id}")
+    public ApiResponse<DetailedAnalysisReport> getReport(@PathVariable("id") Long reportId) {
+        try {
+            LogAnalysisReportEntity report = repository.findById(reportId);
+
+            if (report == null) {
+                return ApiResponse.error(404, "报告不存在");
+            }
+
+            // 如果任务还在处理中，返回状态提示
+            if ("pending".equals(report.getStatus()) || "processing".equals(report.getStatus())) {
+                return ApiResponse.error(400, "报告尚未完成，当前状态：" + report.getStatus());
+            }
+
+            // 构建详细报告响应
+            DetailedAnalysisReport response = DetailedAnalysisReport.builder()
+                    .reportId(report.getReportId())
+                    .status(report.getStatus())
+                    .errorSummary(report.getErrorSummary())
+                    .rootCause(report.getRootCause())
+                    .fixSuggestions(report.getFixSuggestions())
+                    .codeSnippets(report.getCodeSnippets())
+                    .createdAt(report.getCreatedAt())
+                    .updatedAt(report.getUpdatedAt())
+                    .build();
+
+            return ApiResponse.success(response);
+
+        } catch (Exception e) {
+            log.error("获取报告详情失败 (reportId={})", reportId, e);
+            return ApiResponse.error("获取报告详情失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 查询单个任务状态
+     * GET /api/log/report/{id}/status
+     *
+     * @param reportId 报告 ID
+     * @return 任务状态
+     */
+    @GetMapping("/report/{id}/status")
+    public ApiResponse<Map<String, Object>> getReportStatus(@PathVariable("id") Long reportId) {
+        try {
+            LogAnalysisReportEntity report = repository.findById(reportId);
+
+            if (report == null) {
+                return ApiResponse.error(404, "报告不存在");
+            }
+
+            Map<String, Object> status = new HashMap<>();
+            status.put("reportId", report.getReportId());
+            status.put("status", report.getStatus());
+            status.put("createdAt", report.getCreatedAt());
+            status.put("updatedAt", report.getUpdatedAt());
+
+            return ApiResponse.success(status);
+
+        } catch (Exception e) {
+            log.error("查询任务状态失败 (reportId={})", reportId, e);
+            return ApiResponse.error("查询任务状态失败：" + e.getMessage());
+        }
+    }
+
+}

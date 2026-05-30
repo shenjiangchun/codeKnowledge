@@ -1,0 +1,303 @@
+package com.huawei.hisi.neo4j.service;
+
+import lombok.extern.slf4j.Slf4j;
+import org.neo4j.driver.Driver;
+import org.neo4j.driver.Session;
+import org.neo4j.driver.Record;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * Neo4j 向量索引服务
+ *
+ * 负责检测 Neo4j 版本并管理向量索引：
+ * - 启动时检测 Neo4j 版本
+ * - 版本 >= 5.11 时自动创建向量索引
+ * - 版本 < 5.11 或不支持时，标记 vectorIndexAvailable = false，后续查询自动降级为全表扫描
+ */
+@Slf4j
+@Service
+@ConditionalOnProperty(name = "neo4j.uri")
+public class Neo4jVectorIndexService {
+
+    private static final String MIN_VECTOR_INDEX_VERSION = "5.11";
+
+    /**
+     * 向量索引配置（启动时根据 EmbeddingService 维度动态构建）
+     */
+    private List<VectorIndexConfig> vectorIndexes;
+
+    private final Driver neo4jDriver;
+    private final EmbeddingService embeddingService;
+
+    /**
+     * 当前使用的 embedding 维度（运行时从 EmbeddingService 获取）
+     */
+    private int embeddingDimension;
+
+    /**
+     * 向量索引是否可用
+     * 默认为 false，在版本检测通过后设置为 true
+     */
+    private volatile boolean vectorIndexAvailable = false;
+
+    /**
+     * Neo4j 版本信息
+     */
+    private String neo4jVersion;
+
+    public Neo4jVectorIndexService(Driver neo4jDriver, EmbeddingService embeddingService) {
+        this.neo4jDriver = neo4jDriver;
+        this.embeddingService = embeddingService;
+    }
+
+    /**
+     * 应用启动完成后检测 Neo4j 版本并创建向量索引
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void initialize() {
+        log.info("开始检测 Neo4j 版本和向量索引支持...");
+
+        // 从 EmbeddingService 获取当前维度
+        embeddingDimension = embeddingService.getEmbeddingDimension();
+        log.info("当前 Embedding 维度: {}", embeddingDimension);
+
+        vectorIndexes = List.of(
+            new VectorIndexConfig("method_description_vector_index", "Method", "descriptionEmbedding", embeddingDimension),
+            new VectorIndexConfig("method_code_vector_index", "Method", "codeEmbedding", embeddingDimension),
+            new VectorIndexConfig("sql_vector_index", "Sql", "sqlEmbedding", embeddingDimension)
+        );
+
+        try {
+            // 1. 检测 Neo4j 版本
+            neo4jVersion = detectNeo4jVersion();
+            log.info("检测到 Neo4j 版本: {}", neo4jVersion);
+
+            // 2. 检查版本是否支持向量索引
+            if (!isVersionSupported(neo4jVersion)) {
+                log.warn("Neo4j 版本 {} 不支持向量索引 (需要 >= {})，将使用全表扫描模式",
+                        neo4jVersion, MIN_VECTOR_INDEX_VERSION);
+                vectorIndexAvailable = false;
+                return;
+            }
+
+            // 3. 创建向量索引
+            try (Session session = neo4jDriver.session()) {
+                int successCount = 0;
+                int failCount = 0;
+
+                for (VectorIndexConfig config : vectorIndexes) {
+                    try {
+                        if (createVectorIndex(session, config)) {
+                            successCount++;
+                        } else {
+                            failCount++;
+                        }
+                    } catch (Exception e) {
+                        log.error("创建向量索引失败: {} - {}", config.indexName(), e.getMessage());
+                        failCount++;
+                    }
+                }
+
+                // 如果所有索引都创建成功，标记为可用
+                vectorIndexAvailable = (failCount == 0);
+
+                log.info("向量索引初始化完成: 成功={}, 失败={}, 可用={}",
+                        successCount, failCount, vectorIndexAvailable);
+            }
+
+        } catch (Exception e) {
+            log.error("Neo4j 向量索引初始化失败: {}", e.getMessage(), e);
+            vectorIndexAvailable = false;
+        }
+    }
+
+    /**
+     * 检测 Neo4j 版本
+     *
+     * @return Neo4j 版本字符串，例如 "5.11.0"
+     */
+    private String detectNeo4jVersion() {
+        try (Session session = neo4jDriver.session()) {
+            Record record = session.run("CALL dbms.components() YIELD name, versions WHERE name = 'Neo4j Kernel' RETURN versions[0] AS version").single();
+            return record.get("version").asString();
+        } catch (Exception e) {
+            log.error("检测 Neo4j 版本失败: {}", e.getMessage());
+            return "unknown";
+        }
+    }
+
+    /**
+     * 检查版本是否支持向量索引
+     * Neo4j 5.11+ 支持向量索引
+     *
+     * @param version Neo4j 版本字符串
+     * @return true 如果支持向量索引
+     */
+    private boolean isVersionSupported(String version) {
+        if (version == null || version.equals("unknown")) {
+            return false;
+        }
+
+        try {
+            // 提取版本号 (例如 "5.11.0" 或 "5.11.0-enterprise")
+            Pattern pattern = Pattern.compile("^(\\d+)\\.(\\d+)");
+            Matcher matcher = pattern.matcher(version);
+            if (!matcher.find()) {
+                return false;
+            }
+
+            int major = Integer.parseInt(matcher.group(1));
+            int minor = Integer.parseInt(matcher.group(2));
+
+            // 解析最低支持版本
+            Pattern minPattern = Pattern.compile("^(\\d+)\\.(\\d+)");
+            Matcher minMatcher = minPattern.matcher(MIN_VECTOR_INDEX_VERSION);
+            if (!minMatcher.find()) {
+                return false;
+            }
+
+            int minMajor = Integer.parseInt(minMatcher.group(1));
+            int minMinor = Integer.parseInt(minMatcher.group(2));
+
+            // 比较版本
+            if (major > minMajor) {
+                return true;
+            } else if (major == minMajor) {
+                return minor >= minMinor;
+            }
+            return false;
+
+        } catch (Exception e) {
+            log.warn("解析 Neo4j 版本失败: {} - {}", version, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 创建向量索引
+     *
+     * @param session Neo4j 会话
+     * @param config 索引配置
+     * @return true 如果成功创建或索引已存在
+     */
+    private boolean createVectorIndex(Session session, VectorIndexConfig config) {
+        String indexName = config.indexName();
+
+        try {
+            // 检查索引是否已存在
+            var checkResult = session.run(
+                "SHOW INDEXES YIELD name, type, options " +
+                "WHERE name = '" + indexName + "' AND type = 'VECTOR' " +
+                "RETURN options"
+            );
+
+            if (checkResult.hasNext()) {
+                // 索引存在，验证维度
+                var record = checkResult.next();
+                var options = record.get("options").asMap();
+
+                int currentDimension = extractDimension(options);
+                log.info("向量索引 '{}' 已存在，当前维度: {}", indexName, currentDimension);
+
+                if (currentDimension == config.dimension()) {
+                    log.info("向量索引 '{}' 维度正确，无需重建", indexName);
+                    return true;
+                }
+
+                // 维度不对，删除重建
+                log.warn("向量索引 '{}' 维度不正确 (当前: {}, 需要: {})，正在删除重建...",
+                        indexName, currentDimension, config.dimension());
+                session.run("DROP INDEX " + indexName).consume();
+            }
+
+            // 创建新索引
+            String createCypher = String.format(
+                "CREATE VECTOR INDEX %s IF NOT EXISTS FOR (n:%s) ON n.%s " +
+                "OPTIONS { indexConfig: { `vector.dimensions`: %d, `vector.similarity_function`: 'cosine' } }",
+                config.indexName(),
+                config.label(),
+                config.property(),
+                config.dimension()
+            );
+
+            session.run(createCypher).consume();
+            log.info("成功创建向量索引: {} (维度: {})", indexName, config.dimension());
+            return true;
+
+        } catch (Exception e) {
+            log.error("创建向量索引 '{}' 失败: {}", indexName, e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * 从索引选项中提取维度
+     */
+    private int extractDimension(Map<String, Object> options) {
+        try {
+            Object indexConfig = options.get("indexConfig");
+            if (indexConfig instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> configMap = (Map<String, Object>) indexConfig;
+                Object dimObj = configMap.get("vector.dimensions");
+                if (dimObj instanceof Number) {
+                    return ((Number) dimObj).intValue();
+                } else if (dimObj instanceof String) {
+                    return Integer.parseInt((String) dimObj);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("提取向量维度失败: {}", e.getMessage());
+        }
+        return -1;
+    }
+
+    /**
+     * 检查向量索引是否可用
+     *
+     * @return true 如果向量索引可用，false 则应使用全表扫描
+     */
+    public boolean isVectorIndexAvailable() {
+        return vectorIndexAvailable;
+    }
+
+    /**
+     * 获取 Neo4j 版本
+     *
+     * @return Neo4j 版本字符串
+     */
+    public String getNeo4jVersion() {
+        return neo4jVersion;
+    }
+
+    /**
+     * 获取向量索引状态摘要
+     *
+     * @return 状态摘要字符串
+     */
+    public String getStatusSummary() {
+        if (vectorIndexAvailable) {
+            return String.format("Neo4j %s - 向量索引可用 (维度: %d)", neo4jVersion, embeddingDimension);
+        } else {
+            return String.format("Neo4j %s - 向量索引不可用，使用全表扫描模式", neo4jVersion);
+        }
+    }
+
+    /**
+     * 向量索引配置
+     */
+    private record VectorIndexConfig(
+        String indexName,
+        String label,
+        String property,
+        int dimension
+    ) {}
+}

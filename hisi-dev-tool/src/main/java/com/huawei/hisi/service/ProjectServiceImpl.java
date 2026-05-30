@@ -1,0 +1,343 @@
+package com.huawei.hisi.service;
+
+import com.huawei.hisi.model.GitRepositoryInfo;
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.PullResult;
+import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.lib.Ref;
+import org.eclipse.jgit.revwalk.RevCommit;
+import org.eclipse.jgit.transport.RemoteConfig;
+import org.eclipse.jgit.transport.URIish;
+import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.sql.DataSource;
+
+import static com.huawei.hisi.config.DataSourceConfig.PROJECT_DIR;
+
+/**
+ * 项目管理服务实现
+ * M1.3 - 实现项目克隆和分析管理功能
+ */
+@Service
+public class ProjectServiceImpl implements ProjectService {
+
+    private static final org.slf4j.Logger LOG = LoggerFactory.getLogger(ProjectServiceImpl.class);
+
+    @Autowired
+    private AppConfigService appConfigService;
+
+    @Value("${app.codeHubUser:}")
+    private String codeHubUser;
+
+    @Value("${app.codeHubPassword:}")
+    private String codeHubPassword;
+
+    private final DataSource dataSource;
+    private static final Map<String, ProjectStatus> ANALYSIS_STATUS = new ConcurrentHashMap<>();
+
+    // 带 schema 的表名
+    private String fullTableName;
+
+    @Autowired
+    public ProjectServiceImpl(DataSource dataSource) {
+        this.dataSource = dataSource;
+        initTableName();
+    }
+
+    /**
+     * 初始化表名
+     */
+    private void initTableName() {
+        try (Connection conn = dataSource.getConnection()) {
+            // SQLite: check if table exists via sqlite_master
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(
+                     "SELECT name FROM sqlite_master WHERE type='table' AND name='method_call_graph5'")) {
+                if (rs.next()) {
+                    this.fullTableName = "method_call_graph5";
+                    LOG.info("ProjectServiceImpl - Using table name: {}", fullTableName);
+                } else {
+                    this.fullTableName = "method_call_graph5";
+                    LOG.warn("ProjectServiceImpl - Table method_call_graph5 not found, using: {}", fullTableName);
+                }
+            }
+        } catch (SQLException e) {
+            LOG.error("Failed to initialize table name", e);
+            this.fullTableName = "method_call_graph5";
+        }
+    }
+
+    /**
+     * 项目状态枚举
+     */
+    public enum ProjectStatus {
+        PENDING, CLONING, ANALYZING, COMPLETED, FAILED
+    }
+
+    @Override
+    public List<String> listProjects() {
+        Set<String> projectSet = new LinkedHashSet<>();
+        // DB-agnostic: fetch raw packages and extract top-3 segments in Java
+        String sql = "SELECT DISTINCT package FROM " + fullTableName + " WHERE package IS NOT NULL";
+
+        try (Connection conn = dataSource.getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+
+            while (rs.next()) {
+                String pkg = rs.getString("package");
+                if (pkg != null && !pkg.isEmpty()) {
+                    String[] parts = pkg.split("\\.");
+                    if (parts.length >= 3) {
+                        projectSet.add(parts[0] + "." + parts[1] + "." + parts[2]);
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            LOG.error("Failed to list projects", e);
+        }
+
+        return new ArrayList<>(projectSet);
+    }
+
+    @Override
+    public Map<String, Object> cloneProject(String repository, String branch) {
+        Map<String, Object> result = new HashMap<>();
+
+        try {
+            String projectName = extractProjectName(repository);
+            Path projectDir = Paths.get(PROJECT_DIR, projectName);
+
+            if (Files.exists(projectDir)) {
+                Git git = Git.open(projectDir.toFile());
+                UsernamePasswordCredentialsProvider credentials =
+                    new UsernamePasswordCredentialsProvider(codeHubUser, codeHubPassword);
+                PullResult pullResult = git.pull()
+                    .setCredentialsProvider(credentials)
+                    .call();
+                git.checkout().setName(branch).call();
+                result.put("success", true);
+                result.put("message", "Project updated successfully");
+                result.put("project", projectName);
+            } else {
+                Files.createDirectories(projectDir);
+                UsernamePasswordCredentialsProvider credentials =
+                    new UsernamePasswordCredentialsProvider(codeHubUser, codeHubPassword);
+
+                try (Git git = Git.cloneRepository()
+                    .setURI(repository)
+                    .setDirectory(projectDir.toFile())
+                    .setBranch(branch)
+                    .setCredentialsProvider(credentials)
+                    .call()) {
+                    result.put("success", true);
+                    result.put("message", "Project cloned successfully");
+                    result.put("project", projectName);
+                    result.put("path", projectDir.toString());
+                }
+            }
+        } catch (GitAPIException | IOException e) {
+            LOG.error("Failed to clone project: {}", repository, e);
+            result.put("success", false);
+            result.put("error", e.getMessage());
+        }
+
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> getStatus(String project) {
+        Map<String, Object> status = new HashMap<>();
+
+        Path projectDir = Paths.get(PROJECT_DIR, project);
+        status.put("exists", Files.exists(projectDir));
+        status.put("project", project);
+
+        if (Files.exists(projectDir)) {
+            status.put("path", projectDir.toString());
+            status.put("status", getAnalysisStatus(project));
+            status.put("uriCount", getUriCount(project));
+        } else {
+            status.put("status", "NOT_CLONED");
+            status.put("uriCount", 0);
+        }
+
+        return status;
+    }
+
+    private String getAnalysisStatus(String project) {
+        ProjectStatus status = ANALYSIS_STATUS.get(project);
+        if (status == null) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement pstmt = conn.prepareStatement(
+                     "SELECT COUNT(*) FROM " + fullTableName + " WHERE package LIKE ?")) {
+                pstmt.setString(1, project + "%");
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    if (rs.next() && rs.getInt(1) > 0) {
+                        return "COMPLETED";
+                    }
+                }
+            } catch (SQLException e) {
+                LOG.warn("Failed to check analysis status", e);
+            }
+            return "UNKNOWN";
+        }
+        return status.name();
+    }
+
+    private int getUriCount(String project) {
+        int count = 0;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(
+                 "SELECT COUNT(DISTINCT root_uri) FROM " + fullTableName + " WHERE package LIKE ?")) {
+            pstmt.setString(1, project + "%");
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    count = rs.getInt(1);
+                }
+            }
+        } catch (SQLException e) {
+            LOG.warn("Failed to get URI count for project: {}", project, e);
+        }
+        return count;
+    }
+
+    private String extractProjectName(String repository) {
+        String name = repository.substring(repository.lastIndexOf('/') + 1);
+        if (name.endsWith(".git")) {
+            name = name.substring(0, name.length() - 4);
+        }
+        return name;
+    }
+
+    @Override
+    public List<GitRepositoryInfo> scanGitRepositories() {
+        List<GitRepositoryInfo> repositories = new ArrayList<>();
+
+        String projectDir = appConfigService.getProjectDir();
+        if (projectDir == null || projectDir.trim().isEmpty()) {
+            LOG.warn("Project directory not configured");
+            return repositories;
+        }
+
+        File baseDir = new File(projectDir);
+        if (!baseDir.exists() || !baseDir.isDirectory()) {
+            LOG.warn("Project directory does not exist: {}", projectDir);
+            return repositories;
+        }
+
+        // 先扫描子目录下的 git 仓库
+        boolean hasChildGitRepos = false;
+        File[] subDirs = baseDir.listFiles(File::isDirectory);
+        if (subDirs != null) {
+            for (File subDir : subDirs) {
+                File gitDir = new File(subDir, ".git");
+                if (gitDir.exists() && gitDir.isDirectory()) {
+                    try {
+                        GitRepositoryInfo repoInfo = extractGitInfo(subDir);
+                        if (repoInfo != null) {
+                            repositories.add(repoInfo);
+                            hasChildGitRepos = true;
+                        }
+                    } catch (Exception e) {
+                        LOG.warn("Failed to read git info for: {}", subDir.getName(), e);
+                    }
+                }
+            }
+        }
+
+        // 仅当父目录是 git 仓库且 **没有** 子 git 仓库时，才把父目录作为项目暴露给前端。
+        // 否则会出现：用户勾选父目录后，KG 数据其实存在子项目下，导致查询错位。
+        // 父目录下含子项目的场景，让用户直接勾选所有子项目即可，无需再选父目录。
+        File baseGitDir = new File(baseDir, ".git");
+        if (baseGitDir.exists() && baseGitDir.isDirectory() && !hasChildGitRepos) {
+            try {
+                GitRepositoryInfo repoInfo = extractGitInfo(baseDir);
+                if (repoInfo != null) {
+                    repositories.add(repoInfo);
+                }
+            } catch (Exception e) {
+                LOG.warn("Failed to read git info for base directory: {}", baseDir.getName(), e);
+            }
+        } else if (baseGitDir.exists() && hasChildGitRepos) {
+            LOG.info("Skipped parent git repo '{}' because it has {} child git repos; users should pick the children",
+                    baseDir.getName(), repositories.size());
+        }
+
+        LOG.info("Scanned {} git repositories in {}", repositories.size(), projectDir);
+        return repositories;
+    }
+
+    private GitRepositoryInfo extractGitInfo(File repoDir) {
+        try (Git git = Git.open(repoDir)) {
+            String branch = getCurrentBranch(git);
+            String remoteUrl = getRemoteUrl(git);
+            boolean clean = git.status().call().isClean();
+
+            // Get last commit info
+            String lastCommitMessage = null;
+            String lastCommitDate = null;
+            try {
+                Iterable<RevCommit> logs = git.log().setMaxCount(1).call();
+                for (RevCommit commit : logs) {
+                    lastCommitMessage = commit.getShortMessage();
+                    lastCommitDate = commit.getAuthorIdent().getWhen().toString();
+                    break;
+                }
+            } catch (Exception e) {
+                LOG.debug("Could not get last commit for {}", repoDir.getName());
+            }
+
+            return GitRepositoryInfo.builder()
+                    .name(repoDir.getName())
+                    .path(repoDir.getAbsolutePath())
+                    .branch(branch)
+                    .remoteUrl(remoteUrl)
+                    .clean(clean)
+                    .source("scanned")
+                    .lastCommitMessage(lastCommitMessage)
+                    .lastCommitDate(lastCommitDate)
+                    .build();
+        } catch (Exception e) {
+            LOG.error("Failed to read git repository info for: {}", repoDir.getAbsolutePath(), e);
+            return null;
+        }
+    }
+
+    private String getCurrentBranch(Git git) throws Exception {
+        Ref head = git.getRepository().exactRef("HEAD");
+        if (head != null && head.isSymbolic()) {
+            return head.getTarget().getName().replace("refs/heads/", "");
+        }
+        return "detached";
+    }
+
+    private String getRemoteUrl(Git git) {
+        try {
+            RemoteConfig remote = new RemoteConfig(git.getRepository().getConfig(), "origin");
+            URIish uri = remote.getURIs().stream().findFirst().orElse(null);
+            return uri != null ? uri.toString() : null;
+        } catch (Exception e) {
+            LOG.debug("Could not get remote URL: {}", e.getMessage());
+            return null;
+        }
+    }
+}

@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/codeKnowlage.iml" filepath="$PROJECT_DIR$/.idea/codeKnowlage.iml" />
+      <module fileurl="file://$PROJECT_DIR$/hisi-dev-tool/devTools.iml" filepath="$PROJECT_DIR$/hisi-dev-tool/devTools.iml" />
     </modules>
   </component>
 </project>

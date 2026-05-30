@@ -1,0 +1,1663 @@
+<template>
+  <div class="log-query">
+    <el-card header="日志查询">
+      <el-form :model="queryForm" label-width="100px">
+        <el-row :gutter="20">
+          <el-col :span="24">
+            <!-- DSL 配置化构建 -->
+            <el-card shadow="never" class="dsl-builder-card">
+              <template #header>
+                <div class="dsl-builder-header">
+                  <span>DSL 查询配置</span>
+                  <div class="dsl-header-actions">
+                    <el-button type="primary" @click="handleQuery" :loading="loading">
+                      <el-icon><Search /></el-icon>
+                      查询
+                    </el-button>
+                    <el-button @click="handleReset">重置</el-button>
+                  </div>
+                </div>
+              </template>
+
+              <!-- 基础配置 -->
+              <el-row :gutter="16">
+                <el-col :span="6">
+                  <el-form-item label="返回条数" label-width="80px">
+                    <el-input-number
+                      v-model="dslConfig.size"
+                      :min="1"
+                      :max="1000"
+                      :step="10"
+                      controls-position="right"
+                      style="width: 100%"
+                    />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="9">
+                  <el-form-item label="时间范围" label-width="80px">
+                    <el-select v-model="dslConfig.timeRange" style="width: 100%">
+                      <el-option label="最近 5 分钟" value="now-5m" />
+                      <el-option label="最近 15 分钟" value="now-15m" />
+                      <el-option label="最近 30 分钟" value="now-30m" />
+                      <el-option label="最近 1 小时" value="now-1h" />
+                      <el-option label="最近 3 小时" value="now-3h" />
+                      <el-option label="最近 6 小时" value="now-6h" />
+                      <el-option label="最近 12 小时" value="now-12h" />
+                      <el-option label="最近 24 小时" value="now-24h" />
+                      <el-option label="最近 7 天" value="now-7d" />
+                      <el-option label="自定义时间" value="custom" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="9" v-if="dslConfig.timeRange === 'custom'">
+                  <el-form-item label="自定义" label-width="60px">
+                    <el-date-picker
+                      v-model="dslConfig.customStartTime"
+                      type="datetime"
+                      placeholder="开始时间"
+                      style="width: 48%"
+                    />
+                    <span style="margin: 0 2px">-</span>
+                    <el-date-picker
+                      v-model="dslConfig.customEndTime"
+                      type="datetime"
+                      placeholder="结束时间"
+                      style="width: 48%"
+                    />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+
+              <!-- Must 条件 -->
+              <el-divider content-position="left">Must 条件 (必须满足)</el-divider>
+              <div class="condition-list">
+                <div v-for="(condition, index) in dslConfig.mustConditions" :key="'must-' + index" class="condition-item">
+                  <el-select v-model="condition.field" placeholder="字段" style="width: 140px">
+                    <el-option label="@timestamp" value="@timestamp" />
+                    <el-option label="level" value="level" />
+                    <el-option label="message" value="message" />
+                    <el-option label="service" value="service" />
+                    <el-option label="traceId" value="traceId" />
+                    <el-option label="hostname" value="hostname" />
+                    <el-option label="自定义字段" value="custom" />
+                  </el-select>
+                  <el-input v-if="condition.field === 'custom'" v-model="condition.customField" placeholder="字段名" style="width: 120px" />
+                  <el-select v-model="condition.operator" placeholder="操作符" style="width: 110px">
+                    <el-option label="range" value="range" />
+                    <el-option label="match" value="match" />
+                    <el-option label="match_phrase" value="match_phrase" />
+                    <el-option label="term" value="term" />
+                    <el-option label="wildcard" value="wildcard" />
+                  </el-select>
+                  <el-input v-model="condition.value" placeholder="值" style="flex: 1; min-width: 150px" />
+                  <el-button type="danger" :icon="Delete" circle size="small" @click="removeCondition('must', index)" />
+                </div>
+                <el-button type="primary" size="small" @click="addCondition('must')">
+                  <el-icon><Plus /></el-icon> 添加 Must 条件
+                </el-button>
+              </div>
+
+              <!-- Should 条件 -->
+              <el-divider content-position="left">Should 条件 (满足任一)</el-divider>
+              <div class="condition-list">
+                <div v-for="(condition, index) in dslConfig.shouldConditions" :key="'should-' + index" class="condition-item">
+                  <el-select v-model="condition.field" placeholder="字段" style="width: 140px">
+                    <el-option label="level" value="level" />
+                    <el-option label="message" value="message" />
+                    <el-option label="service" value="service" />
+                    <el-option label="自定义字段" value="custom" />
+                  </el-select>
+                  <el-input v-if="condition.field === 'custom'" v-model="condition.customField" placeholder="字段名" style="width: 120px" />
+                  <el-select v-model="condition.operator" placeholder="操作符" style="width: 130px">
+                    <el-option label="match" value="match" />
+                    <el-option label="match_phrase" value="match_phrase" />
+                    <el-option label="term" value="term" />
+                    <el-option label="wildcard" value="wildcard" />
+                    <el-option label="regexp" value="regexp" />
+                  </el-select>
+                  <el-input v-model="condition.value" placeholder="值" style="flex: 1; min-width: 150px" />
+                  <el-button type="danger" :icon="Delete" circle size="small" @click="removeCondition('should', index)" />
+                </div>
+                <el-row :gutter="10" style="margin-top: 8px">
+                  <el-col :span="12">
+                    <el-button type="primary" size="small" @click="addCondition('should')">
+                      <el-icon><Plus /></el-icon> 添加 Should 条件
+                    </el-button>
+                  </el-col>
+                  <el-col :span="12">
+                    <el-button size="small" @click="addPresetCondition">
+                      <el-icon><Plus /></el-icon> 快速添加错误模式
+                    </el-button>
+                  </el-col>
+                </el-row>
+              </div>
+
+              <!-- minimum_should_match -->
+              <el-form-item label="至少匹配" style="margin-top: 16px">
+                <el-input-number v-model="dslConfig.minimumShouldMatch" :min="0" :max="dslConfig.shouldConditions.length || 10" />
+                <span class="form-hint">个 Should 条件</span>
+              </el-form-item>
+
+              <!-- 生成的 DSL 预览 -->
+              <el-collapse v-if="generatedDsl" v-model="dslCollapseActive" style="margin-top: 16px">
+                <el-collapse-item title="生成的 DSL 查询" name="dsl">
+                  <pre class="dsl-preview">{{ generatedDsl }}</pre>
+                  <el-button size="small" @click="copyDsl">复制 DSL</el-button>
+                </el-collapse-item>
+              </el-collapse>
+
+              <!-- 手动输入 DSL -->
+              <el-divider content-position="left">手动输入 DSL</el-divider>
+              <div class="manual-dsl-section">
+                <el-input
+                  v-model="manualDsl"
+                  type="textarea"
+                  :rows="6"
+                  placeholder="在此输入自定义 DSL 查询 JSON，例如：
+{
+  &quot;size&quot;: 20,
+  &quot;query&quot;: {
+    &quot;bool&quot;: {
+      &quot;must&quot;: [{ &quot;match&quot;: { &quot;level&quot;: &quot;ERROR&quot; } }],
+      &quot;should&quot;: [{ &quot;match_phrase&quot;: { &quot;message&quot;: &quot;Exception&quot; } }]
+    }
+  }
+}"
+                  style="font-family: monospace"
+                />
+                <div class="manual-dsl-actions">
+                  <el-button size="small" @click="formatManualDsl">格式化</el-button>
+                  <el-button size="small" @click="loadManualDslToBuilder">加载到配置</el-button>
+                  <el-button size="small" type="warning" @click="clearManualDsl">清空</el-button>
+                </div>
+              </div>
+
+              <!-- 推荐查询 -->
+              <el-divider content-position="left">推荐查询</el-divider>
+              <div class="recommended-queries">
+                <el-card
+                  v-for="(query, index) in recommendedQueries"
+                  :key="index"
+                  shadow="hover"
+                  class="query-card"
+                  @click="applyRecommendedQuery(query.dsl)"
+                >
+                  <div class="query-card-header">
+                    <el-icon><Search /></el-icon>
+                    <span>{{ query.title }}</span>
+                  </div>
+                  <p class="query-desc">{{ query.description }}</p>
+                </el-card>
+              </div>
+            </el-card>
+          </el-col>
+        </el-row>
+      </el-form>
+    </el-card>
+
+    <el-card header="查询结果" class="mt-4">
+      <template #header>
+        <div class="result-header">
+          <span>查询结果</span>
+          <span class="result-count" v-if="pagination.total > 0">共 {{ pagination.total }} 条</span>
+        </div>
+      </template>
+
+      <el-table :data="logs" v-loading="loading" stripe style="width: 100%">
+        <el-table-column prop="level" label="级别" width="80">
+          <template #default="{ row }">
+            <el-tag :type="getLevelType(row.level)" size="small">{{ row.level || '-' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="timestamp" label="时间" width="180">
+          <template #default="{ row }">
+            {{ formatTime(row.timestamp) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="serviceName" label="服务" width="150" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ row.serviceName || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="traceId" label="TraceID" width="140" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-tooltip :content="row.traceId" placement="top" v-if="row.traceId">
+              <span class="trace-id">{{ row.traceId }}</span>
+            </el-tooltip>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="message" label="消息" min-width="300" show-overflow-tooltip>
+          <template #default="{ row }">
+            <div class="log-message">
+              <el-tag v-if="row.errorType" type="danger" size="small" class="error-tag">{{ row.errorType }}</el-tag>
+              <span>{{ row.message }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="hostname" label="主机" width="150" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-tooltip :content="row.hostname" placement="top" v-if="row.hostname">
+              <span>{{ shortText(row.hostname, 15) }}</span>
+            </el-tooltip>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" link size="small" @click="handleAnalyze(row)">
+              分析
+            </el-button>
+            <el-button type="info" link size="small" @click="showDetail(row)">
+              详情
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-pagination
+        class="mt-4"
+        v-model:current-page="pagination.page"
+        v-model:page-size="pagination.pageSize"
+        :total="pagination.total"
+        :page-sizes="[10, 20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        @size-change="handleQuery"
+        @current-change="handleQuery"
+      />
+    </el-card>
+
+    <!-- 日志详情弹窗 -->
+    <el-dialog v-model="detailVisible" title="日志详情" width="800px" append-to-body>
+      <div class="log-detail" v-if="selectedLog">
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="时间">{{ selectedLog.timestamp }}</el-descriptions-item>
+          <el-descriptions-item label="级别">
+            <el-tag :type="getLevelType(selectedLog.level)">{{ selectedLog.level }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="服务">{{ selectedLog.serviceName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="TraceID">{{ selectedLog.traceId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="主机">{{ selectedLog.hostname || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="Pod">{{ selectedLog.podName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="命名空间">{{ selectedLog.namespace || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="错误类型">
+            <el-tag v-if="parsedLogDetail?.errorType" type="danger">{{ parsedLogDetail.errorType }}</el-tag>
+            <span v-else>{{ selectedLog.errorType || '-' }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="日志源" :span="2">{{ selectedLog.logSource || '-' }}</el-descriptions-item>
+        </el-descriptions>
+
+        <!-- 解析后的错误信息 -->
+        <div class="detail-section" v-if="parsedLogDetail?.parseSuccess">
+          <div class="section-title error-title">
+            <el-icon color="#f56c6c"><Warning /></el-icon>
+            错误信息
+          </div>
+          <div class="error-info-card">
+            <div class="error-type-row" v-if="parsedLogDetail.errorType">
+              <span class="label">异常类型:</span>
+              <el-tag type="danger" effect="dark">{{ parsedLogDetail.errorType }}</el-tag>
+            </div>
+            <div class="error-msg-row" v-if="parsedLogDetail.errorMessage">
+              <span class="label">错误描述:</span>
+              <code class="error-message">{{ parsedLogDetail.errorMessage }}</code>
+            </div>
+            <div class="error-header-row" v-if="parsedLogDetail.headerMessage && parsedLogDetail.headerMessage !== parsedLogDetail.errorMessage">
+              <span class="label">日志上下文:</span>
+              <span class="header-message">{{ parsedLogDetail.headerMessage }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 结构化堆栈信息 -->
+        <div class="detail-section" v-if="parsedLogDetail?.stackFrames?.length">
+          <div class="section-title">
+            <el-icon><Document /></el-icon>
+            调用栈 ({{ parsedLogDetail.stackFrames.length }} 帧)
+          </div>
+          <div class="stack-frames">
+            <div
+              v-for="(frame, index) in parsedLogDetail.stackFrames"
+              :key="index"
+              class="stack-frame"
+              :class="{ 'frame-project': !isFrameworkFrame(frame.className) }"
+            >
+              <span class="frame-index">{{ index + 1 }}</span>
+              <span class="frame-class">{{ frame.className }}</span>
+              <span class="frame-method">.{{ frame.methodName }}</span>
+              <span class="frame-location">({{ frame.fileName }}:{{ frame.lineNumber || 'N/A' }})</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Caused by 链 -->
+        <div class="detail-section" v-if="parsedLogDetail?.causedByChain?.length">
+          <div class="section-title caused-by-title">
+            <el-icon color="#e6a23c"><Cpu /></el-icon>
+            Caused By ({{ parsedLogDetail.causedByChain.length }} 层)
+          </div>
+          <div class="caused-by-chain">
+            <div v-for="(cause, index) in parsedLogDetail.causedByChain" :key="index" class="caused-by-item">
+              <div class="cause-header">
+                <el-tag type="warning" size="small">{{ cause.errorType }}</el-tag>
+                <code class="cause-message">{{ cause.errorMessage }}</code>
+              </div>
+              <div class="cause-frames" v-if="cause.stackFrames.length">
+                <div v-for="(frame, fIndex) in cause.stackFrames.slice(0, 3)" :key="fIndex" class="stack-frame compact">
+                  <span class="frame-class">{{ frame.className }}</span>
+                  <span class="frame-method">.{{ frame.methodName }}</span>
+                </div>
+                <div v-if="cause.stackFrames.length > 3" class="more-frames">
+                  ... {{ cause.stackFrames.length - 3 }} more
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 原始日志消息 -->
+        <div class="detail-section" v-if="selectedLog.message">
+          <el-collapse>
+            <el-collapse-item title="查看原始日志">
+              <pre class="message-content raw-log">{{ selectedLog.message }}</pre>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
+
+        <div class="detail-section" v-if="selectedLog.rawFields">
+          <div class="section-title">原始字段</div>
+          <el-collapse>
+            <el-collapse-item title="点击展开查看所有字段">
+              <pre class="raw-fields">{{ JSON.stringify(selectedLog.rawFields, null, 2) }}</pre>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
+      </div>
+    </el-dialog>
+
+    <!-- LLM 分析结果弹窗 -->
+    <el-dialog v-model="analysisVisible" title="Claude 智能分析" width="1000px" @close="closeAnalysisDialog">
+      <!-- 分析中状态 - 流式输出 -->
+      <div v-if="analysisLoading" class="analysis-streaming">
+        <div class="stream-header">
+          <el-icon class="streaming-icon is-loading"><Loading /></el-icon>
+          <span>Claude 正在分析...</span>
+          <el-tag v-if="currentSessionId" size="small" type="info">Session: {{ currentSessionId.slice(0, 8) }}</el-tag>
+        </div>
+
+        <!-- 流式输出区域 -->
+        <div class="stream-output" ref="streamOutputRef">
+          <pre>{{ streamOutput }}</pre>
+        </div>
+
+        <!-- 聊天输入框 -->
+        <div class="chat-input" v-if="currentSessionId">
+          <el-input
+            v-model="chatInput"
+            placeholder="继续向 Claude 提问..."
+            @keyup.enter="sendChat"
+            :disabled="chatLoading"
+          >
+            <template #append>
+              <el-button @click="sendChat" :loading="chatLoading" type="primary">发送</el-button>
+            </template>
+          </el-input>
+        </div>
+      </div>
+
+      <!-- 分析错误状态 -->
+      <div v-else-if="analysisError" class="analysis-error">
+        <el-result icon="warning" title="分析失败" :sub-title="analysisError">
+          <template #extra>
+            <el-button type="primary" @click="analyzingLog && handleAnalyze(analyzingLog)">
+              重试
+            </el-button>
+            <el-button @click="closeAnalysisDialog">关闭</el-button>
+          </template>
+        </el-result>
+      </div>
+
+      <!-- 分析完成后的交互界面 -->
+      <div v-else class="analysis-complete">
+        <div class="stream-header">
+          <el-icon color="#67c23a"><Check /></el-icon>
+          <span>分析完成</span>
+          <el-tag v-if="currentSessionId" size="small" type="success">Session: {{ currentSessionId.slice(0, 8) }}</el-tag>
+        </div>
+
+        <!-- 完整输出 -->
+        <div class="stream-output complete">
+          <pre>{{ streamOutput }}</pre>
+        </div>
+
+        <!-- 继续对话 -->
+        <div class="chat-input">
+          <el-input
+            v-model="chatInput"
+            placeholder="继续向 Claude 提问..."
+            @keyup.enter="sendChat"
+            :disabled="chatLoading"
+          >
+            <template #append>
+              <el-button @click="sendChat" :loading="chatLoading" type="primary">发送</el-button>
+            </template>
+          </el-input>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="closeAnalysisDialog">关闭</el-button>
+          <el-button
+            v-if="!analysisLoading && streamOutput"
+            type="primary"
+            @click="copyOutput"
+          >
+            复制输出
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, reactive, computed, nextTick, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { Search, Loading, Document, Warning, Cpu, Check, Delete, Plus } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { logAnalysisApi } from '@/api/logAnalysis'
+import { aiAnalysisApi } from '@/api/aiAnalysis'
+import { claudeApi } from '@/api/claude'
+import { useWorkspaceStore } from '@/stores/workspaceStore'
+import type { LogEntry } from '@/types/log'
+import { parseJavaErrorLog, formatForAnalysis, type ParsedErrorLog } from '@/utils/logParser'
+
+const router = useRouter()
+const workspaceStore = useWorkspaceStore()
+
+const loading = ref(false)
+const logs = ref<LogEntry[]>([])
+const detailVisible = ref(false)
+const selectedLog = ref<LogEntry | null>(null)
+
+// 解析选中日志的详情
+const parsedLogDetail = computed<ParsedErrorLog | null>(() => {
+  if (!selectedLog.value) return null
+  const rawLog = selectedLog.value.message || selectedLog.value.stackTrace || ''
+  if (!rawLog) return null
+  return parseJavaErrorLog(rawLog)
+})
+
+// 判断是否为框架代码
+const isFrameworkFrame = (className: string): boolean => {
+  const frameworkPrefixes = [
+    'java.',
+    'javax.',
+    'sun.',
+    'org.springframework.',
+    'org.apache.',
+    'com.zaxxer.',
+    'io.undertow.',
+    'org.jboss.',
+    'org.eclipse.',
+    'ch.qos.logback.',
+    'org.slf4j.'
+  ]
+  return frameworkPrefixes.some(prefix => className.startsWith(prefix))
+}
+
+// DSL 配置化
+interface DslCondition {
+  field: string
+  customField: string
+  operator: string
+  value: string
+}
+
+const dslConfig = reactive({
+  size: 20,
+  timeRange: 'now-15m',
+  customStartTime: null as Date | null,
+  customEndTime: null as Date | null,
+  mustConditions: [] as DslCondition[],
+  shouldConditions: [
+    { field: 'message', customField: '', operator: 'match_phrase', value: 'Caused by:' },
+    { field: 'message', customField: '', operator: 'match_phrase', value: '*ExceptionHandler' },
+    { field: 'level', customField: '', operator: 'match', value: 'ERROR' },
+    { field: 'level', customField: '', operator: 'match', value: 'SEVERE' },
+    { field: 'message', customField: '', operator: 'match_phrase', value: '.*Exception' },
+    { field: 'message', customField: '', operator: 'match_phrase', value: '.*Error' },
+    { field: 'message', customField: '', operator: 'match_phrase', value: 'at org.springframework' }
+  ] as DslCondition[],
+  minimumShouldMatch: 1
+})
+
+const generatedDsl = ref('')
+const dslCollapseActive = ref(['dsl'])
+const manualDsl = ref('')
+
+// 推荐查询
+const recommendedQueries = [
+  {
+    title: '错误日志查询',
+    description: '查询最近 15 分钟的所有错误日志',
+    dsl: `{
+  "size": 20,
+  "query": {
+    "bool": {
+      "must": [
+        { "range": { "@timestamp": { "gte": "now-15m" } } }
+      ],
+      "should": [
+        { "match_phrase": { "message": "Caused by:" } },
+        { "match_phrase": { "message": "*ExceptionHandler" } },
+        { "match": { "level": "ERROR" } },
+        { "match": { "level": "SEVERE" } },
+        { "match_phrase": { "message": ".*Exception" } },
+        { "match_phrase": { "message": ".*Error" } },
+        { "match_phrase": { "message": "at org.springframework" } }
+      ],
+      "minimum_should_match": 1
+    }
+  }
+}`
+  },
+  {
+    title: 'NullPointerException',
+    description: '查询空指针异常日志',
+    dsl: `{
+  "size": 20,
+  "query": {
+    "bool": {
+      "must": [
+        { "range": { "@timestamp": { "gte": "now-1h" } } },
+        { "match_phrase": { "message": "NullPointerException" } }
+      ]
+    }
+  }
+}`
+  },
+  {
+    title: '数据库异常',
+    description: '查询数据库相关错误',
+    dsl: `{
+  "size": 20,
+  "query": {
+    "bool": {
+      "must": [
+        { "range": { "@timestamp": { "gte": "now-1h" } } }
+      ],
+      "should": [
+        { "match_phrase": { "message": "SQLException" } },
+        { "match_phrase": { "message": "DataAccessException" } },
+        { "match_phrase": { "message": "Connection refused" } },
+        { "match_phrase": { "message": "Timeout" } }
+      ],
+      "minimum_should_match": 1
+    }
+  }
+}`
+  },
+  {
+    title: 'Spring 异常',
+    description: '查询 Spring 框架相关错误',
+    dsl: `{
+  "size": 20,
+  "query": {
+    "bool": {
+      "must": [
+        { "range": { "@timestamp": { "gte": "now-1h" } } }
+      ],
+      "should": [
+        { "match_phrase": { "message": "at org.springframework" } },
+        { "match_phrase": { "message": "BeanCreationException" } },
+        { "match_phrase": { "message": "NoSuchBeanDefinitionException" } },
+        { "match_phrase": { "message": "HttpMessageNotReadableException" } }
+      ],
+      "minimum_should_match": 1
+    }
+  }
+}`
+  }
+]
+
+// 应用推荐查询
+const applyRecommendedQuery = (dsl: string) => {
+  manualDsl.value = dsl
+  ElMessage.success('已加载推荐查询，点击"查询"按钮执行')
+}
+
+// 生成 DSL JSON
+const buildDslQuery = () => {
+  const query: any = {
+    size: dslConfig.size,
+    query: {
+      bool: {} as any
+    }
+  }
+
+  // Must 条件
+  if (dslConfig.mustConditions.length > 0) {
+    query.query.bool.must = dslConfig.mustConditions.map(cond => {
+      const fieldName = cond.field === 'custom' ? cond.customField : cond.field
+      if (cond.operator === 'range') {
+        return { range: { [fieldName]: { gte: cond.value } } }
+      }
+      return { [cond.operator]: { [fieldName]: cond.value } }
+    })
+  }
+
+  // 时间范围 (添加到 must)
+  if (!query.query.bool.must) {
+    query.query.bool.must = []
+  }
+  if (dslConfig.timeRange === 'custom' && dslConfig.customStartTime) {
+    query.query.bool.must.push({
+      range: {
+        '@timestamp': {
+          gte: dslConfig.customStartTime.toISOString(),
+          lte: (dslConfig.customEndTime || new Date()).toISOString()
+        }
+      }
+    })
+  } else if (dslConfig.timeRange !== 'custom') {
+    query.query.bool.must.push({
+      range: {
+        '@timestamp': { gte: dslConfig.timeRange }
+      }
+    })
+  }
+
+  // Should 条件
+  if (dslConfig.shouldConditions.length > 0) {
+    query.query.bool.should = dslConfig.shouldConditions.map(cond => {
+      const fieldName = cond.field === 'custom' ? cond.customField : cond.field
+      return { [cond.operator]: { [fieldName]: cond.value } }
+    })
+    query.query.bool.minimum_should_match = dslConfig.minimumShouldMatch
+  }
+
+  return query
+}
+
+// 监听 dslConfig 变化，实时更新 DSL 预览
+watch(
+  () => dslConfig,
+  () => {
+    // 只有在非手动 DSL 模式下才自动更新预览
+    if (!manualDsl.value.trim()) {
+      const dsl = buildDslQuery()
+      generatedDsl.value = JSON.stringify(dsl, null, 2)
+    }
+  },
+  { deep: true }
+)
+
+// 初始化时生成 DSL 预览
+const initDsl = buildDslQuery()
+generatedDsl.value = JSON.stringify(initDsl, null, 2)
+
+const previewDsl = () => {
+  const dsl = buildDslQuery()
+  generatedDsl.value = JSON.stringify(dsl, null, 2)
+  dslCollapseActive.value = ['dsl'] // 展开折叠面板
+}
+
+const copyDsl = () => {
+  navigator.clipboard.writeText(generatedDsl.value)
+  ElMessage.success('DSL 已复制到剪贴板')
+}
+
+const addCondition = (type: 'must' | 'should') => {
+  const newCondition: DslCondition = {
+    field: 'message',
+    customField: '',
+    operator: 'match',
+    value: ''
+  }
+  if (type === 'must') {
+    dslConfig.mustConditions.push(newCondition)
+  } else {
+    dslConfig.shouldConditions.push(newCondition)
+  }
+}
+
+const removeCondition = (type: 'must' | 'should', index: number) => {
+  if (type === 'must') {
+    dslConfig.mustConditions.splice(index, 1)
+  } else {
+    dslConfig.shouldConditions.splice(index, 1)
+  }
+}
+
+const addPresetCondition = () => {
+  const presets = [
+    { field: 'message', customField: '', operator: 'match_phrase', value: 'Caused by:' },
+    { field: 'message', customField: '', operator: 'match_phrase', value: 'Exception' },
+    { field: 'level', customField: '', operator: 'match', value: 'ERROR' }
+  ]
+  const randomPreset = presets[Math.floor(Math.random() * presets.length)]
+  dslConfig.shouldConditions.push({ ...randomPreset })
+}
+
+// 手动 DSL 相关方法
+const formatManualDsl = () => {
+  if (!manualDsl.value.trim()) return
+  try {
+    const parsed = JSON.parse(manualDsl.value)
+    manualDsl.value = JSON.stringify(parsed, null, 2)
+    ElMessage.success('DSL 格式化成功')
+  } catch (e: any) {
+    ElMessage.error(`JSON 格式错误: ${e.message}`)
+  }
+}
+
+const loadManualDslToBuilder = () => {
+  if (!manualDsl.value.trim()) return
+  try {
+    const parsed = JSON.parse(manualDsl.value)
+
+    // 解析 size
+    if (parsed.size) {
+      dslConfig.size = parsed.size
+    }
+
+    // 解析时间范围
+    if (parsed.query?.bool?.must) {
+      const must = parsed.query.bool.must
+      for (const cond of must) {
+        if (cond.range?.['@timestamp']) {
+          const gte = cond.range['@timestamp'].gte
+          if (gte && gte.startsWith('now-')) {
+            dslConfig.timeRange = gte
+          }
+        }
+      }
+    }
+
+    // 解析 must 条件
+    if (parsed.query?.bool?.must) {
+      const must = parsed.query.bool.must
+      dslConfig.mustConditions = []
+      for (const cond of must) {
+        if (!cond.range) {
+          const operator = Object.keys(cond)[0]
+          const field = Object.keys(cond[operator])[0]
+          const value = cond[operator][field]
+          dslConfig.mustConditions.push({
+            field,
+            customField: '',
+            operator,
+            value: typeof value === 'object' ? JSON.stringify(value) : String(value)
+          })
+        }
+      }
+    }
+
+    // 解析 should 条件
+    if (parsed.query?.bool?.should) {
+      const should = parsed.query.bool.should
+      dslConfig.shouldConditions = []
+      for (const cond of should) {
+        const operator = Object.keys(cond)[0]
+        const field = Object.keys(cond[operator])[0]
+        const value = cond[operator][field]
+        dslConfig.shouldConditions.push({
+          field,
+          customField: '',
+          operator,
+          value: typeof value === 'object' ? JSON.stringify(value) : String(value)
+        })
+      }
+    }
+
+    // 解析 minimum_should_match
+    if (parsed.query?.bool?.minimum_should_match !== undefined) {
+      dslConfig.minimumShouldMatch = parsed.query.bool.minimum_should_match
+    }
+
+    ElMessage.success('DSL 已加载到配置')
+    previewDsl()
+  } catch (e: any) {
+    ElMessage.error(`解析失败: ${e.message}`)
+  }
+}
+
+const clearManualDsl = () => {
+  manualDsl.value = ''
+}
+
+// Analysis state - 流式输出
+const analysisLoading = ref(false)
+const analysisVisible = ref(false)
+const analysisError = ref<string | null>(null)
+const analyzingLog = ref<MockLogEntry | null>(null)
+const streamOutput = ref('')
+const currentSessionId = ref('')
+const chatInput = ref('')
+const chatLoading = ref(false)
+const abortController = ref<(() => void) | null>(null)
+const streamOutputRef = ref<HTMLElement | null>(null)
+
+const queryForm = reactive({
+  logLevel: 'ERROR',
+  keyword: '',
+  traceId: '',
+  startTime: null as Date | null,
+  endTime: null as Date | null
+})
+
+const pagination = reactive({
+  page: 1,
+  pageSize: 20,
+  total: 0
+})
+
+const getLevelType = (level: string | null) => {
+  if (!level) return ''
+  const types: Record<string, string> = {
+    ERROR: 'danger',
+    WARN: 'warning',
+    INFO: 'info',
+    DEBUG: '',
+    SEVERE: 'danger',
+    FATAL: 'danger'
+  }
+  return types[level.toUpperCase()] || ''
+}
+
+const formatTime = (timestamp: string | null) => {
+  if (!timestamp) return '-'
+  try {
+    return new Date(timestamp).toLocaleString('zh-CN')
+  } catch {
+    return timestamp
+  }
+}
+
+const shortText = (text: string | null, maxLen: number) => {
+  if (!text) return '-'
+  return text.length > maxLen ? text.substring(0, maxLen) + '...' : text
+}
+
+const handleQuery = async () => {
+  loading.value = true
+  try {
+    // 判断使用手动 DSL 还是配置化 DSL
+    let dslQuery: any
+    let dslJsonString: string
+
+    if (manualDsl.value.trim()) {
+      // 使用手动输入的 DSL
+      try {
+        dslQuery = JSON.parse(manualDsl.value)
+        dslJsonString = manualDsl.value
+        // 更新预览
+        generatedDsl.value = manualDsl.value
+      } catch (e: any) {
+        ElMessage.error(`DSL JSON 格式错误: ${e.message}`)
+        loading.value = false
+        return
+      }
+    } else {
+      // 使用配置化的 DSL 查询
+      dslQuery = buildDslQuery()
+      dslJsonString = JSON.stringify(dslQuery)
+      // 自动更新预览
+      generatedDsl.value = dslJsonString
+    }
+
+    const params: any = {
+      dslQuery: dslJsonString
+    }
+
+    const res = await logAnalysisApi.queryLogs(params)
+    // axios 拦截器已解包，res 直接是数据对象
+    logs.value = res?.logs || []
+    pagination.total = res?.total || 0
+
+    if (logs.value.length === 0) {
+      ElMessage.info('未查询到符合条件的日志')
+    } else {
+      ElMessage.success(`查询成功，共 ${pagination.total} 条记录`)
+    }
+
+  } catch (error: any) {
+    ElMessage.error(`查询失败: ${error.message || '请稍后重试'}`)
+    console.error('Query failed:', error)
+  } finally {
+    loading.value = false
+  }
+}
+
+const handleReset = () => {
+  Object.assign(queryForm, {
+    logLevel: 'ERROR',
+    keyword: '',
+    traceId: '',
+    startTime: null,
+    endTime: null
+  })
+  Object.assign(dslConfig, {
+    size: 20,
+    timeRange: 'now-15m',
+    customStartTime: null,
+    customEndTime: null,
+    mustConditions: [],
+    shouldConditions: [
+      { field: 'message', customField: '', operator: 'match_phrase', value: 'Caused by:' },
+      { field: 'message', customField: '', operator: 'match_phrase', value: '*ExceptionHandler' },
+      { field: 'level', customField: '', operator: 'match', value: 'ERROR' },
+      { field: 'level', customField: '', operator: 'match', value: 'SEVERE' },
+      { field: 'message', customField: '', operator: 'match_phrase', value: '.*Exception' },
+      { field: 'message', customField: '', operator: 'match_phrase', value: '.*Error' },
+      { field: 'message', customField: '', operator: 'match_phrase', value: 'at org.springframework' }
+    ],
+    minimumShouldMatch: 1
+  })
+  generatedDsl.value = ''
+  manualDsl.value = ''
+  pagination.page = 1
+  logs.value = []
+  pagination.total = 0
+}
+
+const showDetail = (row: LogEntry) => {
+  selectedLog.value = row
+  detailVisible.value = true
+}
+
+const handleAnalyze = async (row: MockLogEntry) => {
+  // 解析日志，区分错误信息和堆栈信息
+  const rawLog = row.message || row.stackTrace || ''
+  const parsed = parseJavaErrorLog(rawLog)
+  const formatted = formatForAnalysis(parsed)
+
+  try {
+    // 1. 调后端接口，从 Neo4j 拉取相关代码上下文组装为富提示词
+    const result = await aiAnalysisApi.buildLogPrompt({
+      errorMessage: formatted.errorSummary || formatted.errorMessage || rawLog,
+      errorType: formatted.errorType || '',
+      stackTrace: formatted.stackTrace || parsed.rawStackTrace || '',
+      projectPath: row.serviceName || parsed.loggerName || ''
+    }) as any
+
+    const prompt = result?.prompt || result
+    if (!prompt) {
+      ElMessage.warning('生成分析提示词失败')
+      return
+    }
+
+    // 2. 创建 workspace session，通过 PTY 终端发送到 Claude CLI
+    const session = await workspaceStore.createSession(
+      'log-analysis',
+      typeof prompt === 'string' ? prompt : JSON.stringify(prompt)
+    )
+    router.push({ name: 'ClaudeTerminal', query: { sessionId: session.id } })
+    ElMessage.success('已创建日志分析会话')
+  } catch (error: any) {
+    ElMessage.error(`创建分析会话失败: ${error.message || error}`)
+  }
+}
+
+// 发送聊天消息
+const sendChat = async () => {
+  if (!chatInput.value.trim() || !currentSessionId.value || chatLoading.value) return
+
+  const message = chatInput.value.trim()
+  chatInput.value = ''
+  chatLoading.value = true
+
+  // 添加用户消息到输出
+  streamOutput.value += `\n\n---\n**You:** ${message}\n\n**Claude:** `
+
+  try {
+    await claudeApi.streamChat(
+      {
+        sessionId: currentSessionId.value,
+        message: message
+      },
+      {
+        onOutput: (line) => {
+          streamOutput.value += line + '\n'
+          nextTick(() => {
+            if (streamOutputRef.value) {
+              streamOutputRef.value.scrollTop = streamOutputRef.value.scrollHeight
+            }
+          })
+        },
+        onDone: () => {
+          chatLoading.value = false
+        },
+        onError: (error) => {
+          chatLoading.value = false
+          ElMessage.error(`发送失败: ${error}`)
+        }
+      }
+    )
+  } catch (error: any) {
+    chatLoading.value = false
+    ElMessage.error(`发送失败: ${error.message}`)
+  }
+}
+
+// 复制输出
+const copyOutput = () => {
+  navigator.clipboard.writeText(streamOutput.value)
+  ElMessage.success('已复制到剪贴板')
+}
+
+const closeAnalysisDialog = () => {
+  // 取消正在进行的流式请求
+  if (abortController.value) {
+    abortController.value()
+    abortController.value = null
+  }
+  // 结束会话
+  if (currentSessionId.value) {
+    claudeApi.endSession(currentSessionId.value).catch(() => {})
+  }
+  analysisVisible.value = false
+  analyzingLog.value = null
+  streamOutput.value = ''
+  currentSessionId.value = ''
+}
+</script>
+
+<style scoped>
+.mt-4 {
+  margin-top: 16px;
+}
+
+.dsl-builder-card {
+  margin-bottom: 16px;
+}
+
+.dsl-builder-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.condition-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.condition-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  border: 1px solid #ebeef5;
+}
+
+.dsl-preview {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.form-hint {
+  margin-left: 8px;
+  color: #909399;
+  font-size: 12px;
+}
+
+.manual-dsl-section {
+  margin-top: 12px;
+}
+
+.manual-dsl-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.recommended-queries {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.query-card {
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid #e4e7ed;
+}
+
+.query-card:hover {
+  border-color: #409EFF;
+  box-shadow: 0 2px 12px rgba(64, 158, 255, 0.2);
+}
+
+.query-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  color: #303133;
+}
+
+.query-card-header .el-icon {
+  color: #409EFF;
+}
+
+.query-desc {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #909399;
+}
+
+.dsl-builder-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dsl-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.result-count {
+  font-size: 13px;
+  color: #909399;
+}
+
+.trace-id {
+  font-family: monospace;
+  font-size: 12px;
+  color: #409eff;
+  cursor: pointer;
+}
+
+.log-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.error-tag {
+  flex-shrink: 0;
+}
+
+.log-detail {
+  padding: 8px 0;
+}
+
+.detail-section {
+  margin-top: 20px;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #303133;
+  margin-bottom: 8px;
+  padding-left: 8px;
+  border-left: 3px solid #409eff;
+}
+
+.message-content {
+  background: #f5f7fa;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.stack-content {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: monospace;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.raw-fields {
+  background: #f5f7fa;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: monospace;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* Analysis Dialog Styles */
+/* 流式分析样式 */
+.analysis-streaming,
+.analysis-complete {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.stream-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e7ed 100%);
+  border-radius: 8px;
+}
+
+.streaming-icon {
+  font-size: 20px;
+  color: #409eff;
+}
+
+.stream-output {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 300px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.stream-output.complete {
+  background: #282c34;
+}
+
+.stream-output pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-input {
+  margin-top: 8px;
+}
+
+.analysis-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 300px;
+  padding: 40px;
+}
+
+.loading-content {
+  text-align: center;
+  max-width: 500px;
+}
+
+.loading-icon {
+  font-size: 48px;
+  color: #409eff;
+  margin-bottom: 20px;
+}
+
+.loading-content h3 {
+  font-size: 18px;
+  color: #303133;
+  margin: 0 0 16px 0;
+}
+
+.loading-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 24px;
+  color: #606266;
+}
+
+.analyzing-text {
+  font-family: monospace;
+  font-size: 13px;
+  max-width: 400px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-progress {
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto 16px;
+}
+
+.progress-hint {
+  font-size: 13px;
+  color: #909399;
+  margin: 0;
+}
+
+.analysis-error {
+  padding: 20px;
+}
+
+.analysis-result {
+  padding: 8px 0;
+}
+
+.result-header-section {
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e7ed 100%);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.header-row {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.header-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.header-label {
+  font-size: 12px;
+  color: #909399;
+}
+
+.header-value {
+  font-size: 14px;
+  color: #303133;
+}
+
+.confidence-display {
+  display: flex;
+  align-items: center;
+}
+
+.result-section {
+  margin-bottom: 20px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  color: #303133;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.section-header .el-icon {
+  color: #409eff;
+}
+
+.section-content {
+  padding: 0 4px;
+}
+
+.root-cause {
+  background: #fef0f0;
+  border-left: 3px solid #f56c6c;
+  padding: 12px 16px;
+  border-radius: 4px;
+}
+
+.root-cause p {
+  margin: 0;
+  color: #606266;
+  line-height: 1.6;
+}
+
+.code-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.code-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #f5f7fa;
+  padding: 10px 14px;
+  border-radius: 6px;
+  border: 1px solid #ebeef5;
+}
+
+.code-item code {
+  font-family: monospace;
+  font-size: 13px;
+  color: #303133;
+  background: none;
+}
+
+.suggestion-item {
+  padding: 4px 0;
+}
+
+.suggestion-number {
+  font-weight: 500;
+  color: #409eff;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.suggestion-item p {
+  margin: 0;
+  color: #606266;
+  line-height: 1.6;
+}
+
+.result-meta {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #ebeef5;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* 解析后的错误信息样式 */
+.error-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-left-color: #f56c6c;
+  color: #f56c6c;
+}
+
+.error-info-card {
+  background: #fef0f0;
+  border-radius: 8px;
+  padding: 16px;
+  border: 1px solid #fbc4c4;
+}
+
+.error-info-card .label {
+  font-size: 13px;
+  color: #909399;
+  margin-right: 8px;
+}
+
+.error-type-row {
+  margin-bottom: 12px;
+}
+
+.error-msg-row {
+  margin-bottom: 12px;
+}
+
+.error-message {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+  color: #303133;
+  background: #fff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  display: block;
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+.error-header-row {
+  padding-top: 12px;
+  border-top: 1px dashed #fbc4c4;
+}
+
+.header-message {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.5;
+}
+
+/* 堆栈帧样式 */
+.stack-frames {
+  background: #1e1e1e;
+  border-radius: 8px;
+  padding: 12px;
+  max-height: 350px;
+  overflow-y: auto;
+}
+
+.stack-frame {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  color: #abb2bf;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.stack-frame:hover {
+  background: #2c313a;
+}
+
+.stack-frame.frame-project {
+  color: #98c379;
+  background: rgba(152, 195, 121, 0.1);
+}
+
+.stack-frame.frame-project:hover {
+  background: rgba(152, 195, 121, 0.2);
+}
+
+.frame-index {
+  color: #5c6370;
+  min-width: 24px;
+  text-align: right;
+}
+
+.frame-class {
+  color: #e5c07b;
+}
+
+.frame-method {
+  color: #61afef;
+}
+
+.frame-location {
+  color: #56b6c2;
+}
+
+.stack-frame.compact {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+/* Caused By 链样式 */
+.caused-by-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-left-color: #e6a23c;
+  color: #e6a23c;
+}
+
+.caused-by-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.caused-by-item {
+  background: #fdf6ec;
+  border-radius: 8px;
+  padding: 12px;
+  border: 1px solid #f5dab1;
+}
+
+.cause-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.cause-message {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  color: #606266;
+}
+
+.cause-frames {
+  padding-left: 12px;
+  border-left: 2px solid #e6a23c;
+  margin-top: 8px;
+}
+
+.more-frames {
+  font-size: 11px;
+  color: #909399;
+  padding-left: 8px;
+  font-style: italic;
+}
+
+/* 原始日志折叠样式 */
+.raw-log {
+  font-size: 11px;
+  max-height: 250px;
+}
+</style>

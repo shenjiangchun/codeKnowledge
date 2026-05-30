@@ -1,0 +1,63 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "checkout-service"}},
+          {"key": "service.version", "value": {"stringValue": "1.0.0"}},
+          {"key": "telemetry.sdk.language", "value": {"stringValue": "java"}}
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {"name": "io.opentelemetry.spring-webmvc-6.0", "version": "2.10.0"},
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000003",
+              "spanId": "bbbbbbbbbbbbbbb1",
+              "name": "POST /api/checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1747829000000000000",
+              "endTimeUnixNano": "1747829000260000000",
+              "status": {"code": 2, "message": "ServletException: downstream 502"},
+              "attributes": [
+                {"key": "http.method", "value": {"stringValue": "POST"}},
+                {"key": "http.route", "value": {"stringValue": "/api/checkout"}},
+                {"key": "http.status_code", "value": {"intValue": "502"}}
+              ],
+              "events": [
+                {
+                  "name": "exception",
+                  "timeUnixNano": "1747829000255000000",
+                  "attributes": [
+                    {"key": "exception.type", "value": {"stringValue": "jakarta.servlet.ServletException"}},
+                    {"key": "exception.message", "value": {"stringValue": "Downstream payment-service returned 502 Bad Gateway"}},
+                    {"key": "exception.stacktrace", "value": {"stringValue": "jakarta.servlet.ServletException: Downstream payment-service returned 502 Bad Gateway\n\tat com.example.demo.CheckoutController.checkout(CheckoutController.java:55)\n\tat com.example.demo.PaymentClient.charge(PaymentClient.java:78)\n\tat org.springframework.web.client.RestTemplate.handleResponse(RestTemplate.java:931)\n\tat org.springframework.web.client.RestTemplate.doExecute(RestTemplate.java:881)\n\tat org.springframework.web.client.RestTemplate.execute(RestTemplate.java:773)\n\tat org.springframework.web.client.RestTemplate.postForObject(RestTemplate.java:484)\n\tat com.example.demo.CheckoutService.process(CheckoutService.java:33)"}}
+                  ]
+                }
+              ]
+            },
+            {
+              "traceId": "00000000000000000000000000000003",
+              "spanId": "bbbbbbbbbbbbbbb2",
+              "parentSpanId": "bbbbbbbbbbbbbbb1",
+              "name": "POST payment-service /charge",
+              "kind": 3,
+              "startTimeUnixNano": "1747829000080000000",
+              "endTimeUnixNano": "1747829000110000000",
+              "status": {"code": 2, "message": "502 Bad Gateway"},
+              "attributes": [
+                {"key": "http.method", "value": {"stringValue": "POST"}},
+                {"key": "http.url", "value": {"stringValue": "http://payment-service/charge"}},
+                {"key": "http.status_code", "value": {"intValue": "502"}},
+                {"key": "peer.service", "value": {"stringValue": "payment-service"}},
+                {"key": "net.peer.name", "value": {"stringValue": "payment-service"}},
+                {"key": "net.peer.port", "value": {"intValue": "8080"}}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
