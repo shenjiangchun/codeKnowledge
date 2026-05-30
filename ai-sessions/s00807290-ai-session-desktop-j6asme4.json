@@ -1,15 +1,15 @@
 {
   "developer": "s00807290",
   "hostname": "desktop-j6asme4",
-  "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
+  "model": "claude-code",
   "firstSeen": "2026-05-30T01:37:45.023Z",
-  "lastUpdated": "2026-05-30T03:11:50.812Z",
+  "lastUpdated": "2026-05-30T03:16:34.704Z",
   "stats": {
     "totalOperations": 41,
     "totalFilesEdited": 30,
-    "totalAiLines": 978,
-    "totalAiLinesDeleted": 354,
-    "totalCommits": 2
+    "totalAiLines": 980,
+    "totalAiLinesDeleted": 355,
+    "totalCommits": 3
   },
   "pendingFiles": [
     {
@@ -150,22 +150,6 @@
       "operations": 1,
       "timestamp": "2026-05-30T02:55:05.270Z",
       "lastModified": "2026-05-30T02:55:05.270Z"
-    },
-    {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/config/CorsConfig.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-05-30T03:01:43.165Z",
-      "lastModified": "2026-05-30T03:01:43.165Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/config/CorsConfig.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "ExternalAPI-doubao-seed-2.0-code-volcengine-public",
-      "operations": 1,
-      "timestamp": "2026-05-30T03:01:44.590Z",
-      "lastModified": "2026-05-30T03:01:44.590Z"
     },
     {
       "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/controller/KnowledgeGraphController.java",

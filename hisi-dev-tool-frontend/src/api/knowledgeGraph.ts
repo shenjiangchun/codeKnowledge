@@ -591,13 +591,16 @@ export const knowledgeGraphApi = {
   /**
    * 获取DAG图数据
    */
-  getCallChainGraph(entryKey: string, projectPath: string, includeCycles?: boolean, projectPaths?: string[]) {
-    const params: Record<string, string | boolean | string[]> = { entryKey, projectPath }
+  getCallChainGraph(entryKey: string, projectPath: string, includeCycles?: boolean, projectPaths?: string[], maxDepth?: number) {
+    const params: Record<string, string | boolean | string[] | number> = { entryKey, projectPath }
     if (includeCycles !== undefined) {
       params.includeCycles = includeCycles
     }
     if (projectPaths) {
       params.projectPaths = projectPaths
+    }
+    if (maxDepth !== undefined) {
+      params.maxDepth = maxDepth
     }
     return request.get<CallChainGraphData>('/knowledge-graph/call-chain/graph', {
       params

@@ -1013,7 +1013,8 @@ public class KnowledgeGraphController {
             @RequestParam String entryKey,
             @RequestParam(required = false) String projectPath,
             @RequestParam(required = false) List<String> projectPaths,
-            @RequestParam(defaultValue = "true") boolean includeCycles) {
+            @RequestParam(defaultValue = "true") boolean includeCycles,
+            @RequestParam(defaultValue = "50") int maxDepth) {
         long startTime = System.currentTimeMillis();
         List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
         if (paths.isEmpty()) {
@@ -1021,10 +1022,7 @@ public class KnowledgeGraphController {
         }
         String resolvedPath = paths.get(0);
 
-        log.info("[KG Graph] Query: entryKey={}, projectPath={}, includeCycles={}", entryKey, resolvedPath, includeCycles);
-
-        // 使用Neo4j原生图遍历（单次查询获取所有节点）
-        int maxDepth = 50; // 可配置的最大深度
+        log.info("[KG Graph] Query: entryKey={}, projectPath={}, includeCycles={}, maxDepth={}", entryKey, resolvedPath, includeCycles, maxDepth);
 
         // 使用原生 Neo4j Driver 执行查询（变长路径不支持参数绑定）
         List<GraphNode> nodes = new ArrayList<>();
