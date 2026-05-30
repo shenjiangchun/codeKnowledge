@@ -68,6 +68,7 @@ export interface RootEntriesResponse {
 
 export interface EntryPoint {
   nodeId: string
+  methodNodeId: string
   entryType: string
   entryKey: string
   entryInfo: string
