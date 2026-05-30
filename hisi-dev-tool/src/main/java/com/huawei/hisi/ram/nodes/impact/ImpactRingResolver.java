@@ -60,18 +60,15 @@ public class ImpactRingResolver {
 
         log.info("ImpactRing: resolving {} nodeIds (capped={})", allNodeIds.size(), capped);
 
+        // ── Upstream: root entry points (batch) ──
+        // Return the top-level entry points (Controller, Scheduled, MQ consumer, etc.)
+        // that can reach these nodes via the caller chain, NOT intermediate callers.
+        List<Entry> rootEntries = kg.rootEntryAncestors(
+                allNodeIds.stream().filter(n -> n != null).toList(), projectPath, UPSTREAM_DEPTH);
+        if (rootEntries != null) upstream.addAll(rootEntries);
+
         for (String nodeId : allNodeIds) {
             if (nodeId == null) continue;
-
-            // ── Upstream (affecting) ──
-            // Pass nodeId directly as className so resolveMethod() uses Strategy 1
-            // (direct nodeId lookup) — parseClassMethod() extraction often fails to
-            // match the exact className stored in Neo4j.
-            List<Entry> aff = kg.affecting(nodeId, "", projectPath, UPSTREAM_DEPTH);
-            if (aff != null && !aff.isEmpty()) {
-                upstream.addAll(aff);
-                log.debug("ImpactRing: nodeId={} → upstream={}", nodeId, aff.size());
-            }
 
             // ── Downstream ──
             List<Entry> down = kg.downstream(nodeId, projectPath, DOWNSTREAM_DEPTH);

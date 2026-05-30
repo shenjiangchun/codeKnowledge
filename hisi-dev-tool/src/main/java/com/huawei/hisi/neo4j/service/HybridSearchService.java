@@ -502,6 +502,34 @@ public class HybridSearchService {
     }
 
     /**
+     * 从查询文本中提取有检索价值的关键术语。
+     * 规则：长度2-20的中文/英文/驼峰片段，排除常见停用词。
+     */
+    private List<String> extractSearchKeywords(String query) {
+        if (query == null || query.isBlank()) return Collections.emptyList();
+        // 按空格/标点拆分，保留有检索价值的片段
+        String[] tokens = query.split("[\\s，,。.；;、！!？?（）()\\[\\]【】{}\"'<>《》]+");
+        List<String> keywords = new ArrayList<>();
+        Set<String> stopWords = Set.of(
+                "的", "了", "在", "是", "和", "与", "及", "或", "不", "有", "无",
+                "从", "到", "向", "上", "下", "中", "后", "前", "时", "当",
+                "the", "a", "an", "is", "are", "was", "and", "or", "not", "in", "on", "at", "to", "for"
+        );
+        for (String token : tokens) {
+            String t = token.trim();
+            // 跳过太短/太长/停用词
+            if (t.length() < 2 || t.length() > 30) continue;
+            if (stopWords.contains(t.toLowerCase())) continue;
+            // 保留中文片段(>=2字)、英文/驼峰片段(>=3字符)、混合片段
+            if (t.matches(".*[\\u4e00-\\u9fa5].*") || t.length() >= 3) {
+                keywords.add(t);
+            }
+        }
+        // 最多取前5个关键词，避免过多查询
+        return keywords.stream().limit(5).collect(Collectors.toList());
+    }
+
+    /**
      * SQL_SNIPPET 搜索策略 (带分数)
      * sqlEmbedding 向量检索 -> EXECUTES_SQL 批量反查
      */
@@ -1370,5 +1398,122 @@ public class HybridSearchService {
             return sql;
         }
         return sql.substring(0, maxLength) + "...";
+    }
+
+    /**
+     * Find nodes with a specific annotation by checking methodBody and comment.
+     *
+     * @param nodeIds    method node IDs to check
+     * @param annotation the annotation to look for (with or without @)
+     * @return set of nodeIds that have the annotation
+     */
+    public Set<String> findNodesWithAnnotation(List<String> nodeIds, String annotation) {
+        if (nodeIds == null || nodeIds.isEmpty() || annotation == null || annotation.isBlank()) {
+            return Collections.emptySet();
+        }
+        String normalized = annotation.startsWith("@") ? annotation.substring(1) : annotation;
+        try {
+            // Query all methods with the annotation, then intersect with nodeIds
+            List<MethodNode> annotated = methodNodeRepository.findByProjectPathsAndAnnotation(
+                    List.of(), normalized); // empty projectPaths → all projects
+            Set<String> annotatedIds = annotated.stream()
+                    .map(MethodNode::getNodeId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+            Set<String> result = new LinkedHashSet<>(nodeIds);
+            result.retainAll(annotatedIds);
+            return result;
+        } catch (Exception e) {
+            log.debug("[POST-FILTER] annotation check failed for '{}': {}", annotation, e.getMessage());
+            return Collections.emptySet();
+        }
+    }
+
+    /**
+     * Batch check annotations for a list of node IDs.
+     * Used for annotation bonus in intent-aware search.
+     *
+     * @param nodeIds     list of node IDs to check
+     * @param annotations annotations to look for
+     * @return map of nodeId -> set of matched annotations
+     */
+    public Map<String, Set<String>> batchCheckAnnotations(List<String> nodeIds, String[] annotations) {
+        if (nodeIds == null || nodeIds.isEmpty() || annotations == null || annotations.length == 0) {
+            return Collections.emptyMap();
+        }
+        Map<String, Set<String>> result = new HashMap<>();
+        for (String annotation : annotations) {
+            Set<String> matched = findNodesWithAnnotation(nodeIds, annotation);
+            for (String nodeId : matched) {
+                result.computeIfAbsent(nodeId, k -> new LinkedHashSet<>()).add(annotation);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Get 1-hop callees for a list of node IDs.
+     * Used for callee weight propagation in intent-aware search.
+     *
+     * @param nodeIds source node IDs
+     * @return map of source nodeId -> list of callee nodeIds
+     */
+    public Map<String, List<String>> get1HopCallees(List<String> nodeIds) {
+        if (nodeIds == null || nodeIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        try {
+            List<Neo4jMethodNodeRepository.CalleeWithRelationBySource> callees = methodNodeRepository.findCalleesByNodeIds(nodeIds);
+            return callees.stream()
+                    .filter(c -> c.calleeId() != null)
+                    .collect(Collectors.groupingBy(
+                            Neo4jMethodNodeRepository.CalleeWithRelationBySource::sourceNodeId,
+                            Collectors.mapping(
+                                    Neo4jMethodNodeRepository.CalleeWithRelationBySource::calleeId,
+                                    Collectors.toList()
+                            )
+                    ));
+        } catch (Exception e) {
+            log.debug("[CALLEE-PROP] 1-hop callee lookup failed: {}", e.getMessage());
+            return Collections.emptyMap();
+        }
+    }
+
+    /**
+     * Extract core nouns from a query for required word filtering.
+     * Delegates to extractSearchKeywords for implementation.
+     *
+     * @param query user query
+     * @return list of core nouns/keywords
+     */
+    public List<String> extractCoreNouns(String query) {
+        if (query == null || query.isBlank()) return Collections.emptyList();
+        // Reuse extractSearchKeywords logic — same stop words and length rules
+        return extractSearchKeywords(query);
+    }
+
+    /**
+     * Check if a method node matches at least one of the required words.
+     * Matches against methodName, className, and description.
+     *
+     * @param node          the method node to check
+     * @param requiredWords list of required words
+     * @return true if at least one word matches
+     */
+    public boolean matchesAnyRequiredWord(MethodNode node, List<String> requiredWords) {
+        if (requiredWords == null || requiredWords.isEmpty()) return true;
+        if (node == null) return false;
+
+        String text = String.join(" ",
+                Objects.toString(node.getMethodName(), ""),
+                Objects.toString(node.getClassName(), ""),
+                Objects.toString(node.getDescription(), ""));
+
+        for (String word : requiredWords) {
+            if (word != null && text.contains(word)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
