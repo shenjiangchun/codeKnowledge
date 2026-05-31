@@ -22,6 +22,7 @@ import com.huawei.hisi.knowledgegraph.python.scanner.PythonHttpCall;
 import com.huawei.hisi.knowledgegraph.python.scanner.PythonHttpCallScanner;
 import com.huawei.hisi.knowledgegraph.python.scanner.PythonMqCallScanner;
 import com.huawei.hisi.knowledgegraph.service.storage.Neo4jStorageService;
+import com.huawei.hisi.neo4j.repository.Neo4jDataModelNodeRepository;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
 import org.antlr.v4.runtime.CharStreams;
@@ -51,7 +52,9 @@ class DjangoE2ETest {
                     new FlaskRouteScanner(),
                     httpCallScanner,
                     new PythonMqCallScanner(),
-                    new CeleryTaskScanner());
+                    new CeleryTaskScanner(),
+                    mock(PythonDataModelScanner.class),
+                    mock(Neo4jDataModelNodeRepository.class));
 
     @Test
     @DisplayName("e2e: full Django pipeline — ANTLR parse, module-level calls, URLs, includes, CBV, cross-module resolution")

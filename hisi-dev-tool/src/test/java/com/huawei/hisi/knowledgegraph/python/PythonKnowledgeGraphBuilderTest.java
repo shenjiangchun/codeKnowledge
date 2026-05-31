@@ -16,6 +16,7 @@ import com.huawei.hisi.knowledgegraph.python.scanner.PythonHttpCallScanner;
 import com.huawei.hisi.knowledgegraph.python.scanner.PythonMqCallScanner;
 import com.huawei.hisi.knowledgegraph.service.storage.Neo4jStorageService;
 import com.huawei.hisi.neo4j.model.MethodNode;
+import com.huawei.hisi.neo4j.repository.Neo4jDataModelNodeRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -38,7 +39,9 @@ class PythonKnowledgeGraphBuilderTest {
                 new FlaskRouteScanner(),
                 new PythonHttpCallScanner(),
                 new PythonMqCallScanner(),
-                new CeleryTaskScanner());
+                new CeleryTaskScanner(),
+                mock(PythonDataModelScanner.class),
+                mock(Neo4jDataModelNodeRepository.class));
     }
 
     private Path writePy(Path dir, String name, String content) throws IOException {

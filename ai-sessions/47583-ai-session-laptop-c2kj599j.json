@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "mimo-v2.5-pro-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-05-31T13:50:45.114Z",
+  "lastUpdated": "2026-05-31T16:01:51.024Z",
   "stats": {
-    "totalOperations": 1106,
-    "totalFilesEdited": 481,
-    "totalAiLines": 27315,
-    "totalAiLinesDeleted": 1985,
-    "totalCommits": 68
+    "totalOperations": 1126,
+    "totalFilesEdited": 486,
+    "totalAiLines": 27381,
+    "totalAiLinesDeleted": 2022,
+    "totalCommits": 70
   },
   "pendingFiles": [
     {
@@ -913,14 +913,6 @@
       "lastTool": "Edit"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/resources/application.yml",
-      "tool": "Edit",
-      "operations": 3,
-      "timestamp": "2026-05-24T03:44:51.272Z",
-      "lastModified": "2026-05-24T04:33:20.468Z",
-      "lastTool": "Edit"
-    },
-    {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/docs/CODEMAPS/architecture.md",
       "tool": "Write",
       "operations": 1,
@@ -1076,26 +1068,11 @@
       "lastModified": "2026-05-31T12:51:02.832Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/nodes/impact/MultiQuerySearcher.java",
-      "tool": "Edit",
-      "operations": 4,
-      "timestamp": "2026-05-31T13:28:50.286Z",
-      "lastModified": "2026-05-31T13:33:21.025Z",
-      "lastTool": "Edit"
-    },
-    {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/gen_part1.py",
       "tool": "Write",
       "operations": 1,
       "timestamp": "2026-05-31T13:30:51.191Z",
       "lastModified": "2026-05-31T13:30:51.191Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/config/CorsConfig.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-05-31T13:35:40.863Z",
-      "lastModified": "2026-05-31T13:35:40.863Z"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/gen_part2.py",
@@ -1119,6 +1096,14 @@
       "operations": 1,
       "timestamp": "2026-05-31T13:50:45.114Z",
       "lastModified": "2026-05-31T13:50:45.114Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/gen_resume.py",
+      "tool": "Write",
+      "operations": 11,
+      "timestamp": "2026-05-31T14:22:37.964Z",
+      "lastModified": "2026-05-31T14:31:59.755Z",
+      "lastTool": "Edit"
     }
   ]
 }

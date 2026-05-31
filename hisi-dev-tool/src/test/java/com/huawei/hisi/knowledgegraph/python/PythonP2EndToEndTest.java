@@ -21,6 +21,7 @@ import com.huawei.hisi.knowledgegraph.python.scanner.PythonMqCallScanner;
 import com.huawei.hisi.knowledgegraph.service.storage.Neo4jStorageService;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
+import com.huawei.hisi.neo4j.repository.Neo4jDataModelNodeRepository;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.junit.jupiter.api.BeforeEach;
@@ -87,7 +88,9 @@ class PythonP2EndToEndTest {
                 new FlaskRouteScanner(),
                 new PythonHttpCallScanner(),
                 new PythonMqCallScanner(),
-                new CeleryTaskScanner());
+                new CeleryTaskScanner(),
+                mock(PythonDataModelScanner.class),
+                mock(Neo4jDataModelNodeRepository.class));
         flaskScanner = new FlaskRouteScanner();
         celeryScanner = new CeleryTaskScanner();
         callGraphResolver = new PythonCallGraphResolver();
