@@ -96,43 +96,12 @@ function shortName(className: string | null | undefined): string {
   return parts[parts.length - 1]
 }
 
-function formatMethod(className: string | null | undefined, methodName: string | null | undefined, nodeId?: string | null): string {
-  const cls = shortName(className)
-  if (cls && methodName) return `${cls}#${methodName}`
-  if (methodName) return methodName
-  if (cls) return cls
-  // Fallback: extract from nodeId format "path:com.pkg.Class.method.hash"
-  if (nodeId) {
-    const parsed = parseNodeId(nodeId)
-    if (parsed) return formatMethod(parsed.className, parsed.methodName)
-  }
-  return '(未知方法)'
-}
-
-function entryTypeLabel(type: string | null | undefined): string {
-  if (!type) return '接口'
-  const labels: Record<string, string> = {
-    CONTROLLER: 'HTTP 接口',
-    REST_ENDPOINT: 'REST 接口',
-    HTTP: 'HTTP 接口',
-    SCHEDULED: '定时任务',
-    MQ_LISTENER: '消息监听',
-    MQ_CONSUMER: '消息监听',
-    FEIGN_CLIENT: 'Feign 调用',
-    WEBSOCKET: 'WebSocket',
-    EVENT_LISTENER: '事件监听',
-    GRPC: 'gRPC',
-    RMI: 'RMI'
-  }
-  return labels[type.toUpperCase()] ?? type
 function parseNodeId(nodeId: string): { className?: string; methodName?: string } | null {
-  // Parse format "path:com.pkg.Class.method.hash"
   const parts = nodeId.split(':')
   if (parts.length < 2) return null
   const rest = parts[1]
   const components = rest.split('.')
   if (components.length < 2) return null
-  // Last part is hash, before that is methodName, before that are className parts
   const classNameParts = components.slice(0, -2)
   const methodName = components[components.length - 2]
   return {
@@ -146,7 +115,6 @@ function formatMethod(className: string | null | undefined, methodName: string |
   if (cls && methodName) return `${cls}#${methodName}`
   if (methodName) return methodName
   if (cls) return cls
-  // Fallback: extract from nodeId format "path:com.pkg.Class.method.hash"
   if (nodeId) {
     const parsed = parseNodeId(nodeId)
     if (parsed) return formatMethod(parsed.className, parsed.methodName)
@@ -154,14 +122,6 @@ function formatMethod(className: string | null | undefined, methodName: string |
   return '(未知方法)'
 }
 
-function entryTypeIcon(type: string | null | undefined): string {
-  if (!type) return '🔌'
-  switch (type.toUpperCase()) {
-    case 'HTTP': case 'CONTROLLER': case 'REST_ENDPOINT': return '🔌'
-    case 'SCHEDULED': return '⏰'
-    case 'MQ_LISTENER': case 'MQ_CONSUMER': return '📨'
-    case 'FEIGN_CLIENT': case 'GRPC': case 'RMI': return '🔗'
-    default: return '🔌'
 function entryTypeLabel(type: string | null | undefined): string {
   if (!type) return '接口'
   const labels: Record<string, string> = {
@@ -534,25 +494,6 @@ export default {
 .col-num {
   width: 30px;
   color: #909399;
-  border-bottom: 1px solid #ebeef5;
-  padding: 4px 8px;
-  font-size: 12px;
-}
-
-.method-table td {
-  padding: 6px 8px;
-  border-bottom: 1px solid #f5f7fa;
-  vertical-align: top;
-}
-
-.col-num {
-  width: 30px;
-  color: #909399;
-}
-
-.col-reason {
-  color: #606266;
-  font-size: 12px;
 }
 
 .col-reason {

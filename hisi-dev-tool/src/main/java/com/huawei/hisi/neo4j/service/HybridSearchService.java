@@ -622,34 +622,6 @@ public class HybridSearchService {
     }
 
     /**
-     * 从查询文本中提取有检索价值的关键术语。
-     * 规则：长度2-20的中文/英文/驼峰片段，排除常见停用词。
-     */
-    private List<String> extractSearchKeywords(String query) {
-        if (query == null || query.isBlank()) return Collections.emptyList();
-        // 按空格/标点拆分，保留有检索价值的片段
-        String[] tokens = query.split("[\\s，,。.；;、！!？?（）()\\[\\]【】{}\"'<>《》]+");
-        List<String> keywords = new ArrayList<>();
-        Set<String> stopWords = Set.of(
-                "的", "了", "在", "是", "和", "与", "及", "或", "不", "有", "无",
-                "从", "到", "向", "上", "下", "中", "后", "前", "时", "当",
-                "the", "a", "an", "is", "are", "was", "and", "or", "not", "in", "on", "at", "to", "for"
-        );
-        for (String token : tokens) {
-            String t = token.trim();
-            // 跳过太短/太长/停用词
-            if (t.length() < 2 || t.length() > 30) continue;
-            if (stopWords.contains(t.toLowerCase())) continue;
-            // 保留中文片段(>=2字)、英文/驼峰片段(>=3字符)、混合片段
-            if (t.matches(".*[\\u4e00-\\u9fa5].*") || t.length() >= 3) {
-                keywords.add(t);
-            }
-        }
-        // 最多取前5个关键词，避免过多查询
-        return keywords.stream().limit(5).collect(Collectors.toList());
-    }
-
-    /**
      * SQL_SNIPPET 搜索策略 (带分数)
      * sqlEmbedding 向量检索 -> EXECUTES_SQL 批量反查
      */
