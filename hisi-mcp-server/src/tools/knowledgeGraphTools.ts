@@ -25,12 +25,20 @@ function resolveProjectParams(args: Record<string, unknown>): {
   };
 }
 
-// Common optional properties added to every tool's inputSchema
-const commonOptionalProperties = {
+// Common required property for multi-project query tools
+const commonRequiredProperties = {
   projectPaths: {
     type: 'array' as const,
     items: { type: 'string' as const },
-    description: '项目路径列表，支持多项目同时查询',
+    description: '项目路径列表（必填），支持多项目同时查询',
+  },
+};
+
+// Common optional properties added to every tool's inputSchema
+const commonOptionalProperties = {
+  projectPath: {
+    type: 'string' as const,
+    description: '单项目路径（兼容旧调用，优先使用 projectPaths）',
   },
   language: {
     type: 'string' as const,
@@ -51,9 +59,9 @@ export const knowledgeGraphToolDefinitions = [
     name: 'kg_list_projects',
     description:
       '【⚠️必须最先调用】列出知识图谱中所有已建图的项目路径。' +
-      '在调用任何其他 kg_* 或 hybrid_search 工具之前，必须先用此工具获取可用的 projectPath 列表，' +
-      '然后向用户确认应该在哪些项目里搜索/查询，再用用户选定的路径作为后续工具的 projectPath 入参。' +
-      '不要自己猜测 projectPath（例如把仓库根目录或工作目录直接当 projectPath），那样会查到 0 条结果。',
+      '在调用任何其他 kg_* 或 hybrid_search 工具之前，必须先用此工具获取可用的项目路径列表，' +
+      '然后向用户确认应该在哪些项目里搜索/查询，再用用户选定的路径作为后续工具的 projectPaths 入参。' +
+      '不要自己猜测项目路径（例如把仓库根目录或工作目录直接当 projectPath），那样会查到 0 条结果。',
     inputSchema: {
       type: 'object' as const,
       properties: {},
@@ -70,13 +78,10 @@ export const knowledgeGraphToolDefinitions = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        projectPath: {
-          type: 'string',
-          description: '项目根目录的绝对路径',
-        },
+        ...commonRequiredProperties,
         ...commonOptionalProperties,
       },
-      required: ['projectPath'],
+      required: ['projectPaths'],
     },
   },
 
@@ -93,13 +98,10 @@ export const knowledgeGraphToolDefinitions = [
           type: 'string',
           description: '方法节点ID',
         },
-        projectPath: {
-          type: 'string',
-          description: '项目路径',
-        },
+        ...commonRequiredProperties,
         ...commonOptionalProperties,
       },
-      required: ['nodeId', 'projectPath'],
+      required: ['nodeId', 'projectPaths'],
     },
   },
   {
@@ -112,13 +114,10 @@ export const knowledgeGraphToolDefinitions = [
           type: 'string',
           description: '类名（全限定名）',
         },
-        projectPath: {
-          type: 'string',
-          description: '项目路径',
-        },
+        ...commonRequiredProperties,
         ...commonOptionalProperties,
       },
-      required: ['className', 'projectPath'],
+      required: ['className', 'projectPaths'],
     },
   },
 
@@ -139,13 +138,10 @@ export const knowledgeGraphToolDefinitions = [
           type: 'string',
           description: '方法名',
         },
-        projectPath: {
-          type: 'string',
-          description: '项目路径',
-        },
+        ...commonRequiredProperties,
         ...commonOptionalProperties,
       },
-      required: ['className', 'methodName', 'projectPath'],
+      required: ['className', 'methodName', 'projectPaths'],
     },
   },
   {
@@ -162,17 +158,14 @@ export const knowledgeGraphToolDefinitions = [
           type: 'string',
           description: '方法名',
         },
-        projectPath: {
-          type: 'string',
-          description: '项目路径',
-        },
         maxDepth: {
           type: 'number',
           description: '最大追踪深度，默认10',
         },
+        ...commonRequiredProperties,
         ...commonOptionalProperties,
       },
-      required: ['className', 'methodName', 'projectPath'],
+      required: ['className', 'methodName', 'projectPaths'],
     },
   },
 
@@ -185,18 +178,15 @@ export const knowledgeGraphToolDefinitions = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        projectPath: {
-          type: 'string',
-          description: '项目路径',
-        },
         entryType: {
           type: 'string',
           enum: ['CONTROLLER', 'SCHEDULED', 'MQ_LISTENER', 'FEIGN_CLIENT', 'ALL'],
           description: '入口点类型（可选，默认ALL）',
         },
+        ...commonRequiredProperties,
         ...commonOptionalProperties,
       },
-      required: ['projectPath'],
+      required: ['projectPaths'],
     },
   },
 
@@ -213,17 +203,14 @@ export const knowledgeGraphToolDefinitions = [
           type: 'string',
           description: '节点ID',
         },
-        projectPath: {
-          type: 'string',
-          description: '项目路径',
-        },
         maxDepth: {
           type: 'number',
           description: '最大追踪深度（可选，默认10）',
         },
+        ...commonRequiredProperties,
         ...commonOptionalProperties,
       },
-      required: ['nodeId', 'projectPath'],
+      required: ['nodeId', 'projectPaths'],
     },
   },
   {
@@ -240,13 +227,10 @@ export const knowledgeGraphToolDefinitions = [
           type: 'string',
           description: '方法名',
         },
-        projectPath: {
-          type: 'string',
-          description: '项目路径',
-        },
+        ...commonRequiredProperties,
         ...commonOptionalProperties,
       },
-      required: ['className', 'methodName', 'projectPath'],
+      required: ['className', 'methodName', 'projectPaths'],
     },
   },
   {
@@ -259,13 +243,10 @@ export const knowledgeGraphToolDefinitions = [
           type: 'string',
           description: '节点ID',
         },
-        projectPath: {
-          type: 'string',
-          description: '项目路径',
-        },
+        ...commonRequiredProperties,
         ...commonOptionalProperties,
       },
-      required: ['nodeId', 'projectPath'],
+      required: ['nodeId', 'projectPaths'],
     },
   },
   {
@@ -274,13 +255,10 @@ export const knowledgeGraphToolDefinitions = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        projectPath: {
-          type: 'string',
-          description: '项目路径',
-        },
+        ...commonRequiredProperties,
         ...commonOptionalProperties,
       },
-      required: ['projectPath'],
+      required: ['projectPaths'],
     },
   },
 
@@ -297,13 +275,10 @@ export const knowledgeGraphToolDefinitions = [
           type: 'string',
           description: '接口名（全限定名）',
         },
-        projectPath: {
-          type: 'string',
-          description: '项目路径',
-        },
+        ...commonRequiredProperties,
         ...commonOptionalProperties,
       },
-      required: ['interfaceName', 'projectPath'],
+      required: ['interfaceName', 'projectPaths'],
     },
   },
 
@@ -316,10 +291,6 @@ export const knowledgeGraphToolDefinitions = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        projectPath: {
-          type: 'string',
-          description: '项目路径',
-        },
         mapperInterface: {
           type: 'string',
           description: 'Mapper接口名（全限定名），可选，不提供则返回所有',
@@ -329,9 +300,10 @@ export const knowledgeGraphToolDefinitions = [
           enum: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
           description: 'SQL语句类型过滤，可选',
         },
+        ...commonRequiredProperties,
         ...commonOptionalProperties,
       },
-      required: ['projectPath'],
+      required: ['projectPaths'],
     },
   },
 
@@ -348,13 +320,10 @@ export const knowledgeGraphToolDefinitions = [
           type: 'string',
           description: 'Feign服务名',
         },
-        projectPath: {
-          type: 'string',
-          description: '项目路径',
-        },
+        ...commonRequiredProperties,
         ...commonOptionalProperties,
       },
-      required: ['serviceName', 'projectPath'],
+      required: ['serviceName', 'projectPaths'],
     },
   },
   {
@@ -367,13 +336,10 @@ export const knowledgeGraphToolDefinitions = [
           type: 'string',
           description: 'MQ主题名',
         },
-        projectPath: {
-          type: 'string',
-          description: '项目路径',
-        },
+        ...commonRequiredProperties,
         ...commonOptionalProperties,
       },
-      required: ['topic', 'projectPath'],
+      required: ['topic', 'projectPaths'],
     },
   },
 ];
@@ -389,76 +355,76 @@ interface MultiProjectParams {
 }
 
 export interface KgStatusParams extends MultiProjectParams {
-  projectPath: string;
+  projectPaths: string[];
 }
 
 export interface KgMethodDetailParams extends MultiProjectParams {
   nodeId: string;
-  projectPath: string;
+  projectPaths: string[];
 }
 
 export interface KgMethodByClassParams extends MultiProjectParams {
   className: string;
-  projectPath: string;
+  projectPaths: string[];
 }
 
 export interface KgEntryPointsParams extends MultiProjectParams {
-  projectPath: string;
+  projectPaths: string[];
   entryType?: 'CONTROLLER' | 'SCHEDULED' | 'MQ_LISTENER' | 'FEIGN_CLIENT' | 'ALL';
 }
 
 export interface KgDownstreamParams extends MultiProjectParams {
   nodeId: string;
-  projectPath: string;
+  projectPaths: string[];
   maxDepth?: number;
 }
 
 export interface KgAffectingParams extends MultiProjectParams {
   className: string;
   methodName: string;
-  projectPath: string;
+  projectPaths: string[];
 }
 
 export interface KgBridgesParams extends MultiProjectParams {
   nodeId: string;
-  projectPath: string;
+  projectPaths: string[];
 }
 
 export interface KgBridgeStatsParams extends MultiProjectParams {
-  projectPath: string;
+  projectPaths: string[];
 }
 
 export interface KgImplementationsParams extends MultiProjectParams {
   interfaceName: string;
-  projectPath: string;
+  projectPaths: string[];
 }
 
 export interface KgMybatisSqlParams extends MultiProjectParams {
-  projectPath: string;
+  projectPaths: string[];
   mapperInterface?: string;
   statementType?: 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
 }
 
 export interface KgFeignChainParams extends MultiProjectParams {
   serviceName: string;
-  projectPath: string;
+  projectPaths: string[];
 }
 
 export interface KgMqChainParams extends MultiProjectParams {
   topic: string;
-  projectPath: string;
+  projectPaths: string[];
 }
 
 export interface KgRootEntriesParams extends MultiProjectParams {
   className: string;
   methodName: string;
-  projectPath: string;
+  projectPaths: string[];
 }
 
 export interface KgCalleesTreeParams extends MultiProjectParams {
   className: string;
   methodName: string;
-  projectPath: string;
+  projectPaths: string[];
   maxDepth?: number;
 }
 
