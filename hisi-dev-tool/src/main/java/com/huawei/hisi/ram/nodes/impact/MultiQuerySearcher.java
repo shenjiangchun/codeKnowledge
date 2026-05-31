@@ -9,9 +9,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Executes independent hybrid searches for each intent-aware sub-query, then merges
@@ -33,10 +37,18 @@ public class MultiQuerySearcher {
 
     private final KgMcpClient kg;
     private final SearchIntentProperties intentProperties;
+    private final ExecutorService searchExecutor;
 
     public MultiQuerySearcher(KgMcpClient kg, SearchIntentProperties intentProperties) {
         this.kg = kg;
         this.intentProperties = intentProperties;
+        this.searchExecutor = Executors.newFixedThreadPool(
+                Math.min(Runtime.getRuntime().availableProcessors(), 8),
+                r -> {
+                    Thread t = new Thread(r, "multi-query-search");
+                    t.setDaemon(true);
+                    return t;
+                });
     }
 
     /**
@@ -60,38 +72,44 @@ public class MultiQuerySearcher {
         // 1. Expand dual-channel for low-confidence sub-queries
         List<SubQuery> expanded = expandDualChannels(subQueries);
 
-        // 2. Execute each sub-query independently with weighted RRF
-        Map<String, Double> rrfScores = new LinkedHashMap<>();
-        Map<String, Seed> seedMap = new LinkedHashMap<>();
-        Map<String, Double> maxEffWeightMap = new LinkedHashMap<>();
+        // 2. Execute all sub-queries in parallel
+        List<CompletableFuture<Void>> futures = new ArrayList<>(expanded.size());
+        // Thread-safe accumulators (written by parallel tasks, read after all complete)
+        Map<String, Double> rrfScores = new ConcurrentHashMap<>();
+        Map<String, Seed> seedMap = new ConcurrentHashMap<>();
+        Map<String, Double> maxEffWeightMap = new ConcurrentHashMap<>();
 
         for (SubQuery sq : expanded) {
-            List<Seed> groupResults;
-            try {
-                // Use multi-path overload when available
-                groupResults = kg.hybridSearch(sq.query(), projectPaths, perQueryLimit);
-            } catch (Exception ex) {
-                log.warn("[MultiQuerySearcher] hybridSearch failed for query='{}': {}",
-                        sq.query(), ex.getMessage());
-                continue;
-            }
-            if (groupResults == null || groupResults.isEmpty()) {
-                continue;
-            }
-
-            // 3. Accumulate weighted RRF score per nodeId
             double wEff = intentProperties.effectiveWeight(sq.intentType());
-            for (int rank = 0; rank < groupResults.size(); rank++) {
-                Seed seed = groupResults.get(rank);
-                if (seed == null || seed.nodeId() == null) continue;
+            futures.add(CompletableFuture.runAsync(() -> {
+                List<Seed> groupResults;
+                try {
+                    groupResults = kg.hybridSearch(sq.query(), projectPaths, perQueryLimit);
+                } catch (Exception ex) {
+                    log.warn("[MultiQuerySearcher] hybridSearch failed for query='{}': {}",
+                            sq.query(), ex.getMessage());
+                    return;
+                }
+                if (groupResults == null || groupResults.isEmpty()) {
+                    return;
+                }
 
-                String nodeId = seed.nodeId();
-                double contribution = wEff / (rrfK + rank + 1);
-                rrfScores.merge(nodeId, contribution, Double::sum);
-                seedMap.putIfAbsent(nodeId, seed);
-                maxEffWeightMap.merge(nodeId, wEff, Double::max);
-            }
+                // Accumulate weighted RRF score per nodeId
+                for (int rank = 0; rank < groupResults.size(); rank++) {
+                    Seed seed = groupResults.get(rank);
+                    if (seed == null || seed.nodeId() == null) continue;
+
+                    String nodeId = seed.nodeId();
+                    double contribution = wEff / (rrfK + rank + 1);
+                    rrfScores.merge(nodeId, contribution, Double::sum);
+                    seedMap.putIfAbsent(nodeId, seed);
+                    maxEffWeightMap.merge(nodeId, wEff, Double::max);
+                }
+            }, searchExecutor));
         }
+
+        // Wait for all sub-queries to complete
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
         // 4. Multi-hit normalization
         normalizeMultiHitScores(rrfScores, maxEffWeightMap, maxMultiHitRatio);
