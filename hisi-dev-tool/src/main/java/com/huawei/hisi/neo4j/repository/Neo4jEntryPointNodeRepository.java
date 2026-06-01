@@ -52,6 +52,16 @@ public interface Neo4jEntryPointNodeRepository extends Neo4jRepository<EntryPoin
     List<EntryPointNode> findByProjectPathAndEntryKey(String projectPath, String entryKey);
 
     /**
+     * 根据多个项目路径和入口Key查询（IN 子句）
+     */
+    @Query("""
+        MATCH (entry:EntryPoint)
+        WHERE entry.projectPath IN $projectPaths AND entry.entryKey = $entryKey
+        RETURN entry
+        """)
+    List<EntryPointNode> findByProjectPathsAndEntryKey(@Param("projectPaths") List<String> projectPaths, @Param("entryKey") String entryKey);
+
+    /**
      * 删除项目下的所有入口点
      */
     @Query("""

@@ -838,12 +838,11 @@ public class KnowledgeGraphController {
         if (paths.isEmpty()) {
             return ApiResponse.error(400, "projectPath or projectPaths required");
         }
-        String resolvedPath = paths.get(0);
 
         // 使用 Neo4j 图遍历获取调用链节点
         int maxDepth = 50;
         List<Neo4jMethodNodeRepository.GraphTraversalResult> traversalNodes =
-            getCallChainNodes(entryKey, resolvedPath, maxDepth);
+            getCallChainNodes(entryKey, paths, maxDepth);
 
         if (traversalNodes.isEmpty()) {
             return ApiResponse.error(404, "未找到入口: " + entryKey);
@@ -851,12 +850,12 @@ public class KnowledgeGraphController {
 
         // 使用 Neo4j 图遍历获取调用链边
         List<Neo4jMethodNodeRepository.GraphEdgeResult> traversalEdges =
-            getCallChainEdges(entryKey, resolvedPath, maxDepth);
+            getCallChainEdges(entryKey, paths, maxDepth);
 
         log.info("[KG CallChain] entryKey={}, nodes={}, edges={}", entryKey, traversalNodes.size(), traversalEdges.size());
 
         // 构建链路视图
-        Map<String, Object> result = buildChainViewFromNeo4j(traversalNodes, traversalEdges, entryKey, resolvedPath);
+        Map<String, Object> result = buildChainViewFromNeo4j(traversalNodes, traversalEdges, entryKey, String.join(",", paths));
         return ApiResponse.success(result);
     }
 
@@ -883,9 +882,9 @@ public class KnowledgeGraphController {
 
         for (EntryPointNode ep : entryPoints) {
             List<Neo4jMethodNodeRepository.GraphTraversalResult> traversalNodes =
-                getCallChainNodes(ep.getEntryKey(), ep.getProjectPath(), maxDepth);
+                getCallChainNodes(ep.getEntryKey(), List.of(ep.getProjectPath()), maxDepth);
             List<Neo4jMethodNodeRepository.GraphEdgeResult> traversalEdges =
-                getCallChainEdges(ep.getEntryKey(), ep.getProjectPath(), maxDepth);
+                getCallChainEdges(ep.getEntryKey(), List.of(ep.getProjectPath()), maxDepth);
 
             if (!traversalNodes.isEmpty()) {
                 results.add(buildChainViewFromNeo4j(traversalNodes, traversalEdges,
@@ -928,9 +927,9 @@ public class KnowledgeGraphController {
                 int maxDepth = 50;
                 for (Neo4jMethodNodeRepository.EntryPointInfo entry : callingEntries) {
                     List<Neo4jMethodNodeRepository.GraphTraversalResult> traversalNodes =
-                        getCallChainNodes(entry.entryKey(), node.getProjectPath(), maxDepth);
+                        getCallChainNodes(entry.entryKey(), List.of(node.getProjectPath()), maxDepth);
                     List<Neo4jMethodNodeRepository.GraphEdgeResult> traversalEdges =
-                        getCallChainEdges(entry.entryKey(), node.getProjectPath(), maxDepth);
+                        getCallChainEdges(entry.entryKey(), List.of(node.getProjectPath()), maxDepth);
 
                     if (!traversalNodes.isEmpty()) {
                         results.add(buildChainViewFromNeo4j(traversalNodes, traversalEdges,
@@ -1036,14 +1035,13 @@ public class KnowledgeGraphController {
         if (paths.isEmpty()) {
             return ApiResponse.error(400, "projectPath or projectPaths required");
         }
-        String resolvedPath = paths.get(0);
 
-        log.info("[KG Graph] Query: entryKey={}, projectPath={}, includeCycles={}, maxDepth={}", entryKey, resolvedPath, includeCycles, maxDepth);
+        log.info("[KG Graph] Query: entryKey={}, projectPaths={}, includeCycles={}, maxDepth={}", entryKey, paths, includeCycles, maxDepth);
 
-        // 首先找到入口点对应的方法节点
-        List<EntryPointNode> entryPoints = neo4jEntryPointNodeRepository.findByProjectPathAndEntryKey(resolvedPath, entryKey);
+        // 首先找到入口点对应的方法节点（跨所有项目路径搜索）
+        List<EntryPointNode> entryPoints = neo4jEntryPointNodeRepository.findByProjectPathsAndEntryKey(paths, entryKey);
         if (entryPoints.isEmpty()) {
-            log.warn("[KG Graph] EntryPoint not found: entryKey={}, projectPath={}", entryKey, resolvedPath);
+            log.warn("[KG Graph] EntryPoint not found: entryKey={}, projectPaths={}", entryKey, paths);
             return ApiResponse.error(404, "未找到入口: " + entryKey);
         }
 
@@ -1066,8 +1064,8 @@ public class KnowledgeGraphController {
         Set<String> nodesInCycle = new HashSet<>();
         List<CallCycleInfo> cycles = new ArrayList<>();
 
-        // 递归遍历调用链
-        buildDownstreamGraph(methodNodeId, resolvedPath, 0, maxDepth, visitedNodes, nodes, edges, nodesInCycle, cycles);
+        // 递归遍历调用链（projectPath 参数在 buildDownstreamGraph 内部未用于过滤，传空即可）
+        buildDownstreamGraph(methodNodeId, null, 0, maxDepth, visitedNodes, nodes, edges, nodesInCycle, cycles);
 
         // 检测环
         if (includeCycles) {
@@ -1110,9 +1108,8 @@ public class KnowledgeGraphController {
         if (paths.isEmpty()) {
             return ApiResponse.error(400, "projectPath or projectPaths required");
         }
-        String resolvedPath = paths.get(0);
 
-        log.info("[KG Cycles] Detect: projectPath={}, entryKey={}, nodeId={}", resolvedPath, entryKey, nodeId);
+        log.info("[KG Cycles] Detect: projectPaths={}, entryKey={}, nodeId={}", paths, entryKey, nodeId);
 
         List<Neo4jMethodNodeRepository.CallRelationWithNodes> relations;
         Set<String> targetNodes = new HashSet<>();
@@ -1122,13 +1119,13 @@ public class KnowledgeGraphController {
             // 根据入口Key过滤 - 使用 Neo4j 图遍历获取节点
             int maxDepth = 50;
             List<Neo4jMethodNodeRepository.GraphTraversalResult> traversalNodes =
-                getCallChainNodes(entryKey, resolvedPath, maxDepth);
+                getCallChainNodes(entryKey, paths, maxDepth);
             Set<String> entryNodeIds = traversalNodes.stream()
                 .map(Neo4jMethodNodeRepository.GraphTraversalResult::nodeId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
             targetNodes.addAll(entryNodeIds);
-            relations = neo4jMethodNodeRepository.findAllCallRelationsByProjectPath(resolvedPath).stream()
+            relations = neo4jMethodNodeRepository.findAllCallRelationsByProjectPaths(paths).stream()
                 .filter(r -> entryNodeIds.contains(r.callerId()) || entryNodeIds.contains(r.calleeId()))
                 .collect(Collectors.toList());
         } else if (nodeId != null && !nodeId.isEmpty()) {
@@ -1156,7 +1153,7 @@ public class KnowledgeGraphController {
             }
         } else {
             // 获取项目所有调用关系 - 使用 Neo4j
-            relations = neo4jMethodNodeRepository.findAllCallRelationsByProjectPath(resolvedPath);
+            relations = neo4jMethodNodeRepository.findAllCallRelationsByProjectPaths(paths);
         }
 
         // 构建图并检测环
@@ -2144,13 +2141,14 @@ public class KnowledgeGraphController {
      * 注意：变长路径不支持参数绑定，必须使用字符串拼接
      * 使用 min(length(path)) 对每个节点只保留最小深度，避免重复
      */
-    private List<Neo4jMethodNodeRepository.GraphTraversalResult> getCallChainNodes(String entryKey, String projectPath, int maxDepth) {
+    private List<Neo4jMethodNodeRepository.GraphTraversalResult> getCallChainNodes(String entryKey, List<String> projectPaths, int maxDepth) {
         List<Neo4jMethodNodeRepository.GraphTraversalResult> results = new ArrayList<>();
 
         try (Session session = neo4jDriver.session()) {
             // 使用聚合查询，每个 nodeId 只返回一次（取最小深度）
             String query = """
-                MATCH (ep:EntryPoint {entryKey: $entryKey, projectPath: $projectPath})
+                MATCH (ep:EntryPoint)
+                WHERE ep.entryKey = $entryKey AND ep.projectPath IN $projectPaths
                 WITH ep.methodNodeId as entryMethodId
                 MATCH (entry:Method {nodeId: entryMethodId})
                 MATCH path = (entry)-[:CALLS*0..%d]->(m:Method)
@@ -2164,7 +2162,7 @@ public class KnowledgeGraphController {
 
             var result = session.run(query, Map.of(
                 "entryKey", entryKey,
-                "projectPath", projectPath
+                "projectPaths", projectPaths
             ));
 
             while (result.hasNext()) {
@@ -2189,12 +2187,13 @@ public class KnowledgeGraphController {
      * 使用 Neo4j Driver 执行图遍历获取调用链边
      * 注意：变长路径不支持参数绑定，必须使用字符串拼接
      */
-    private List<Neo4jMethodNodeRepository.GraphEdgeResult> getCallChainEdges(String entryKey, String projectPath, int maxDepth) {
+    private List<Neo4jMethodNodeRepository.GraphEdgeResult> getCallChainEdges(String entryKey, List<String> projectPaths, int maxDepth) {
         List<Neo4jMethodNodeRepository.GraphEdgeResult> results = new ArrayList<>();
 
         try (Session session = neo4jDriver.session()) {
             String query = """
-                MATCH (ep:EntryPoint {entryKey: $entryKey, projectPath: $projectPath})
+                MATCH (ep:EntryPoint)
+                WHERE ep.entryKey = $entryKey AND ep.projectPath IN $projectPaths
                 WITH ep.methodNodeId as entryMethodId
                 MATCH (entry:Method {nodeId: entryMethodId})
                 MATCH path = (entry)-[:CALLS*1..%d]->(method:Method)
@@ -2206,7 +2205,7 @@ public class KnowledgeGraphController {
 
             var result = session.run(query, Map.of(
                 "entryKey", entryKey,
-                "projectPath", projectPath
+                "projectPaths", projectPaths
             ));
 
             while (result.hasNext()) {
