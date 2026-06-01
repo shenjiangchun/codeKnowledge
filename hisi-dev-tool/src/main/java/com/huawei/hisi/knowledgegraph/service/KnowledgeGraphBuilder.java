@@ -213,8 +213,12 @@ public class KnowledgeGraphBuilder {
         vectorGenerationService.startVectorGeneration(projectPath);
 
         // 保存生成日志（供增量更新使用）
-        saveGenerationLog(projectPath, methodNodeCount, callRelationCount,
-            entryPointCount, 0, startTime);
+        try {
+            saveGenerationLog(projectPath, methodNodeCount, callRelationCount,
+                entryPointCount, 0, startTime);
+        } catch (Exception e) {
+            log.error("保存生成日志/checkpoint 失败，增量刷新将不可用: {}", e.getMessage());
+        }
 
         log.info("Python知识图谱构建完成: {}", result);
         return result;
@@ -474,8 +478,12 @@ public class KnowledgeGraphBuilder {
         vectorGenerationService.startVectorGeneration(projectPath);
 
         // 保存生成日志（供增量更新使用）
-        saveGenerationLog(projectPath, allMethodNodes.size(), allCallRelations.size(),
-            allEntryPoints.size(), impls.size(), startTime);
+        try {
+            saveGenerationLog(projectPath, allMethodNodes.size(), allCallRelations.size(),
+                allEntryPoints.size(), impls.size(), startTime);
+        } catch (Exception e) {
+            log.error("保存生成日志/checkpoint 失败，增量刷新将不可用: {}", e.getMessage());
+        }
 
         log.info("知识图谱构建完成: {}", result);
         return result;
@@ -1638,25 +1646,25 @@ public class KnowledgeGraphBuilder {
      */
     private void saveGenerationLog(String projectPath, int methodCount, int callRelationCount,
                                    int entryPointCount, int implCount, long startTime) {
+        // Normalize path to ensure consistency
+        String normalizedProjectPath = com.huawei.hisi.knowledgegraph.util.ProjectPathResolver.normalize(projectPath);
+
+        long costTimeMs = System.currentTimeMillis() - startTime;
+        long nowEpoch = java.time.Instant.now().getEpochSecond();
+        long startEpoch = nowEpoch - (costTimeMs / 1000);
+
+        // Retrieve current commit hash for incremental update support
+        String commitHash = null;
         try {
-            // Normalize path to ensure consistency
-            String normalizedProjectPath = com.huawei.hisi.knowledgegraph.util.ProjectPathResolver.normalize(projectPath);
+            com.huawei.hisi.knowledgegraph.model.GitStatus gitStatus =
+                gitStatusService.getGitStatus(normalizedProjectPath);
+            commitHash = gitStatus.getCommitHash();
+        } catch (Exception e) {
+            this.log.warn("获取 Git commit hash 失败: {}", e.getMessage());
+        }
 
-            long costTimeMs = System.currentTimeMillis() - startTime;
-            long nowEpoch = java.time.Instant.now().getEpochSecond();
-            long startEpoch = nowEpoch - (costTimeMs / 1000);
-
-            // Retrieve current commit hash for incremental update support
-            String commitHash = null;
-            try {
-                com.huawei.hisi.knowledgegraph.model.GitStatus gitStatus =
-                    gitStatusService.getGitStatus(normalizedProjectPath);
-                commitHash = gitStatus.getCommitHash();
-            } catch (Exception e) {
-                this.log.warn("获取 Git commit hash 失败: {}", e.getMessage());
-            }
-
-            // Store commit hash in errorMessage field (repurposed for KG_LOG metadata)
+        // 1. 保存 SQLite 生成日志（best-effort，失败不影响主流程）
+        try {
             GenerationTask logTask = GenerationTask.builder()
                 .taskType("KG_LOG")
                 .projectPath(normalizedProjectPath)
@@ -1672,25 +1680,21 @@ public class KnowledgeGraphBuilder {
 
             generationTaskRepository.insert(logTask);
             this.log.info("知识图谱生成日志已保存: projectPath={}, commitHash={}", normalizedProjectPath, commitHash);
-
-            // Also create/update Neo4j checkpoint for IncrementalRefreshService (V2)
-            try {
-                String branch = null;
-                try {
-                    branch = gitStatusService.getCurrentBranch(normalizedProjectPath);
-                } catch (Exception ge) {
-                    this.log.debug("获取分支失败，checkpoint 将以 null 分支保存: {}", ge.getMessage());
-                }
-                String effectiveCommit = commitHash != null ? commitHash : "NO_COMMIT";
-                checkpointRepository.upsertCheckpoint(normalizedProjectPath, effectiveCommit, branch);
-                this.log.info("增量刷新 checkpoint 已保存: projectPath={}, commit={}, branch={}",
-                        normalizedProjectPath, effectiveCommit, branch);
-            } catch (Exception ce) {
-                this.log.warn("保存增量刷新 checkpoint 失败: {}", ce.getMessage());
-            }
         } catch (Exception e) {
-            this.log.warn("保存知识图谱生成日志失败: {}", e.getMessage());
+            this.log.warn("保存知识图谱生成日志失败（不影响增量刷新）: {}", e.getMessage());
         }
+
+        // 2. 保存 Neo4j checkpoint（失败必须可见，否则增量刷新会报 409）
+        String branch = null;
+        try {
+            branch = gitStatusService.getCurrentBranch(normalizedProjectPath);
+        } catch (Exception ge) {
+            this.log.debug("获取分支失败，checkpoint 将以 null 分支保存: {}", ge.getMessage());
+        }
+        String effectiveCommit = commitHash != null ? commitHash : "NO_COMMIT";
+        checkpointRepository.upsertCheckpoint(normalizedProjectPath, effectiveCommit, branch);
+        this.log.info("增量刷新 checkpoint 已保存: projectPath={}, commit={}, branch={}",
+                normalizedProjectPath, effectiveCommit, branch);
     }
 
     private void cleanOldData(String projectPath) {

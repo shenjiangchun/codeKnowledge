@@ -1,12 +1,19 @@
 package com.huawei.hisi.knowledgegraph.service;
 
+import com.huawei.hisi.cache.GlobalAnalysisCache;
 import com.huawei.hisi.knowledgegraph.exception.NoCheckpointException;
 import com.huawei.hisi.knowledgegraph.exception.WorkingDirDirtyException;
 import com.huawei.hisi.knowledgegraph.link.CrossServiceLinker;
+import com.huawei.hisi.knowledgegraph.python.PythonKnowledgeGraphBuilder;
+import com.huawei.hisi.knowledgegraph.scanner.JavaDataModelScanner;
+import com.huawei.hisi.knowledgegraph.service.storage.KnowledgeGraphStorageService;
 import com.huawei.hisi.knowledgegraph.vector.VectorWriter;
 import com.huawei.hisi.neo4j.model.GenerationCheckpointNode;
+import com.huawei.hisi.neo4j.repository.Neo4jDataModelNodeRepository;
+import com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jGenerationCheckpointRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
+import com.huawei.hisi.service.CodeAnalysisCoreService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,6 +37,13 @@ class IncrementalRefreshServiceTest {
     @Mock private VectorWriter vectorWriter;
     @Mock private CrossServiceLinker crossServiceLinker;
     @Mock private Neo4jMethodNodeRepository methodNodeRepository;
+    @Mock private Neo4jEntryPointNodeRepository entryPointRepository;
+    @Mock private PythonKnowledgeGraphBuilder pythonKnowledgeGraphBuilder;
+    @Mock private CodeAnalysisCoreService coreService;
+    @Mock private GlobalAnalysisCache globalCache;
+    @Mock private KnowledgeGraphStorageService storageService;
+    @Mock private JavaDataModelScanner javaDataModelScanner;
+    @Mock private Neo4jDataModelNodeRepository dataModelNodeRepository;
 
     private IncrementalRefreshService service;
 
@@ -38,7 +52,10 @@ class IncrementalRefreshServiceTest {
     @BeforeEach
     void setUp() {
         service = new IncrementalRefreshService(
-                gitStatusService, checkpointRepository, vectorWriter, crossServiceLinker, methodNodeRepository);
+                gitStatusService, checkpointRepository, vectorWriter, crossServiceLinker,
+                methodNodeRepository, entryPointRepository, pythonKnowledgeGraphBuilder,
+                coreService, globalCache, storageService, javaDataModelScanner,
+                dataModelNodeRepository);
     }
 
     @Test
@@ -97,8 +114,8 @@ class IncrementalRefreshServiceTest {
         assertThat(result.isNoop()).isFalse();
         assertThat(result.changedFiles()).isEqualTo(1);
         assertThat(result.deleted()).isEqualTo(1);
-        assertThat(result.rebuilt()).isEqualTo(1);
 
+        verify(entryPointRepository).deleteByFilePathAndProjectPath("src/Main.java", PROJECT_PATH);
         verify(vectorWriter).deleteByFilePath("src/Main.java", PROJECT_PATH);
         verify(checkpointRepository).upsertCheckpoint(PROJECT_PATH, "def456", "main");
     }

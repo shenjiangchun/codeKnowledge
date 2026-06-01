@@ -1910,6 +1910,15 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     // ==================== 清理项目数据方法 ====================
 
     /**
+     * 删除项目的 IMPLEMENTS 关系
+     */
+    @Query("""
+        MATCH ()-[r:IMPLEMENTS]->() WHERE r.projectPath = $projectPath
+        DELETE r
+        """)
+    void deleteImplementsRelationsByProjectPath(@Param("projectPath") String projectPath);
+
+    /**
      * 删除项目的 EXTENDS 关系
      */
     @Query("""

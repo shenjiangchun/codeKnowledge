@@ -71,6 +71,20 @@ public interface Neo4jEntryPointNodeRepository extends Neo4jRepository<EntryPoin
     void deleteByProjectPath(String projectPath);
 
     /**
+     * 删除指定文件关联的入口点（通过 methodNodeId 关联到 Method 节点的 filePath）
+     */
+    @Query("""
+        MATCH (entry:EntryPoint {projectPath: $projectPath})
+        WHERE entry.methodNodeId IS NOT NULL
+          AND EXISTS {
+            MATCH (m:Method {nodeId: entry.methodNodeId})
+            WHERE m.filePath = $filePath
+          }
+        DETACH DELETE entry
+        """)
+    void deleteByFilePathAndProjectPath(@Param("filePath") String filePath, @Param("projectPath") String projectPath);
+
+    /**
      * 统计项目下的入口点数量
      */
     long countByProjectPath(String projectPath);

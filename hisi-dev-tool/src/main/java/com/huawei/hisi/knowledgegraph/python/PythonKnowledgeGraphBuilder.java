@@ -87,6 +87,39 @@ public class PythonKnowledgeGraphBuilder {
     }
 
     /**
+     * Parse a single Python file and return entry points detected by framework scanners.
+     * Runs FastAPI/Django/Flask/Celery scanners on the parsed module.
+     * Used for incremental refresh of Python entry points.
+     */
+    public List<EntryPointNode> buildFileEntryPoints(String filePath, String projectPath) throws IOException {
+        ParsedFile parsed = parseFileInternal(filePath, projectPath);
+        PyModule module = parsed.module();
+
+        Set<Framework> frameworks = PythonFrameworkDetector.detect(projectPath);
+        List<EntryPointNode> entryPoints = new ArrayList<>();
+
+        Map<String, PyModule> modulesByPath = new LinkedHashMap<>();
+        modulesByPath.putIfAbsent(module.getModulePath(), module);
+
+        if (frameworks.contains(Framework.DJANGO)) {
+            entryPoints.addAll(djangoUrlScanner.scanModule(module, projectPath, modulesByPath));
+        }
+        if (frameworks.contains(Framework.FASTAPI)) {
+            entryPoints.addAll(fastApiRouteScanner.scanModule(module, projectPath));
+        }
+        if (frameworks.contains(Framework.FLASK)) {
+            entryPoints.addAll(flaskRouteScanner.scanModule(module, projectPath));
+        }
+        entryPoints.addAll(celeryTaskScanner.scanModule(module, projectPath));
+
+        // Guard: clear dangling methodNodeId references
+        clearDanglingMethodNodeIds(entryPoints, parsed.nodes());
+
+        log.debug("[Python KG] Built {} entry points from file: {}", entryPoints.size(), filePath);
+        return entryPoints;
+    }
+
+    /**
      * Walk {@code projectPath} recursively, parse every {@code .py} file
      * (excluding paths matched by {@code excludePaths}), and return the
      * aggregated list of method nodes.

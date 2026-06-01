@@ -31,7 +31,7 @@ class RefreshControllerTest {
     @Test
     @DisplayName("refresh success returns 200 with result")
     void refresh_success_returns200() throws Exception {
-        var result = new RefreshResult(false, 5, 2, 3);
+        var result = new RefreshResult(false, 5, 2, 3, 1, 0, 0);
         when(refreshService.refresh(eq("/project")))
                 .thenReturn(result);
 
@@ -44,7 +44,7 @@ class RefreshControllerTest {
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.changedFiles").value(5))
                 .andExpect(jsonPath("$.data.deleted").value(2))
-                .andExpect(jsonPath("$.data.rebuilt").value(3));
+                .andExpect(jsonPath("$.data.rebuiltMethods").value(3));
     }
 
     @Test
