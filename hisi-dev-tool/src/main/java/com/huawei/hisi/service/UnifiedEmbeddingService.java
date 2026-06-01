@@ -94,6 +94,9 @@ public class UnifiedEmbeddingService {
                 HttpHeaders headers = new HttpHeaders();
                 headers.setContentType(MediaType.APPLICATION_JSON);
                 headers.set("Authorization", "Bearer " + config.getApiKey());
+                if (config.getCsbToken() != null && !config.getCsbToken().isBlank()) {
+                    headers.set("csb-token", config.getCsbToken());
+                }
 
                 HttpEntity<String> entity = new HttpEntity<>(
                         objectMapper.writeValueAsString(requestBody), headers);

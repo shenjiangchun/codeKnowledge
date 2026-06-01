@@ -71,6 +71,12 @@ public class IncrementalRefreshService {
         String currentCommit = gitStatusService.getCurrentCommitHash(normalizedProjectPath);
         String lastCommit = checkpoint.getLastCommit();
 
+        // 3a. If checkpoint has no valid commit info, cannot do incremental diff
+        if ("NO_COMMIT".equals(lastCommit) && currentCommit == null) {
+            log.info("[IncrementalRefresh] No git history available for project={}, returning noop", normalizedProjectPath);
+            return RefreshResult.noop();
+        }
+
         // 4. If same commit -> noop
         if (currentCommit != null && currentCommit.equals(lastCommit)) {
             return RefreshResult.noop();

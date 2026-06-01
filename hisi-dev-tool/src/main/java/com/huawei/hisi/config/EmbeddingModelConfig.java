@@ -45,4 +45,7 @@ public class EmbeddingModelConfig {
 
     /** 获取令牌的最长等待时间（秒），超时则放弃本次请求。 */
     private long acquireTimeoutSeconds = 120;
+
+    /** ROMA CSB 网关鉴权 Token（可选，部分内网网关需要 csb-token header） */
+    private String csbToken;
 }

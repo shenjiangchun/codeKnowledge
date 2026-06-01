@@ -1674,15 +1674,19 @@ public class KnowledgeGraphBuilder {
             this.log.info("知识图谱生成日志已保存: projectPath={}, commitHash={}", normalizedProjectPath, commitHash);
 
             // Also create/update Neo4j checkpoint for IncrementalRefreshService (V2)
-            if (commitHash != null) {
+            try {
+                String branch = null;
                 try {
-                    String branch = gitStatusService.getCurrentBranch(normalizedProjectPath);
-                    checkpointRepository.upsertCheckpoint(normalizedProjectPath, commitHash, branch);
-                    this.log.info("增量刷新 checkpoint 已保存: projectPath={}, commit={}, branch={}",
-                            normalizedProjectPath, commitHash, branch);
-                } catch (Exception ce) {
-                    this.log.warn("保存增量刷新 checkpoint 失败: {}", ce.getMessage());
+                    branch = gitStatusService.getCurrentBranch(normalizedProjectPath);
+                } catch (Exception ge) {
+                    this.log.debug("获取分支失败，checkpoint 将以 null 分支保存: {}", ge.getMessage());
                 }
+                String effectiveCommit = commitHash != null ? commitHash : "NO_COMMIT";
+                checkpointRepository.upsertCheckpoint(normalizedProjectPath, effectiveCommit, branch);
+                this.log.info("增量刷新 checkpoint 已保存: projectPath={}, commit={}, branch={}",
+                        normalizedProjectPath, effectiveCommit, branch);
+            } catch (Exception ce) {
+                this.log.warn("保存增量刷新 checkpoint 失败: {}", ce.getMessage());
             }
         } catch (Exception e) {
             this.log.warn("保存知识图谱生成日志失败: {}", e.getMessage());

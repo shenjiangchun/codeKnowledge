@@ -3,13 +3,13 @@
   "hostname": "desktop-j6asme4",
   "model": "GLM-5.1-w4a8",
   "firstSeen": "2026-05-30T01:37:45.023Z",
-  "lastUpdated": "2026-06-01T03:17:45.085Z",
+  "lastUpdated": "2026-06-01T03:57:33.407Z",
   "stats": {
     "totalOperations": 159,
     "totalFilesEdited": 76,
-    "totalAiLines": 1850,
-    "totalAiLinesDeleted": 663,
-    "totalCommits": 11
+    "totalAiLines": 1885,
+    "totalAiLinesDeleted": 689,
+    "totalCommits": 12
   },
   "pendingFiles": [
     {
@@ -156,40 +156,6 @@
       "operations": 1,
       "timestamp": "2026-06-01T02:17:56.676Z",
       "lastModified": "2026-06-01T02:17:56.676Z"
-    },
-    {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/repository/Neo4jEntryPointNodeRepository.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-01T02:53:40.366Z",
-      "lastModified": "2026-06-01T02:53:40.366Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/repository/Neo4jEntryPointNodeRepository.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 1,
-      "timestamp": "2026-06-01T02:53:40.886Z",
-      "lastModified": "2026-06-01T02:53:40.886Z"
-    },
-    {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/controller/KnowledgeGraphController.java",
-      "tool": "Edit",
-      "operations": 8,
-      "timestamp": "2026-06-01T02:53:50.630Z",
-      "lastModified": "2026-06-01T03:06:55.983Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/controller/KnowledgeGraphController.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 8,
-      "timestamp": "2026-06-01T02:53:50.735Z",
-      "lastModified": "2026-06-01T03:06:56.107Z",
-      "lastTool": "Edit"
     }
   ],
   "repoPath": "D:/hisi-code-analyser/codeKnowledge1"
