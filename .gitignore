@@ -43,4 +43,4 @@ models/
 !*.test.js
 remote-repos/
 ai-sessions/
-src/main/resources/application-local.yml
+**/application-local.yml
