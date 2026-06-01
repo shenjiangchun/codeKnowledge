@@ -162,6 +162,12 @@ public class KnowledgeGraphBuilder {
         log.info("开始构建知识图谱: {} (excludePaths={})", projectPath, excludePaths);
         long startTime = System.currentTimeMillis();
 
+        // 前置校验：必须能获取 git commit hash，否则增量刷新 checkpoint 无法保存
+        String commitHash = gitStatusService.getCurrentCommitHash(projectPath);
+        if (commitHash == null || commitHash.isBlank()) {
+            throw new com.huawei.hisi.knowledgegraph.exception.NoGitCommitException(projectPath);
+        }
+
         // 检测项目语言
         Language language = ProjectLanguageDetector.detectLanguage(projectPath);
         log.info("[KG Build] Detected language: {}", language);
