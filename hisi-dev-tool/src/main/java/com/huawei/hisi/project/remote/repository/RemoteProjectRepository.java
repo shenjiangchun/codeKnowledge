@@ -31,6 +31,7 @@ public class RemoteProjectRepository {
             .branch(rs.getString("branch"))
             .localPath(rs.getString("local_path"))
             .cloneStatus(rs.getString("clone_status"))
+            .cloneError(rs.getString("clone_error"))
             .lastSyncAt(rs.getObject("last_sync_at") != null ? rs.getLong("last_sync_at") : null)
             .createdAt(rs.getObject("created_at") != null ? rs.getLong("created_at") : null)
             .build();
@@ -83,7 +84,13 @@ public class RemoteProjectRepository {
 
     public int updateCloneStatus(long id, String status) {
         return jdbcTemplate.update(
-            "UPDATE remote_project SET clone_status = ? WHERE id = ?", status, id
+            "UPDATE remote_project SET clone_status = ?, clone_error = NULL WHERE id = ?", status, id
+        );
+    }
+
+    public int updateCloneError(long id, String error) {
+        return jdbcTemplate.update(
+            "UPDATE remote_project SET clone_status = 'FAILED', clone_error = ? WHERE id = ?", error, id
         );
     }
 

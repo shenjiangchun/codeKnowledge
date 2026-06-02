@@ -38,8 +38,11 @@ import java.util.stream.Collectors;
  * <b>限流由下游令牌桶承担</b>：{@code UnifiedEmbeddingService} / {@code UnifiedTextService}
  * 内部每次调用先 {@code rateLimiter.acquire()} 拿令牌，拿不到就阻塞等待。
  *
- * <p>线程数 ≤ min(embedding.burst, text-model.burst)，确保不会出现"线程比令牌多导致空等"。
+ * <p>线程数 = min(embedding.burst, text-model.burst)（默认 6），确保令牌桶被充分利用。
  * 线程拿到令牌才发请求，令牌桶控制实际 QPS，线程池只提供并发度。
+ *
+ * <p>为防止大量方法一次性塞入线程池队列导致 OOM，采用分批提交策略：
+ * 每批提交 batchSize 个任务，等全部完成后再提交下一批。
  */
 @Service
 @Slf4j
@@ -57,11 +60,18 @@ public class VectorGenerationService {
     private final EmbeddingService embeddingService;
 
     /**
-     * 工作线程数。限流由下游令牌桶承担，线程数只需 ≤ burst 即可。
-     * 设置原则：≤ min(embedding.burst, text-model.burst)
+     * 工作线程数。默认 6 = min(embedding.burst=10, text-model.burst=6)，
+     * 令牌桶控制实际 QPS，线程只需多到能消费完令牌即可。
      */
-    @Value("${vector.generation.concurrency:3}")
+    @Value("${vector.generation.concurrency:6}")
     private int concurrency;
+
+    /**
+     * 每批提交的任务数。默认与线程数相同，避免一次性把大量任务塞入队列。
+     * 一批完成后再提交下一批，内存中最多持有 batchSize 个并发任务。
+     */
+    @Value("${vector.generation.batch-size:0}")
+    private int batchSizeConfig;
 
     @Value("${vector.generation.progress-update-interval:10}")
     private int progressUpdateInterval;
@@ -93,7 +103,13 @@ public class VectorGenerationService {
             t.setDaemon(true);
             return t;
         });
-        fileLog("========== VectorGenerationService 初始化完成: concurrency={}, 限流=令牌桶 ==========", concurrency);
+        // batchSize defaults to concurrency if not explicitly set
+        fileLog("========== VectorGenerationService 初始化完成: concurrency={}, batchSize={}, 限流=令牌桶 ==========",
+                concurrency, getBatchSize());
+    }
+
+    private int getBatchSize() {
+        return batchSizeConfig > 0 ? batchSizeConfig : concurrency;
     }
 
     @PreDestroy
@@ -181,25 +197,37 @@ public class VectorGenerationService {
             taskRepository.save(task);
             fileLog("[向量生成] Initial task state saved");
 
-            // 3. 提交到线程池并发处理 —— 限流由下游令牌桶承担
+            // 3. 分批提交到线程池并发处理 —— 限流由下游令牌桶承担
             int totalMethods = methods.size();
+            int batchSz = getBatchSize();
 
             if (!methods.isEmpty()) {
-                List<CompletableFuture<Void>> futures = new ArrayList<>(totalMethods);
-                for (MethodNode method : methods) {
-                    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                        processMethod(method, successCount, failCount);
+                fileLog("[向量生成] 开始分批处理: 总方法数={}, batchSize={}, 线程数={}",
+                        totalMethods, batchSz, concurrency);
 
-                        int processed = processedCount.incrementAndGet();
-                        if (processed % progressUpdateInterval == 0 || processed == totalMethods) {
-                            updateProgress(projectPath, processed, totalMethods, successCount, failCount);
-                        }
-                    }, executorService);
-                    futures.add(future);
+                for (int offset = 0; offset < totalMethods; offset += batchSz) {
+                    int end = Math.min(offset + batchSz, totalMethods);
+                    List<MethodNode> batch = methods.subList(offset, end);
+
+                    List<CompletableFuture<Void>> futures = new ArrayList<>(batch.size());
+                    for (MethodNode method : batch) {
+                        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                            processMethod(method, successCount, failCount);
+
+                            int processed = processedCount.incrementAndGet();
+                            if (processed % progressUpdateInterval == 0 || processed == totalMethods) {
+                                updateProgress(projectPath, processed, totalMethods, successCount, failCount);
+                            }
+                        }, executorService);
+                        futures.add(future);
+                    }
+
+                    // 等待本批次全部完成再提交下一批，防止队列堆积 OOM
+                    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+                    fileLog("[向量生成] 批次完成: {}/{}, 批次大小={}", end, totalMethods, batch.size());
                 }
 
-                fileLog("[向量生成] 已提交 " + totalMethods + " 个任务, 线程数=" + concurrency);
-                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+                fileLog("[向量生成] 全部方法处理完成, 线程数=" + concurrency);
             } else {
                 fileLog("[向量生成] 没有需要处理的方法，跳转到 SQL 向量生成...");
             }
@@ -325,7 +353,7 @@ public class VectorGenerationService {
     }
 
     /**
-     * 处理 SQL 节点的向量生成（并发提交到线程池，限流由下游令牌桶承担）
+     * 处理 SQL 节点的向量生成（分批并发提交到线程池，限流由下游令牌桶承担）
      */
     private void processSqlNodes(String projectPath, GenerationTask task) {
         fileLog("[SQL向量生成] 开始处理 SQL 节点...");
@@ -352,23 +380,32 @@ public class VectorGenerationService {
 
         AtomicInteger sqlSuccess = new AtomicInteger(0);
         AtomicInteger sqlFail = new AtomicInteger(0);
+        int batchSz = getBatchSize();
+        int totalSql = sqlNodes.size();
 
-        List<CompletableFuture<Void>> futures = new ArrayList<>(sqlNodes.size());
-        for (SqlNode sqlNode : sqlNodes) {
-            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                try {
-                    processSqlNode(sqlNode);
-                    sqlSuccess.incrementAndGet();
-                } catch (Exception e) {
-                    fileLog("[ERROR] 处理 SQL 节点失败: nodeId=" + sqlNode.getNodeId() +
-                            ", sqlId=" + sqlNode.getSqlId() + ", error=" + e.getMessage());
-                    sqlFail.incrementAndGet();
-                }
-            }, executorService);
-            futures.add(future);
+        for (int offset = 0; offset < totalSql; offset += batchSz) {
+            int end = Math.min(offset + batchSz, totalSql);
+            List<SqlNode> batch = sqlNodes.subList(offset, end);
+
+            List<CompletableFuture<Void>> futures = new ArrayList<>(batch.size());
+            for (SqlNode sqlNode : batch) {
+                CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                    try {
+                        processSqlNode(sqlNode);
+                        sqlSuccess.incrementAndGet();
+                    } catch (Exception e) {
+                        fileLog("[ERROR] 处理 SQL 节点失败: nodeId=" + sqlNode.getNodeId() +
+                                ", sqlId=" + sqlNode.getSqlId() + ", error=" + e.getMessage());
+                        sqlFail.incrementAndGet();
+                    }
+                }, executorService);
+                futures.add(future);
+            }
+
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            fileLog("[SQL向量生成] 批次完成: {}/{}, 批次大小={}", end, totalSql, batch.size());
         }
 
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
         fileLog("[SQL向量生成] 完成: 成功=" + sqlSuccess.get() + ", 失败=" + sqlFail.get());
     }
 

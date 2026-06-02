@@ -99,20 +99,22 @@ public class RemoteProjectService {
             UsernamePasswordCredentialsProvider credentials =
                 new UsernamePasswordCredentialsProvider(project.getUsername(), password);
 
+            log.info("[Clone] Starting clone: url={}, branch={}, target={}", project.getGitUrl(), project.getBranch(), targetDir);
             try (Git git = Git.cloneRepository()
                 .setURI(project.getGitUrl())
                 .setDirectory(targetDir.toFile())
                 .setBranch(project.getBranch())
                 .setCredentialsProvider(credentials)
                 .call()) {
-                log.info("Cloned {} to {}", project.getGitUrl(), targetDir);
+                log.info("[Clone] Success: url={}, target={}", project.getGitUrl(), targetDir);
             }
 
             repository.updateCloneStatus(id, "CLONED");
             repository.updateLastSyncAt(id, Instant.now().getEpochSecond());
         } catch (Exception e) {
-            log.error("Failed to clone project {}: {}", project.getName(), e.getMessage(), e);
-            repository.updateCloneStatus(id, "FAILED");
+            String errorDetail = extractRootCause(e);
+            log.error("[Clone] Failed: project={}, url={}, error={}", project.getName(), project.getGitUrl(), errorDetail, e);
+            repository.updateCloneError(id, errorDetail);
         }
     }
 
@@ -152,5 +154,18 @@ public class RemoteProjectService {
 
     private String sanitizeName(String name) {
         return name.replaceAll("[^a-zA-Z0-9._-]", "-").toLowerCase();
+    }
+
+    private String extractRootCause(Throwable t) {
+        Throwable cause = t;
+        while (cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        String msg = cause.getMessage();
+        if (msg == null || msg.isBlank()) {
+            msg = t.getClass().getSimpleName();
+        }
+        // Truncate to 500 chars to fit DB column comfortably
+        return msg.length() > 500 ? msg.substring(0, 500) : msg;
     }
 }

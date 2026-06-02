@@ -142,12 +142,14 @@ public class ProjectServiceImpl implements ProjectService {
                 UsernamePasswordCredentialsProvider credentials =
                     new UsernamePasswordCredentialsProvider(codeHubUser, codeHubPassword);
 
+                LOG.info("[Clone] Starting clone: url={}, branch={}, target={}", repository, branch, projectDir);
                 try (Git git = Git.cloneRepository()
                     .setURI(repository)
                     .setDirectory(projectDir.toFile())
                     .setBranch(branch)
                     .setCredentialsProvider(credentials)
                     .call()) {
+                    LOG.info("[Clone] Success: url={}, target={}", repository, projectDir);
                     result.put("success", true);
                     result.put("message", "Project cloned successfully");
                     result.put("project", projectName);
@@ -155,9 +157,9 @@ public class ProjectServiceImpl implements ProjectService {
                 }
             }
         } catch (GitAPIException | IOException e) {
-            LOG.error("Failed to clone project: {}", repository, e);
+            LOG.error("[Clone] Failed: url={}, error={}", repository, e.getMessage(), e);
             result.put("success", false);
-            result.put("error", e.getMessage());
+            result.put("message", e.getMessage());
         }
 
         return result;

@@ -199,9 +199,9 @@ const filteredBridges = computed(() => {
   return bridges.value.filter(b => b.bridgeType === filterType.value)
 })
 
-function getBridgeTagType(type: string): '' | 'success' | 'warning' | 'danger' | 'info' {
-  const map: Record<string, '' | 'success' | 'warning' | 'danger' | 'info'> = {
-    FEIGN: '',
+function getBridgeTagType(type: string): 'primary' | 'success' | 'warning' | 'danger' | 'info' {
+  const map: Record<string, 'primary' | 'success' | 'warning' | 'danger' | 'info'> = {
+    FEIGN: 'primary',
     HTTP: 'success',
     MQ: 'warning',
     MAPPER: 'info',

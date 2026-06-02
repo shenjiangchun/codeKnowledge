@@ -6,6 +6,7 @@ export interface RemoteProject {
   branch: string
   localPath: string
   cloneStatus: 'PENDING' | 'CLONING' | 'CLONED' | 'FAILED'
+  cloneError: string | null
   lastSyncAt: number | null
 }
 

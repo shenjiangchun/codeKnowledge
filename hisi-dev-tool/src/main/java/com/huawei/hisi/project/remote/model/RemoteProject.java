@@ -20,6 +20,7 @@ public class RemoteProject {
     private String localPath;
     @Builder.Default
     private String cloneStatus = "PENDING";
+    private String cloneError;
     private Long lastSyncAt;
     private Long createdAt;
 }

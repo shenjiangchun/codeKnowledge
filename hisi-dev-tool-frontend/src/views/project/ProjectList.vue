@@ -238,7 +238,16 @@
             <el-table-column prop="branch" label="分支" width="100" />
             <el-table-column label="克隆状态" width="110" align="center">
               <template #default="{ row }">
-                <el-tag :type="remoteCloneStatusType(row.cloneStatus)" size="small">
+                <el-tooltip
+                  v-if="row.cloneStatus === 'FAILED' && row.cloneError"
+                  :content="row.cloneError"
+                  placement="top"
+                >
+                  <el-tag type="danger" size="small" style="cursor: help;">
+                    {{ remoteCloneStatusText(row.cloneStatus) }}
+                  </el-tag>
+                </el-tooltip>
+                <el-tag v-else :type="remoteCloneStatusType(row.cloneStatus)" size="small">
                   {{ remoteCloneStatusText(row.cloneStatus) }}
                 </el-tag>
               </template>
@@ -1285,8 +1294,9 @@ const handleClone = async () => {
     ElMessage.success('克隆成功')
     showCloneDialog.value = false
     handleScan() // Refresh list after clone
-  } catch (error) {
-    ElMessage.error('克隆失败')
+  } catch (error: any) {
+    const msg = error?.response?.data?.message || error?.response?.data?.error || error?.message || '克隆失败'
+    ElMessage.error(msg)
   } finally {
     cloning.value = false
   }
@@ -1759,7 +1769,21 @@ const handleCloneRemote = async (row: RemoteProject) => {
   try {
     await cloneRemoteProject(row.id)
     ElMessage.success(`开始克隆: ${row.name}`)
-    await loadRemoteProjects()
+    // Poll for clone status to surface errors
+    const pollInterval = setInterval(async () => {
+      await loadRemoteProjects()
+      const updated = remoteProjects.value.find((p: RemoteProject) => p.id === row.id)
+      if (updated && updated.cloneStatus !== 'CLONING') {
+        clearInterval(pollInterval)
+        if (updated.cloneStatus === 'FAILED') {
+          ElMessage.error(`克隆失败: ${updated.cloneError || '未知错误'}`)
+        } else if (updated.cloneStatus === 'CLONED') {
+          ElMessage.success(`克隆成功: ${row.name}`)
+        }
+      }
+    }, 3000)
+    // Stop polling after 5 minutes
+    setTimeout(() => clearInterval(pollInterval), 300000)
   } catch {
     ElMessage.error('克隆请求失败')
   }

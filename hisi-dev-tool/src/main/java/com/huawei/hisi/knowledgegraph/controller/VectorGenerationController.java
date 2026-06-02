@@ -137,19 +137,27 @@ public class VectorGenerationController {
     public ResponseEntity<ApiResponse<java.util.Map<String, Object>>> getMissing(
             @RequestParam String projectPath,
             @RequestParam(defaultValue = "50") int limit) {
-        projectPath = normalizePath(projectPath);
-        long totalMethods = neo4jMethodNodeRepository.countByProjectPath(projectPath);
-        long missingCount = neo4jMethodNodeRepository.countMissingDescriptionEmbedding(projectPath);
-        java.util.List<java.util.Map<String, Object>> preview =
-                neo4jMethodNodeRepository.findMissingDescriptionEmbedding(projectPath, Math.min(limit, 100));
+        try {
+            projectPath = normalizePath(projectPath);
+            if (projectPath.isEmpty()) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("projectPath 不能为空"));
+            }
+            long totalMethods = neo4jMethodNodeRepository.countByProjectPath(projectPath);
+            long missingCount = neo4jMethodNodeRepository.countMissingDescriptionEmbedding(projectPath);
+            java.util.List<java.util.Map<String, Object>> preview =
+                    neo4jMethodNodeRepository.findMissingDescriptionEmbedding(projectPath, Math.min(limit, 100));
 
-        java.util.Map<String, Object> result = new java.util.HashMap<>();
-        result.put("totalMethods", totalMethods);
-        result.put("missingCount", missingCount);
-        result.put("generatedCount", totalMethods - missingCount);
-        result.put("preview", preview);
+            java.util.Map<String, Object> result = new java.util.HashMap<>();
+            result.put("totalMethods", totalMethods);
+            result.put("missingCount", missingCount);
+            result.put("generatedCount", totalMethods - missingCount);
+            result.put("preview", preview);
 
-        return ResponseEntity.ok(ApiResponse.success(result));
+            return ResponseEntity.ok(ApiResponse.success(result));
+        } catch (Exception e) {
+            log.error("[VectorGeneration] /missing failed: projectPath={}, error={}", projectPath, e.getMessage(), e);
+            return ResponseEntity.badRequest().body(ApiResponse.error("查询缺失向量失败: " + e.getMessage()));
+        }
     }
 
     /**

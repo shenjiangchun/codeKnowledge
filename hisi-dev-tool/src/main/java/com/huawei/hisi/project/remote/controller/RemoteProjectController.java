@@ -22,7 +22,7 @@ public class RemoteProjectController {
     public record CreateRequest(String name, String gitUrl, String username, String password, String branch) {}
     public record UpdateRequest(String name, String gitUrl, String username, String password, String branch) {}
     public record ProjectResponse(Long id, String name, String gitUrl, String username, String branch,
-                                  String localPath, String cloneStatus, Long lastSyncAt) {}
+                                  String localPath, String cloneStatus, String cloneError, Long lastSyncAt) {}
 
     @GetMapping
     public ApiResponse<List<ProjectResponse>> list() {
@@ -52,13 +52,21 @@ public class RemoteProjectController {
 
     @PostMapping("/{id}/clone")
     public ApiResponse<String> cloneProject(@PathVariable long id) {
-        CompletableFuture.runAsync(() -> service.cloneProject(id));
+        CompletableFuture.runAsync(() -> service.cloneProject(id))
+            .exceptionally(ex -> {
+                log.error("[Clone] Unhandled exception for project id={}: {}", id, ex.getMessage(), ex);
+                return null;
+            });
         return ApiResponse.success("Clone started");
     }
 
     @PostMapping("/{id}/pull")
     public ApiResponse<String> pullProject(@PathVariable long id) {
-        CompletableFuture.runAsync(() -> service.pullProject(id));
+        CompletableFuture.runAsync(() -> service.pullProject(id))
+            .exceptionally(ex -> {
+                log.error("[Pull] Unhandled exception for project id={}: {}", id, ex.getMessage(), ex);
+                return null;
+            });
         return ApiResponse.success("Pull started");
     }
 
@@ -68,7 +76,7 @@ public class RemoteProjectController {
         Long lastSyncAtMs = p.getLastSyncAt() != null ? p.getLastSyncAt() * 1000 : null;
         return new ProjectResponse(
             p.getId(), p.getName(), p.getGitUrl(), p.getUsername(),
-            p.getBranch(), fullPath, p.getCloneStatus(), lastSyncAtMs
+            p.getBranch(), fullPath, p.getCloneStatus(), p.getCloneError(), lastSyncAtMs
         );
     }
 }

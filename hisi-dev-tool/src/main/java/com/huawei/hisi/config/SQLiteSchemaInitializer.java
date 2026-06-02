@@ -205,6 +205,14 @@ public class SQLiteSchemaInitializer {
             )
             """);
 
+        // Add clone_error column if upgrading from older schema
+        try {
+            jdbcTemplate.execute("ALTER TABLE remote_project ADD COLUMN clone_error TEXT");
+            log.info("[SQLite] Added clone_error column to remote_project");
+        } catch (Exception ignored) {
+            // Column already exists
+        }
+
         jdbcTemplate.execute("""
             CREATE TABLE IF NOT EXISTS kg_schedule (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
