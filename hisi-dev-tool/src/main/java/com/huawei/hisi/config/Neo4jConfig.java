@@ -6,6 +6,7 @@ import org.neo4j.driver.Driver;
 import org.neo4j.driver.GraphDatabase;
 import org.neo4j.driver.SessionConfig;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -52,10 +53,11 @@ public class Neo4jConfig {
     private Duration connectionTimeout;
 
     /**
-     * 创建 Neo4j Driver Bean
-     * 配置连接池参数以优化性能和资源管理
+     * 创建 Neo4j Driver Bean（外部 Bolt 服务器模式）
+     * 当 Neo4jHarnessConfig 提供嵌入式 Driver 时，此 bean 自动跳过
      */
     @Bean
+    @ConditionalOnMissingBean(Driver.class)
     public Driver neo4jDriver() {
         Config config = Config.builder()
             .withMaxConnectionPoolSize(maxConnectionPoolSize)
@@ -69,6 +71,7 @@ public class Neo4jConfig {
      * 默认 SDN 使用 "neo4j"，此处读取 neo4j.database 配置项覆盖
      */
     @Bean
+    @ConditionalOnMissingBean(DatabaseSelectionProvider.class)
     public DatabaseSelectionProvider databaseSelectionProvider() {
         return () -> DatabaseSelection.byName(database);
     }
@@ -78,6 +81,7 @@ public class Neo4jConfig {
      * 确保统一走配置的数据库（而非 Driver 默认的 neo4j 库）
      */
     @Bean
+    @ConditionalOnMissingBean(SessionConfig.class)
     public SessionConfig neo4jSessionConfig() {
         return SessionConfig.forDatabase(database);
     }

@@ -170,6 +170,11 @@ analysis:
 
 # Neo4j 图数据库配置
 neo4j:
+  # 嵌入式模式（默认启用，进程内 Bolt 服务器，无需安装 Neo4j Desktop/Docker）
+  embedded:
+    enabled: ${NEO4J_EMBEDDED:true}
+    data-directory: ${NEO4J_DATA_DIR:./neo4j-data}
+  # 外部服务器模式（embedded.enabled=false 时生效）
   uri: bolt://127.0.0.1:7687
   database: ${NEO4J_DATABASE:neo4j}
   username: neo4j
