@@ -46,7 +46,7 @@ public class Neo4jHarnessConfig {
     public Driver neo4jEmbeddedDriver() {
         log.info("[Neo4j Harness] Starting in-process Neo4j server...");
 
-        Path dataPath = Path.of(dataDirectory).toAbsolutePath();
+        Path dataPath = Path.of(dataDirectory).toAbsolutePath().normalize();
         boolean persistentDir = false;
 
         // 尝试创建持久化目录
