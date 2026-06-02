@@ -9,6 +9,8 @@ import com.huawei.hisi.cache.GlobalAnalysisCache;
 import com.huawei.hisi.knowledgegraph.model.*;
 import com.huawei.hisi.knowledgegraph.repository.GenerationTaskRepository;
 import com.huawei.hisi.knowledgegraph.service.storage.KnowledgeGraphStorageService;
+
+import java.util.concurrent.Semaphore;
 import com.huawei.hisi.model.FeignClientInfo;
 import com.huawei.hisi.model.HttpCallInfo;
 import com.huawei.hisi.model.MQEndpoint;
@@ -97,6 +99,10 @@ public class KnowledgeGraphBuilder {
     // 数据模型扫描器
     private final JavaDataModelScanner javaDataModelScanner;
 
+    // 全局信号量：同一时刻只允许一个项目执行知识图谱生成
+    // 因为 GlobalAnalysisCache 是单例，并发生成会导致缓存互相覆盖
+    private final Semaphore generationSemaphore = new Semaphore(1, true);
+
     // Neo4j 数据模型节点 Repository
     private final Neo4jDataModelNodeRepository neo4jDataModelNodeRepository;
 
@@ -152,6 +158,17 @@ public class KnowledgeGraphBuilder {
      * 为项目构建知识图谱，支持自定义屏蔽目录
      */
     public Map<String, Object> buildKnowledgeGraph(String projectPath, List<String> excludePaths) {
+        if (!generationSemaphore.tryAcquire()) {
+            throw new IllegalStateException("知识图谱生成任务正在执行中，请稍后再试（同一时刻仅允许一个项目生成）");
+        }
+        try {
+            return doBuildKnowledgeGraph(projectPath, excludePaths);
+        } finally {
+            generationSemaphore.release();
+        }
+    }
+
+    private Map<String, Object> doBuildKnowledgeGraph(String projectPath, List<String> excludePaths) {
         // 入口规范化：把反斜杠统一成正斜杠，并去尾斜杠，确保 Neo4j 节点的 projectPath
         // 始终使用规范形态。否则同一份代码用 \ 和 / 调两次会产生两套重复节点。
         String rawInput = projectPath;
