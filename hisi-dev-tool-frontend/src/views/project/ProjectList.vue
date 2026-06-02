@@ -1622,10 +1622,18 @@ async function handleCrossServiceBuild() {
 async function handleRefreshProject(project: { path: string }) {
   try {
     const res = await knowledgeGraphApi.refresh(project.path)
-    ElMessage.success(`刷新任务已创建，taskId=${(res as any)?.taskId}`)
+    if (res.isNoop) {
+      ElMessage.info('无变更，图谱已是最新')
+    } else {
+      ElMessage.success(`刷新完成：${res.changedFiles} 个文件变更，${res.deleted} 个节点删除，${res.rebuilt} 个节点重建`)
+      // 刷新后重新加载图谱状态
+      await loadAllKnowledgeGraphStatuses()
+    }
   } catch (e: unknown) {
     if ((e as { response?: { status?: number } })?.response?.status === 412) {
       ElMessage.warning('工作区不干净，请先提交所有改动')
+    } else if ((e as { response?: { status?: number } })?.response?.status === 409) {
+      ElMessage.warning('无检查点记录，请先全量生成图谱')
     } else {
       ElMessage.error('图谱刷新失败')
     }

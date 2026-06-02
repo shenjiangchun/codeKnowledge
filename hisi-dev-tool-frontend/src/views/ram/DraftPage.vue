@@ -639,6 +639,8 @@ onMounted(async () => {
     router.replace({ name: 'RamInput' })
     return
   }
+  // Always rejoin SSE first so we don't miss events even if getRamSession fails
+  session.rejoin(id, 0)
   try {
     const info = await getRamSession(id)
     if (info.clarifyPending) {
@@ -647,14 +649,9 @@ onMounted(async () => {
     if (info.hitlPending) {
       showConfirm.value = true
     }
-    // Always rejoin from seq 0 so we receive the complete event history.
-    // Each DraftPage mount creates a fresh useRamSession() with no prior
-    // events, so we must replay from the beginning regardless of the
-    // session's current progress.
-    session.rejoin(id, 0)
   } catch (e) {
-    const msg = e instanceof Error ? e.message : '加载会话失败'
-    ElMessage.error(msg)
+    const msg = e instanceof Error ? e.message : '加载会话信息失败，但SSE流已建立'
+    ElMessage.warning(msg)
   }
 })
 

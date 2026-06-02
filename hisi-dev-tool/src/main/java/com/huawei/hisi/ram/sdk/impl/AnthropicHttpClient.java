@@ -41,17 +41,28 @@ public class AnthropicHttpClient {
     private final ProxyConfig proxyConfig;
     private final String apiKey;
     private final String apiUrl;
+    private final String configuredModel;
 
     public AnthropicHttpClient(ProxyConfig proxyConfig,
                                @Value("${anthropic.api-key:}") String apiKey,
-                               @Value("${anthropic.base-url:}") String baseUrl) {
+                               @Value("${anthropic.base-url:}") String baseUrl,
+                               @Value("${anthropic.model:}") String configuredModel) {
         this.proxyConfig = proxyConfig;
         this.apiKey = apiKey;
+        this.configuredModel = (configuredModel != null && !configuredModel.isBlank())
+                ? configuredModel : "claude-sonnet-4-20250514";
         String effective = (baseUrl != null && !baseUrl.isBlank()) ? baseUrl : DEFAULT_BASE_URL;
-        // Strip trailing slash, then append /v1/messages
+        // Strip trailing slash
         if (effective.endsWith("/")) effective = effective.substring(0, effective.length() - 1);
-        this.apiUrl = effective + "/v1/messages";
-        log.info("[AnthropicHttpClient] apiUrl={}", this.apiUrl);
+        // Append /v1/messages only if base URL doesn't already include it
+        if (effective.endsWith("/v1")) {
+            this.apiUrl = effective + "/messages";
+        } else if (effective.endsWith("/v1/messages")) {
+            this.apiUrl = effective;
+        } else {
+            this.apiUrl = effective + "/v1/messages";
+        }
+        log.info("[AnthropicHttpClient] apiUrl={} model={}", this.apiUrl, this.configuredModel);
     }
 
     /**
@@ -109,7 +120,8 @@ public class AnthropicHttpClient {
                                                  List<ToolDefinition> tools,
                                                  SendOptions opts) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("model", opts.model());
+        body.put("model", (opts.model() != null && !opts.model().isBlank())
+                ? opts.model() : configuredModel);
         body.put("max_tokens", opts.maxTokens());
         body.put("temperature", opts.temperature());
         body.put("stream", true);

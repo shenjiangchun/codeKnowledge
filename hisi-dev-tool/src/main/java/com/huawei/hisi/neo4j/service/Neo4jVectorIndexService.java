@@ -28,6 +28,8 @@ import java.util.regex.Pattern;
 public class Neo4jVectorIndexService {
 
     private static final String MIN_VECTOR_INDEX_VERSION = "5.11";
+    private static final int INDEX_ONLINE_POLL_INTERVAL_MS = 2000;
+    private static final int INDEX_ONLINE_TIMEOUT_S = 120;
 
     /**
      * 向量索引配置（启动时根据 EmbeddingService 维度动态构建）
@@ -106,11 +108,21 @@ public class Neo4jVectorIndexService {
                     }
                 }
 
-                // 如果所有索引都创建成功，标记为可用
+                // 等待所有新建/重建的索引上线
+                int onlineCount = 0;
+                for (VectorIndexConfig config : vectorIndexes) {
+                    if (waitForIndexOnline(config.indexName())) {
+                        onlineCount++;
+                    } else {
+                        log.warn("向量索引 '{}' 未在 {}s 内上线", config.indexName(), INDEX_ONLINE_TIMEOUT_S);
+                        failCount++;
+                    }
+                }
+
                 vectorIndexAvailable = (failCount == 0);
 
-                log.info("向量索引初始化完成: 成功={}, 失败={}, 可用={}",
-                        successCount, failCount, vectorIndexAvailable);
+                log.info("向量索引初始化完成: 成功={}, 上线={}, 失败={}, 可用={}",
+                        successCount, onlineCount, failCount, vectorIndexAvailable);
             }
 
         } catch (Exception e) {
@@ -200,7 +212,7 @@ public class Neo4jVectorIndexService {
             );
 
             if (checkResult.hasNext()) {
-                // 索引存在，验证维度
+                // 索引存在，验证维度和状态
                 var record = checkResult.next();
                 var options = record.get("options").asMap();
 
@@ -208,10 +220,16 @@ public class Neo4jVectorIndexService {
                 log.info("向量索引 '{}' 已存在，当前维度: {}", indexName, currentDimension);
 
                 if (currentDimension == config.dimension()) {
-                    log.info("向量索引 '{}' 维度正确，无需重建", indexName);
+                    // 维度匹配，但还需确认索引已上线（可能上一轮刚重建还在 POPULATING）
+                    String indexState = checkIndexState(indexName);
+                    if ("ONLINE".equals(indexState)) {
+                        log.info("向量索引 '{}' 维度正确且已上线，保留", indexName);
+                        return true;
+                    }
+                    log.warn("向量索引 '{}' 维度正确但状态为 '{}'，等待上线后再判定", indexName, indexState);
+                    // 不删不建，交给 waitForIndexOnline 处理
                     return true;
                 }
-
                 // 维度不对，删除重建
                 log.warn("向量索引 '{}' 维度不正确 (当前: {}, 需要: {})，正在删除重建...",
                         indexName, currentDimension, config.dimension());
@@ -236,6 +254,67 @@ public class Neo4jVectorIndexService {
             log.error("创建向量索引 '{}' 失败: {}", indexName, e.getMessage(), e);
             return false;
         }
+    }
+
+    /**
+     * 查询索引当前状态。
+     *
+     * @param indexName 索引名称
+     * @return 状态字符串（如 "ONLINE"、"POPULATING"、"FAILED"），查询失败返回 "UNKNOWN"
+     */
+    private String checkIndexState(String indexName) {
+        try (Session session = neo4jDriver.session()) {
+            var result = session.run(
+                "SHOW INDEXES YIELD name, state WHERE name = '" + indexName + "' RETURN state AS state"
+            );
+            if (result.hasNext()) {
+                return result.next().get("state").asString();
+            }
+        } catch (Exception e) {
+            log.warn("查询索引 '{}' 状态失败: {}", indexName, e.getMessage());
+        }
+        return "UNKNOWN";
+    }
+
+    /**
+     * 轮询等待向量索引上线（状态变为 ONLINE）。
+     * Neo4j 创建/重建索引后需要时间填充数据，此方法阻塞等待直到索引可用。
+     *
+     * @param indexName 索引名称
+     * @return true 如果索引已上线，false 如果超时
+     */
+    private boolean waitForIndexOnline(String indexName) {
+        long deadline = System.currentTimeMillis() + INDEX_ONLINE_TIMEOUT_S * 1000L;
+
+        while (System.currentTimeMillis() < deadline) {
+            try (Session session = neo4jDriver.session()) {
+                var result = session.run(
+                    "SHOW INDEXES YIELD name, state WHERE name = '" + indexName + "' RETURN state AS state"
+                );
+                if (result.hasNext()) {
+                    String state = result.next().get("state").asString();
+                    if ("ONLINE".equals(state)) {
+                        log.info("向量索引 '{}' 已上线", indexName);
+                        return true;
+                    }
+                    log.debug("向量索引 '{}' 状态: {}, 继续等待...", indexName, state);
+                } else {
+                    log.debug("向量索引 '{}' 尚未出现在索引列表中，继续等待...", indexName);
+                }
+            } catch (Exception e) {
+                log.warn("查询索引 '{}' 状态失败: {}", indexName, e.getMessage());
+            }
+
+            try {
+                Thread.sleep(INDEX_ONLINE_POLL_INTERVAL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("等待索引 '{}' 上线被中断", indexName);
+                return false;
+            }
+        }
+
+        return false;
     }
 
     /**

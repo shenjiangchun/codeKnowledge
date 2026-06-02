@@ -69,6 +69,14 @@ public class HybridSearchService {
      */
     private static final int CONTEXT_LIMIT = 3;
 
+    /**
+     * 向量索引 topK 放大倍数。
+     * db.index.vector.queryNodes 返回全局 topK 后再按 projectPath 过滤，
+     * 多项目数据库中全局 top 10 可能全部属于其他项目，导致过滤后为空。
+     * 乘以此倍数扩大候选集，确保过滤后仍有足够结果。
+     */
+    private static final int VECTOR_INDEX_TOPK_MULTIPLIER = 20;
+
     private final Neo4jMethodNodeRepository methodNodeRepository;
     private final Neo4jSqlNodeRepository sqlNodeRepository;
     private final Neo4jEntryPointNodeRepository entryPointRepository;
@@ -305,7 +313,7 @@ public class HybridSearchService {
                     embeddingList.add((double) v);
                 }
                 List<MethodWithScore> results = methodNodeRepository.findByDescriptionVectorIndexWithScoreByProjectPaths(
-                        projectPaths, embeddingList, SIMILARITY_THRESHOLD, limit);
+                        projectPaths, embeddingList, SIMILARITY_THRESHOLD, limit * VECTOR_INDEX_TOPK_MULTIPLIER);
                 if (results.isEmpty()) {
                     String firstPath = projectPaths.isEmpty() ? "" : projectPaths.get(0);
                     long totalInProject = methodNodeRepository.countByProjectPath(firstPath);
@@ -328,8 +336,8 @@ public class HybridSearchService {
                             for (Map<String, Object> idx : indexes) {
                                 @SuppressWarnings("unchecked")
                                 Map<String, Object> info2 = idx.get("info") instanceof Map ? (Map<String, Object>) idx.get("info") : idx;
-                                log.warn("[DEBUG-VECTOR]   Index: {} type={} options={}",
-                                        info2.get("name"), info2.get("type"), info2.get("options"));
+                                log.warn("[DEBUG-VECTOR]   Index: {} type={} state={} options={}",
+                                        info2.get("name"), info2.get("type"), info2.get("state"), info2.get("options"));
                             }
                             // 尝试不使用索引直接搜索
                             log.warn("[DEBUG-VECTOR] ====== 尝试直接相似度搜索（不使用向量索引）======");
@@ -636,7 +644,7 @@ public class HybridSearchService {
         if (useVectorIndex) {
             try {
                 sqlResults = sqlNodeRepository.findBySqlVectorIndexWithScore(
-                        firstPath, embedding, SIMILARITY_THRESHOLD, limit);
+                        firstPath, embedding, SIMILARITY_THRESHOLD, limit * VECTOR_INDEX_TOPK_MULTIPLIER);
             } catch (SearchException e) {
                 throw e;
             } catch (Exception e) {
@@ -762,7 +770,7 @@ public class HybridSearchService {
                     embeddingList.add((double) v);
                 }
                 List<MethodWithScore> results = methodNodeRepository.findByCodeVectorIndexWithScoreByProjectPaths(
-                        projectPaths, embeddingList, SIMILARITY_THRESHOLD, limit);
+                        projectPaths, embeddingList, SIMILARITY_THRESHOLD, limit * VECTOR_INDEX_TOPK_MULTIPLIER);
                 methods = new ArrayList<>();
                 for (MethodWithScore result : results) {
                     methods.add(result.toMethodNode());

@@ -13,6 +13,6 @@ public record SendOptions(
 ) {
 
     public static SendOptions defaults() {
-        return new SendOptions("claude-opus-4-5", 4096, 0.7, null);
+        return new SendOptions(null, 4096, 0.7, null);
     }
 }

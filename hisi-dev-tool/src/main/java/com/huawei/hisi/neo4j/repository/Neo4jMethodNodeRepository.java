@@ -148,9 +148,9 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
      * [诊断] 检查向量索引的配置信息
      */
     @Query("""
-        SHOW INDEXES YIELD name, type, options
+        SHOW INDEXES YIELD name, type, state, options
         WHERE name IN ['method_description_vector_index', 'method_code_vector_index', 'sql_vector_index']
-        RETURN {name: name, type: type, options: options} AS info
+        RETURN {name: name, type: type, state: state, options: options} AS info
         """)
     List<Map<String, Object>> diagnosticCheckVectorIndexes();
 

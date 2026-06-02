@@ -16,7 +16,31 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
-        changeOrigin: true
+        changeOrigin: true,
+        selfHandleResponse: true,
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes, req, res) => {
+            // SSE streams: pipe directly without buffering
+            if (proxyRes.headers['content-type']?.includes('text/event-stream')) {
+              res.writeHead(proxyRes.statusCode!, proxyRes.headers)
+              proxyRes.pipe(res)
+              return
+            }
+            // All other responses: collect and forward normally
+            const chunks: Buffer[] = []
+            proxyRes.on('data', (chunk: Buffer) => chunks.push(chunk))
+            proxyRes.on('end', () => {
+              const body = Buffer.concat(chunks)
+              const headers = { ...proxyRes.headers }
+              if (headers['transfer-encoding']) {
+                delete headers['transfer-encoding']
+                headers['content-length'] = String(body.length)
+              }
+              res.writeHead(proxyRes.statusCode!, headers)
+              res.end(body)
+            })
+          })
+        }
       },
       '/ws': {
         target: 'http://localhost:8080',

@@ -47,13 +47,11 @@ function asNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
-// Diagnostic logger for the RAM session lifecycle. Intentionally uses
-// console.debug so it stays out of the default browser console filter, but
-// can be enabled by switching the level to "Verbose". Added per request to
-// trace RUN_FAILED root cause end-to-end.
+// Diagnostic logger for the RAM session lifecycle. Uses console.info so
+// messages are visible in the default browser console filter level.
 const dbg = (...args: unknown[]): void => {
   // eslint-disable-next-line no-console
-  console.debug('[RAM]', ...args)
+  console.info('[RAM]', ...args)
 }
 
 export function useRamSession(): UseRamSessionReturn {
@@ -188,19 +186,20 @@ export function useRamSession(): UseRamSessionReturn {
     let consecutiveErrors = 0
     es.onopen = () => {
       consecutiveErrors = 0
-      dbg('SSE onopen', { sid, readyState: es.readyState })
+      dbg('SSE onopen', { sid, readyState: es.readyState, url })
     }
     es.onmessage = (raw) => {
       consecutiveErrors = 0
       handleEvent(raw)
     }
-    es.onerror = () => {
+    es.onerror = (evt) => {
       consecutiveErrors++
-      dbg('SSE onerror', { sid, readyState: es.readyState, status: status.value, consecutiveErrors })
+      dbg('SSE onerror', { sid, readyState: es.readyState, status: status.value, consecutiveErrors, eventType: evt.type, url })
       // EventSource auto-retries while readyState !== CLOSED. Surface a failure
       // only when the connection is permanently closed by the browser, OR
       // when we get too many consecutive errors (proxy/server restart).
       if (es.readyState === EventSource.CLOSED && status.value === 'running') {
+        dbg('SSE permanently closed → error')
         status.value = 'error'
         tearDown()
       } else if (consecutiveErrors > 10 && status.value === 'running') {
@@ -211,6 +210,7 @@ export function useRamSession(): UseRamSessionReturn {
       }
     }
     source = es
+    dbg('EventSource created', { sid, url, readyState: es.readyState })
   }
 
   const start = async (rawInput: string, projectPath: string): Promise<string> => {

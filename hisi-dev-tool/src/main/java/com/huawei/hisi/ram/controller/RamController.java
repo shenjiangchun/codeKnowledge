@@ -19,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -33,8 +34,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * REST + SSE entry point for the Requirement Analysis Master (RAM) Phase-1 UI.
@@ -279,22 +282,30 @@ public class RamController {
     // GET /sessions/{sid}/stream
     // ---------------------------------------------------------------------
 
-    @GetMapping("/sessions/{sid}/stream")
+    @GetMapping(value = "/sessions/{sid}/stream", produces = "text/event-stream")
     public SseEmitter stream(@PathVariable("sid") String handle,
-                             @RequestParam(value = "afterSeq", required = false) Long afterSeq) {
+                             @RequestParam(value = "afterSeq", required = false) Long afterSeq,
+                             HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-cache, no-transform");
+        response.setHeader("X-Accel-Buffering", "no");
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
         AtomicLong lastSeq = new AtomicLong(afterSeq == null ? 0L : Math.max(0L, afterSeq));
         AtomicLong waitTicks = new AtomicLong(0L);
+        AtomicReference<ScheduledFuture<?>> futureRef = new AtomicReference<>();
 
         Runnable tick = () -> {
             try {
                 // Send SSE heartbeat (comment) to keep the connection alive
-                // and prevent browser/proxy from closing an idle connection
-                emitter.send(SseEmitter.event().comment("heartbeat"));
+                try {
+                    emitter.send(SseEmitter.event().comment("heartbeat"));
+                } catch (IllegalStateException | IOException e) {
+                    throw new ClientGoneException(e);
+                }
 
                 if (abortedSessions.contains(handle)) {
                     sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
                             "RUN_ABORTED", Map.of("reason", "user_requested")));
+                    log.info("[SSE] handle={} aborted → closing stream", handle);
                     emitter.complete();
                     return;
                 }
@@ -303,30 +314,40 @@ public class RamController {
                     if (waitTicks.incrementAndGet() > 120L) {
                         emitter.completeWithError(
                                 new IllegalStateException("session not started: " + handle));
+                    } else if (waitTicks.get() % 20 == 1) {
+                        log.debug("[SSE] handle={} waiting for session mapping (tick={})", handle, waitTicks.get());
                     }
                     return;
                 }
 
                 List<AgentEvent> events = eventRepository.findBySessionId(backendId);
+                int newCount = 0;
                 for (AgentEvent ev : events) {
                     if (ev.getSeq() <= lastSeq.get()) {
                         continue;
                     }
+                    newCount++;
                     sendEvent(emitter, toSseMap(ev));
                     lastSeq.set(ev.getSeq());
 
                     if (ev.getType() == EventType.CLARIFY_REQ) {
                         sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
                                 "CLARIFY_REQUIRED", parseJsonPayload(ev.getPayload())));
+                        log.info("[SSE] handle={} CLARIFY_REQ → closing stream", handle);
                         emitter.complete();
                         return;
                     }
                     if (ev.getType() == EventType.HITL_REQ) {
                         sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
                                 "HITL_REQUIRED", parseJsonPayload(ev.getPayload())));
+                        log.info("[SSE] handle={} HITL_REQ → closing stream", handle);
                         emitter.complete();
                         return;
                     }
+                }
+
+                if (newCount > 0) {
+                    log.debug("[SSE] handle={} sent {} new events, lastSeq={}", handle, newCount, lastSeq.get());
                 }
 
                 Optional<AgentSession> session = sessionRepository.findById(backendId);
@@ -335,30 +356,47 @@ public class RamController {
                     if (status == SessionStatus.DONE) {
                         sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
                                 "RUN_COMPLETED", Map.of()));
+                        log.info("[SSE] handle={} session DONE → closing stream", handle);
                         emitter.complete();
                     } else if (status == SessionStatus.FAILED) {
                         Map<String, Object> errPayload = lastErrorPayload(backendId);
                         sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
                                 "RUN_FAILED", errPayload));
+                        log.info("[SSE] handle={} session FAILED → closing stream", handle);
                         emitter.complete();
                     } else if (status == SessionStatus.ABORTED) {
                         sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
                                 "RUN_ABORTED", Map.of()));
+                        log.info("[SSE] handle={} session ABORTED → closing stream", handle);
                         emitter.complete();
                     }
                 }
             } catch (ClientGoneException e) {
-                // Client disconnected — drop quietly and stop polling.
-                log.debug("SSE client gone for handle {}: {}", handle, e.getCause().getMessage());
-                try { emitter.complete(); } catch (Exception ignored) { /* already done */ }
+                // Client disconnected — cancel the scheduled polling immediately.
+                log.info("[SSE] client gone for handle {} lastSeq={} reason={}",
+                        handle, lastSeq.get(), e.getCause() != null ? e.getCause().getClass().getSimpleName() : "unknown");
+                ScheduledFuture<?> f = futureRef.get();
+                if (f != null) {
+                    f.cancel(true);
+                }
             } catch (Exception e) {
-                log.warn("SSE tick failed for handle {}", handle, e);
+                log.warn("[SSE] tick failed for handle {} lastSeq={} error={}",
+                        handle, lastSeq.get(), e.toString());
+                ScheduledFuture<?> f = futureRef.get();
+                if (f != null) {
+                    f.cancel(true);
+                }
                 emitter.completeWithError(e);
             }
         };
 
-        var future = streamScheduler.scheduleAtFixedRate(tick, 0L, POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
-        emitter.onCompletion(() -> future.cancel(true));
+        ScheduledFuture<?> future = streamScheduler.scheduleAtFixedRate(tick, 0L, POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
+        futureRef.set(future);
+        log.info("[SSE] stream opened handle={} afterSeq={}", handle, afterSeq);
+        emitter.onCompletion(() -> {
+            log.info("[SSE] stream completed handle={} lastSeq={}", handle, lastSeq.get());
+            future.cancel(true);
+        });
         emitter.onTimeout(() -> future.cancel(true));
         emitter.onError(t -> future.cancel(true));
         return emitter;
