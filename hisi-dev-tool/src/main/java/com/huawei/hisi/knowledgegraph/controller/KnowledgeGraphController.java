@@ -30,6 +30,7 @@ import com.huawei.hisi.service.KnowledgeGraphTaskService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Driver;
+import org.neo4j.driver.SessionConfig;
 import org.neo4j.driver.Record;
 import org.neo4j.driver.Session;
 import org.springframework.http.ResponseEntity;
@@ -56,6 +57,7 @@ public class KnowledgeGraphController {
 
     // Neo4j Driver (for raw Cypher queries)
     private final Driver neo4jDriver;
+    private final SessionConfig neo4jSessionConfig;
 
     // Neo4j Repository (主数据源)
     private final Neo4jMethodNodeRepository neo4jMethodNodeRepository;
@@ -356,7 +358,7 @@ public class KnowledgeGraphController {
 
         // 如果 Neo4j 数据为空，列出数据库中的 projectPath
         if (methodNodeCount == 0 && entryPointCount == 0) {
-            try (Session session = neo4jDriver.session()) {
+            try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
                 var pathsResult = session.run(
                     "MATCH (n) WHERE n.projectPath IS NOT NULL RETURN DISTINCT n.projectPath as path, labels(n) as labels LIMIT 5"
                 );
@@ -370,7 +372,7 @@ public class KnowledgeGraphController {
 
         // Neo4j 数据：接口实现数量（IN 查询）
         int interfaceImplCount;
-        try (Session neoSession = neo4jDriver.session()) {
+        try (Session neoSession = neo4jDriver.session(neo4jSessionConfig)) {
             interfaceImplCount = neoSession.run(
                 "MATCH (c)-[:IMPLEMENTS]->(i) WHERE c.projectPath IN $paths RETURN count(c) AS cnt",
                 Map.of("paths", paths)
@@ -1436,7 +1438,7 @@ public class KnowledgeGraphController {
         }
 
         List<String> interfaces;
-        try (Session neoSession = neo4jDriver.session()) {
+        try (Session neoSession = neo4jDriver.session(neo4jSessionConfig)) {
             interfaces = neoSession.run(
                 "MATCH (c)-[:IMPLEMENTS]->(i) WHERE c.name = $className AND c.projectPath IN $paths RETURN DISTINCT i.name AS name",
                 Map.of("className", className, "paths", paths)
@@ -2144,7 +2146,7 @@ public class KnowledgeGraphController {
     private List<Neo4jMethodNodeRepository.GraphTraversalResult> getCallChainNodes(String entryKey, List<String> projectPaths, int maxDepth) {
         List<Neo4jMethodNodeRepository.GraphTraversalResult> results = new ArrayList<>();
 
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             // 使用聚合查询，每个 nodeId 只返回一次（取最小深度）
             String query = """
                 MATCH (ep:EntryPoint)
@@ -2190,7 +2192,7 @@ public class KnowledgeGraphController {
     private List<Neo4jMethodNodeRepository.GraphEdgeResult> getCallChainEdges(String entryKey, List<String> projectPaths, int maxDepth) {
         List<Neo4jMethodNodeRepository.GraphEdgeResult> results = new ArrayList<>();
 
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             String query = """
                 MATCH (ep:EntryPoint)
                 WHERE ep.entryKey = $entryKey AND ep.projectPath IN $projectPaths

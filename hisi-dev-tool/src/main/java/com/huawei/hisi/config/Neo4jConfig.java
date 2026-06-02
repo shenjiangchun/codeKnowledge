@@ -4,6 +4,7 @@ import org.neo4j.driver.AuthTokens;
 import org.neo4j.driver.Config;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.GraphDatabase;
+import org.neo4j.driver.SessionConfig;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -41,6 +42,9 @@ public class Neo4jConfig {
     @Value("${neo4j.password:neo4j}")
     private String password;
 
+    @Value("${neo4j.database:neo4j}")
+    private String database;
+
     @Value("${neo4j.pool.max-connection-pool-size:50}")
     private int maxConnectionPoolSize;
 
@@ -61,21 +65,39 @@ public class Neo4jConfig {
     }
 
     /**
+     * 配置 DatabaseSelectionProvider，让 Spring Data Neo4j Repository 使用配置的数据库名
+     * 默认 SDN 使用 "neo4j"，此处读取 neo4j.database 配置项覆盖
+     */
+    @Bean
+    public DatabaseSelectionProvider databaseSelectionProvider() {
+        return () -> DatabaseSelection.byName(database);
+    }
+
+    /**
+     * SessionConfig bean — 所有直接使用 Driver.session() 的代码注入此 bean，
+     * 确保统一走配置的数据库（而非 Driver 默认的 neo4j 库）
+     */
+    @Bean
+    public SessionConfig neo4jSessionConfig() {
+        return SessionConfig.forDatabase(database);
+    }
+
+    /**
      * 配置 Neo4j 事务管理器
      * 使用 transactionManager 作为主事务管理器
      */
     @Bean
     @org.springframework.context.annotation.Primary
-    public PlatformTransactionManager transactionManager(Driver driver) {
-        return new Neo4jTransactionManager(driver);
+    public PlatformTransactionManager transactionManager(Driver driver, DatabaseSelectionProvider databaseSelectionProvider) {
+        return new Neo4jTransactionManager(driver, databaseSelectionProvider);
     }
 
     /**
      * Neo4j 专用事务管理器别名
      */
     @Bean("neo4jTransactionManager")
-    public PlatformTransactionManager neo4jTransactionManager(Driver driver) {
-        return new Neo4jTransactionManager(driver);
+    public PlatformTransactionManager neo4jTransactionManager(Driver driver, DatabaseSelectionProvider databaseSelectionProvider) {
+        return new Neo4jTransactionManager(driver, databaseSelectionProvider);
     }
 
     /**

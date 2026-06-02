@@ -171,6 +171,7 @@ analysis:
 # Neo4j 图数据库配置
 neo4j:
   uri: bolt://127.0.0.1:7687
+  database: ${NEO4J_DATABASE:neo4j}
   username: neo4j
   password: ${NEO4J_PASSWORD:12345678}
   pool:

@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.Session;
+import org.neo4j.driver.SessionConfig;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -22,6 +23,7 @@ import java.util.List;
 public class Neo4jInitializer {
 
     private final Driver neo4jDriver;
+    private final SessionConfig neo4jSessionConfig;
 
     /**
      * 唯一性约束列表
@@ -98,7 +100,7 @@ public class Neo4jInitializer {
     public void initialize() {
         log.info("开始初始化 Neo4j 约束和索引...");
 
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             int successCount = 0;
             int failCount = 0;
 

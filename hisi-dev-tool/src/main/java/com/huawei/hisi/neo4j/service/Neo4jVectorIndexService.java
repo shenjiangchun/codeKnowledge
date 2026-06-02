@@ -2,6 +2,7 @@ package com.huawei.hisi.neo4j.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Driver;
+import org.neo4j.driver.SessionConfig;
 import org.neo4j.driver.Session;
 import org.neo4j.driver.Record;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -37,6 +38,7 @@ public class Neo4jVectorIndexService {
     private List<VectorIndexConfig> vectorIndexes;
 
     private final Driver neo4jDriver;
+    private final SessionConfig neo4jSessionConfig;
     private final EmbeddingService embeddingService;
 
     /**
@@ -55,8 +57,9 @@ public class Neo4jVectorIndexService {
      */
     private String neo4jVersion;
 
-    public Neo4jVectorIndexService(Driver neo4jDriver, EmbeddingService embeddingService) {
+    public Neo4jVectorIndexService(Driver neo4jDriver, SessionConfig neo4jSessionConfig, EmbeddingService embeddingService) {
         this.neo4jDriver = neo4jDriver;
+        this.neo4jSessionConfig = neo4jSessionConfig;
         this.embeddingService = embeddingService;
     }
 
@@ -91,7 +94,7 @@ public class Neo4jVectorIndexService {
             }
 
             // 3. 创建向量索引
-            try (Session session = neo4jDriver.session()) {
+            try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
                 int successCount = 0;
                 int failCount = 0;
 
@@ -137,7 +140,7 @@ public class Neo4jVectorIndexService {
      * @return Neo4j 版本字符串，例如 "5.11.0"
      */
     private String detectNeo4jVersion() {
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             Record record = session.run("CALL dbms.components() YIELD name, versions WHERE name = 'Neo4j Kernel' RETURN versions[0] AS version").single();
             return record.get("version").asString();
         } catch (Exception e) {
@@ -263,7 +266,7 @@ public class Neo4jVectorIndexService {
      * @return 状态字符串（如 "ONLINE"、"POPULATING"、"FAILED"），查询失败返回 "UNKNOWN"
      */
     private String checkIndexState(String indexName) {
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             var result = session.run(
                 "SHOW INDEXES YIELD name, state WHERE name = '" + indexName + "' RETURN state AS state"
             );
@@ -287,7 +290,7 @@ public class Neo4jVectorIndexService {
         long deadline = System.currentTimeMillis() + INDEX_ONLINE_TIMEOUT_S * 1000L;
 
         while (System.currentTimeMillis() < deadline) {
-            try (Session session = neo4jDriver.session()) {
+            try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
                 var result = session.run(
                     "SHOW INDEXES YIELD name, state WHERE name = '" + indexName + "' RETURN state AS state"
                 );
