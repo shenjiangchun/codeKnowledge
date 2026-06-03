@@ -633,7 +633,7 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     @Query("""
         MATCH (m:Method {projectPath: $projectPath})
         WHERE m.descriptionEmbedding IS NULL
-        RETURN m.nodeId as nodeId, m.className as className, m.methodName as methodName, m.signature as signature
+        RETURN m{.nodeId, .className, .methodName, .signature} as item
         LIMIT $limit
         """)
     List<Map<String, Object>> findMissingDescriptionEmbedding(@Param("projectPath") String projectPath, @Param("limit") int limit);

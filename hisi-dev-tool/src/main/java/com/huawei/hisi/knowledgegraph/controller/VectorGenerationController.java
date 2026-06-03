@@ -144,8 +144,21 @@ public class VectorGenerationController {
             }
             long totalMethods = neo4jMethodNodeRepository.countByProjectPath(projectPath);
             long missingCount = neo4jMethodNodeRepository.countMissingDescriptionEmbedding(projectPath);
-            java.util.List<java.util.Map<String, Object>> preview =
+            java.util.List<java.util.Map<String, Object>> rawPreview =
                     neo4jMethodNodeRepository.findMissingDescriptionEmbedding(projectPath, Math.min(limit, 100));
+            // Spring Data Neo4j returns [{item: {nodeId, className, ...}}, ...] for map projections
+            // Flatten to [{nodeId, className, ...}, ...]
+            java.util.List<java.util.Map<String, Object>> preview = rawPreview.stream()
+                    .map(row -> {
+                        Object item = row.get("item");
+                        if (item instanceof java.util.Map) {
+                            @SuppressWarnings("unchecked")
+                            java.util.Map<String, Object> map = (java.util.Map<String, Object>) item;
+                            return map;
+                        }
+                        return row;
+                    })
+                    .toList();
 
             java.util.Map<String, Object> result = new java.util.HashMap<>();
             result.put("totalMethods", totalMethods);

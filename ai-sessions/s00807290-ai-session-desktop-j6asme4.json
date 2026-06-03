@@ -3,13 +3,13 @@
   "hostname": "desktop-j6asme4",
   "model": "GLM-5.1-w4a8",
   "firstSeen": "2026-05-30T01:37:45.023Z",
-  "lastUpdated": "2026-06-03T04:40:19.382Z",
+  "lastUpdated": "2026-06-03T04:44:18.620Z",
   "stats": {
-    "totalOperations": 408,
-    "totalFilesEdited": 174,
-    "totalAiLines": 3373,
-    "totalAiLinesDeleted": 1214,
-    "totalCommits": 21
+    "totalOperations": 412,
+    "totalFilesEdited": 178,
+    "totalAiLines": 3391,
+    "totalAiLinesDeleted": 1221,
+    "totalCommits": 22
   },
   "pendingFiles": [
     {
@@ -158,20 +158,36 @@
       "lastModified": "2026-06-01T02:17:56.676Z"
     },
     {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/service/DiffExtractService.java",
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/repository/Neo4jMethodNodeRepository.java",
       "tool": "Edit",
       "operations": 1,
-      "timestamp": "2026-06-03T04:40:19.311Z",
-      "lastModified": "2026-06-03T04:40:19.311Z"
+      "timestamp": "2026-06-03T04:43:47.662Z",
+      "lastModified": "2026-06-03T04:43:47.662Z"
     },
     {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/service/DiffExtractService.java",
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/repository/Neo4jMethodNodeRepository.java",
       "tool": "Edit",
       "aiTool": "claude-code",
       "model": "GLM-5.1-w4a8",
       "operations": 1,
-      "timestamp": "2026-06-03T04:40:19.382Z",
-      "lastModified": "2026-06-03T04:40:19.382Z"
+      "timestamp": "2026-06-03T04:43:47.726Z",
+      "lastModified": "2026-06-03T04:43:47.726Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/controller/VectorGenerationController.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-03T04:44:18.553Z",
+      "lastModified": "2026-06-03T04:44:18.553Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/controller/VectorGenerationController.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "GLM-5.1-w4a8",
+      "operations": 1,
+      "timestamp": "2026-06-03T04:44:18.620Z",
+      "lastModified": "2026-06-03T04:44:18.620Z"
     }
   ],
   "repoPath": "D:/hisi-code-analyser/codeKnowledge1"
