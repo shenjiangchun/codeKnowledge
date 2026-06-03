@@ -3,13 +3,13 @@
   "hostname": "desktop-j6asme4",
   "model": "GLM-5.1-w4a8",
   "firstSeen": "2026-05-30T01:37:45.023Z",
-  "lastUpdated": "2026-06-03T04:36:58.707Z",
+  "lastUpdated": "2026-06-03T04:40:19.382Z",
   "stats": {
-    "totalOperations": 406,
-    "totalFilesEdited": 172,
-    "totalAiLines": 3359,
-    "totalAiLinesDeleted": 1208,
-    "totalCommits": 20
+    "totalOperations": 408,
+    "totalFilesEdited": 174,
+    "totalAiLines": 3373,
+    "totalAiLinesDeleted": 1214,
+    "totalCommits": 21
   },
   "pendingFiles": [
     {
@@ -158,20 +158,20 @@
       "lastModified": "2026-06-01T02:17:56.676Z"
     },
     {
-      "path": "hisi-dev-tool-frontend/src/views/knowledge-graph/KnowledgeGraphView.vue",
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/service/DiffExtractService.java",
       "tool": "Edit",
       "operations": 1,
-      "timestamp": "2026-06-03T04:36:58.629Z",
-      "lastModified": "2026-06-03T04:36:58.629Z"
+      "timestamp": "2026-06-03T04:40:19.311Z",
+      "lastModified": "2026-06-03T04:40:19.311Z"
     },
     {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool-frontend/src/views/knowledge-graph/KnowledgeGraphView.vue",
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/service/DiffExtractService.java",
       "tool": "Edit",
       "aiTool": "claude-code",
       "model": "GLM-5.1-w4a8",
       "operations": 1,
-      "timestamp": "2026-06-03T04:36:58.707Z",
-      "lastModified": "2026-06-03T04:36:58.707Z"
+      "timestamp": "2026-06-03T04:40:19.382Z",
+      "lastModified": "2026-06-03T04:40:19.382Z"
     }
   ],
   "repoPath": "D:/hisi-code-analyser/codeKnowledge1"

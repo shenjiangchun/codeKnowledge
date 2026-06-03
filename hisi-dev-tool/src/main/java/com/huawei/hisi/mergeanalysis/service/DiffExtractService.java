@@ -123,13 +123,24 @@ public class DiffExtractService {
     }
 
     private ObjectId resolveRef(Repository repository, String branchName) throws Exception {
-        ObjectId id = repository.resolve("refs/heads/" + branchName);
-        if (id == null) {
-            id = repository.resolve("refs/remotes/origin/" + branchName);
+        // Strip common prefixes that shortenRefName may leave
+        String name = branchName;
+        if (name.startsWith("origin/")) {
+            String stripped = name.substring("origin/".length());
+            ObjectId id = repository.resolve("refs/remotes/origin/" + stripped);
+            if (id != null) return id;
         }
-        if (id == null) {
-            throw new IllegalArgumentException("Cannot resolve branch: " + branchName);
-        }
-        return id;
+
+        ObjectId id = repository.resolve("refs/heads/" + name);
+        if (id != null) return id;
+
+        id = repository.resolve("refs/remotes/origin/" + name);
+        if (id != null) return id;
+
+        // Last resort: let JGit resolve it as-is (handles full refs/ paths, HEAD, etc.)
+        id = repository.resolve(name);
+        if (id != null) return id;
+
+        throw new IllegalArgumentException("Cannot resolve branch: " + branchName);
     }
 }
