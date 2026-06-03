@@ -8,6 +8,7 @@
  *
  * Project selection is aligned with the Knowledge Graph page:
  * - Auto-scan local Git repositories via /projects/scan-git-repos
+ * - Also load cloned remote projects via /remote-projects
  * - el-select with filterable search + status tag (branch / clean / source)
  * - Manual-path fallback toggle for paths outside the scanned roots
  */
@@ -17,6 +18,7 @@ import { ElMessage } from 'element-plus'
 import { useAppStore } from '@/stores/app'
 import { startRamSession } from '@/api/ram'
 import { projectApi } from '@/api/project'
+import { listRemoteProjects } from '@/api/remote-project'
 import type { GitRepositoryInfo } from '@/types/callchain'
 
 const router = useRouter()
@@ -48,10 +50,31 @@ const selectedProjectLabel = computed(() => {
 async function loadProjects(): Promise<void> {
   loadingProjects.value = true
   try {
-    const list = (await projectApi.scanGitRepos()) as unknown as GitRepositoryInfo[]
-    if (Array.isArray(list)) {
-      projects.value = list
-    }
+    // 并行加载本地项目 + 已克隆远端项目
+    const [localList, remoteList] = await Promise.allSettled([
+      projectApi.scanGitRepos() as Promise<unknown>,
+      listRemoteProjects() as Promise<unknown>
+    ])
+
+    const local = localList.status === 'fulfilled' && Array.isArray(localList.value)
+      ? localList.value as GitRepositoryInfo[]
+      : []
+    const cloned = remoteList.status === 'fulfilled' && Array.isArray(remoteList.value)
+      ? (remoteList.value as any[])
+          .filter((r: any) => r.cloneStatus === 'CLONED' && r.localPath)
+          .map((r: any) => ({
+            name: r.name,
+            path: r.localPath,
+            branch: r.branch || 'main',
+            clean: true,
+            source: 'remote'
+          }))
+      : []
+
+    // 去重：远端项目 localPath 可能和本地项目 path 重复
+    const localPaths = new Set(local.map(p => p.path))
+    const dedupedRemote = cloned.filter(p => !localPaths.has(p.path))
+    projects.value = [...local, ...dedupedRemote]
   } catch (error) {
     const msg = error instanceof Error ? error.message : '扫描项目失败'
     ElMessage.warning(`未能加载项目列表：${msg}`)
@@ -125,12 +148,15 @@ async function onSubmit(): Promise<void> {
                   <span class="proj-meta">
                     <el-tag size="small" type="info">{{ opt.branch || '-' }}</el-tag>
                     <el-tag
+                      v-if="opt.source !== 'remote'"
                       size="small"
                       :type="opt.clean ? 'success' : 'warning'"
                     >
                       {{ opt.clean ? 'clean' : 'dirty' }}
                     </el-tag>
-                    <el-tag size="small">{{ opt.source }}</el-tag>
+                    <el-tag size="small" :type="opt.source === 'remote' ? 'warning' : 'primary'">
+                      {{ opt.source === 'remote' ? '远端' : opt.source === 'scanned' ? '扫描' : opt.source }}
+                    </el-tag>
                   </span>
                 </div>
               </el-option>

@@ -215,7 +215,7 @@ class RamControllerTest {
         when(sessionRepository.findById(sid)).thenReturn(Optional.of(
                 AgentSession.builder().id(sid).status(SessionStatus.DONE).build()));
 
-        controller.stream(handle, null);
+        controller.stream(handle, null, mock(jakarta.servlet.http.HttpServletResponse.class));
 
         // Wait for the SSE poll loop to read from the repository at least once,
         // which proves the live-poll path runs (not a one-shot post-completion drain).

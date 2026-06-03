@@ -366,6 +366,7 @@ public class PythonKnowledgeGraphBuilder {
 
     private ParsedFile parseFileInternal(String filePath, String projectPath) throws IOException {
         String source = Files.readString(Path.of(filePath), StandardCharsets.UTF_8);
+        source = normalizeFstringsForParser(source);
         String relativePath = KnowledgeGraphCommonUtils.relativeFilePath(projectPath, filePath);
         String modulePath = toModulePath(relativePath);
 
@@ -411,6 +412,93 @@ public class PythonKnowledgeGraphBuilder {
         }
 
         return new ParsedFile(module, Collections.unmodifiableList(nodes));
+    }
+
+    /**
+     * Normalize PEP 701 f-strings so the ANTLR Python 3 grammar can parse them.
+     *
+     * <p>Python 3.12+ allows f-strings to reuse the same quote character inside
+     * {@code {...}} expressions (e.g. {@code f"key={d["id"]}"}).  The ANTLR grammar
+     * predates PEP 701 and cannot handle this, causing lexer errors.  We work around
+     * it by converting inner quotes to the alternate style — exactly what pre-3.12
+     * Python required.</p>
+     */
+    static String normalizeFstringsForParser(String source) {
+        StringBuilder out = new StringBuilder(source.length());
+        int i = 0;
+        int len = source.length();
+        while (i < len) {
+            // Detect f-string start: [fFrR]* followed by ' or "
+            int prefixStart = i;
+            while (i < len && isFstringPrefixChar(source.charAt(i))) {
+                i++;
+            }
+            if (i > prefixStart && i < len && (source.charAt(i) == '"' || source.charAt(i) == '\'')) {
+                char quote = source.charAt(i);
+                // Check for triple-quoted
+                boolean triple = (i + 2 < len && source.charAt(i + 1) == quote && source.charAt(i + 2) == quote);
+                int contentStart = triple ? i + 3 : i + 1;
+                // Copy prefix + opening quotes
+                out.append(source, prefixStart, contentStart);
+                // Find matching end, normalizing inner quotes inside {...}
+                i = contentStart;
+                int depth = 0;
+                while (i < len) {
+                    char c = source.charAt(i);
+                    if (c == '\\' && i + 1 < len) {
+                        out.append(c).append(source.charAt(i + 1));
+                        i += 2;
+                        continue;
+                    }
+                    if (c == '{') {
+                        depth++;
+                        out.append(c);
+                        i++;
+                        continue;
+                    }
+                    if (c == '}') {
+                        depth--;
+                        out.append(c);
+                        i++;
+                        continue;
+                    }
+                    // Inside expression: flip same-type quotes to alternate
+                    if (depth > 0 && c == quote) {
+                        out.append(quote == '"' ? '\'' : '"');
+                        i++;
+                        continue;
+                    }
+                    // Check for closing quote
+                    if (depth == 0) {
+                        if (triple) {
+                            if (i + 2 < len && source.charAt(i) == quote && source.charAt(i + 1) == quote && source.charAt(i + 2) == quote) {
+                                out.append(source, i, i + 3);
+                                i += 3;
+                                break;
+                            }
+                        } else {
+                            if (c == quote) {
+                                out.append(c);
+                                i++;
+                                break;
+                            }
+                        }
+                    }
+                    out.append(c);
+                    i++;
+                }
+                continue;
+            }
+            // Not an f-string prefix — backtrack and copy the first char
+            i = prefixStart;
+            out.append(source.charAt(i));
+            i++;
+        }
+        return out.toString();
+    }
+
+    private static boolean isFstringPrefixChar(char c) {
+        return c == 'f' || c == 'F' || c == 'r' || c == 'R';
     }
 
     // ------------------------------------------------------------------

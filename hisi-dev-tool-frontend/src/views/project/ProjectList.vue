@@ -231,18 +231,23 @@
                 @click="handleRemoteConfirmMultiSelect"
                 :disabled="selectedRemoteProjects.length === 0"
               >
-                <el-icon class="check-icon">
-                  <svg data-v-20d88a06 xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-                    <path fill="currentColor" d="M77.248 415.04a64 64 0 0 1 90.496 0l226.304 226.304L846.528 188.8a64 64 0 1 1 90.56 90.496l-543.04 543.04-316.8-316.8a64 64 0 0 1 0-90.496"></path>
-                  </svg>
-                </el-icon>
-                查看图谱
+                <el-icon><Select /></el-icon>
+                选择 ({{ selectedRemoteProjects.filter((p: any) => p.cloneStatus === 'CLONED').length }})
               </el-button>
             </div>
           </div>
           <el-table :data="remoteProjects" v-loading="remoteLoading" stripe @selection-change="handleRemoteSelectionChange">
             <el-table-column type="selection" width="55" />
-            <el-table-column prop="name" label="项目名称" min-width="120" />
+            <el-table-column prop="name" label="项目名称" min-width="120">
+              <template #default="{ row }">
+                <div class="project-name-cell">
+                  <span>{{ row.name }}</span>
+                  <el-tag v-if="row.cloneStatus === 'CLONED' && appStore.selectedProjectNames.includes(row.name)" type="success" size="small">
+                    已选择
+                  </el-tag>
+                </div>
+              </template>
+            </el-table-column>
             <el-table-column prop="gitUrl" label="Git地址" min-width="200" show-overflow-tooltip />
             <el-table-column prop="branch" label="分支" width="100" />
             <el-table-column label="克隆状态" width="110" align="center">
@@ -264,6 +269,41 @@
             <el-table-column label="最后同步" width="170">
               <template #default="{ row }">
                 {{ row.lastSyncAt ? formatTimestamp(row.lastSyncAt) : '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="图谱状态" width="120" align="center">
+              <template #default="{ row }">
+                <template v-if="row.cloneStatus === 'CLONED'">
+                  <div class="status-indicator">
+                    <span
+                      class="status-dot"
+                      :class="getKnowledgeGraphStatusClass(getProjectKnowledgeGraphStatus(row.localPath))"
+                      :title="getKnowledgeGraphStatusTooltip(row.localPath)"
+                    ></span>
+                    <span class="status-text">{{ getKnowledgeGraphStatusText(getProjectKnowledgeGraphStatus(row.localPath)) }}</span>
+                  </div>
+                </template>
+                <span v-else class="text-muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="向量状态" width="120" align="center">
+              <template #default="{ row }">
+                <template v-if="row.cloneStatus === 'CLONED'">
+                  <div class="vector-status">
+                    <div class="status-indicator">
+                      <span
+                        class="status-dot"
+                        :class="getVectorStatusClass(getProjectVectorStatus(row.localPath))"
+                        :title="getVectorStatusTooltip(row.localPath)"
+                      ></span>
+                      <span class="status-text">{{ getVectorStatusText(getProjectVectorStatus(row.localPath)) }}</span>
+                    </div>
+                    <span v-if="getProjectVectorProgress(row.localPath)" class="progress-text">
+                      {{ getProjectVectorProgress(row.localPath)!.processed }}/{{ getProjectVectorProgress(row.localPath)!.total }}
+                    </span>
+                  </div>
+                </template>
+                <span v-else class="text-muted">-</span>
               </template>
             </el-table-column>
             <el-table-column label="操作" width="420">
@@ -1603,23 +1643,21 @@ function handleConfirmMultiSelect() {
   ElMessage.success(`已选择 ${names.length} 个项目: ${names.join(', ')}`)
 }
 
-/** 远端项目查看图谱：跳转到知识图谱页面 */
+/** 远端项目选择：与本地项目行为一致，写入 appStore */
 function handleRemoteConfirmMultiSelect() {
   if (selectedRemoteProjects.value.length === 0) {
     ElMessage.warning('请先在表格中勾选项目')
     return
   }
-  // 筛选已克隆的项目
   const clonedProjects = selectedRemoteProjects.value.filter((p: any) => p.cloneStatus === 'CLONED')
   if (clonedProjects.length === 0) {
     ElMessage.warning('请选择已克隆的项目')
     return
   }
-  // 转换为项目信息
   const projects = clonedProjects.map((p: any) => ({ name: p.name, path: p.localPath }))
   appStore.selectProjects(projects)
-  // 跳转到知识图谱页面
-  router.push('/knowledge-graph')
+  const names = projects.map(p => p.name)
+  ElMessage.success(`已选择 ${names.length} 个项目: ${names.join(', ')}`)
 }
 
 const selectedProjectsWithKg = computed(() =>
@@ -1751,11 +1789,47 @@ const loadRemoteProjects = async () => {
   try {
     remoteProjects.value = await listRemoteProjects() as unknown as RemoteProject[]
     remoteLoaded = true
+    // 加载已克隆远端项目的 KG/向量任务状态
+    await loadRemoteProjectTaskStatuses()
   } catch {
     ElMessage.error('加载远端项目列表失败')
   } finally {
     remoteLoading.value = false
   }
+}
+
+/** 加载已克隆远端项目的图谱/向量任务状态 */
+const loadRemoteProjectTaskStatuses = async () => {
+  const clonedPaths = remoteProjects.value
+    .filter(p => p.cloneStatus === 'CLONED' && p.localPath)
+    .map(p => normalizePath(p.localPath))
+  if (clonedPaths.length === 0) return
+
+  try {
+    const tasks = await knowledgeGraphApi.getTaskStatus(clonedPaths)
+    if (tasks && Array.isArray(tasks)) {
+      const newMap = { ...knowledgeGraphTaskStatusMap.value }
+      let hasRunning = false
+      tasks.forEach(task => {
+        const key = normalizePath(task.projectPath)
+        newMap[key] = task
+        if (task.status === 'PENDING' || task.status === 'RUNNING') hasRunning = true
+      })
+      knowledgeGraphTaskStatusMap.value = newMap
+      if (hasRunning) startKgPolling()
+    }
+
+    const newStatusMap = { ...knowledgeGraphStatusMap.value }
+    try {
+      const batchResult = await knowledgeGraphApi.getBatchStatus(clonedPaths) as unknown as Array<any>
+      batchResult.forEach((item: any) => {
+        if (item.projectPath) {
+          newStatusMap[normalizePath(item.projectPath)] = item
+        }
+      })
+      knowledgeGraphStatusMap.value = newStatusMap
+    } catch { /* non-critical */ }
+  } catch { /* non-critical */ }
 }
 
 const handleAddRemote = () => {

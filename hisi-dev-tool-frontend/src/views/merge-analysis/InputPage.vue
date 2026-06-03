@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAppStore } from '@/stores/app'
 import { projectApi } from '@/api/project'
+import { listRemoteProjects } from '@/api/remote-project'
 import { listBranches } from '@/api/merge-analysis'
 
 const router = useRouter()
@@ -12,6 +13,7 @@ const appStore = useAppStore()
 interface ProjectItem {
   name: string
   path: string
+  source?: string
 }
 
 const form = ref({
@@ -35,11 +37,31 @@ const canProceed = computed(() =>
 async function fetchProjects() {
   loadingProjects.value = true
   try {
-    const list = await projectApi.scanGitRepos() as any[]
-    projects.value = list.map((p: any) => ({
-      name: p.name || '',
-      path: p.path || ''
-    }))
+    const [localResult, remoteResult] = await Promise.allSettled([
+      projectApi.scanGitRepos() as Promise<unknown>,
+      listRemoteProjects() as Promise<unknown>
+    ])
+
+    const local = localResult.status === 'fulfilled' && Array.isArray(localResult.value)
+      ? (localResult.value as any[]).map((p: any) => ({
+          name: p.name || '',
+          path: p.path || '',
+          source: p.source || 'scanned'
+        }))
+      : []
+    const cloned = remoteResult.status === 'fulfilled' && Array.isArray(remoteResult.value)
+      ? (remoteResult.value as any[])
+          .filter((r: any) => r.cloneStatus === 'CLONED' && r.localPath)
+          .map((r: any) => ({
+            name: r.name,
+            path: r.localPath,
+            source: 'remote'
+          }))
+      : []
+
+    const localPaths = new Set(local.map(p => p.path))
+    const dedupedRemote = cloned.filter(p => !localPaths.has(p.path))
+    projects.value = [...local, ...dedupedRemote]
   } catch {
     ElMessage.error('获取项目列表失败')
   } finally {
@@ -98,7 +120,12 @@ fetchProjects()
               :key="p.path"
               :label="p.name"
               :value="p.path"
-            />
+            >
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span>{{ p.name }}</span>
+                <el-tag v-if="p.source === 'remote'" size="small" type="warning">远端</el-tag>
+              </div>
+            </el-option>
           </el-select>
         </el-form-item>
         <el-form-item label="源分支 (feature)">
