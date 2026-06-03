@@ -3,13 +3,13 @@
   "hostname": "desktop-j6asme4",
   "model": "GLM-5.1-w4a8",
   "firstSeen": "2026-05-30T01:37:45.023Z",
-  "lastUpdated": "2026-06-03T02:59:38.948Z",
+  "lastUpdated": "2026-06-03T03:10:02.508Z",
   "stats": {
     "totalOperations": 359,
     "totalFilesEdited": 157,
-    "totalAiLines": 2476,
-    "totalAiLinesDeleted": 817,
-    "totalCommits": 17
+    "totalAiLines": 2971,
+    "totalAiLinesDeleted": 932,
+    "totalCommits": 18
   },
   "pendingFiles": [
     {
@@ -156,128 +156,6 @@
       "operations": 1,
       "timestamp": "2026-06-01T02:17:56.676Z",
       "lastModified": "2026-06-01T02:17:56.676Z"
-    },
-    {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/service/KgGenerationQueue.java",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-06-02T13:15:38.986Z",
-      "lastModified": "2026-06-02T13:15:38.986Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/service/KgGenerationQueue.java",
-      "tool": "Write",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 1,
-      "timestamp": "2026-06-02T13:15:39.096Z",
-      "lastModified": "2026-06-02T13:15:39.096Z"
-    },
-    {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/service/KnowledgeGraphTaskServiceImpl.java",
-      "tool": "Edit",
-      "operations": 3,
-      "timestamp": "2026-06-02T13:19:05.856Z",
-      "lastModified": "2026-06-02T13:22:31.580Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/service/KnowledgeGraphTaskServiceImpl.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 3,
-      "timestamp": "2026-06-02T13:19:05.966Z",
-      "lastModified": "2026-06-02T13:22:31.686Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/controller/KnowledgeGraphController.java",
-      "tool": "Edit",
-      "operations": 3,
-      "timestamp": "2026-06-02T13:22:45.876Z",
-      "lastModified": "2026-06-02T13:23:10.729Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/controller/KnowledgeGraphController.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 3,
-      "timestamp": "2026-06-02T13:22:46.005Z",
-      "lastModified": "2026-06-02T13:23:10.823Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "hisi-dev-tool-frontend/src/api/knowledgeGraph.ts",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-02T13:23:28.233Z",
-      "lastModified": "2026-06-02T13:23:28.233Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool-frontend/src/api/knowledgeGraph.ts",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 1,
-      "timestamp": "2026-06-02T13:23:28.334Z",
-      "lastModified": "2026-06-02T13:23:28.334Z"
-    },
-    {
-      "path": "hisi-dev-tool-frontend/src/views/project/ProjectList.vue",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-06-02T13:23:48.302Z",
-      "lastModified": "2026-06-02T13:24:09.735Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool-frontend/src/views/project/ProjectList.vue",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 2,
-      "timestamp": "2026-06-02T13:23:48.434Z",
-      "lastModified": "2026-06-02T13:24:09.830Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/service/RemoteProjectService.java",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-06-03T00:37:23.753Z",
-      "lastModified": "2026-06-03T00:38:41.581Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/service/RemoteProjectService.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 2,
-      "timestamp": "2026-06-03T00:37:23.845Z",
-      "lastModified": "2026-06-03T00:38:41.665Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/service/ProjectServiceImpl.java",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-06-03T02:51:56.535Z",
-      "lastModified": "2026-06-03T02:59:38.885Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/service/ProjectServiceImpl.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 2,
-      "timestamp": "2026-06-03T02:52:02.265Z",
-      "lastModified": "2026-06-03T02:59:38.948Z",
-      "lastTool": "Edit"
     }
   ],
   "repoPath": "D:/hisi-code-analyser/codeKnowledge1"
