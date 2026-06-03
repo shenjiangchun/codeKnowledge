@@ -82,6 +82,15 @@
                 <el-icon><Select /></el-icon>
                 确认选择 ({{ selectedProjects.length }})
               </el-button>
+              <el-button
+                type="success"
+                @click="handleBatchGenerateKG"
+                :disabled="selectedProjects.length === 0"
+                :loading="batchGeneratingKG"
+              >
+                <el-icon><DataAnalysis /></el-icon>
+                批量生成图谱 ({{ selectedProjects.length }})
+              </el-button>
             </div>
           </div>
           <el-table :data="projects" v-loading="loading" stripe @selection-change="handleSelectionChange">
@@ -1619,6 +1628,36 @@ const selectedProjectsWithKg = computed(() =>
     return status && (status.status === 'generated' || status.status === 'completed')
   })
 )
+
+const batchGeneratingKG = ref(false)
+
+async function handleBatchGenerateKG() {
+  if (selectedProjects.value.length === 0) {
+    ElMessage.warning('请先在表格中勾选项目')
+    return
+  }
+  const paths = selectedProjects.value.map((p: any) => normalizePath(p.path))
+  batchGeneratingKG.value = true
+  try {
+    const tasks = await knowledgeGraphApi.startGenerateTaskBatch(paths, kgExcludePaths.value.length > 0 ? kgExcludePaths.value : undefined)
+    if (tasks && tasks.length > 0) {
+      // 更新任务状态 map
+      for (const task of tasks) {
+        const normalizedPath = normalizePath(task.projectPath)
+        knowledgeGraphTaskStatusMap.value = {
+          ...knowledgeGraphTaskStatusMap.value,
+          [normalizedPath]: task
+        }
+      }
+      ElMessage.success(`已入队 ${tasks.length} 个项目，排队生成中...`)
+      startKgPolling()
+    }
+  } catch (error: any) {
+    ElMessage.error(`批量生成入队失败: ${error.message || error}`)
+  } finally {
+    batchGeneratingKG.value = false
+  }
+}
 
 async function handleCrossServiceBuild() {
   crossServiceBuilding.value = true

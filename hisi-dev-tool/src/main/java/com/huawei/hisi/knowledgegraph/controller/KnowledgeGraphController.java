@@ -16,6 +16,7 @@ import com.huawei.hisi.knowledgegraph.scanner.MyBatisXmlScanner;
 import com.huawei.hisi.knowledgegraph.service.GitStatusService;
 import com.huawei.hisi.knowledgegraph.service.IncrementalUpdateService;
 import com.huawei.hisi.knowledgegraph.service.DtoSchemaResolver;
+import com.huawei.hisi.knowledgegraph.service.KgGenerationQueue;
 import com.huawei.hisi.knowledgegraph.service.KnowledgeGraphBuilder;
 import com.huawei.hisi.model.ApiResponse;
 import com.huawei.hisi.model.KnowledgeGraphTask;
@@ -54,6 +55,7 @@ public class KnowledgeGraphController {
 
     private final KnowledgeGraphBuilder knowledgeGraphBuilder;
     private final KnowledgeGraphTaskService taskService;
+    private final KgGenerationQueue kgGenerationQueue;
 
     // Neo4j Driver (for raw Cypher queries)
     private final Driver neo4jDriver;
@@ -153,6 +155,53 @@ public class KnowledgeGraphController {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(task);
+    }
+
+    /**
+     * 批量启动知识图谱生成任务（排队执行）
+     * POST /api/knowledge-graph/tasks/generate-batch
+     * 多个项目依次入队，完整完成一个（图谱+描述+向量）后再做下一个。
+     */
+    @PostMapping("/tasks/generate-batch")
+    public ResponseEntity<?> startTaskBatch(
+            @RequestBody Map<String, Object> request) {
+        @SuppressWarnings("unchecked")
+        List<String> projectPaths = (List<String>) request.get("projectPaths");
+        @SuppressWarnings("unchecked")
+        List<String> excludePaths = (List<String>) request.get("excludePaths");
+
+        if (projectPaths == null || projectPaths.isEmpty()) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "INVALID_REQUEST");
+            error.put("message", "projectPaths 不能为空");
+            return ResponseEntity.badRequest().body(error);
+        }
+
+        // 规范化路径
+        projectPaths = projectPaths.stream()
+                .map(this::normalizePath)
+                .filter(p -> !p.isEmpty())
+                .distinct()
+                .collect(Collectors.toList());
+
+        try {
+            List<KnowledgeGraphTask> tasks = kgGenerationQueue.enqueueBatch(projectPaths, excludePaths);
+            return ResponseEntity.ok(tasks);
+        } catch (Exception e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "BATCH_ENQUEUE_FAILED");
+            error.put("message", e.getMessage());
+            return ResponseEntity.internalServerError().body(error);
+        }
+    }
+
+    /**
+     * 获取生成队列状态
+     * GET /api/knowledge-graph/tasks/queue
+     */
+    @GetMapping("/tasks/queue")
+    public ResponseEntity<Map<String, Object>> getQueueStatus() {
+        return ResponseEntity.ok(kgGenerationQueue.getQueueStatus());
     }
 
     // ============================================================

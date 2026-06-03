@@ -1,6 +1,7 @@
 package com.huawei.hisi.service;
 
 import com.huawei.hisi.model.GitRepositoryInfo;
+import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.PullResult;
 import org.eclipse.jgit.api.errors.GitAPIException;
@@ -18,23 +19,15 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Logger;
 import org.slf4j.LoggerFactory;
-
-import javax.sql.DataSource;
 
 import static com.huawei.hisi.config.DataSourceConfig.PROJECT_DIR;
 
 /**
  * 项目管理服务实现
- * M1.3 - 实现项目克隆和分析管理功能
+ * 项目列表从 Neo4j 查询（旧 method_call_graph5 SQLite 表已废弃）
  */
 @Service
 public class ProjectServiceImpl implements ProjectService {
@@ -44,46 +37,16 @@ public class ProjectServiceImpl implements ProjectService {
     @Autowired
     private AppConfigService appConfigService;
 
+    @Autowired
+    private Neo4jMethodNodeRepository neo4jMethodNodeRepository;
+
     @Value("${app.codeHubUser:}")
     private String codeHubUser;
 
     @Value("${app.codeHubPassword:}")
     private String codeHubPassword;
 
-    private final DataSource dataSource;
     private static final Map<String, ProjectStatus> ANALYSIS_STATUS = new ConcurrentHashMap<>();
-
-    // 带 schema 的表名
-    private String fullTableName;
-
-    @Autowired
-    public ProjectServiceImpl(DataSource dataSource) {
-        this.dataSource = dataSource;
-        initTableName();
-    }
-
-    /**
-     * 初始化表名
-     */
-    private void initTableName() {
-        try (Connection conn = dataSource.getConnection()) {
-            // SQLite: check if table exists via sqlite_master
-            try (Statement stmt = conn.createStatement();
-                 ResultSet rs = stmt.executeQuery(
-                     "SELECT name FROM sqlite_master WHERE type='table' AND name='method_call_graph5'")) {
-                if (rs.next()) {
-                    this.fullTableName = "method_call_graph5";
-                    LOG.info("ProjectServiceImpl - Using table name: {}", fullTableName);
-                } else {
-                    this.fullTableName = "method_call_graph5";
-                    LOG.warn("ProjectServiceImpl - Table method_call_graph5 not found, using: {}", fullTableName);
-                }
-            }
-        } catch (SQLException e) {
-            LOG.error("Failed to initialize table name", e);
-            this.fullTableName = "method_call_graph5";
-        }
-    }
 
     /**
      * 项目状态枚举
@@ -94,28 +57,12 @@ public class ProjectServiceImpl implements ProjectService {
 
     @Override
     public List<String> listProjects() {
-        Set<String> projectSet = new LinkedHashSet<>();
-        // DB-agnostic: fetch raw packages and extract top-3 segments in Java
-        String sql = "SELECT DISTINCT package FROM " + fullTableName + " WHERE package IS NOT NULL";
-
-        try (Connection conn = dataSource.getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-
-            while (rs.next()) {
-                String pkg = rs.getString("package");
-                if (pkg != null && !pkg.isEmpty()) {
-                    String[] parts = pkg.split("\\.");
-                    if (parts.length >= 3) {
-                        projectSet.add(parts[0] + "." + parts[1] + "." + parts[2]);
-                    }
-                }
-            }
-        } catch (SQLException e) {
-            LOG.error("Failed to list projects", e);
+        try {
+            return neo4jMethodNodeRepository.findDistinctProjectPaths();
+        } catch (Exception e) {
+            LOG.error("Failed to list projects from Neo4j", e);
+            return Collections.emptyList();
         }
-
-        return new ArrayList<>(projectSet);
     }
 
     @Override
@@ -187,39 +134,25 @@ public class ProjectServiceImpl implements ProjectService {
 
     private String getAnalysisStatus(String project) {
         ProjectStatus status = ANALYSIS_STATUS.get(project);
-        if (status == null) {
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement pstmt = conn.prepareStatement(
-                     "SELECT COUNT(*) FROM " + fullTableName + " WHERE package LIKE ?")) {
-                pstmt.setString(1, project + "%");
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    if (rs.next() && rs.getInt(1) > 0) {
-                        return "COMPLETED";
-                    }
-                }
-            } catch (SQLException e) {
-                LOG.warn("Failed to check analysis status", e);
-            }
+        if (status != null) {
+            return status.name();
+        }
+        try {
+            long count = neo4jMethodNodeRepository.countByProjectPath(project);
+            return count > 0 ? "COMPLETED" : "UNKNOWN";
+        } catch (Exception e) {
+            LOG.warn("Failed to check analysis status for: {}", project, e);
             return "UNKNOWN";
         }
-        return status.name();
     }
 
     private int getUriCount(String project) {
-        int count = 0;
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(
-                 "SELECT COUNT(DISTINCT root_uri) FROM " + fullTableName + " WHERE package LIKE ?")) {
-            pstmt.setString(1, project + "%");
-            try (ResultSet rs = pstmt.executeQuery()) {
-                if (rs.next()) {
-                    count = rs.getInt(1);
-                }
-            }
-        } catch (SQLException e) {
+        try {
+            return (int) neo4jMethodNodeRepository.countByProjectPath(project);
+        } catch (Exception e) {
             LOG.warn("Failed to get URI count for project: {}", project, e);
+            return 0;
         }
-        return count;
     }
 
     private String extractProjectName(String repository) {

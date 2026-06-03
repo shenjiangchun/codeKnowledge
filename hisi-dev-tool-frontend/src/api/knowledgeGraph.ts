@@ -391,6 +391,19 @@ export const knowledgeGraphApi = {
     return request.post<KnowledgeGraphTask>('/knowledge-graph/tasks/generate', null, { params })
   },
 
+  /** 批量入队：多项目排队生成，完整完成一个再做下一个 */
+  startGenerateTaskBatch(projectPaths: string[], excludePaths?: string[]) {
+    return request.post<KnowledgeGraphTask[]>('/knowledge-graph/tasks/generate-batch', {
+      projectPaths,
+      excludePaths: excludePaths || undefined
+    })
+  },
+
+  /** 获取生成队列状态（当前执行中 + 排队列表） */
+  getQueueStatus() {
+    return request.get<{ currentProject: string | null; queueSize: number; queue: Array<{ projectPath: string; taskId: string }> }>('/knowledge-graph/tasks/queue')
+  },
+
   getTaskStatus(projectPaths?: string[]) {
     const params = projectPaths ? { projectPaths: projectPaths.join(',') } : {}
     return request.get<KnowledgeGraphTask[]>('/knowledge-graph/tasks/status', { params })

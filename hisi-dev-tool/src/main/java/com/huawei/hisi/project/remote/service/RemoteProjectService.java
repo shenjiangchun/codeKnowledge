@@ -94,6 +94,18 @@ public class RemoteProjectService {
 
         Path targetDir = resolveCloneDir(project.getLocalPath());
         try {
+            // 如果目标目录已存在且有内容，先清理（可能是上次失败的残留）
+            if (Files.exists(targetDir) && Files.list(targetDir).findAny().isPresent()) {
+                log.warn("[Clone] Target directory not empty, cleaning: {}", targetDir);
+                try (Stream<Path> walk = Files.walk(targetDir)) {
+                    walk.sorted(Comparator.reverseOrder())
+                        .forEach(p -> {
+                            try { Files.delete(p); } catch (IOException ex) {
+                                log.warn("Failed to delete {}: {}", p, ex.getMessage());
+                            }
+                        });
+                }
+            }
             Files.createDirectories(targetDir);
             String password = gitCredentialService.decrypt(project.getEncryptedPassword());
             UsernamePasswordCredentialsProvider credentials =
@@ -153,7 +165,9 @@ public class RemoteProjectService {
     }
 
     private String sanitizeName(String name) {
-        return name.replaceAll("[^a-zA-Z0-9._-]", "-").toLowerCase();
+        String sanitized = name.replaceAll("[^a-zA-Z0-9._-]", "-").replaceAll("-+", "-").replaceAll("^-|-$", "");
+        // 中文/特殊字符名全部被替换后可能为空，回退到时间戳
+        return sanitized.isBlank() ? "project-" + System.currentTimeMillis() : sanitized.toLowerCase();
     }
 
     private String extractRootCause(Throwable t) {

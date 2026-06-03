@@ -4,6 +4,7 @@ import com.huawei.hisi.knowledgegraph.model.GenerationTask;
 import com.huawei.hisi.knowledgegraph.model.GitStatus;
 import com.huawei.hisi.knowledgegraph.repository.GenerationTaskRepository;
 import com.huawei.hisi.knowledgegraph.service.GitStatusService;
+import com.huawei.hisi.knowledgegraph.service.KgGenerationQueue;
 import com.huawei.hisi.knowledgegraph.service.KnowledgeGraphBuilder;
 import com.huawei.hisi.model.KnowledgeGraphTask;
 import org.slf4j.Logger;
@@ -40,6 +41,9 @@ public class KnowledgeGraphTaskServiceImpl implements KnowledgeGraphTaskService 
     @Autowired
     private GitStatusService gitStatusService;
 
+    @Autowired
+    private KgGenerationQueue kgGenerationQueue;
+
     @Lazy
     @Autowired
     private KnowledgeGraphTaskService self;
@@ -51,7 +55,7 @@ public class KnowledgeGraphTaskServiceImpl implements KnowledgeGraphTaskService 
 
     @Override
     public KnowledgeGraphTask startTask(String rawProjectPath, List<String> excludePaths) {
-        // 入口规范化：避免同一份代码以 \ 和 / 两种形态创建出两个独立任务+两套 KG 节点。
+        // Git 校验仍在此处做，队列只管执行
         final String projectPath = com.huawei.hisi.knowledgegraph.util.KnowledgeGraphCommonUtils.normalizePath(rawProjectPath);
         File projectDir = new File(projectPath);
         if (!projectDir.exists() || !projectDir.isDirectory()) {
@@ -73,30 +77,8 @@ public class KnowledgeGraphTaskServiceImpl implements KnowledgeGraphTaskService 
             LOG.warn("项目路径不是有效的 Git 仓库: {}", projectPath);
         }
 
-        // Check for existing running/pending tasks
-        taskRepository.findLatestByProjectPathAndType(projectPath, TASK_TYPE).ifPresent(existing -> {
-            String status = existing.getStatus();
-            if ("PENDING".equals(status) || "RUNNING".equals(status)) {
-                LOG.warn("Project path {} has a stale task: id={}, status={}, overriding with new task",
-                    projectPath, existing.getId(), status);
-                taskRepository.updateFailed(existing.getId(),
-                    "被新任务覆盖（可能因服务中断导致状态未更新）");
-            }
-        });
-
-        // Create task
-        GenerationTask genTask = GenerationTask.builder()
-            .taskType(TASK_TYPE)
-            .projectPath(projectPath)
-            .status("PENDING")
-            .build();
-        genTask = taskRepository.insert(genTask);
-
-        KnowledgeGraphTask task = toKnowledgeGraphTask(genTask);
-        LOG.info("Created knowledge graph task: id={}, projectPath={}", task.getId(), projectPath);
-
-        self.executeTaskAsync(task.getId(), projectPath, excludePaths);
-        return task;
+        // 入队（队列内部处理 PENDING 任务创建和重复检查）
+        return kgGenerationQueue.enqueue(projectPath, excludePaths);
     }
 
     @Override
