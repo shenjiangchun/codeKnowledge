@@ -1,11 +1,14 @@
 package com.huawei.hisi.config;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.util.Arrays;
 
@@ -14,13 +17,29 @@ import java.util.Arrays;
  * M1.4 - 支持前端跨域访问
  */
 @Configuration
-public class CorsConfig {
+@RequiredArgsConstructor
+public class CorsConfig implements WebMvcConfigurer {
+
+    private final LocalhostOnlyInterceptor localhostOnlyInterceptor;
 
     // 默认允许所有来源（内网环境）
     private static final String DEFAULT_ALLOWED_ORIGINS = "*";
 
     @Value("${cors.allowed-origins:" + DEFAULT_ALLOWED_ORIGINS + "}")
     private String allowedOriginsConfig;
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(localhostOnlyInterceptor)
+                .addPathPatterns(
+                        "/api/knowledge-graph/tasks/generate",
+                        "/api/knowledge-graph/tasks/generate-batch",
+                        "/api/knowledge-graph/generate",
+                        "/api/knowledge-graph/incremental",
+                        "/api/vector-generation/start",
+                        "/api/vector-generation/regenerate"
+                );
+    }
 
     @Bean
     public CorsFilter corsFilter() {

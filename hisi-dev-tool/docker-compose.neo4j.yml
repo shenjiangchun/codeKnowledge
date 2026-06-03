@@ -34,7 +34,7 @@ services:
       - NEO4J_server_memory_transaction_total__max=256M
 
       # 数据库配置
-      - NEO4J_dbms_default__database=neo4j
+      - NEO4J_dbms_default__database=code
       - NEO4J_dbms_tx__log_rotation_retention__policy=100M size
 
       # APOC 配置

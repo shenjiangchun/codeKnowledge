@@ -134,7 +134,23 @@ function formatClarifyOutput(output: Record<string, unknown>): string {
   if (intent) lines.push(`## 需求意图\n${intent}`)
   const paths = output['project_paths']
   if (Array.isArray(paths) && paths.length > 0) {
-    lines.push(`## 项目路径\n${paths.map((p) => `- ${p}`).join('\n')}`)
+    const projectPaths: string[] = []
+    const filePaths: string[] = []
+    for (const p of paths) {
+      if (typeof p !== 'string') continue
+      // Distinguish: project dirs (no .java/.py etc, no src/main) vs file paths
+      if (/\.java\b|\.py\b|\.xml\b|src\/main|src\/test/.test(p)) {
+        filePaths.push(p)
+      } else {
+        projectPaths.push(p)
+      }
+    }
+    if (projectPaths.length > 0) {
+      lines.push(`## 项目路径\n${projectPaths.map((p) => `- ${p}`).join('\n')}`)
+    }
+    if (filePaths.length > 0) {
+      lines.push(`## 影响范围\n${filePaths.map((p) => `- ${p}`).join('\n')}`)
+    }
   }
   const criteria = output['acceptance_criteria']
   if (Array.isArray(criteria) && criteria.length > 0) {
@@ -457,6 +473,14 @@ watch(
       switch (nodeKey) {
         case 'clarify':
           if (md) draftMd.value = md
+          // CLARIFY_REQ/CLARIFY_REQUIRED may carry partialOutput from the LLM
+          // so the user sees the draft even when clarification is needed
+          if (evt.type === 'CLARIFY_REQ' || evt.type === 'CLARIFY_REQUIRED') {
+            const partial = asRecord(evt.payload['partialOutput'])
+            if (partial && Object.keys(partial).length > 0) {
+              draftMd.value = formatClarifyOutput(partial)
+            }
+          }
           break
         case 'impact': {
           if (md) impactMd.value = md
@@ -571,11 +595,13 @@ function onDagClick(key: DagNodeKey): void {
   activeNode.value = key
 }
 
-/** Whether the tech_plan node can be triggered (verify done, tech_plan still pending). */
+/** Whether the tech_plan node can be triggered (verify has output, tech_plan has no output). */
 const canTriggerTechPlan = computed(() => {
   const verifyNode = dagNodes.value.find(n => n.key === 'verify')
-  const techPlanNode = dagNodes.value.find(n => n.key === 'tech_plan')
-  return verifyNode?.status === 'done' && techPlanNode?.status === 'pending'
+  // tech_plan is manually triggered, not part of the auto DAG pipeline.
+  // After RUN_COMPLETED, its DAG status becomes 'done' even without execution,
+  // so we check for actual output data instead of DAG status.
+  return verifyNode?.status === 'done' && !techPlanOutputData.value
 })
 
 const techPlanTriggering = ref(false)

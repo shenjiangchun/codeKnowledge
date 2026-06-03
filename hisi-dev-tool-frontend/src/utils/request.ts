@@ -90,6 +90,18 @@ request.interceptors.response.use(
         return Promise.reject(error)
       }
 
+      // 处理 403 — 非本地访问禁止写入
+      if (status === 403) {
+        const forbiddenMsg = apiResponse?.message || '拒绝访问：仅限本地操作'
+        ElMessage({
+          type: 'error',
+          message: forbiddenMsg,
+          duration: 5000,
+          showClose: true
+        })
+        return Promise.reject(error)
+      }
+
       // 处理其他 HTTP 错误
       const errorMessage = apiResponse?.message || getHttpErrorMessage(status)
       ElMessage.error(errorMessage)

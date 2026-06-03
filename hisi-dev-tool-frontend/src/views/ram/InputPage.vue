@@ -25,11 +25,23 @@ const router = useRouter()
 const appStore = useAppStore()
 
 const rawInput = ref<string>('')
-const projectPath = ref<string>('')
+const projectPaths = ref<string[]>([])
+const manualInput = ref<string>('')
 const projects = ref<GitRepositoryInfo[]>([])
 const loadingProjects = ref<boolean>(false)
 const manualMode = ref<boolean>(false)
 const submitting = ref<boolean>(false)
+
+function addManualPath(): void {
+  const path = manualInput.value.trim()
+  if (!path) return
+  if (projectPaths.value.includes(path)) {
+    ElMessage.warning('该路径已添加')
+    return
+  }
+  projectPaths.value = [...projectPaths.value, path]
+  manualInput.value = ''
+}
 
 const projectOptions = computed(() =>
   projects.value.map((p) => ({
@@ -41,10 +53,11 @@ const projectOptions = computed(() =>
   }))
 )
 
-const selectedProjectLabel = computed(() => {
-  if (!projectPath.value) return ''
-  const match = projects.value.find((p) => p.path === projectPath.value)
-  return match ? match.name : projectPath.value
+const selectedProjectLabels = computed(() => {
+  return projectPaths.value.map(path => {
+    const match = projects.value.find((p) => p.path === path)
+    return match ? match.name : path
+  })
 })
 
 async function loadProjects(): Promise<void> {
@@ -83,9 +96,9 @@ async function loadProjects(): Promise<void> {
   }
 
   // Pre-populate from app store if available.
-  const fromStore = appStore.selectedProjects?.[0]?.path
-  if (fromStore && !projectPath.value) {
-    projectPath.value = fromStore
+  const fromStore = appStore.selectedProjects?.map((p: any) => p.path).filter(Boolean) as string[]
+  if (fromStore && fromStore.length > 0 && projectPaths.value.length === 0) {
+    projectPaths.value = fromStore
   }
 }
 
@@ -96,15 +109,19 @@ async function onSubmit(): Promise<void> {
     ElMessage.warning('请输入需求描述')
     return
   }
-  if (!projectPath.value.trim()) {
-    ElMessage.warning('请选择项目')
+  const paths = manualMode.value
+    ? projectPaths.value // manual mode: paths are typed directly
+    : projectPaths.value
+  if (paths.length === 0) {
+    ElMessage.warning('请选择至少一个项目')
     return
   }
   submitting.value = true
   try {
-    // Only POST to create the session — do NOT open an SSE stream here.
-    // DraftPage.vue will open the single SSE stream via rejoin().
-    const resp = await startRamSession({ rawInput: rawInput.value, projectPath: projectPath.value })
+    const resp = await startRamSession({
+      rawInput: rawInput.value,
+      projectPaths: paths
+    })
     await router.push({ name: 'RamDraft', params: { sid: resp.sessionId } })
   } catch (error) {
     const msg = error instanceof Error ? error.message : '启动失败'
@@ -129,11 +146,14 @@ async function onSubmit(): Promise<void> {
           <div class="project-row">
             <el-select
               v-if="!manualMode"
-              v-model="projectPath"
+              v-model="projectPaths"
+              multiple
               filterable
               clearable
+              collapse-tags
+              collapse-tags-tooltip
               :loading="loadingProjects"
-              placeholder="选择本机已扫描到的 Git 仓库"
+              placeholder="选择一个或多个 Git 仓库"
               style="flex: 1"
               data-test="ram-project-select"
             >
@@ -163,12 +183,17 @@ async function onSubmit(): Promise<void> {
             </el-select>
             <el-input
               v-else
-              v-model="projectPath"
-              placeholder="项目绝对路径，例如 C:/projects/foo"
+              v-model="manualInput"
+              placeholder="输入项目绝对路径，回车添加（可添加多个）"
               clearable
               style="flex: 1"
               data-test="ram-project-manual"
-            />
+              @keyup.enter="addManualPath"
+            >
+              <template #append>
+                <el-button @click="addManualPath">添加</el-button>
+              </template>
+            </el-input>
             <el-button
               :icon="loadingProjects ? undefined : undefined"
               :loading="loadingProjects"
@@ -181,10 +206,18 @@ async function onSubmit(): Promise<void> {
               {{ manualMode ? '从列表选择' : '手动输入路径' }}
             </el-button>
           </div>
-          <div v-if="projectPath && !manualMode" class="selected-project-hint">
+          <div v-if="projectPaths.length > 0 && !manualMode" class="selected-project-hint">
             <el-icon :size="14"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="14" height="14"><path fill="currentColor" d="M512 64a448 448 0 1 1 0 896 448 448 0 0 1 0-896m-55.808 536.384-99.52-99.584a38.4 38.4 0 1 0-54.336 54.336l126.72 126.72a38.272 38.272 0 0 0 54.336 0l262.4-262.464a38.4 38.4 0 1 0-54.336-54.336z"/></svg></el-icon>
-            <span class="selected-name">{{ selectedProjectLabel }}</span>
-            <span class="selected-path">{{ projectPath }}</span>
+            <span>已选 {{ projectPaths.length }} 个项目</span>
+          </div>
+          <div v-if="manualMode && projectPaths.length > 0" class="manual-paths-list">
+            <el-tag
+              v-for="(p, idx) in projectPaths"
+              :key="idx"
+              closable
+              size="small"
+              @close="projectPaths.splice(idx, 1)"
+            >{{ p }}</el-tag>
           </div>
           <div v-if="!manualMode && projects.length === 0 && !loadingProjects" class="empty-hint">
             未扫描到 Git 仓库，可点击「手动输入路径」直接填写绝对路径，或在「项目管理」中克隆/添加项目。
@@ -274,5 +307,11 @@ async function onSubmit(): Promise<void> {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.manual-paths-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
 }
 </style>

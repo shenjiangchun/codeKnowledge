@@ -119,12 +119,8 @@ public class AffectedEntriesAnnotator {
             return new AnnotatedEntries(List.of(), List.of());
         }
         if (!claude.isAvailable()) {
-            log.info("[AffectedEntriesAnnotator] Claude unavailable -- all entries as INDIRECT");
-            List<AnnotatedEntry> allIndirect = upstream.stream()
-                    .map(e -> AnnotatedEntry.shallow(e.nodeId(), e.className(), e.methodName(),
-                            e.type(), "INDIRECT", "AI不可用，默认间接"))
-                    .toList();
-            return new AnnotatedEntries(List.of(), allIndirect);
+            log.info("[AffectedEntriesAnnotator] Claude unavailable -- heuristic fallback");
+            return heuristicFallback(upstream, targetNodeId);
         }
 
         try {
@@ -153,14 +149,43 @@ public class AffectedEntriesAnnotator {
 
             return parseAnnotationResult(result, upstream);
         } catch (Exception ex) {
-            log.warn("[AffectedEntriesAnnotator] AI annotation failed -- all as INDIRECT: {}",
+            log.warn("[AffectedEntriesAnnotator] AI annotation failed -- heuristic fallback: {}",
                     ex.getMessage());
-            List<AnnotatedEntry> allIndirect = upstream.stream()
-                    .map(e -> AnnotatedEntry.shallow(e.nodeId(), e.className(), e.methodName(),
-                            e.type(), "INDIRECT", "AI标注失败"))
-                    .toList();
-            return new AnnotatedEntries(List.of(), allIndirect);
+            return heuristicFallback(upstream, targetNodeId);
         }
+    }
+
+    /**
+     * Heuristic fallback when AI annotation is unavailable or fails.
+     * Classifies entries as DIRECT if their short class#method appears in
+     * the target summary string, otherwise INDIRECT.
+     */
+    private AnnotatedEntries heuristicFallback(List<Entry> upstream, String targetSummary) {
+        List<AnnotatedEntry> direct = new ArrayList<>();
+        List<AnnotatedEntry> indirect = new ArrayList<>();
+        for (Entry e : upstream) {
+            String shortRef = shortClassMethod(e.className(), e.methodName());
+            boolean matches = shortRef != null && targetSummary != null
+                    && targetSummary.contains(shortRef);
+            if (matches) {
+                direct.add(AnnotatedEntry.shallow(e.nodeId(), e.className(), e.methodName(),
+                        e.type(), "DIRECT", "与修改目标直接相关（启发式标注）"));
+            } else {
+                indirect.add(AnnotatedEntry.shallow(e.nodeId(), e.className(), e.methodName(),
+                        e.type(), "INDIRECT", "调用链间接受影响（启发式标注）"));
+            }
+        }
+        return new AnnotatedEntries(direct, indirect);
+    }
+
+    private String shortClassMethod(String className, String methodName) {
+        if (className == null && methodName == null) return null;
+        String shortClass = className;
+        if (className != null && className.contains(".")) {
+            shortClass = className.substring(className.lastIndexOf('.') + 1);
+        }
+        if (shortClass != null && methodName != null) return shortClass + "#" + methodName;
+        return methodName != null ? methodName : shortClass;
     }
 
     /**

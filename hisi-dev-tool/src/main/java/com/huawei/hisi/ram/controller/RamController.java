@@ -177,7 +177,8 @@ public class RamController {
     // POST /sessions
     // ---------------------------------------------------------------------
 
-    public record StartSessionRequest(String rawInput, String projectPath, String userId) {}
+    public record StartSessionRequest(String rawInput, String projectPath,
+                                       java.util.List<String> projectPaths, String userId) {}
 
     public record StartSessionResponse(String sessionId) {}
 
@@ -206,8 +207,21 @@ public class RamController {
         args.put("user_id", userId);
         args.put("mode", "interactive");
         args.put("session_id", backendId);
-        if (request.projectPath() != null) {
-            args.put("project_path", request.projectPath());
+        // Build project_paths from both single and multi-select fields
+        java.util.List<String> allPaths = new java.util.ArrayList<>();
+        if (request.projectPath() != null && !request.projectPath().isBlank()) {
+            allPaths.add(request.projectPath());
+        }
+        if (request.projectPaths() != null) {
+            for (String p : request.projectPaths()) {
+                if (p != null && !p.isBlank() && !allPaths.contains(p)) {
+                    allPaths.add(p);
+                }
+            }
+        }
+        if (!allPaths.isEmpty()) {
+            args.put("project_path", allPaths.get(0)); // backward compat
+            args.put("project_paths", allPaths);
         }
 
         CompletableFuture.runAsync(() -> dispatchAnalyze(handle, args), asyncExecutor);

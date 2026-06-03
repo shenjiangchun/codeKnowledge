@@ -213,8 +213,8 @@ export function useRamSession(): UseRamSessionReturn {
     dbg('EventSource created', { sid, url, readyState: es.readyState })
   }
 
-  const start = async (rawInput: string, projectPath: string): Promise<string> => {
-    dbg('start() called', { rawInput, projectPath })
+  const start = async (rawInput: string, projectPath: string | undefined, projectPaths?: string[]): Promise<string> => {
+    dbg('start() called', { rawInput, projectPath, projectPaths })
     events.value = []
     clarifyQuestions.value = null
     hitlSchema.value = null
@@ -223,7 +223,7 @@ export function useRamSession(): UseRamSessionReturn {
     lastSeq.value = 0
     status.value = 'running'
     try {
-      const resp = await startRamSession({ rawInput, projectPath })
+      const resp = await startRamSession({ rawInput, projectPath, projectPaths })
       dbg('start() POST /sessions OK', resp)
       sessionId.value = resp.sessionId
       openStream(resp.sessionId)

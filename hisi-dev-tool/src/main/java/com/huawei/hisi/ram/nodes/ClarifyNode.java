@@ -89,7 +89,7 @@ public class ClarifyNode implements DagNode {
             }
             if (!questions.isEmpty()) {
                 log.info("[RAM][ClarifyNode] LLM says needs_clarification=true questions={}", questions);
-                throw new ClarifyRequiredException(questions);
+                throw new ClarifyRequiredException(questions, extracted);
             }
             log.warn("[RAM][ClarifyNode] needs_clarification=true but no valid questions — proceeding to schema validation");
         }

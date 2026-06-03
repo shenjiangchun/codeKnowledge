@@ -15,7 +15,8 @@ import type {
 
 export interface StartSessionPayload {
   rawInput: string
-  projectPath: string
+  projectPath?: string
+  projectPaths?: string[]
   userId?: string
 }
 
