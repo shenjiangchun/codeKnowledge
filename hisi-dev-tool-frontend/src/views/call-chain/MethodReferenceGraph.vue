@@ -63,41 +63,26 @@
         </div>
       </div>
 
-      <!-- 向上查询：展示调用链 -->
-      <div v-if="analysisDirection === 'upstream' && upstreamGraphNodes.length > 0" class="upstream-section">
+      <!-- 向上查询：展示根入口列表 -->
+      <div v-if="analysisDirection === 'upstream' && upstreamEntries.length > 0" class="upstream-section">
         <div class="section-header">
           <el-icon><Link /></el-icon>
-          <span>上游调用链 ({{ upstreamGraphNodes.length }} 节点)</span>
-          <el-radio-group v-model="upstreamViewMode" size="small" style="margin-left: auto;">
-            <el-radio-button value="flow">流程图</el-radio-button>
-            <el-radio-button value="table">表格</el-radio-button>
-          </el-radio-group>
+          <span>根入口 ({{ upstreamEntries.length }})</span>
         </div>
 
-        <div v-if="upstreamViewMode === 'flow'" class="upstream-flow-container">
-          <FlowDag
-            :nodes="upstreamGraphNodes"
-            :edges="upstreamGraphEdges"
-            direction="BT"
-            @node-click="handleUpstreamNodeClick"
-          />
-        </div>
-
-        <el-table v-else :data="upstreamCallers" stripe style="width: 100%">
-          <el-table-column prop="display" label="调用者方法" min-width="400" />
-          <el-table-column prop="callType" label="调用类型" width="120" />
-          <el-table-column prop="callLine" label="行号" width="80" />
-          <el-table-column label="操作" width="160">
+        <el-table :data="upstreamEntries" stripe style="width: 100%">
+          <el-table-column prop="entryType" label="入口类型" width="180">
             <template #default="{ row }">
-              <el-button size="small" @click="drillUpFromCaller(row)">继续向上</el-button>
+              <el-tag size="small">{{ row.entryType }}</el-tag>
             </template>
           </el-table-column>
+          <el-table-column prop="entryKey" label="入口标识" min-width="400" show-overflow-tooltip />
         </el-table>
       </div>
 
       <!-- 向上查询：无结果提示 -->
-      <el-empty v-if="analysisDirection === 'upstream' && upstreamGraphNodes.length === 0 && !loading && hasQueried"
-        description="未找到调用者" />
+      <el-empty v-if="analysisDirection === 'upstream' && upstreamEntries.length === 0 && !loading && hasQueried"
+        description="未找到根入口" />
 
       <!-- 多入口合并流程图 -->
       <div v-if="analysisDirection === 'downstream' && mergedGraph" class="merged-graph-section">
@@ -143,7 +128,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ChatDotRound, Link } from '@element-plus/icons-vue'
-import { knowledgeGraphApi, type GraphNode as ApiGraphNode, type GraphEdge as ApiGraphEdge, type CallChainGraphData } from '@/api/knowledgeGraph'
+import { knowledgeGraphApi, type CallChainGraphData } from '@/api/knowledgeGraph'
 import { mergeCallChainGraphs, type MergedGraph } from './components/mergeGraphs'
 import { claudeApi } from '@/api/claude'
 import { useAppStore } from '@/stores/app'
@@ -161,13 +146,10 @@ interface ChainNode {
   children?: ChainNode[]
 }
 
-interface UpstreamCaller {
-  callerId: string
-  callerClassName: string
-  callerMethodName: string
-  callType: string
-  callLine: number
-  display: string
+interface RootEntry {
+  entryId: string
+  entryType: string
+  entryKey: string
 }
 
 interface Selection {
@@ -197,10 +179,7 @@ const selection = ref<Selection | null>(null)
 const loading = ref(false)
 const analysisLoading = ref(false)
 const chainData = ref<ChainNode | null>(null)
-const upstreamCallers = ref<UpstreamCaller[]>([])
-const upstreamViewMode = ref<'flow' | 'table'>('flow')
-const upstreamGraphNodes = ref<ApiGraphNode[]>([])
-const upstreamGraphEdges = ref<ApiGraphEdge[]>([])
+const upstreamEntries = ref<RootEntry[]>([])
 const hasQueried = ref(false)
 const maxDepth = ref<number>(5)
 const mergedGraph = ref<MergedGraph | null>(null)
@@ -250,92 +229,58 @@ const loadDependencyGraph = async () => {
 
   loading.value = true
   hasQueried.value = true
-  upstreamCallers.value = []
-  upstreamGraphNodes.value = []
-  upstreamGraphEdges.value = []
+  upstreamEntries.value = []
   chainData.value = null
   mergedGraph.value = null
 
   try {
     const projectPaths = effectiveProjectPaths.value
-    const projectPath = projectPaths[0] || ''
 
     if (analysisDirection.value === 'upstream') {
-      // 向上：使用合并接口获取根入口 + 直接调用者
-      const allNodes: ApiGraphNode[] = []
-      const allEdges: ApiGraphEdge[] = []
-      const callers: UpstreamCaller[] = []
-      let nodeIdCounter = 0
-
-      for (const method of entryMethods.value) {
+      // 向上：并行查询所有方法的根入口点
+      const queries = entryMethods.value.map(method => {
         const { className, methodName } = splitFqn(method)
-        const resp = await knowledgeGraphApi.getRootEntries(className, methodName, projectPaths) as unknown as { rootEntries: any[]; directCallers: any[] }
-        const targetId = `target_${nodeIdCounter++}`
-
-        allNodes.push({
-          id: targetId, name: methodName, className, depth: 0,
-          inCycle: false, callType: '', description: `查询目标: ${className}.${methodName}`
-        })
-
-        for (const item of (resp?.directCallers || [])) {
-          const callerId = item.callerId || `caller_${nodeIdCounter++}`
-          callers.push({
-            callerId,
-            callerClassName: item.callerClassName || '',
-            callerMethodName: item.callerMethodName || '',
-            callType: item.callType || '',
-            callLine: item.callLine || 0,
-            display: `${item.callerClassName || ''}.${item.callerMethodName || ''}`
-          })
-          allNodes.push({
-            id: callerId, name: item.callerMethodName || '',
-            className: item.callerClassName || '', depth: 1,
-            inCycle: false, callType: item.callType || ''
-          })
-          allEdges.push({
-            source: callerId, target: targetId,
-            callType: item.callType || '', callLine: item.callLine || 0,
-            isCycleEdge: false
-          })
-        }
-
-        for (const r of (resp?.rootEntries || [])) {
-          const entryNodeId = r.entryId || `entry_${nodeIdCounter++}`
-          if (!allNodes.find(n => n.id === entryNodeId)) {
-            allNodes.push({
-              id: entryNodeId, name: r.entryKey || '',
-              className: r.entryType || '', depth: 2,
-              inCycle: false, callType: r.entryType || '',
-              description: `Root entry: ${r.entryType}`
-            })
+        return knowledgeGraphApi.getRootEntries(className, methodName, projectPaths)
+          .then(resp => (resp as any)?.rootEntries || [])
+          .catch(() => [] as any[])
+      })
+      const results = await Promise.all(queries)
+      const allEntries: RootEntry[] = []
+      const seen = new Set<string>()
+      for (const entries of results) {
+        for (const r of entries) {
+          if (r.entryId && seen.add(r.entryId)) {
+            allEntries.push({ entryId: r.entryId, entryType: r.entryType || '', entryKey: r.entryKey || '' })
           }
         }
       }
+      upstreamEntries.value = allEntries
 
-      upstreamCallers.value = callers
-      upstreamGraphNodes.value = allNodes
-      upstreamGraphEdges.value = allEdges
-
-      if (callers.length > 0) {
-        ElMessage.success(`找到 ${callers.length} 个调用者`)
+      if (allEntries.length > 0) {
+        ElMessage.success(`找到 ${allEntries.length} 个根入口`)
       } else {
-        ElMessage.info('未找到调用者')
+        ElMessage.info('未找到根入口')
       }
     } else {
-      // 向下：使用 callees-tree 获取完整子树
+      // 向下：并行查询所有方法的下游调用树
+      const queries = entryMethods.value.map(method => {
+        const { className, methodName } = splitFqn(method)
+        return knowledgeGraphApi.getCalleesTree(className, methodName, projectPaths, maxDepth.value)
+          .then(graph => ({ entryFqn: method, data: graph as unknown as CallChainGraphData }))
+          .catch(() => null)
+      })
+      const results = await Promise.all(queries)
+
       const graphResults: { entryFqn: string; data: CallChainGraphData }[] = []
       const rootChildren: ChainNode[] = []
-      for (const method of entryMethods.value) {
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i]
+        const method = entryMethods.value[i]
         const { className, methodName } = splitFqn(method)
-        try {
-          const graph = await knowledgeGraphApi.getCalleesTree(className, methodName, projectPaths, maxDepth.value) as unknown as CallChainGraphData
-          if (graph && Array.isArray(graph.nodes) && graph.nodes.length > 0) {
-            graphResults.push({ entryFqn: method, data: graph })
-            rootChildren.push(buildSubtreeFromCalleesTree(graph, method))
-          } else {
-            rootChildren.push({ name: methodName, className, methodSignature: method, children: [] })
-          }
-        } catch {
+        if (result && Array.isArray(result.data?.nodes) && result.data.nodes.length > 0) {
+          graphResults.push(result)
+          rootChildren.push(buildSubtreeFromCalleesTree(result.data, method))
+        } else {
           rootChildren.push({ name: methodName, className, methodSignature: method, children: [] })
         }
       }
@@ -422,27 +367,7 @@ const buildSubtreeFromCalleesTree = (graph: any, rootFqn: string): ChainNode => 
   return root
 }
 
-// 从调用者表中"继续向上"
-const drillUpFromCaller = (caller: UpstreamCaller) => {
-  const fqn = `${caller.callerClassName}.${caller.callerMethodName}`
-  if (!entryMethods.value.includes(fqn)) {
-    entryMethods.value.push(fqn)
-  }
-  loadDependencyGraph()
-}
-
-// FlowDag 节点点击：加入入口列表并重新查询
-const handleUpstreamNodeClick = (node: FlowNode) => {
-  if (node.className && node.name) {
-    const fqn = `${node.className}.${node.name}`
-    if (!entryMethods.value.includes(fqn)) {
-      entryMethods.value.push(fqn)
-    }
-    loadDependencyGraph()
-  }
-}
-
-// 合并图节点点击：显示节点信息
+// 用 callees-tree 返回的图结构（nodes+edges）构建子树
 const handleMergedNodeClick = (node: FlowNode) => {
   if (node.className && node.name) {
     ElMessage.info(`${node.className}.${node.name}`)
@@ -613,13 +538,6 @@ onMounted(() => {
 
 .upstream-section {
   margin-top: 16px;
-}
-
-.upstream-flow-container {
-  height: 500px;
-  border: 1px solid #ebeef5;
-  border-radius: 8px;
-  margin-top: 12px;
 }
 
 .merged-graph-section {

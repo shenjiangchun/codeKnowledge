@@ -35,10 +35,10 @@ const canProceed = computed(() =>
 async function fetchProjects() {
   loadingProjects.value = true
   try {
-    const list = await projectApi.getProjects() as any[]
+    const list = await projectApi.scanGitRepos() as any[]
     projects.value = list.map((p: any) => ({
-      name: p.name || p.projectName || '',
-      path: p.path || p.projectPath || ''
+      name: p.name || '',
+      path: p.path || ''
     }))
   } catch {
     ElMessage.error('获取项目列表失败')

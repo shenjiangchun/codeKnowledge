@@ -177,9 +177,8 @@ watch(selectedProjectPath, (newPath) => {
 })
 
 // 初始化
-onMounted(async () => {
-  await skillStore.loadSkills()
-  await loadProjects()
+onMounted(() => {
+  Promise.all([skillStore.loadSkills(), loadProjects()])
 })
 </script>
 
