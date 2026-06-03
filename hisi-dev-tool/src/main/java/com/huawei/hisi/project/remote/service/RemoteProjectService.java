@@ -10,13 +10,14 @@ import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Stream;
 
 @Slf4j
 @Service
@@ -72,18 +73,7 @@ public class RemoteProjectService {
         RemoteProject project = getById(id);
 
         Path localDir = resolveCloneDir(project.getLocalPath());
-        if (Files.exists(localDir)) {
-            try (Stream<Path> walk = Files.walk(localDir)) {
-                walk.sorted(Comparator.reverseOrder())
-                    .forEach(p -> {
-                        try { Files.delete(p); } catch (IOException e) {
-                            log.warn("Failed to delete {}: {}", p, e.getMessage());
-                        }
-                    });
-            } catch (IOException e) {
-                log.error("Failed to walk directory for deletion: {}", localDir, e);
-            }
-        }
+        deleteDirectory(localDir);
 
         repository.deleteById(id);
     }
@@ -92,19 +82,24 @@ public class RemoteProjectService {
         RemoteProject project = getById(id);
         repository.updateCloneStatus(id, "CLONING");
 
-        Path targetDir = resolveCloneDir(project.getLocalPath());
+        // 修复旧数据中 localPath 为纯短横线（如 "----"）的情况
+        String localPath = project.getLocalPath();
+        String cleaned = localPath.replaceAll("-+", "-").replaceAll("^-|-$", "");
+        if (cleaned.isBlank()) {
+            String oldPath = localPath;
+            localPath = sanitizeName(project.getName());
+            project.setLocalPath(localPath);
+            repository.update(project);
+            log.info("[Clone] Fixed invalid localPath for project '{}': {} -> {}",
+                project.getName(), oldPath, localPath);
+        }
+
+        Path targetDir = resolveCloneDir(localPath);
         try {
             // 如果目标目录已存在且有内容，先清理（可能是上次失败的残留）
             if (Files.exists(targetDir) && Files.list(targetDir).findAny().isPresent()) {
                 log.warn("[Clone] Target directory not empty, cleaning: {}", targetDir);
-                try (Stream<Path> walk = Files.walk(targetDir)) {
-                    walk.sorted(Comparator.reverseOrder())
-                        .forEach(p -> {
-                            try { Files.delete(p); } catch (IOException ex) {
-                                log.warn("Failed to delete {}: {}", p, ex.getMessage());
-                            }
-                        });
-                }
+                deleteDirectory(targetDir);
             }
             Files.createDirectories(targetDir);
             String password = gitCredentialService.decrypt(project.getEncryptedPassword());
@@ -166,8 +161,33 @@ public class RemoteProjectService {
 
     private String sanitizeName(String name) {
         String sanitized = name.replaceAll("[^a-zA-Z0-9._-]", "-").replaceAll("-+", "-").replaceAll("^-|-$", "");
-        // 中文/特殊字符名全部被替换后可能为空，回退到时间戳
-        return sanitized.isBlank() ? "project-" + System.currentTimeMillis() : sanitized.toLowerCase();
+        if (!sanitized.isBlank()) {
+            return sanitized.toLowerCase();
+        }
+        // 中文/特殊字符名全部被替换后为空，从 gitUrl 提取仓库名
+        return "project-" + System.currentTimeMillis();
+    }
+
+    private void deleteDirectory(Path dir) {
+        if (!Files.exists(dir)) return;
+        try {
+            Files.walkFileTree(dir, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                    file.toFile().setWritable(true);
+                    Files.delete(file);
+                    return FileVisitResult.CONTINUE;
+                }
+                @Override
+                public FileVisitResult postVisitDirectory(Path d, IOException exc) throws IOException {
+                    d.toFile().setWritable(true);
+                    Files.delete(d);
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+        } catch (IOException e) {
+            log.error("Failed to delete directory: {}", dir, e);
+        }
     }
 
     private String extractRootCause(Throwable t) {

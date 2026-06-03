@@ -3,10 +3,10 @@
   "hostname": "desktop-j6asme4",
   "model": "GLM-5.1-w4a8",
   "firstSeen": "2026-05-30T01:37:45.023Z",
-  "lastUpdated": "2026-06-03T03:10:02.508Z",
+  "lastUpdated": "2026-06-03T03:54:23.603Z",
   "stats": {
-    "totalOperations": 359,
-    "totalFilesEdited": 157,
+    "totalOperations": 373,
+    "totalFilesEdited": 159,
     "totalAiLines": 2971,
     "totalAiLinesDeleted": 932,
     "totalCommits": 18
@@ -156,6 +156,24 @@
       "operations": 1,
       "timestamp": "2026-06-01T02:17:56.676Z",
       "lastModified": "2026-06-01T02:17:56.676Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/service/RemoteProjectService.java",
+      "tool": "Edit",
+      "operations": 7,
+      "timestamp": "2026-06-03T03:46:56.174Z",
+      "lastModified": "2026-06-03T03:54:22.883Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/service/RemoteProjectService.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "GLM-5.1-w4a8",
+      "operations": 7,
+      "timestamp": "2026-06-03T03:46:56.701Z",
+      "lastModified": "2026-06-03T03:54:23.603Z",
+      "lastTool": "Edit"
     }
   ],
   "repoPath": "D:/hisi-code-analyser/codeKnowledge1"
