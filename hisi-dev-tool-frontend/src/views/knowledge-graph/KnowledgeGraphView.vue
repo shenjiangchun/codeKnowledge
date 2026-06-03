@@ -229,17 +229,17 @@
       </div>
 
       <el-table :data="glossaryTerms" v-loading="glossaryLoading" empty-text="暂无术语" stripe size="small">
-        <el-table-column prop="wrongTerm" label="错误术语" width="140">
+        <el-table-column prop="term" label="术语" width="140">
           <template #default="{ row }">
-            <el-tag type="danger" effect="plain" size="small">{{ row.wrongTerm }}</el-tag>
+            <el-tag type="success" effect="plain" size="small">{{ row.term }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="" width="40" align="center">
           <template #default>→</template>
         </el-table-column>
-        <el-table-column prop="correctTerm" label="正确术语" width="140">
+        <el-table-column prop="synonym" label="同义词" width="140">
           <template #default="{ row }">
-            <el-tag type="success" effect="plain" size="small">{{ row.correctTerm }}</el-tag>
+            <el-tag type="info" effect="plain" size="small">{{ row.synonym }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="context" label="说明" min-width="150" show-overflow-tooltip />
@@ -261,11 +261,11 @@
       destroy-on-close
     >
       <el-form :model="glossaryForm" label-width="80px">
-        <el-form-item label="错误术语" required>
-          <el-input v-model="glossaryForm.wrongTerm" placeholder="LLM 可能错误使用的术语" />
+        <el-form-item label="术语" required>
+          <el-input v-model="glossaryForm.term" placeholder="标准术语，如：知识图谱" />
         </el-form-item>
-        <el-form-item label="正确术语" required>
-          <el-input v-model="glossaryForm.correctTerm" placeholder="应该使用的正确术语" />
+        <el-form-item label="同义词" required>
+          <el-input v-model="glossaryForm.synonym" placeholder="LLM 可能使用的同义词，如：KG" />
         </el-form-item>
         <el-form-item label="说明">
           <el-input v-model="glossaryForm.context" placeholder="可选，如适用场景" />
@@ -769,7 +769,7 @@ const glossaryLoading = ref(false)
 const glossaryShowForm = ref(false)
 const glossarySubmitting = ref(false)
 const glossaryEditingId = ref<number | null>(null)
-const glossaryForm = ref({ wrongTerm: '', correctTerm: '', context: '' })
+const glossaryForm = ref({ term: '', synonym: '', context: '' })
 
 const loadGlossaryTerms = async () => {
   if (!projectPath.value) return
@@ -790,8 +790,8 @@ watch(showGlossaryDialog, (visible) => {
 const glossaryEditRow = (row: GlossaryTerm) => {
   glossaryEditingId.value = row.id!
   glossaryForm.value = {
-    wrongTerm: row.wrongTerm,
-    correctTerm: row.correctTerm,
+    term: row.term,
+    synonym: row.synonym,
     context: row.context || ''
   }
   glossaryShowForm.value = true
@@ -800,7 +800,7 @@ const glossaryEditRow = (row: GlossaryTerm) => {
 const glossaryDeleteRow = async (row: GlossaryTerm) => {
   try {
     await ElMessageBox.confirm(
-      `确定删除「${row.wrongTerm} → ${row.correctTerm}」？`,
+      `确定删除「${row.term}（${row.synonym}）」？`,
       '删除确认',
       { type: 'warning' }
     )
@@ -813,16 +813,16 @@ const glossaryDeleteRow = async (row: GlossaryTerm) => {
 }
 
 const glossarySubmit = async () => {
-  if (!glossaryForm.value.wrongTerm.trim() || !glossaryForm.value.correctTerm.trim()) {
-    ElMessage.warning('错误术语和正确术语不能为空')
+  if (!glossaryForm.value.term.trim() || !glossaryForm.value.synonym.trim()) {
+    ElMessage.warning('术语和同义词不能为空')
     return
   }
   glossarySubmitting.value = true
   try {
     const payload: GlossaryTerm = {
       projectPath: projectPath.value,
-      wrongTerm: glossaryForm.value.wrongTerm.trim(),
-      correctTerm: glossaryForm.value.correctTerm.trim(),
+      term: glossaryForm.value.term.trim(),
+      synonym: glossaryForm.value.synonym.trim(),
       context: glossaryForm.value.context.trim() || undefined
     }
     if (glossaryEditingId.value) {
@@ -834,7 +834,7 @@ const glossarySubmit = async () => {
     }
     glossaryShowForm.value = false
     glossaryEditingId.value = null
-    glossaryForm.value = { wrongTerm: '', correctTerm: '', context: '' }
+    glossaryForm.value = { term: '', synonym: '', context: '' }
     await loadGlossaryTerms()
   } catch {
     ElMessage.error('保存失败')
@@ -844,7 +844,10 @@ const glossarySubmit = async () => {
 }
 
 onMounted(async () => {
-  // 先加载项目列表
+  // 轮询立即启动，不等 loadProjects
+  startPolling()
+  startVectorPolling()
+  // 先加载项目列表（确定 projectPath）
   await loadProjects()
   // 项目列表加载完成后，再加载图谱数据
   if (projectPath.value) {
@@ -853,8 +856,6 @@ onMounted(async () => {
     loadVectorStatus()
     loadMissingInfo()
   }
-  startPolling()
-  startVectorPolling()
 })
 
 onUnmounted(() => {

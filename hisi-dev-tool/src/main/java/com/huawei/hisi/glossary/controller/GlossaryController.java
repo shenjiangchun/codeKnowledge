@@ -34,8 +34,8 @@ public class GlossaryController {
         try {
             validateTerm(term);
             GlossaryTerm saved = glossaryTermRepository.insert(term);
-            log.info("[Glossary] Created term: '{}' → '{}' for project {}",
-                    saved.getWrongTerm(), saved.getCorrectTerm(), saved.getProjectPath());
+            log.info("[Glossary] Created term: '{}' (synonym: '{}') for project {}",
+                    saved.getTerm(), saved.getSynonym(), saved.getProjectPath());
             return ApiResponse.success(saved);
         } catch (IllegalArgumentException e) {
             log.warn("[Glossary] Create rejected: {}", e.getMessage());
@@ -85,11 +85,11 @@ public class GlossaryController {
         if (term.getProjectPath() == null || term.getProjectPath().isBlank()) {
             throw new IllegalArgumentException("Project path is required");
         }
-        if (term.getWrongTerm() == null || term.getWrongTerm().isBlank()) {
-            throw new IllegalArgumentException("Wrong term is required");
+        if (term.getTerm() == null || term.getTerm().isBlank()) {
+            throw new IllegalArgumentException("Term is required");
         }
-        if (term.getCorrectTerm() == null || term.getCorrectTerm().isBlank()) {
-            throw new IllegalArgumentException("Correct term is required");
+        if (term.getSynonym() == null || term.getSynonym().isBlank()) {
+            throw new IllegalArgumentException("Synonym is required");
         }
     }
 }

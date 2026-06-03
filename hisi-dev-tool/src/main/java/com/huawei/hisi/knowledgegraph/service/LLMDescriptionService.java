@@ -276,8 +276,11 @@ public class LLMDescriptionService {
         }
         StringBuilder sb = new StringBuilder("\n\n## 术语规范（必须严格遵守）\n");
         for (GlossaryTerm t : terms) {
-            sb.append("- 禁止使用「").append(t.getWrongTerm())
-              .append("」，应使用「").append(t.getCorrectTerm()).append("」");
+            sb.append("- 「").append(t.getTerm()).append("」");
+            if (t.getSynonym() != null && !t.getSynonym().isBlank()) {
+                sb.append("（同义词：").append(t.getSynonym()).append("）");
+            }
+            sb.append("：请统一使用「").append(t.getTerm()).append("」");
             if (t.getContext() != null && !t.getContext().isBlank()) {
                 sb.append("（").append(t.getContext()).append("）");
             }

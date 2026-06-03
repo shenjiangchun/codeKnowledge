@@ -510,17 +510,17 @@
         </el-button>
       </div>
       <el-table :data="glossaryTerms" v-loading="glossaryLoading" empty-text="暂无术语，点击「新增」添加" stripe max-height="350">
-        <el-table-column prop="wrongTerm" label="错误术语" width="140">
+        <el-table-column prop="term" label="术语" width="140">
           <template #default="{ row }">
-            <el-tag type="danger" effect="plain">{{ row.wrongTerm }}</el-tag>
+            <el-tag type="success" effect="plain">{{ row.term }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="" width="40" align="center">
           <template #default>→</template>
         </el-table-column>
-        <el-table-column prop="correctTerm" label="正确术语" width="140">
+        <el-table-column prop="synonym" label="同义词" width="140">
           <template #default="{ row }">
-            <el-tag type="success" effect="plain">{{ row.correctTerm }}</el-tag>
+            <el-tag type="info" effect="plain">{{ row.synonym }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="context" label="说明" min-width="150" show-overflow-tooltip />
@@ -541,11 +541,11 @@
         destroy-on-close
       >
         <el-form :model="glossaryForm" label-width="80px" @submit.prevent="handleGlossarySubmit">
-          <el-form-item label="错误术语" required>
-            <el-input v-model="glossaryForm.wrongTerm" placeholder="LLM 可能错误使用的术语" />
+          <el-form-item label="术语" required>
+            <el-input v-model="glossaryForm.term" placeholder="标准术语，如：知识图谱" />
           </el-form-item>
-          <el-form-item label="正确术语" required>
-            <el-input v-model="glossaryForm.correctTerm" placeholder="应该使用的正确术语" />
+          <el-form-item label="同义词" required>
+            <el-input v-model="glossaryForm.synonym" placeholder="LLM 可能使用的同义词，如：KG" />
           </el-form-item>
           <el-form-item label="说明">
             <el-input v-model="glossaryForm.context" placeholder="可选，如适用场景说明" />
@@ -712,7 +712,7 @@ const glossarySubmitting = ref(false)
 const showGlossaryForm = ref(false)
 const glossaryIsEdit = ref(false)
 const glossaryEditId = ref<number | null>(null)
-const glossaryForm = ref({ wrongTerm: '', correctTerm: '', context: '' })
+const glossaryForm = ref({ term: '', synonym: '', context: '' })
 const glossaryProjectPath = ref('')
 
 const openGlossaryDialog = () => {
@@ -752,7 +752,7 @@ const onGlossaryProjectChange = () => {
 const openGlossaryAdd = () => {
   glossaryIsEdit.value = false
   glossaryEditId.value = null
-  glossaryForm.value = { wrongTerm: '', correctTerm: '', context: '' }
+  glossaryForm.value = { term: '', synonym: '', context: '' }
   showGlossaryForm.value = true
 }
 
@@ -760,16 +760,16 @@ const openGlossaryEdit = (term: GlossaryTerm) => {
   glossaryIsEdit.value = true
   glossaryEditId.value = term.id!
   glossaryForm.value = {
-    wrongTerm: term.wrongTerm,
-    correctTerm: term.correctTerm,
+    term: term.term,
+    synonym: term.synonym,
     context: term.context || ''
   }
   showGlossaryForm.value = true
 }
 
 const handleGlossarySubmit = async () => {
-  if (!glossaryForm.value.wrongTerm.trim() || !glossaryForm.value.correctTerm.trim()) {
-    ElMessage.warning('错误术语和正确术语不能为空')
+  if (!glossaryForm.value.term.trim() || !glossaryForm.value.synonym.trim()) {
+    ElMessage.warning('术语和同义词不能为空')
     return
   }
   if (!glossaryProjectPath.value) {
@@ -780,8 +780,8 @@ const handleGlossarySubmit = async () => {
   try {
     const payload: GlossaryTerm = {
       projectPath: glossaryProjectPath.value,
-      wrongTerm: glossaryForm.value.wrongTerm.trim(),
-      correctTerm: glossaryForm.value.correctTerm.trim(),
+      term: glossaryForm.value.term.trim(),
+      synonym: glossaryForm.value.synonym.trim(),
       context: glossaryForm.value.context.trim() || undefined
     }
     if (glossaryIsEdit.value && glossaryEditId.value != null) {
@@ -803,7 +803,7 @@ const handleGlossarySubmit = async () => {
 const handleGlossaryDelete = async (term: GlossaryTerm) => {
   try {
     await ElMessageBox.confirm(
-      `确定删除术语「${term.wrongTerm} → ${term.correctTerm}」？`,
+      `确定删除术语「${term.term}（${term.synonym}）」？`,
       '删除确认',
       { type: 'warning' }
     )
@@ -1251,9 +1251,11 @@ const loadProjects = async () => {
 
     projects.value = [...scannedRepos, ...legacyProjects]
 
-    // Load task statuses after projects are loaded
-    await loadAllKnowledgeGraphStatuses()
-    await loadAllVectorGenerationStatuses()
+    // Load task statuses in parallel after projects are loaded
+    await Promise.all([
+      loadAllKnowledgeGraphStatuses(),
+      loadAllVectorGenerationStatuses()
+    ])
   } catch (error) {
     ElMessage.error('加载项目列表失败')
     console.error('Failed to load projects:', error)
@@ -1273,9 +1275,11 @@ const handleScan = async () => {
     // axios 拦截器已提取 data，res 直接就是仓库数组
     projects.value = Array.isArray(res) ? res : (res as any)?.data || []
     ElMessage.success(`扫描完成，发现 ${projects.value.length} 个仓库`)
-    // Load task statuses after scan
-    await loadAllKnowledgeGraphStatuses()
-    await loadAllVectorGenerationStatuses()
+    // Load task statuses in parallel after scan
+    await Promise.all([
+      loadAllKnowledgeGraphStatuses(),
+      loadAllVectorGenerationStatuses()
+    ])
   } catch (error) {
     ElMessage.error('扫描失败')
   } finally {

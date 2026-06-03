@@ -23,8 +23,8 @@ public class GlossaryTermRepository {
         GlossaryTerm.builder()
             .id(rs.getLong("id"))
             .projectPath(rs.getString("project_path"))
-            .wrongTerm(rs.getString("wrong_term"))
-            .correctTerm(rs.getString("correct_term"))
+            .term(rs.getString("term"))
+            .synonym(rs.getString("synonym"))
             .context(rs.getString("context"))
             .createdAt(rs.getObject("created_at") != null ? rs.getLong("created_at") : null)
             .updatedAt(rs.getObject("updated_at") != null ? rs.getLong("updated_at") : null)
@@ -34,12 +34,12 @@ public class GlossaryTermRepository {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(
-                "INSERT INTO glossary_term (project_path, wrong_term, correct_term, context) VALUES (?, ?, ?, ?)",
+                "INSERT INTO glossary_term (project_path, term, synonym, context) VALUES (?, ?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS
             );
             ps.setString(1, term.getProjectPath());
-            ps.setString(2, term.getWrongTerm());
-            ps.setString(3, term.getCorrectTerm());
+            ps.setString(2, term.getTerm());
+            ps.setString(3, term.getSynonym());
             ps.setString(4, term.getContext());
             return ps;
         }, keyHolder);
@@ -53,9 +53,9 @@ public class GlossaryTermRepository {
 
     public int update(GlossaryTerm term) {
         return jdbcTemplate.update(
-            "UPDATE glossary_term SET wrong_term = ?, correct_term = ?, context = ?, " +
+            "UPDATE glossary_term SET term = ?, synonym = ?, context = ?, " +
             "updated_at = strftime('%s','now') WHERE id = ?",
-            term.getWrongTerm(), term.getCorrectTerm(), term.getContext(), term.getId()
+            term.getTerm(), term.getSynonym(), term.getContext(), term.getId()
         );
     }
 

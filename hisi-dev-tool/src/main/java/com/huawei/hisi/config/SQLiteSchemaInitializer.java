@@ -180,13 +180,16 @@ public class SQLiteSchemaInitializer {
             CREATE TABLE IF NOT EXISTS glossary_term (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_path VARCHAR(500) NOT NULL,
-                wrong_term   VARCHAR(100) NOT NULL,
-                correct_term VARCHAR(100) NOT NULL,
+                term         VARCHAR(100) NOT NULL,
+                synonym      VARCHAR(100) NOT NULL,
                 context      VARCHAR(200),
                 created_at   INTEGER DEFAULT (strftime('%s','now')),
                 updated_at   INTEGER DEFAULT (strftime('%s','now'))
             )
             """);
+
+        // 迁移：旧表使用 wrong_term/correct_term，重命名为 term/synonym
+        migrateGlossaryColumns(jdbcTemplate);
 
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_glossary_project ON glossary_term(project_path)");
 
@@ -227,5 +230,21 @@ public class SQLiteSchemaInitializer {
             """);
 
         log.info("[SQLite] Schema initialization complete - 13 tables ensured");
+    }
+
+    private void migrateGlossaryColumns(JdbcTemplate jdbcTemplate) {
+        try {
+            // 检查是否存在旧列名 wrong_term，如有则重命名
+            jdbcTemplate.execute("ALTER TABLE glossary_term RENAME COLUMN wrong_term TO term");
+            log.info("[SQLite] Migrated glossary_term: wrong_term → term");
+        } catch (Exception ignored) {
+            // 列不存在或已迁移，忽略
+        }
+        try {
+            jdbcTemplate.execute("ALTER TABLE glossary_term RENAME COLUMN correct_term TO synonym");
+            log.info("[SQLite] Migrated glossary_term: correct_term → synonym");
+        } catch (Exception ignored) {
+            // 列不存在或已迁移，忽略
+        }
     }
 }

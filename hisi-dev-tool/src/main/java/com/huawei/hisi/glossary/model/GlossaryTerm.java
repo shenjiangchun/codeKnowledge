@@ -13,8 +13,8 @@ public class GlossaryTerm {
 
     private Long id;
     private String projectPath;
-    private String wrongTerm;
-    private String correctTerm;
+    private String term;
+    private String synonym;
     private String context;
     private Long createdAt;
     private Long updatedAt;

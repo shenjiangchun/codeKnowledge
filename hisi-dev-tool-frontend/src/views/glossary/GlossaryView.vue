@@ -13,9 +13,9 @@
 
     <el-card shadow="never">
       <el-table :data="terms" v-loading="loading" empty-text="暂无术语，点击「新增术语」添加" stripe>
-        <el-table-column prop="wrongTerm" label="错误术语" width="180">
+        <el-table-column prop="term" label="术语" width="180">
           <template #default="{ row }">
-            <el-tag type="danger" effect="plain">{{ row.wrongTerm }}</el-tag>
+            <el-tag type="success" effect="plain">{{ row.term }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="" width="60" align="center">
@@ -23,9 +23,9 @@
             <el-icon><Right /></el-icon>
           </template>
         </el-table-column>
-        <el-table-column prop="correctTerm" label="正确术语" width="180">
+        <el-table-column prop="synonym" label="同义词" width="180">
           <template #default="{ row }">
-            <el-tag type="success" effect="plain">{{ row.correctTerm }}</el-tag>
+            <el-tag type="info" effect="plain">{{ row.synonym }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="context" label="说明" min-width="200" show-overflow-tooltip />
@@ -50,11 +50,11 @@
       destroy-on-close
     >
       <el-form :model="form" label-width="80px" @submit.prevent="handleSubmit">
-        <el-form-item label="错误术语" required>
-          <el-input v-model="form.wrongTerm" placeholder="LLM 可能错误使用的术语" />
+        <el-form-item label="术语" required>
+          <el-input v-model="form.term" placeholder="标准术语，如：知识图谱" />
         </el-form-item>
-        <el-form-item label="正确术语" required>
-          <el-input v-model="form.correctTerm" placeholder="应该使用的正确术语" />
+        <el-form-item label="同义词" required>
+          <el-input v-model="form.synonym" placeholder="LLM 可能使用的同义词，如：KG" />
         </el-form-item>
         <el-form-item label="说明">
           <el-input v-model="form.context" placeholder="可选，如适用场景说明" />
@@ -87,8 +87,8 @@ const isEdit = ref(false)
 const editingId = ref<number | null>(null)
 
 const form = ref({
-  wrongTerm: '',
-  correctTerm: '',
+  term: '',
+  synonym: '',
   context: ''
 })
 
@@ -114,7 +114,7 @@ async function loadTerms() {
 function openCreateDialog() {
   isEdit.value = false
   editingId.value = null
-  form.value = { wrongTerm: '', correctTerm: '', context: '' }
+  form.value = { term: '', synonym: '', context: '' }
   dialogVisible.value = true
 }
 
@@ -122,16 +122,16 @@ function openEditDialog(term: GlossaryTerm) {
   isEdit.value = true
   editingId.value = term.id!
   form.value = {
-    wrongTerm: term.wrongTerm,
-    correctTerm: term.correctTerm,
+    term: term.term,
+    synonym: term.synonym,
     context: term.context || ''
   }
   dialogVisible.value = true
 }
 
 async function handleSubmit() {
-  if (!form.value.wrongTerm.trim() || !form.value.correctTerm.trim()) {
-    ElMessage.warning('错误术语和正确术语不能为空')
+  if (!form.value.term.trim() || !form.value.synonym.trim()) {
+    ElMessage.warning('术语和同义词不能为空')
     return
   }
 
@@ -145,8 +145,8 @@ async function handleSubmit() {
   try {
     const payload: GlossaryTerm = {
       projectPath,
-      wrongTerm: form.value.wrongTerm.trim(),
-      correctTerm: form.value.correctTerm.trim(),
+      term: form.value.term.trim(),
+      synonym: form.value.synonym.trim(),
       context: form.value.context.trim() || undefined
     }
 
@@ -170,7 +170,7 @@ async function handleSubmit() {
 async function handleDelete(term: GlossaryTerm) {
   try {
     await ElMessageBox.confirm(
-      `确定删除术语「${term.wrongTerm} → ${term.correctTerm}」？`,
+      `确定删除术语「${term.term}（${term.synonym}）」？`,
       '删除确认',
       { type: 'warning' }
     )
