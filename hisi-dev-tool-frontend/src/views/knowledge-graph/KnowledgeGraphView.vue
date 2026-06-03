@@ -377,12 +377,20 @@ const lastGeneratedCommit = computed(() => {
 
 // 多项目路径列表
 const projectPaths = computed(() => {
-  return selectedProjectNames.value
-    .map(name => {
-      const proj = projects.value.find(p => p.name === name)
-      return proj ? proj.path.replace(/\\/g, '/') : ''
-    })
-    .filter(Boolean)
+  const result: string[] = []
+  for (const name of selectedProjectNames.value) {
+    const proj = projects.value.find(p => p.name === name)
+    if (proj) {
+      result.push(proj.path.replace(/\\/g, '/'))
+    } else {
+      // Fallback: look up from appStore (handles remote projects not yet in projects list)
+      const storeProj = appStore.selectedProjects.find(p => p.name === name)
+      if (storeProj?.path) {
+        result.push(storeProj.path.replace(/\\/g, '/'))
+      }
+    }
+  }
+  return result
 })
 
 // 向后兼容：第一个选中项目的路径
