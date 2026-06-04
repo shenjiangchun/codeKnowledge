@@ -176,6 +176,28 @@ public interface Neo4jEntryPointNodeRepository extends Neo4jRepository<EntryPoin
         @Param("methodNodeIds") List<String> methodNodeIds
     );
 
+    /**
+     * 查找受指定类变更影响的入口点（正向图遍历）。
+     * 从项目入口点出发沿 CALLS 链向下追踪，若调用链中任一方法属于目标类则返回该入口点。
+     * CALLS*0.. 支持 length=0（入口点方法本身就在目标类中），同时覆盖内部类（$ 分隔符）。
+     */
+    @Query("""
+        MATCH (ep:EntryPoint {projectPath: $projectPath})
+        WHERE ep.methodNodeId IS NOT NULL
+        WITH ep
+        MATCH (entry:Method {nodeId: ep.methodNodeId})
+        MATCH path = (entry)-[:CALLS*0..10]->(target:Method)
+        WHERE (target.className = $className OR target.className STARTS WITH $className + '$')
+          AND target.projectPath = $projectPath
+          AND length(path) <= $maxDepth
+        RETURN DISTINCT ep
+        """)
+    List<EntryPointNode> findEntryPointsAffectingClass(
+        @Param("projectPath") String projectPath,
+        @Param("className") String className,
+        @Param("maxDepth") int maxDepth
+    );
+
     // ==================== 批量多项目查询（N+1 优化） ====================
 
     /**

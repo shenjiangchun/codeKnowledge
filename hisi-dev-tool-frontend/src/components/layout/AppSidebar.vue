@@ -6,7 +6,7 @@ import type { Component } from 'vue'
 import { useAppStore } from '@/stores/app'
 
 // Define menu key type that matches availableMenus keys
-type MenuKey = 'log-analysis' | 'project-management' | 'claude-terminal' | 'prompt-config' | 'search' | 'skill-market' | 'knowledge-graph' | 'settings' | 'apm-debug'
+type MenuKey = 'log-analysis' | 'project-management' | 'claude-terminal' | 'prompt-config' | 'search' | 'skill-market' | 'knowledge-graph' | 'settings' | 'apm-debug' | 'ram' | 'merge-analysis'
 
 interface MenuItem {
   index: string
@@ -66,13 +66,13 @@ const baseMenuItems: MenuItem[] = [
     index: '/ram',
     title: '需求分析大师',
     icon: MagicStick,
-    menuKey: 'claude-terminal' as MenuKey
+    menuKey: 'ram'
   },
   {
     index: '/merge-analysis',
     title: '合入分析',
     icon: Connection,
-    menuKey: 'knowledge-graph' as MenuKey
+    menuKey: 'merge-analysis'
   },
   {
     index: '/project',

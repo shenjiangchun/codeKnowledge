@@ -1264,10 +1264,6 @@ const getProjectPath = (projectName: string) => {
 
 // Handle project selection (single row button - selects only this project)
 const handleSelect = (row: GitRepositoryInfo) => {
-  if (!appStore.projectDirConfigured) {
-    ElMessage.warning('请先配置项目目录')
-    return
-  }
   appStore.selectProject(row.name, row.path)
   ElMessage.success(`已选择项目: ${row.name}`)
 }

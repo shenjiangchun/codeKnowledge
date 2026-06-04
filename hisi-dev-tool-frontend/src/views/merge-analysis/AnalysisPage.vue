@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useMergeAnalysisSession } from '@/composables/useMergeAnalysisSession'
+import { rerunMergeAnalysisNode } from '@/api/merge-analysis'
 import type { ImpactResult, TestScopeResult, DiffResult } from '@/types/merge-analysis'
 
 const route = useRoute()
@@ -11,8 +12,9 @@ const router = useRouter()
 const projectPath = route.query.projectPath as string
 const sourceBranch = route.query.sourceBranch as string
 const targetBranch = route.query.targetBranch as string
+const sid = route.query.sid as string | undefined
 
-const { status, events, currentNode, start } = useMergeAnalysisSession()
+const { status, events, currentNode, start, rejoin, sessionId, lastSeq } = useMergeAnalysisSession()
 
 const diffResult = ref<DiffResult | null>(null)
 const impactResult = ref<ImpactResult | null>(null)
@@ -35,29 +37,80 @@ function riskColor(level: string): string {
   }
 }
 
+// Track processed events to avoid re-parsing
+let processedSeq = 0
+
 watch(events, (evts) => {
   for (const ev of evts) {
+    if (ev.seq <= processedSeq) continue
+    processedSeq = ev.seq
+
+    // Handle NODES_CLEARED: reset downstream results
+    if (ev.type === 'NODES_CLEARED') {
+      const clearedNodes = ev.payload['clearedNodes']
+      if (Array.isArray(clearedNodes)) {
+        for (const nodeName of clearedNodes) {
+          if (nodeName === 'diff_extract') diffResult.value = null
+          if (nodeName === 'impact_analysis') impactResult.value = null
+          if (nodeName === 'test_scope') testScopeResult.value = null
+        }
+      }
+      continue
+    }
+
     if (ev.type !== 'CHECKPOINT') continue
     const payload = ev.payload
-    const node = payload['node'] as string
-    const dataStr = payload['data'] as string
-    if (!node || !dataStr) continue
-    try {
-      const data = JSON.parse(dataStr)
-      switch (node) {
-        case 'diff_extract':
-          diffResult.value = data as DiffResult
-          break
-        case 'impact_analysis':
-          impactResult.value = data as ImpactResult
-          break
-        case 'test_scope':
-          testScopeResult.value = data as TestScopeResult
-          break
-      }
-    } catch { /* ignore parse errors */ }
+    // DagExecutor format: nodeName + output; legacy format: node + data
+    const node = (payload['nodeName'] ?? payload['node']) as string
+    const output = payload['output']
+    const dataStr = payload['data'] as string | undefined
+    if (!node) continue
+
+    let data: unknown = output
+    if (!data && dataStr) {
+      try { data = JSON.parse(dataStr) } catch { continue }
+    }
+    if (!data) continue
+
+    // DagExecutor stores the merged accumulator map in `output`,
+    // so each result is nested under its own key (diffResult, impactResult, etc.)
+    const outMap = data as Record<string, unknown>
+
+    switch (node) {
+      case 'diff_extract':
+        diffResult.value = (outMap.diffResult ?? data) as DiffResult
+        break
+      case 'impact_analysis':
+        impactResult.value = (outMap.impactResult ?? data) as ImpactResult
+        break
+      case 'test_scope':
+        testScopeResult.value = (outMap.testScopeResult ?? data) as TestScopeResult
+        break
+    }
   }
 }, { deep: true })
+
+async function handleRerun(nodeName: string): Promise<void> {
+  if (!sid) return
+  try {
+    const resp = await rerunMergeAnalysisNode(sid, nodeName)
+    const nextSeq = typeof resp['nextSeq'] === 'number' ? resp['nextSeq'] as number : 0
+    processedSeq = nextSeq
+
+    // Clear downstream results immediately
+    const nodeIdx = stepNodes.indexOf(nodeName)
+    for (let i = nodeIdx; i < stepNodes.length; i++) {
+      if (stepNodes[i] === 'diff_extract') diffResult.value = null
+      if (stepNodes[i] === 'impact_analysis') impactResult.value = null
+      if (stepNodes[i] === 'test_scope') testScopeResult.value = null
+    }
+
+    rejoin(sid, nextSeq)
+    ElMessage.success(`重新执行 ${nodeName}`)
+  } catch {
+    ElMessage.error('重新执行失败')
+  }
+}
 
 function handleBack() {
   router.push({
@@ -67,6 +120,16 @@ function handleBack() {
 }
 
 onMounted(async () => {
+  // If sid is provided, rejoin an existing session (from history list)
+  if (sid) {
+    try {
+      await rejoin(sid, 0)
+    } catch {
+      ElMessage.error('恢复会话失败')
+    }
+    return
+  }
+  // Otherwise start a new session (from DiffPreviewPage)
   if (!projectPath || !sourceBranch || !targetBranch) {
     ElMessage.error('缺少必要参数')
     router.push({ name: 'MergeAnalysisInput' })
@@ -84,7 +147,10 @@ onMounted(async () => {
   <div class="analysis-page">
     <el-page-header @back="handleBack" style="margin-bottom: 20px">
       <template #content>
-        <span>合入影响分析: {{ sourceBranch }} → {{ targetBranch }}</span>
+        <span>合入影响分析: {{ sourceBranch || '—' }} → {{ targetBranch || '—' }}</span>
+        <el-tag v-if="sessionId" size="small" effect="plain" style="margin-left: 8px; font-family: monospace">
+          #{{ sessionId.slice(0, 8) }}
+        </el-tag>
       </template>
     </el-page-header>
 
@@ -112,9 +178,18 @@ onMounted(async () => {
           <template #header>
             <div style="display: flex; justify-content: space-between; align-items: center">
               <h4 style="margin: 0">影响分析</h4>
-              <el-tag :type="riskColor(impactResult.riskLevel)">
-                {{ impactResult.riskLevel }}
-              </el-tag>
+              <div>
+                <el-tag :type="riskColor(impactResult.riskLevel)" style="margin-right: 8px">
+                  {{ impactResult.riskLevel }}
+                </el-tag>
+                <el-button
+                  v-if="status === 'completed' && sid"
+                  size="small"
+                  type="warning"
+                  plain
+                  @click="handleRerun('impact_analysis')"
+                >重新执行</el-button>
+              </div>
             </div>
           </template>
 
@@ -151,17 +226,32 @@ onMounted(async () => {
       <el-col :span="12">
         <el-card v-if="testScopeResult">
           <template #header>
-            <h4 style="margin: 0">测试范围建议</h4>
+            <div style="display: flex; justify-content: space-between; align-items: center">
+              <h4 style="margin: 0">测试范围建议</h4>
+              <el-button
+                v-if="status === 'completed' && sid"
+                size="small"
+                type="warning"
+                plain
+                @click="handleRerun('test_scope')"
+              >重新执行</el-button>
+            </div>
           </template>
 
-          <div v-for="group in testScopeResult.groups" :key="group.entryPointName" class="test-group">
+          <div v-for="group in testScopeResult.groups" :key="group.urlRoot || group.entryPointName" class="test-group">
             <div class="group-header">
-              <span class="mono">{{ group.entryPointName }}</span>
-              <el-tag :type="riskColor(group.riskLevel)" size="small">
-                {{ group.riskLevel }}
-              </el-tag>
+              <span class="mono">{{ group.urlRoot || group.entryPointName }}</span>
+              <div style="display: flex; align-items: center; gap: 6px">
+                <el-tag v-if="group.coveredEntryCount" size="small" type="info">
+                  {{ group.coveredEntryCount }} 个入口
+                </el-tag>
+                <el-tag :type="riskColor(group.riskLevel)" size="small">
+                  {{ group.riskLevel }}
+                </el-tag>
+              </div>
             </div>
-            <div v-if="group.urlPattern" class="group-url">{{ group.urlPattern }}</div>
+            <div v-if="group.coveredMethods" class="group-methods">覆盖方法: {{ group.coveredMethods }}</div>
+            <div v-else-if="group.urlPattern" class="group-url">{{ group.urlPattern }}</div>
             <ul class="test-cases">
               <li v-for="(tc, i) in group.testCases" :key="i">
                 <el-tag :type="riskColor(tc.riskLevel)" size="small" style="margin-right: 6px">
@@ -233,6 +323,15 @@ export default { components: { Loading } }
   font-size: 12px;
   color: #909399;
   margin-bottom: 8px;
+}
+.group-methods {
+  font-family: monospace;
+  font-size: 12px;
+  color: #606266;
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  background: #f5f7fa;
+  border-radius: 4px;
 }
 .test-cases {
   margin: 0;

@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { configApi } from '@/api/config'
+
+const LS_KEY = 'hisi-selected-projects'
 
 export interface SelectedProjectInfo {
   name: string
@@ -12,9 +14,27 @@ export const useAppStore = defineStore('app', () => {
   const projectDir = ref<string>('')
   const projectDirConfigured = computed(() => projectDir.value.trim() !== '')
 
-  // 多项目选择（存储项目名称+路径）
-  const selectedProjects = ref<SelectedProjectInfo[]>([])
+  // 多项目选择（存储项目名称+路径） — 从 localStorage 恢复
+  const selectedProjects = ref<SelectedProjectInfo[]>(loadPersistedProjects())
   const projectSelected = computed(() => selectedProjects.value.length > 0)
+
+  // Persist project selection to localStorage
+  watch(selectedProjects, (val) => {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(val))
+    } catch { /* quota exceeded — ignore */ }
+  }, { deep: true })
+
+  function loadPersistedProjects(): SelectedProjectInfo[] {
+    try {
+      const raw = localStorage.getItem(LS_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) return parsed
+      }
+    } catch { /* ignore */ }
+    return []
+  }
 
   // 向后兼容：返回第一个选中的项目名称
   const selectedProject = computed(() => selectedProjects.value[0]?.name || '')
@@ -27,16 +47,20 @@ export const useAppStore = defineStore('app', () => {
   const configError = ref<string>('')
 
   // Menu availability - requires project selection for analysis features
+  // Note: projectDirConfigured is NOT required — remote projects may exist
+  // without a local scan root configured. Only projectSelected matters.
   const availableMenus = computed(() => ({
-    'project-management': true, // Always available
-    'skill-market': true, // Always available
-    'claude-terminal': true, // Always available
-    'search': projectDirConfigured.value && projectSelected.value,
-    'knowledge-graph': projectDirConfigured.value && projectSelected.value,
-    'log-analysis': projectDirConfigured.value && projectSelected.value,
-    'prompt-config': true, // Always available
-    'settings': true, // Always available
-    'apm-debug': true, // Always available
+    'project-management': true,
+    'skill-market': true,
+    'claude-terminal': true,
+    'search': projectSelected.value,
+    'knowledge-graph': projectSelected.value,
+    'log-analysis': projectSelected.value,
+    'ram': projectSelected.value,
+    'merge-analysis': true, // Has its own project selector inside
+    'prompt-config': true,
+    'settings': true,
+    'apm-debug': true,
   }))
 
   // Actions

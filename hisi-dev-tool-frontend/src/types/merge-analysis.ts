@@ -46,8 +46,11 @@ export interface TestCase {
 }
 
 export interface TestCaseGroup {
-  entryPointName: string
-  urlPattern: string
+  entryPointName?: string
+  urlPattern?: string
+  urlRoot?: string
+  coveredEntryCount?: number
+  coveredMethods?: string
   riskLevel: string
   testCases: TestCase[]
 }

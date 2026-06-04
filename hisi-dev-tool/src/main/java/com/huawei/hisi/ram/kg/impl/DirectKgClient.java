@@ -89,9 +89,8 @@ public class DirectKgClient implements KgMcpClient {
             if (result == null || result.getResults() == null) {
                 return Collections.emptyList();
             }
-            // 保留全部结果，不做 .limit(limit) 截断
-            // RAM 的 MultiQuerySearcher 会做 RRF 融合和排序
             return result.getResults().stream()
+                    .limit(limit > 0 ? limit : Long.MAX_VALUE)
                     .map(m -> new Seed(
                             m.getNodeId(),
                             0.0,
@@ -175,6 +174,12 @@ public class DirectKgClient implements KgMcpClient {
     public List<Entry> rootEntries(String className, String methodName, String projectPath) {
         String normPath = PathUtils.normalize(projectPath);
         try {
+            // Wildcard: find all entry points whose call chain reaches the target class
+            if ("*".equals(methodName)) {
+                List<EntryPointNode> eps = entryPointRepository.findEntryPointsAffectingClass(normPath, className, 10);
+                return eps.stream().map(this::toEntry).collect(Collectors.toList());
+            }
+
             MethodNode target = resolveMethod(className, methodName, normPath);
             if (target == null) {
                 return Collections.emptyList();
@@ -205,6 +210,16 @@ public class DirectKgClient implements KgMcpClient {
     public List<Entry> affecting(String className, String methodName, String projectPath, int maxDepth) {
         String normPath = PathUtils.normalize(projectPath);
         try {
+            // Wildcard: find all upstream callers for the entire class
+            if ("*".equals(methodName)) {
+                List<MethodNode> callers = methodNodeRepository.findCallersUpToDepthByClassName(normPath, className, maxDepth);
+                if (log.isDebugEnabled()) {
+                    log.debug("affecting: className='{}' wildcard maxDepth={} → {} upstream callers",
+                            className, maxDepth, callers.size());
+                }
+                return callers.stream().map(this::toEntry).collect(Collectors.toList());
+            }
+
             MethodNode target = resolveMethod(className, methodName, normPath);
             if (target == null) {
                 log.debug("affecting: resolveMethod returned null for className='{}' methodName='{}' path='{}'",

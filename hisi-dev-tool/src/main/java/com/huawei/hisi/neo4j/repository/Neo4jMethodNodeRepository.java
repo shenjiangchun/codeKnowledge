@@ -206,6 +206,24 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     List<MethodNode> findCallersUpToDepth(@Param("nodeId") String nodeId, @Param("depth") int depth);
 
     /**
+     * 查找指定类的所有方法的上游调用者（用于 className + "*" 通配符场景）。
+     * 匹配目标类及其内部类（$ 分隔符），向上追溯 N 层 CALLS 链。
+     */
+    @Query("""
+        MATCH (target:Method)
+        WHERE (target.className = $className OR target.className STARTS WITH $className + '$')
+          AND target.projectPath = $projectPath
+        MATCH path = (caller:Method)-[:CALLS*1..10]->(target)
+        WHERE length(path) <= $maxDepth
+        RETURN DISTINCT caller
+        """)
+    List<MethodNode> findCallersUpToDepthByClassName(
+        @Param("projectPath") String projectPath,
+        @Param("className") String className,
+        @Param("maxDepth") int maxDepth
+    );
+
+    /**
      * 查询调用链 - 向下追溯N层
      * 注意：Neo4j 不允许在变长关系长度中使用参数（包括 SpEL 转出的参数），
      *       因此固定上限为 10，再用 WHERE length(path) <= $depth 过滤实际深度。

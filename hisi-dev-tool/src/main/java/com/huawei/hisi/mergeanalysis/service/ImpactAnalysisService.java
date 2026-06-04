@@ -32,7 +32,7 @@ public class ImpactAnalysisService {
 
     @SuppressWarnings("unchecked")
     public ImpactResult analyze(String projectPath, DiffResult diffResult) {
-        log.info("[ImpactAnalysis] Analyzing {} changed files for {}", diffResult.getTotalFiles(), projectPath);
+        log.info("[ImpactAnalysis] Analyzing {} changed files for projectPath={}", diffResult.getTotalFiles(), projectPath);
 
         List<ImpactResult.AffectedEntryPoint> allEntryPoints = new ArrayList<>();
         List<ImpactResult.CallChainEdge> allEdges = new ArrayList<>();
@@ -41,15 +41,25 @@ public class ImpactAnalysisService {
         for (DiffResult.FileDiff file : diffResult.getFiles()) {
             String filePath = file.getFilePath();
             if (!filePath.endsWith(".java") && !filePath.endsWith(".py")) {
+                log.debug("[ImpactAnalysis] Skipping non-source file: {}", filePath);
                 continue;
             }
 
             String className = filePathToClassName(filePath);
-            if (className.isEmpty()) continue;
+            if (className.isEmpty()) {
+                log.warn("[ImpactAnalysis] Could not extract className from filePath={}", filePath);
+                continue;
+            }
+
+            log.info("[ImpactAnalysis] File={} → className={}", filePath, className);
 
             try {
                 List<Entry> rootEntries = kgClient.rootEntries(className, "*", projectPath);
+                log.info("[ImpactAnalysis] rootEntries(className={}, projectPath={}) → {} results",
+                        className, projectPath, rootEntries.size());
                 for (Entry entry : rootEntries) {
+                    log.debug("[ImpactAnalysis]   entry: nodeId={} type={}.{} entryType={}",
+                            entry.nodeId(), entry.className(), entry.methodName(), entry.type());
                     if (seenEntries.add(entry.nodeId())) {
                         allEntryPoints.add(ImpactResult.AffectedEntryPoint.builder()
                                 .nodeId(entry.nodeId())
@@ -61,6 +71,8 @@ public class ImpactAnalysisService {
                 }
 
                 List<Entry> upstreamCallers = kgClient.affecting(className, "*", projectPath, 3);
+                log.info("[ImpactAnalysis] affecting(className={}, projectPath={}, depth=3) → {} upstream callers",
+                        className, projectPath, upstreamCallers.size());
                 for (Entry caller : upstreamCallers) {
                     allEdges.add(ImpactResult.CallChainEdge.builder()
                             .callerId(caller.nodeId())
@@ -71,9 +83,11 @@ public class ImpactAnalysisService {
                             .build());
                 }
             } catch (Exception e) {
-                log.warn("[ImpactAnalysis] KG query failed for {}: {}", className, e.getMessage());
+                log.warn("[ImpactAnalysis] KG query failed for className={} projectPath={}: {}", className, projectPath, e.getMessage());
             }
         }
+
+        log.info("[ImpactAnalysis] Total: {} entry points, {} call chain edges", allEntryPoints.size(), allEdges.size());
 
         String businessImpactSummary = "No LLM analysis available";
         String riskLevel = deriveRiskLevel(diffResult, allEntryPoints.size());

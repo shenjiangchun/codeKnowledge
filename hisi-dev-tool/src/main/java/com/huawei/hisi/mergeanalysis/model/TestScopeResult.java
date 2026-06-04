@@ -16,6 +16,9 @@ public class TestScopeResult {
     public static class TestCaseGroup {
         private String entryPointName;
         private String urlPattern;
+        private String urlRoot;
+        private int coveredEntryCount;
+        private String coveredMethods;
         private String riskLevel;
         private List<TestCase> testCases;
     }
