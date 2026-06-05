@@ -3,6 +3,7 @@ package com.huawei.hisi.ram.repository;
 import com.huawei.hisi.ram.model.AgentSession;
 import com.huawei.hisi.ram.model.SessionStatus;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -15,6 +16,14 @@ public interface AgentSessionRepository {
 
     Optional<AgentSession> findById(long id);
 
+    Optional<AgentSession> findByUuid(String uuid);
+
+    List<AgentSession> listRecent(int limit);
+
+    List<AgentSession> listRecentByUserId(String userId, int limit);
+
+    List<AgentSession> listRecentExcludingUserId(String excludeUserId, int limit);
+
     /**
      * Optimistic-locking update. Returns the new version on success or empty when
      * the in-memory version no longer matches the stored row.
@@ -22,4 +31,6 @@ public interface AgentSessionRepository {
     Optional<AgentSession> update(AgentSession session);
 
     int updateStatus(long id, SessionStatus status);
+
+    int clearRerunFromNode(long id);
 }

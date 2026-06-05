@@ -41,6 +41,10 @@ public class RamSchemaInitializer {
                 last_checkpoint_event_id  INTEGER,
                 cache_key                 TEXT,
                 version                   INTEGER NOT NULL DEFAULT 0,
+                uuid                      TEXT,
+                intent                    TEXT,
+                project_paths             TEXT,
+                rerun_from_node           TEXT,
                 created_at                INTEGER DEFAULT (strftime('%s','now')),
                 updated_at                INTEGER DEFAULT (strftime('%s','now'))
             )
@@ -48,6 +52,17 @@ public class RamSchemaInitializer {
 
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_agent_session_user ON agent_session(user_id)");
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_agent_session_status ON agent_session(status)");
+
+        // Idempotent ALTER TABLE migrations for existing databases
+        addColumnIfNotExists("agent_session", "uuid", "TEXT");
+        addColumnIfNotExists("agent_session", "intent", "TEXT");
+        addColumnIfNotExists("agent_session", "project_paths", "TEXT");
+        addColumnIfNotExists("agent_session", "rerun_from_node", "TEXT");
+        addColumnIfNotExists("agent_session", "source_branch", "TEXT");
+        addColumnIfNotExists("agent_session", "target_branch", "TEXT");
+
+        // Create indexes on new columns AFTER migration ensures they exist
+        addIndexIfNotExists("idx_agent_session_uuid", "agent_session(uuid)");
 
         jdbcTemplate.execute("""
             CREATE TABLE IF NOT EXISTS agent_event (
@@ -78,5 +93,31 @@ public class RamSchemaInitializer {
                 + "ON agent_event(session_id, seq)");
 
         log.info("[RAM-SQLite] Schema initialization complete - 2 tables ensured");
+    }
+
+    private void addColumnIfNotExists(String table, String column, String type) {
+        try {
+            boolean exists = jdbcTemplate.queryForList("PRAGMA table_info(" + table + ")")
+                    .stream().anyMatch(row -> column.equalsIgnoreCase((String) row.get("name")));
+            if (!exists) {
+                jdbcTemplate.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + type);
+                log.info("[RAM-SQLite] Added column {}.{}", table, column);
+            }
+        } catch (Exception e) {
+            log.warn("[RAM-SQLite] Migration {}.{} failed (may already exist): {}", table, column, e.getMessage());
+        }
+    }
+
+    private void addIndexIfNotExists(String indexName, String indexSpec) {
+        try {
+            boolean exists = jdbcTemplate.queryForList("PRAGMA index_list(agent_session)")
+                    .stream().anyMatch(row -> indexName.equalsIgnoreCase((String) row.get("name")));
+            if (!exists) {
+                jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS " + indexName + " ON " + indexSpec);
+                log.info("[RAM-SQLite] Created index {}", indexName);
+            }
+        } catch (Exception e) {
+            log.warn("[RAM-SQLite] Index {} failed: {}", indexName, e.getMessage());
+        }
     }
 }

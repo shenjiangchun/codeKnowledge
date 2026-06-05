@@ -75,3 +75,57 @@ export function getRamSession(sessionId: string): Promise<SessionInfoResponse> {
 export function executeTechPlan(sessionId: string): Promise<Record<string, unknown>> {
   return request.post(`/ram/sessions/${sessionId}/nodes/tech-plan`)
 }
+
+// ──────────────── Session History ────────────────
+
+export interface SessionSummary {
+  sessionId: string | null
+  status: string | null
+  currentNode: string | null
+  intent: string | null
+  projectPaths: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+export function listRamSessions(limit = 50): Promise<SessionSummary[]> {
+  return request.get('/ram/sessions', { params: { limit } })
+}
+
+export interface RamEvent {
+  seq: number
+  type: string | null
+  payload: Record<string, unknown>
+  createdAt: number
+}
+
+export function getRamSessionEvents(sessionId: string): Promise<RamEvent[]> {
+  return request.get(`/ram/sessions/${sessionId}/events`)
+}
+
+export function rerunFromNode(sessionId: string, nodeName: string): Promise<Record<string, unknown>> {
+  return request.post(`/ram/sessions/${sessionId}/rerun-from/${nodeName}`)
+}
+
+export interface ClarifyRoundSummary {
+  roundNo: number
+  questions: string[]
+  answers: Record<string, unknown>
+}
+
+export function listClarifyRounds(sessionId: string): Promise<ClarifyRoundSummary[]> {
+  return request.get(`/ram/sessions/${sessionId}/clarify-rounds`)
+}
+
+export function rerunFromRound(sessionId: string, roundNo: number): Promise<Record<string, unknown>> {
+  return request.post(`/ram/sessions/${sessionId}/rerun-from-round/${roundNo}`)
+}
+
+export interface RamHealthResponse {
+  status: string
+  startedAt: number
+}
+
+export function getRamHealth(): Promise<RamHealthResponse> {
+  return request.get('/ram/health')
+}

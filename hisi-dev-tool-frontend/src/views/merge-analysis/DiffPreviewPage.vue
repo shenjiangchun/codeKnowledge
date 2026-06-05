@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getDiff } from '@/api/merge-analysis'
+import { getDiff, startMergeAnalysis } from '@/api/merge-analysis'
 import type { DiffResult, FileDiff } from '@/types/merge-analysis'
 
 const route = useRoute()
@@ -34,15 +34,25 @@ function toggleFile(filePath: string) {
   }
 }
 
-function handleStartAnalysis() {
-  router.push({
-    name: 'MergeAnalysisResult',
-    query: { projectPath, sourceBranch, targetBranch }
-  })
+const starting = ref(false)
+
+async function handleStartAnalysis() {
+  starting.value = true
+  try {
+    const resp = await startMergeAnalysis({ projectPath, sourceBranch, targetBranch })
+    router.push({
+      name: 'MergeAnalysisResult',
+      query: { projectPath, sourceBranch, targetBranch, sid: resp.sessionHandle }
+    })
+  } catch {
+    ElMessage.error('启动分析失败')
+  } finally {
+    starting.value = false
+  }
 }
 
 function handleBack() {
-  router.push({ name: 'MergeAnalysisInput' })
+  router.push({ name: 'MergeAnalysisInput', query: { projectPath, sourceBranch, targetBranch } })
 }
 
 onMounted(async () => {
@@ -123,7 +133,7 @@ onMounted(async () => {
 
       <div class="action-bar">
         <el-button @click="handleBack">上一步</el-button>
-        <el-button type="primary" @click="handleStartAnalysis">
+        <el-button type="primary" :loading="starting" @click="handleStartAnalysis">
           开始分析
         </el-button>
       </div>

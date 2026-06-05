@@ -16,6 +16,7 @@ import { computed, getCurrentInstance, onUnmounted, ref, type ComputedRef, type 
 import {
   abortRamSession,
   confirmRamNode,
+  getRamSessionEvents,
   ramStreamUrl,
   resumeRamSession,
   startRamSession,
@@ -39,7 +40,7 @@ export interface UseRamSessionReturn {
   ) => Promise<void>
   resume: () => Promise<void>
   abort: () => Promise<void>
-  rejoin: (sid: string, afterSeq?: number) => void
+  rejoin: (sid: string, afterSeq?: number) => Promise<void>
   disconnect: () => void
 }
 
@@ -294,21 +295,89 @@ export function useRamSession(): UseRamSessionReturn {
   }
 
   /**
-   * Re-attach to an in-flight session (e.g. after a page refresh). Unlike
-   * {@link start}, this does not POST anywhere and does not reset accumulated
-   * events/cost — it just opens the SSE stream against an existing session id,
-   * routing every event through {@link handleEvent} so dedup, cumulative-cost
-   * guard, and terminal-state transitions all apply consistently.
+   * Re-attach to an in-flight session (e.g. after a page refresh or switching
+   * from the session list). Resets all composable state before loading the new
+   * session so no data leaks from a prior session.
    */
-  const rejoin = (sid: string, afterSeq = 0): void => {
+  const rejoin = async (sid: string, afterSeq = 0): Promise<void> => {
+    // Reset all state to avoid leaking data from a prior session
+    tearDown()
+    events.value = []
+    clarifyQuestions.value = null
+    hitlSchema.value = null
+    tokens.value = 0
+    usd.value = 0
+    lastSeq.value = 0
     sessionId.value = sid
+
+    // Load historical events from REST so page refresh doesn't lose content
+    try {
+      const allEvents = await getRamSessionEvents(sid)
+      if (allEvents && allEvents.length > 0) {
+        events.value = allEvents
+        const maxSeq = allEvents.reduce((max, e) => Math.max(max, e.seq ?? 0), 0)
+        if (maxSeq > lastSeq.value) lastSeq.value = maxSeq
+        dbg('rejoin: loaded', allEvents.length, 'historical events, maxSeq=', maxSeq)
+
+        // Derive clarify/hitl status from historical events
+        // Process in reverse to find the latest state
+        for (let i = allEvents.length - 1; i >= 0; i--) {
+          const ev = allEvents[i]
+          if (!ev || typeof ev.type !== 'string') continue
+          const payload = (ev.payload ?? {}) as Record<string, unknown>
+
+          if ((ev.type === 'CLARIFY_REQUIRED' || ev.type === 'CLARIFY_REQ') && !clarifyQuestions.value) {
+            const questions = Array.isArray(payload['questions'])
+              ? (payload['questions'] as unknown[]).map((q) => String(q))
+              : []
+            clarifyQuestions.value = {
+              nodeName: typeof payload['nodeName'] === 'string' ? (payload['nodeName'] as string) : undefined,
+              questions
+            }
+          }
+          if ((ev.type === 'HITL_REQUIRED' || ev.type === 'HITL_REQ') && !hitlSchema.value) {
+            hitlSchema.value = {
+              nodeName: typeof payload['nodeName'] === 'string' ? (payload['nodeName'] as string) : '',
+              output: (payload['output'] ?? {}) as Record<string, unknown>
+            }
+          }
+          // Terminal events take precedence — break early
+          if (ev.type === 'RUN_COMPLETED') { break }
+          if (ev.type === 'RUN_FAILED' || ev.type === 'ERROR') { break }
+          if (ev.type === 'RUN_ABORTED') { break }
+        }
+
+        // Determine status from the last event
+        const lastEvent = allEvents[allEvents.length - 1]
+        if (lastEvent) {
+          const t = lastEvent.type
+          if (t === 'RUN_COMPLETED') {
+            status.value = 'completed'
+          } else if (t === 'RUN_FAILED' || t === 'ERROR') {
+            status.value = 'error'
+          } else if (t === 'RUN_ABORTED') {
+            status.value = 'aborted'
+          } else if (t === 'CLARIFY_REQUIRED' || t === 'CLARIFY_REQ') {
+            status.value = 'clarify'
+          } else if (t === 'HITL_REQUIRED' || t === 'HITL_REQ') {
+            status.value = 'confirm'
+          } else {
+            status.value = 'running'
+          }
+        }
+      }
+    } catch (e) {
+      dbg('rejoin: failed to load historical events', e)
+    }
+
     if (afterSeq > lastSeq.value) {
       lastSeq.value = afterSeq
     }
-    if (status.value === 'idle') {
+    // Only open SSE if the session is still in-progress
+    if (status.value === 'running' || status.value === 'idle') {
       status.value = 'running'
+      openStream(sid)
     }
-    openStream(sid)
   }
 
   // Best-effort auto-cleanup when used inside a component instance. Callers

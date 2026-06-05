@@ -36,6 +36,9 @@ public class ScopeNarrowingService {
     /** Truncate long method bodies to prevent prompt overflow. */
     private static final int MAX_METHOD_BODY_CHARS = 2000;
 
+    /** Max user prompt length (chars) per Claude call — controls context budget. */
+    private static final int MAX_PROMPT_CHARS = 80_000;
+
     private static final String SYSTEM_PROMPT = """
             你是一名资深 Java 架构师，负责判断代码方法与需求的关联性。
 
@@ -67,6 +70,7 @@ public class ScopeNarrowingService {
 
     /**
      * Filter candidates to only those Claude confirms are relevant.
+     * Splits candidates into batches to avoid prompt overflow.
      *
      * @param intent      the user's requirement description
      * @param candidates  seed nodes from search
@@ -92,24 +96,39 @@ public class ScopeNarrowingService {
                     .collect(Collectors.toMap(
                             MethodBodyInfo::nodeId, b -> b, (a, b) -> a));
 
-            // 2. Build user prompt with code snippets
-            String userPrompt = buildUserPrompt(intent, candidates, bodyMap);
+            // 2. Split into batches by cumulative prompt length, not fixed count
+            Set<String> allRelevantIds = new HashSet<>();
+            List<List<Seed>> batches = splitByPromptSize(intent, candidates, bodyMap);
+            int totalBatches = batches.size();
 
-            // 3. Call Claude
-            Map<String, Object> result = claude.callJson(
-                    SYSTEM_PROMPT,
-                    userPrompt,
-                    new SendOptions(claude.defaultModel(), 2048, 0.1, SYSTEM_PROMPT));
+            for (int batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
+                List<Seed> batch = batches.get(batchIdx);
+                String userPrompt = buildUserPrompt(intent, batch, bodyMap);
 
-            // 4. Extract relevant nodeIds
-            Set<String> relevantIds = extractRelevantNodeIds(result);
-            if (relevantIds.isEmpty()) {
+                try {
+                    Map<String, Object> result = claude.callJson(
+                            SYSTEM_PROMPT,
+                            userPrompt,
+                            new SendOptions(claude.defaultModel(), 8192, 0.1, SYSTEM_PROMPT));
+
+                    Set<String> batchRelevant = extractRelevantNodeIds(result);
+                    allRelevantIds.addAll(batchRelevant);
+                    log.info("[ScopeNarrowingService] batch {}/{}: {} candidates (prompt {} chars) → {} relevant",
+                            batchIdx + 1, totalBatches, batch.size(), userPrompt.length(), batchRelevant.size());
+                } catch (Exception ex) {
+                    log.warn("[ScopeNarrowingService] batch {}/{} failed — keeping all in batch: {}",
+                            batchIdx + 1, totalBatches, ex.getMessage());
+                    batch.forEach(s -> allRelevantIds.add(s.nodeId()));
+                }
+            }
+
+            if (allRelevantIds.isEmpty()) {
                 log.warn("[ScopeNarrowingService] Claude returned no relevant nodes — keeping all candidates");
                 return candidates;
             }
 
             List<Seed> narrowed = candidates.stream()
-                    .filter(s -> relevantIds.contains(s.nodeId()))
+                    .filter(s -> allRelevantIds.contains(s.nodeId()))
                     .toList();
 
             log.info("[ScopeNarrowingService] narrowed {} candidates → {} relevant (removed {})",
@@ -173,5 +192,52 @@ public class ScopeNarrowingService {
             }
         }
         return ids;
+    }
+
+    /**
+     * Split candidates into batches where each batch's user prompt stays
+     * under {@link #MAX_PROMPT_CHARS}. Estimates per-candidate prompt size
+     * from method body length to avoid building the full prompt speculatively.
+     */
+    private List<List<Seed>> splitByPromptSize(String intent, List<Seed> candidates,
+                                                Map<String, MethodBodyInfo> bodyMap) {
+        // Base overhead: intent section + formatting per candidate
+        int baseLen = intent.length() + 50; // "## 需求\n" + intent + "\n\n## 候选方法\n\n"
+
+        List<List<Seed>> batches = new ArrayList<>();
+        List<Seed> current = new ArrayList<>();
+        int currentLen = baseLen;
+
+        for (Seed seed : candidates) {
+            int entryLen = estimateEntryLength(seed, bodyMap);
+            if (!current.isEmpty() && currentLen + entryLen > MAX_PROMPT_CHARS) {
+                batches.add(List.copyOf(current));
+                current = new ArrayList<>();
+                currentLen = baseLen;
+            }
+            current.add(seed);
+            currentLen += entryLen;
+        }
+        if (!current.isEmpty()) {
+            batches.add(List.copyOf(current));
+        }
+        return batches;
+    }
+
+    /** Estimate the prompt characters a single candidate entry will occupy. */
+    private int estimateEntryLength(Seed seed, Map<String, MethodBodyInfo> bodyMap) {
+        MethodBodyInfo body = bodyMap.get(seed.nodeId());
+        if (body != null) {
+            int codeLen = body.methodBody() != null
+                    ? Math.min(body.methodBody().length(), MAX_METHOD_BODY_CHARS)
+                    : 10; // "(无源码)"
+            // "### 方法 N\n- nodeId: ...\n- class: ...\n- method: ...\n- description: ...\n```java\n...\n```\n\n"
+            return 80 + seed.nodeId().length() + body.className().length()
+                    + body.methodName().length()
+                    + (body.description() != null ? body.description().length() : 0)
+                    + codeLen;
+        }
+        // No body: "### 方法 N\n- nodeId: ...\n- summary: ...\n- (无法加载源码)\n\n"
+        return 60 + seed.nodeId().length() + (seed.summary() != null ? seed.summary().length() : 0);
     }
 }

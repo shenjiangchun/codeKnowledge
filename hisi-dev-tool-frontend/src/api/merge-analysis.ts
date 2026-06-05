@@ -33,3 +33,39 @@ export function mergeAnalysisStreamUrl(sessionId: string, afterSeq = 0): string 
   const base = `/api/merge-analysis/sessions/${sessionId}/stream`
   return afterSeq > 0 ? `${base}?afterSeq=${afterSeq}` : base
 }
+
+// ──────────────── Session History ────────────────
+
+export interface MergeSessionSummary {
+  sessionId: string | null
+  status: string | null
+  currentNode: string | null
+  intent: string | null
+  projectPaths: string | null
+  sourceBranch: string | null
+  targetBranch: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+export function listMergeAnalysisSessions(limit = 50): Promise<MergeSessionSummary[]> {
+  return request.get('/merge-analysis/sessions', { params: { limit } })
+}
+
+export interface MergeEvent {
+  seq: number
+  type: string | null
+  payload: Record<string, unknown>
+  createdAt: number
+}
+
+export function getMergeAnalysisSessionEvents(sessionId: string): Promise<MergeEvent[]> {
+  return request.get(`/merge-analysis/sessions/${sessionId}/events`)
+}
+
+export function rerunMergeAnalysisNode(
+  sessionId: string,
+  nodeName: string
+): Promise<Record<string, unknown>> {
+  return request.post(`/merge-analysis/sessions/${sessionId}/rerun-from/${nodeName}`)
+}

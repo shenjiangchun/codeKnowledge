@@ -1,5 +1,5 @@
 import { getCurrentInstance, onUnmounted, ref, type Ref } from 'vue'
-import { startMergeAnalysis, mergeAnalysisStreamUrl } from '@/api/merge-analysis'
+import { startMergeAnalysis, mergeAnalysisStreamUrl, getMergeAnalysisSessionEvents } from '@/api/merge-analysis'
 import type { MergeAnalysisEvent, MergeAnalysisStatus } from '@/types/merge-analysis'
 
 export interface UseMergeAnalysisReturn {
@@ -9,7 +9,7 @@ export interface UseMergeAnalysisReturn {
   currentNode: Ref<string>
   lastSeq: Ref<number>
   start: (projectPath: string, sourceBranch: string, targetBranch: string) => Promise<string>
-  rejoin: (sid: string, afterSeq?: number) => void
+  rejoin: (sid: string, afterSeq?: number) => Promise<void>
   disconnect: () => void
 }
 
@@ -49,7 +49,7 @@ export function useMergeAnalysisSession(): UseMergeAnalysisReturn {
     events.value = [...events.value, parsed]
 
     if (parsed.type === 'CHECKPOINT') {
-      const node = parsed.payload['node']
+      const node = parsed.payload['nodeName'] ?? parsed.payload['node']
       if (typeof node === 'string') {
         currentNode.value = node
       }
@@ -106,15 +106,49 @@ export function useMergeAnalysisSession(): UseMergeAnalysisReturn {
     }
   }
 
-  const rejoin = (sid: string, afterSeq = 0): void => {
+  const rejoin = async (sid: string, afterSeq = 0): Promise<void> => {
+    // Reset all state to avoid leaking data from a prior session
+    tearDown()
+    events.value = []
+    currentNode.value = ''
+    lastSeq.value = 0
     sessionId.value = sid
+
+    // Load historical events from REST before opening SSE
+    try {
+      const allEvents = await getMergeAnalysisSessionEvents(sid)
+      if (allEvents && allEvents.length > 0) {
+        events.value = allEvents.map(e => ({
+          seq: e.seq,
+          type: e.type ?? '',
+          payload: e.payload ?? {}
+        }))
+        const maxSeq = allEvents.reduce((max, e) => Math.max(max, e.seq ?? 0), 0)
+        if (maxSeq > lastSeq.value) lastSeq.value = maxSeq
+
+        // Derive status from the last event
+        const lastEvent = allEvents[allEvents.length - 1]
+        if (lastEvent) {
+          const t = lastEvent.type
+          if (t === 'RUN_COMPLETED') {
+            status.value = 'completed'
+          } else if (t === 'RUN_FAILED' || t === 'ERROR') {
+            status.value = 'error'
+          } else {
+            status.value = 'running'
+          }
+        }
+      }
+    } catch { /* ignore — SSE will still work */ }
+
     if (afterSeq > lastSeq.value) {
       lastSeq.value = afterSeq
     }
-    if (status.value === 'idle') {
+    // Only open SSE if session is still in-progress
+    if (status.value === 'running' || status.value === 'idle') {
       status.value = 'running'
+      openStream(sid)
     }
-    openStream(sid)
   }
 
   const disconnect = (): void => {

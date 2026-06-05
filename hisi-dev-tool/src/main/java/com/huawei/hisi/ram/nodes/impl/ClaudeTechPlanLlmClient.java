@@ -127,12 +127,15 @@ public class ClaudeTechPlanLlmClient implements TechPlanLlmClient {
     private String buildUserPrompt(Map<String, Object> impactOutput,
                                    Map<String, Object> implementOutput,
                                    String intent) {
+        log.info("[RAM][ClaudeTechPlanLlmClient] buildUserPrompt impact={} implement={}",
+                impactOutput != null ? ("keys=" + impactOutput.keySet()) : "null",
+                implementOutput != null ? ("keys=" + implementOutput.keySet()) : "null");
         StringBuilder sb = new StringBuilder();
-        sb.append("## 需求描述\n").append(intent).append("\n\n");
+        sb.append("## 需求描述\n").append(intent != null ? intent : "").append("\n\n");
         sb.append("## 影响分析结果\n");
-        sb.append(impactOutput == null ? "{}" : impactOutput.toString()).append("\n\n");
+        sb.append(impactOutput == null ? "（无影响分析数据）" : formatMap(impactOutput)).append("\n\n");
         sb.append("## 实现方案\n");
-        sb.append(implementOutput == null ? "{}" : implementOutput.toString()).append("\n\n");
+        sb.append(implementOutput == null ? "（无实现方案数据）" : formatMap(implementOutput)).append("\n\n");
         sb.append("\n请使用工具深入分析代码，然后返回完整的技术方案 JSON。");
         return sb.toString();
     }
@@ -186,5 +189,15 @@ public class ClaudeTechPlanLlmClient implements TechPlanLlmClient {
     private List<Object> asList(Object o) {
         if (o instanceof List<?> l) return List.copyOf(l);
         return List.of();
+    }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
+
+    private String formatMap(Map<String, Object> map) {
+        try {
+            return JSON.writerWithDefaultPrettyPrinter().writeValueAsString(map);
+        } catch (Exception e) {
+            return map.toString();
+        }
     }
 }

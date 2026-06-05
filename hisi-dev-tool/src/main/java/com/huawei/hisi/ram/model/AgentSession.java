@@ -26,6 +26,12 @@ public class AgentSession {
     private int stepCount;
     private Long lastCheckpointEventId;
     private String cacheKey;
+    private String uuid;
+    private String intent;
+    private String projectPaths;
+    private String rerunFromNode;
+    private String sourceBranch;
+    private String targetBranch;
     private int version;
     private long createdAt;
     private long updatedAt;

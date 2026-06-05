@@ -31,7 +31,7 @@ import ImpactOutputView from '@/components/ram/ImpactOutputView.vue'
 import TechPlanOutputView from '@/components/ram/TechPlanOutputView.vue'
 import { deriveDagSnapshot, type DagNodeKey } from '@/components/ram/dagModel'
 import { useRamSession } from '@/composables/useRamSession'
-import { executeTechPlan, getRamSession } from '@/api/ram'
+import { executeTechPlan, getRamHealth, getRamSession, rerunFromNode, listClarifyRounds, rerunFromRound, type ClarifyRoundSummary } from '@/api/ram'
 import { useRamStore, type ImpactPayload } from '@/stores/ram'
 
 const route = useRoute()
@@ -58,7 +58,26 @@ const nodeReasoning = ref<Record<string, string>>({})
 // Current progress message for running node
 const progressMessage = ref<string>('')
 
-const dagNodes = computed(() => deriveDagSnapshot(session.events.value, session.status.value))
+// Clarify rounds history
+const clarifyRounds = ref<ClarifyRoundSummary[]>([])
+const clarifyRoundsLoading = ref(false)
+
+// Nodes whose CHECKPOINT results were cleared by rerun-from-node.
+// The DAG snapshot still sees old events, so we override status here.
+const clearedNodeKeys = ref<Set<DagNodeKey>>(new Set())
+
+const dagNodes = computed(() => {
+  const snapshot = deriveDagSnapshot(session.events.value, session.status.value)
+  // Override status for nodes cleared by rerun: first cleared node → running, rest → pending
+  const cleared = clearedNodeKeys.value
+  if (cleared.size === 0) return snapshot
+  const rerunNode = [...cleared][0]
+  return snapshot.map(n => {
+    if (!cleared.has(n.key)) return n
+    const isRerunNode = n.key === rerunNode
+    return { ...n, status: isRerunNode ? 'running' as const : 'pending' as const }
+  })
+})
 
 function asString(value: unknown): string | null {
   return typeof value === 'string' ? value : null
@@ -417,6 +436,17 @@ watch(
       const nodeKey = resolveNodeKey(evt)
       if (!nodeKey) continue
 
+      // When a rerun produces a CHECKPOINT for a cleared node, remove only that
+      // node from the cleared set. Downstream nodes stay cleared until they
+      // receive their own new CHECKPOINTs, so the DAG override keeps them as
+      // pending/running instead of showing stale "done" from old events.
+      const cleared = clearedNodeKeys.value
+      if (cleared.has(nodeKey) && evt.type === 'CHECKPOINT') {
+        const newCleared = new Set(cleared)
+        newCleared.delete(nodeKey)
+        clearedNodeKeys.value = newCleared
+      }
+
       // --- CHECKPOINT events: content is in payload.output ---
       if (evt.type === 'CHECKPOINT') {
         const output = asRecord(evt.payload['output'])
@@ -609,7 +639,17 @@ const techPlanTriggering = ref(false)
 async function onTriggerTechPlan(): Promise<void> {
   techPlanTriggering.value = true
   try {
-    await executeTechPlan(sid.value)
+    const resp = await executeTechPlan(sid.value)
+    // Mark tech_plan as running in clearedNodeKeys so DAG shows "执行中"
+    clearedNodeKeys.value = new Set(['tech_plan'])
+    techPlanMd.value = ''
+    techPlanOutputData.value = null
+    // Set session status to running so SSE stays open
+    session.status.value = 'running'
+    // Use nextSeq to skip already-processed events and rejoin SSE
+    const nextSeq = typeof resp['nextSeq'] === 'number' ? resp['nextSeq'] as number : 0
+    processedSeq = nextSeq
+    session.rejoin(sid.value, nextSeq)
     ElMessage.success('技术方案已开始生成')
   } catch (e) {
     const msg = e instanceof Error ? e.message : '触发技术方案失败'
@@ -618,6 +658,110 @@ async function onTriggerTechPlan(): Promise<void> {
     techPlanTriggering.value = false
   }
 }
+
+/** Map DagNodeKey to backend node name for rerun API. */
+const dagKeyToNodeName: Record<DagNodeKey, string> = {
+  clarify: 'clarify',
+  impact: 'impact',
+  implement: 'implement',
+  verify: 'verify',
+  tech_plan: 'tech_plan'
+}
+
+const rerunning = ref(false)
+
+async function onRerunFromNode(key: DagNodeKey): Promise<void> {
+  const nodeName = dagKeyToNodeName[key]
+  try {
+    const resp = await rerunFromNode(sid.value, nodeName)
+    rerunning.value = true
+    ElMessage.success(`将从 ${nodeName} 节点重新分析`)
+    // Mark this node + downstream as cleared so DAG shows correct status
+    const downstream: DagNodeKey[] = ['impact', 'implement', 'verify', 'tech_plan']
+    const startIdx = downstream.indexOf(key)
+    const toClear = key === 'clarify' ? ['clarify', ...downstream] as DagNodeKey[] : [key, ...downstream.slice(startIdx)]
+    clearedNodeKeys.value = new Set(toClear)
+    // Clear output for this node + downstream
+    for (const k of toClear) {
+      switch (k) {
+        case 'clarify': draftMd.value = ''; break
+        case 'impact': impactMd.value = ''; impactOutputData.value = null; impactPayload.value = null; break
+        case 'implement': implementMd.value = ''; break
+        case 'verify': verifyMd.value = ''; break
+        case 'tech_plan': techPlanMd.value = ''; techPlanOutputData.value = null; break
+      }
+    }
+    // Use nextSeq from backend to skip all historical events
+    const nextSeq = typeof resp['nextSeq'] === 'number' ? resp['nextSeq'] as number : 0
+    processedSeq = nextSeq
+    // Set session status to running so DAG shows correct state
+    session.status.value = 'running'
+    // Rejoin with nextSeq so SSE starts after historical events
+    session.rejoin(sid.value, nextSeq)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : '重跑失败'
+    ElMessage.error(msg)
+  } finally {
+    rerunning.value = false
+  }
+}
+
+/** Whether the rerun button should show for a DAG node (completed + not currently running). */
+function canRerun(key: DagNodeKey): boolean {
+  const node = dagNodes.value.find(n => n.key === key)
+  return (node?.status === 'done') && session.status.value !== 'running' && !rerunning.value
+}
+
+/** Load clarify rounds from backend. */
+async function loadClarifyRounds(): Promise<void> {
+  clarifyRoundsLoading.value = true
+  try {
+    clarifyRounds.value = await listClarifyRounds(sid.value)
+  } catch {
+    clarifyRounds.value = []
+  } finally {
+    clarifyRoundsLoading.value = false
+  }
+}
+
+async function onRerunFromRound(roundNo: number): Promise<void> {
+  try {
+    const resp = await rerunFromRound(sid.value, roundNo)
+    // Clear impact + downstream
+    const toClear: DagNodeKey[] = ['impact', 'implement', 'verify', 'tech_plan']
+    clearedNodeKeys.value = new Set(toClear)
+    for (const k of toClear) {
+      switch (k) {
+        case 'impact': impactMd.value = ''; impactOutputData.value = null; impactPayload.value = null; break
+        case 'implement': implementMd.value = ''; break
+        case 'verify': verifyMd.value = ''; break
+        case 'tech_plan': techPlanMd.value = ''; techPlanOutputData.value = null; break
+      }
+    }
+    const nextSeq = typeof resp['nextSeq'] === 'number' ? resp['nextSeq'] as number : 0
+    processedSeq = nextSeq
+    session.status.value = 'running'
+    session.rejoin(sid.value, nextSeq)
+    ElMessage.success(`从第 ${roundNo} 轮澄清结果重新执行后续节点`)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : '重跑失败'
+    ElMessage.error(msg)
+  }
+}
+
+/** Track backend startedAt for restart detection. */
+
+// Load clarify rounds when clarify node is done and has output
+watch(
+  () => [dagNodes.value.find(n => n.key === 'clarify')?.status, draftMd.value] as const,
+  ([status, md]) => {
+    if (status === 'done' && md && clarifyRounds.value.length === 0) {
+      loadClarifyRounds()
+    }
+  },
+  { immediate: true }
+)
+let backendStartedAt = 0
 
 const detailMarkdown = computed(() => {
   switch (activeNode.value) {
@@ -658,15 +802,42 @@ const detailTitle = computed(() => {
   return labels[activeNode.value]
 })
 
-onMounted(async () => {
-  const id = sid.value
+async function initSession(id: string): Promise<void> {
   if (!id) {
     ElMessage.error('缺少 session id')
-    router.replace({ name: 'RamInput' })
+    router.replace({ name: 'RamSessions' })
     return
   }
-  // Always rejoin SSE first so we don't miss events even if getRamSession fails
-  session.rejoin(id, 0)
+  // Reset DraftPage local state for the new session
+  draftMd.value = ''
+  impactMd.value = ''
+  implementMd.value = ''
+  verifyMd.value = ''
+  techPlanMd.value = ''
+  impactOutputData.value = null
+  techPlanOutputData.value = null
+  impactPayload.value = null
+  ramStore.clear()
+  nodeReasoning.value = {}
+  progressMessage.value = ''
+  clearedNodeKeys.value = new Set()
+  processedSeq = 0
+  clarifyRounds.value = []
+
+  // Capture backend startedAt for restart detection
+  try {
+    const health = await getRamHealth()
+    backendStartedAt = health.startedAt
+  } catch { /* non-critical */ }
+  // rejoin resets composable state and loads historical events
+  await session.rejoin(id, 0)
+  // Sync UI state from composable
+  if (session.status.value === 'clarify') {
+    showClarify.value = true
+  }
+  if (session.status.value === 'confirm') {
+    showConfirm.value = true
+  }
   try {
     const info = await getRamSession(id)
     if (info.clarifyPending) {
@@ -679,7 +850,35 @@ onMounted(async () => {
     const msg = e instanceof Error ? e.message : '加载会话信息失败，但SSE流已建立'
     ElMessage.warning(msg)
   }
+}
+
+// Watch sid for route param changes (Vue Router reuses the component)
+watch(sid, async (newSid, oldSid) => {
+  if (newSid && newSid !== oldSid) {
+    await initSession(newSid)
+  }
 })
+
+onMounted(async () => {
+  await initSession(sid.value)
+})
+
+// Restart detection: when SSE errors out, check if backend restarted
+watch(
+  () => session.status.value,
+  async (newStatus) => {
+    if (newStatus !== 'error') return
+    if (!backendStartedAt) return
+    try {
+      const health = await getRamHealth()
+      if (health.startedAt > backendStartedAt) {
+        backendStartedAt = health.startedAt
+        ElMessage.warning('后端已重启，正在恢复会话...')
+        await session.rejoin(sid.value, 0)
+      }
+    } catch { /* give up silently */ }
+  }
+)
 
 onBeforeUnmount(() => {
   session.disconnect()
@@ -750,6 +949,15 @@ onBeforeUnmount(() => {
       <article class="detail">
         <header class="detail-header">
           <h2>{{ detailTitle }}</h2>
+          <el-button
+            v-if="canRerun(activeNode)"
+            size="small"
+            type="warning"
+            :loading="rerunning"
+            @click="onRerunFromNode(activeNode)"
+          >
+            从此节点重跑
+          </el-button>
         </header>
         <div class="detail-body">
           <!-- Running node progress indicator -->
@@ -789,6 +997,41 @@ onBeforeUnmount(() => {
             </div>
             <div v-else class="detail-empty">— 暂无内容 —</div>
           </template>
+
+          <!-- Clarify rounds history (shown when clarify node is active and done) -->
+          <div v-if="activeNode === 'clarify' && clarifyRounds.length > 0" class="clarify-rounds-panel">
+            <el-divider>澄清轮次历史</el-divider>
+            <div class="round-list">
+              <div v-for="round in clarifyRounds" :key="round.roundNo" class="round-item">
+                <div class="round-header">
+                  <el-tag size="small" effect="plain">第 {{ round.roundNo }} 轮</el-tag>
+                  <el-button
+                    v-if="session.status.value !== 'running'"
+                    size="small"
+                    type="warning"
+                    plain
+                    @click="onRerunFromRound(round.roundNo)"
+                  >从本轮重跑后续节点</el-button>
+                </div>
+                <div class="round-body">
+                  <div class="round-questions">
+                    <span class="round-label">提问:</span>
+                    <ul>
+                      <li v-for="(q, qi) in round.questions" :key="qi">{{ q }}</li>
+                    </ul>
+                  </div>
+                  <div class="round-answers">
+                    <span class="round-label">回答:</span>
+                    <ul>
+                      <li v-for="(val, key) in round.answers" :key="String(key)">
+                        <span class="answer-key">{{ key }}:</span> {{ val }}
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <!-- Reasoning section (collapsible) -->
           <div v-if="activeReasoning" class="detail-reasoning">
@@ -1124,5 +1367,55 @@ onBeforeUnmount(() => {
 
 :deep(.el-collapse-item__content) {
   padding-bottom: 0;
+}
+
+/* Clarify rounds history */
+.clarify-rounds-panel {
+  margin-top: 16px;
+}
+.round-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.round-item {
+  background: #f5f7fa;
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+.round-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.round-body {
+  display: flex;
+  gap: 24px;
+}
+.round-questions,
+.round-answers {
+  flex: 1;
+  font-size: 13px;
+}
+.round-label {
+  font-weight: 600;
+  color: #606266;
+  margin-right: 4px;
+}
+.round-questions ul,
+.round-answers ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.round-questions li,
+.round-answers li {
+  margin-bottom: 2px;
+  line-height: 1.5;
+}
+.answer-key {
+  font-family: monospace;
+  font-size: 12px;
+  color: #909399;
 }
 </style>

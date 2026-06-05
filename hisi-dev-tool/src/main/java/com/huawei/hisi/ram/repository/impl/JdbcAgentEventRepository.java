@@ -131,6 +131,14 @@ public class JdbcAgentEventRepository implements AgentEventRepository {
         return max == null ? 0L : max;
     }
 
+    @Override
+    public long countBySessionIdAndType(long sessionId, EventType type) {
+        Long c = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM agent_event WHERE session_id = ? AND type = ?",
+                Long.class, sessionId, type.name());
+        return c == null ? 0L : c;
+    }
+
     private static Long nullableLong(Object o) {
         if (o == null) return null;
         if (o instanceof Number n) return n.longValue();

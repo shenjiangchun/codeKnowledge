@@ -11,6 +11,7 @@ import com.huawei.hisi.ram.model.AgentSession;
 import com.huawei.hisi.ram.model.SessionStatus;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -40,6 +41,9 @@ public class MergeAnalysisController {
 
     private final Map<String, Long> sessionIdMap = new ConcurrentHashMap<>();
     private final ScheduledExecutorService streamScheduler = Executors.newScheduledThreadPool(2);
+    private final long startedAt = System.currentTimeMillis();
+
+    private static final int MAX_SESSION_MAPPINGS = 10_000;
 
     public MergeAnalysisController(DiffExtractService diffExtractService,
                                    MergeAnalysisService mergeAnalysisService,
@@ -56,6 +60,32 @@ public class MergeAnalysisController {
     @PreDestroy
     void shutdown() {
         streamScheduler.shutdownNow();
+    }
+
+    @PostConstruct
+    void recoverSessionMappings() {
+        try {
+            for (AgentSession s : sessionRepository.listRecentByUserId("merge-analysis", MAX_SESSION_MAPPINGS)) {
+                if (s.getUuid() != null && !s.getUuid().isBlank()) {
+                    sessionIdMap.put(s.getUuid(), s.getId());
+                }
+            }
+            log.info("[MergeAnalysis] Recovered {} session mappings from DB", sessionIdMap.size());
+        } catch (Exception e) {
+            log.warn("[MergeAnalysis] Failed to recover session mappings", e);
+        }
+    }
+
+    private Long resolveBackendId(String handle) {
+        Long id = sessionIdMap.get(handle);
+        if (id != null) return id;
+        Optional<AgentSession> found = sessionRepository.findByUuid(handle);
+        if (found.isPresent()) {
+            id = found.get().getId();
+            sessionIdMap.put(handle, id);
+            return id;
+        }
+        return null;
     }
 
     public record DiffRequest(String projectPath, String sourceBranch, String targetBranch) {}
@@ -82,13 +112,20 @@ public class MergeAnalysisController {
         long id = mergeAnalysisService.createSession(
                 request.projectPath(), request.sourceBranch(), request.targetBranch());
         sessionIdMap.put(handle, id);
+        // Store uuid/intent for history list and restart recovery
+        // (projectPaths/sourceBranch/targetBranch already set in createSession)
+        sessionRepository.findById(id).ifPresent(s -> {
+            s.setUuid(handle);
+            s.setIntent("合入分析: " + request.sourceBranch() + " → " + request.targetBranch());
+            sessionRepository.update(s);
+        });
         mergeAnalysisService.runAnalysis(id, request.projectPath(), request.sourceBranch(), request.targetBranch());
         return ApiResponse.success(new StartResponse(handle));
     }
 
     @GetMapping("/sessions/{sid}")
     public ApiResponse<SessionInfo> getSession(@PathVariable("sid") String handle) {
-        Long backendId = sessionIdMap.get(handle);
+        Long backendId = resolveBackendId(handle);
         if (backendId == null) {
             return ApiResponse.error(404, "Session not found");
         }
@@ -101,6 +138,62 @@ public class MergeAnalysisController {
         return ApiResponse.success(new SessionInfo(s.getStatus().name(), s.getCurrentNode(), lastSeq));
     }
 
+    @PostMapping("/sessions/{sid}/rerun-from/{nodeName}")
+    public ApiResponse<Map<String, Object>> rerunFromNode(
+            @PathVariable("sid") String handle,
+            @PathVariable("nodeName") String nodeName) {
+        Long backendId = resolveBackendId(handle);
+        if (backendId == null) {
+            return ApiResponse.error(404, "Session not found");
+        }
+        Optional<AgentSession> sessionOpt = sessionRepository.findById(backendId);
+        if (sessionOpt.isEmpty()) {
+            return ApiResponse.error(404, "Session not found");
+        }
+
+        AgentSession session = sessionOpt.get();
+        session.setRerunFromNode(nodeName);
+        session.setStatus(SessionStatus.RUNNING);
+        sessionRepository.update(session);
+
+        // Append NODES_CLEARED event
+        List<String> clearedNodes = computeMergeClearedNodes(nodeName);
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("clearedNodes", clearedNodes);
+            AgentEvent ev = AgentEvent.builder()
+                    .sessionId(backendId)
+                    .type(com.huawei.hisi.ram.model.EventType.NODES_CLEARED)
+                    .payload(objectMapper.writeValueAsString(payload))
+                    .idempotencyKey("nodes-cleared-" + backendId + "-" + nodeName + "-" + System.nanoTime())
+                    .circuitState("OK")
+                    .validatorStatus("OK")
+                    .createdAt(System.currentTimeMillis() / 1000L)
+                    .build();
+            eventRepository.append(ev);
+        } catch (Exception e) {
+            log.warn("[MergeAnalysis] Failed to append NODES_CLEARED event: {}", e.getMessage());
+        }
+
+        long nextSeq = eventRepository.findMaxSeq(backendId);
+
+        mergeAnalysisService.rerunFromNode(backendId, nodeName);
+
+        return ApiResponse.success(Map.of(
+                "rerunFromNode", nodeName,
+                "dispatched", true,
+                "nextSeq", nextSeq));
+    }
+
+    private static List<String> computeMergeClearedNodes(String fromNode) {
+        String[] order = {"diff_extract", "impact_analysis", "test_scope"};
+        int idx = Arrays.asList(order).indexOf(fromNode);
+        if (idx < 0) return List.of();
+        List<String> result = new ArrayList<>();
+        for (int i = idx; i < order.length; i++) result.add(order[i]);
+        return result;
+    }
+
     @GetMapping("/sessions/{sid}/stream")
     public SseEmitter stream(@PathVariable("sid") String handle,
                              @RequestParam(value = "afterSeq", required = false) Long afterSeq) {
@@ -109,7 +202,7 @@ public class MergeAnalysisController {
 
         Runnable tick = () -> {
             try {
-                Long backendId = sessionIdMap.get(handle);
+                Long backendId = resolveBackendId(handle);
                 if (backendId == null) {
                     return;
                 }
@@ -149,6 +242,58 @@ public class MergeAnalysisController {
         emitter.onError(t -> future.cancel(true));
         return emitter;
     }
+
+    // ──────────────── History & Events ────────────────
+
+    public record SessionSummary(
+            String sessionId, String status, String currentNode,
+            String intent, String projectPaths,
+            String sourceBranch, String targetBranch,
+            long createdAt, long updatedAt) {}
+
+    @GetMapping("/sessions")
+    public ApiResponse<List<SessionSummary>> listSessions(
+            @RequestParam(value = "limit", defaultValue = "50") int limit) {
+        List<SessionSummary> out = new ArrayList<>();
+        for (AgentSession s : sessionRepository.listRecentByUserId("merge-analysis", limit)) {
+            String intentText = s.getIntent();
+            if (intentText != null && intentText.length() > 80) {
+                intentText = intentText.substring(0, 80) + "...";
+            }
+            out.add(new SessionSummary(
+                    s.getUuid(),
+                    s.getStatus() != null ? s.getStatus().name() : null,
+                    s.getCurrentNode(),
+                    intentText,
+                    s.getProjectPaths(),
+                    s.getSourceBranch(),
+                    s.getTargetBranch(),
+                    s.getCreatedAt() * 1000L,
+                    s.getUpdatedAt() * 1000L));
+        }
+        return ApiResponse.success(out);
+    }
+
+    @GetMapping("/sessions/{sid}/events")
+    public ApiResponse<List<Map<String, Object>>> listEvents(@PathVariable("sid") String handle) {
+        Long backendId = resolveBackendId(handle);
+        if (backendId == null) {
+            return ApiResponse.error(404, "Session not found");
+        }
+        List<AgentEvent> events = eventRepository.findBySessionId(backendId);
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (AgentEvent ev : events) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("seq", ev.getSeq());
+            row.put("type", ev.getType() == null ? null : ev.getType().name());
+            row.put("payload", parseJsonPayload(ev.getPayload()));
+            row.put("createdAt", ev.getCreatedAt() * 1000L);
+            out.add(row);
+        }
+        return ApiResponse.success(out);
+    }
+
+    // ──────────────── SSE helpers ────────────────
 
     private void sendEvent(SseEmitter emitter, Map<String, Object> payload) {
         try {

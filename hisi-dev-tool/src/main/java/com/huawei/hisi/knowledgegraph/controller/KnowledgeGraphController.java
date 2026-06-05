@@ -759,7 +759,7 @@ public class KnowledgeGraphController {
         List<CallCycleInfo> cycles = new ArrayList<>();
 
         buildDownstreamGraph(startNode.getNodeId(), resolvedPath, 0, maxDepth,
-            visitedNodes, graphNodes, graphEdges, nodesInCycle, cycles);
+            visitedNodes, graphNodes, graphEdges, nodesInCycle, cycles, null);
 
         CallChainGraphResponse response = CallChainGraphResponse.builder()
             .entryId(startNode.getNodeId())
@@ -1050,7 +1050,7 @@ public class KnowledgeGraphController {
         List<CallCycleInfo> cycles = new ArrayList<>();
 
         // 递归遍历调用链
-        buildDownstreamGraph(nodeId, resolvedPath, 0, maxDepth, visitedNodes, nodes, edges, nodesInCycle, cycles);
+        buildDownstreamGraph(nodeId, resolvedPath, 0, maxDepth, visitedNodes, nodes, edges, nodesInCycle, cycles, null);
 
         // 构建响应
         CallChainGraphResponse response = CallChainGraphResponse.builder()
@@ -1116,7 +1116,7 @@ public class KnowledgeGraphController {
         List<CallCycleInfo> cycles = new ArrayList<>();
 
         // 递归遍历调用链（projectPath 参数在 buildDownstreamGraph 内部未用于过滤，传空即可）
-        buildDownstreamGraph(methodNodeId, null, 0, maxDepth, visitedNodes, nodes, edges, nodesInCycle, cycles);
+        buildDownstreamGraph(methodNodeId, null, 0, maxDepth, visitedNodes, nodes, edges, nodesInCycle, cycles, null);
 
         // 检测环
         if (includeCycles) {
@@ -1230,7 +1230,8 @@ public class KnowledgeGraphController {
      */
     private void buildDownstreamGraph(String nodeId, String projectPath, int currentDepth, int maxDepth,
                                       Set<String> visitedNodes, List<GraphNode> nodes, List<GraphEdge> edges,
-                                      Set<String> nodesInCycle, List<CallCycleInfo> cycles) {
+                                      Set<String> nodesInCycle, List<CallCycleInfo> cycles,
+                                      String incomingCallType) {
         if (currentDepth > maxDepth || visitedNodes.contains(nodeId)) {
             // 检测到环
             if (visitedNodes.contains(nodeId)) {
@@ -1256,6 +1257,7 @@ public class KnowledgeGraphController {
             .className(method.getClassName())
             .depth(currentDepth)
             .inCycle(nodesInCycle.contains(nodeId))
+            .callType(incomingCallType)
             .signature(method.getSignature())
             .filePath(method.getFilePath())
             .startLine(method.getStartLine())
@@ -1281,7 +1283,7 @@ public class KnowledgeGraphController {
 
             // 递归处理被调用方
             buildDownstreamGraph(relation.calleeId(), projectPath, currentDepth + 1, maxDepth,
-                visitedNodes, nodes, edges, nodesInCycle, cycles);
+                visitedNodes, nodes, edges, nodesInCycle, cycles, relation.callType());
         }
     }
 
@@ -1290,7 +1292,8 @@ public class KnowledgeGraphController {
      * 镜像 buildDownstreamGraph，方向相反：从 nodeId 向上追溯调用者
      */
     private void buildUpstreamGraph(String nodeId, String projectPath, int currentDepth, int maxDepth,
-                                    Set<String> visitedNodes, List<GraphNode> nodes, List<GraphEdge> edges) {
+                                    Set<String> visitedNodes, List<GraphNode> nodes, List<GraphEdge> edges,
+                                    String incomingCallType) {
         if (currentDepth > maxDepth || visitedNodes.contains(nodeId)) {
             return;
         }
@@ -1311,6 +1314,7 @@ public class KnowledgeGraphController {
             .className(method.getClassName())
             .depth(-currentDepth)
             .inCycle(false)
+            .callType(incomingCallType)
             .signature(method.getSignature())
             .filePath(method.getFilePath())
             .startLine(method.getStartLine())
@@ -1335,7 +1339,7 @@ public class KnowledgeGraphController {
 
             // 递归向上
             buildUpstreamGraph(caller.callerId(), projectPath, currentDepth + 1, maxDepth,
-                visitedNodes, nodes, edges);
+                visitedNodes, nodes, edges, caller.callType());
         }
     }
 
@@ -1839,11 +1843,11 @@ public class KnowledgeGraphController {
             for (Neo4jMethodNodeRepository.CallRelationWithNodes bridge : matchedBridges) {
                 // 上游：从 FeignClient 方法向上追溯
                 buildUpstreamGraph(bridge.callerId(), resolvedPath, 0, maxDepth,
-                    globalVisited, allNodes, allEdges);
+                    globalVisited, allNodes, allEdges, null);
 
                 // 下游：从 ServiceImpl 方法向下追溯
                 buildDownstreamGraph(bridge.calleeId(), resolvedPath, 0, maxDepth,
-                    globalVisited, allNodes, allEdges, nodesInCycle, cycles);
+                    globalVisited, allNodes, allEdges, nodesInCycle, cycles, null);
 
                 // 确保 bridge 边本身存在
                 boolean bridgeEdgeExists = allEdges.stream()
@@ -1954,11 +1958,11 @@ public class KnowledgeGraphController {
             for (Neo4jMethodNodeRepository.CallRelationWithNodes bridge : matchedBridges) {
                 // 上游：从 Producer 方法向上追溯
                 buildUpstreamGraph(bridge.callerId(), resolvedPath, 0, maxDepth,
-                    globalVisited, allNodes, allEdges);
+                    globalVisited, allNodes, allEdges, null);
 
                 // 下游：从 Consumer 方法向下追溯
                 buildDownstreamGraph(bridge.calleeId(), resolvedPath, 0, maxDepth,
-                    globalVisited, allNodes, allEdges, nodesInCycle, cycles);
+                    globalVisited, allNodes, allEdges, nodesInCycle, cycles, null);
 
                 // 确保 bridge 边本身存在
                 boolean bridgeEdgeExists = allEdges.stream()

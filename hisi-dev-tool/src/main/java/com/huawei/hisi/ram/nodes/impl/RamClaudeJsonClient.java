@@ -99,32 +99,15 @@ public class RamClaudeJsonClient {
                 .blockLast();
 
         String raw = sb.toString().trim();
-        // Strip markdown fences if the model wrapped JSON in ```json ... ```
-        if (raw.startsWith("```")) {
-            int start = raw.indexOf('\n');
-            int end = raw.lastIndexOf("```");
-            if (start > 0 && end > start) {
-                raw = raw.substring(start + 1, end).trim();
-            }
-        }
 
         log.debug("[RamClaudeJsonClient] raw response length={}", raw.length());
 
-        try {
-            return MAPPER.readValue(raw, new TypeReference<>() {});
-        } catch (Exception ex) {
-            // Attempt truncated-JSON recovery: when the LLM hits max_tokens mid-response,
-            // the JSON string is cut off. Try closing unclosed structures and re-parsing.
-            Map<String, Object> recovered = recoverTruncatedJson(raw);
-            if (recovered != null) {
-                log.warn("[RamClaudeJsonClient] Recovered truncated JSON (original {} chars → partial result with keys {})",
-                        raw.length(), recovered.keySet());
-                return recovered;
-            }
-            log.error("[RamClaudeJsonClient] Failed to parse JSON response: {}",
-                    raw.length() > 500 ? raw.substring(0, 500) + "..." : raw, ex);
-            throw new IllegalStateException("Claude response is not valid JSON", ex);
+        if (raw.isEmpty()) {
+            log.error("[RamClaudeJsonClient] Empty response from Claude — returning empty map");
+            return Map.of();
         }
+
+        return parseJsonResponse(raw);
     }
 
     // ──────────────── Tool-Use API ────────────────

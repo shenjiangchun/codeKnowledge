@@ -24,7 +24,7 @@ public class InvolvedRingResolver {
 
     private static final Logger log = LoggerFactory.getLogger(InvolvedRingResolver.class);
 
-    private static final int DEFAULT_SEED_LIMIT = 10;
+    private static final int DEFAULT_SEED_LIMIT = 30;
     private static final int PER_QUERY_LIMIT = 10;
 
     private final KgMcpClient kg;

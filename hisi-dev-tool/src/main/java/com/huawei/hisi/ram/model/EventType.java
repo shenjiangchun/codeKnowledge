@@ -13,5 +13,6 @@ public enum EventType {
     CLARIFY_RES,
     HITL_REQ,
     HITL_RES,
+    NODES_CLEARED,
     ERROR
 }

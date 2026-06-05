@@ -152,6 +152,19 @@ export function deriveDagSnapshot(
     if (evt.type === 'CIRCUIT_OPEN' && lastRunning) {
       acc[lastRunning].status = 'circuit-open'
     }
+    if (evt.type === 'NODES_CLEARED') {
+      const clearedNodes = evt.payload['clearedNodes']
+      if (Array.isArray(clearedNodes)) {
+        for (const nodeName of clearedNodes) {
+          const key = PHASE_TO_NODE[nodeName.toLowerCase()]
+          if (key) {
+            acc[key].status = 'pending'
+            acc[key].tokens = 0
+            acc[key].events = 0
+          }
+        }
+      }
+    }
     if ((evt.type === 'RUN_FAILED' || evt.type === 'ERROR') && lastRunning) {
       acc[lastRunning].status = 'failed'
     }

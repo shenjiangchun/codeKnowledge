@@ -6,6 +6,7 @@ import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.model.SessionStatus;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
+import com.huawei.hisi.ram.model.AgentSession;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,15 +58,30 @@ public class DagExecutor {
         List<String> skipped = new ArrayList<>();
         Map<String, Object> previousOutput = initialInput == null ? Map.of() : initialInput;
 
+        // Load rerun-from-node flag: when set, skip cache for that node and all downstream
+        String rerunFromNode = sessionRepo.findById(sessionId)
+                .map(AgentSession::getRerunFromNode)
+                .orElse(null);
+        boolean forceRerun = (rerunFromNode == null);
+
         List<AgentEvent> sessionEvents = eventRepo.findBySessionId(sessionId);
-        log.info("[RAM][DagExecutor] run start sid={} nodes={} initialInput.keys={} priorEvents={}",
+        log.info("[RAM][DagExecutor] run start sid={} nodes={} initialInput.keys={} priorEvents={} rerunFrom={}",
                 sessionId,
                 orderedNodes.stream().map(DagNode::name).toList(),
                 previousOutput.keySet(),
-                sessionEvents.size());
+                sessionEvents.size(),
+                rerunFromNode);
 
         for (int nodeIdx = 0; nodeIdx < orderedNodes.size(); nodeIdx++) {
             DagNode node = orderedNodes.get(nodeIdx);
+
+            // Activate force-rerun once we reach the target node
+            if (!forceRerun && node.name().equals(rerunFromNode)) {
+                forceRerun = true;
+                log.info("[RAM][DagExecutor] sid={} node={} — forceRerun activated",
+                        sessionId, node.name());
+            }
+
             Map<String, Object> input = previousOutput;
 
             // Inject rejection feedback into input if the user rejected this node's
@@ -80,7 +96,8 @@ public class DagExecutor {
 
             String inputsHash = InputsHasher.hash(input);
 
-            Map<String, Object> cached = findCachedOutput(sessionEvents, node.name(), inputsHash);
+            // Skip cache lookup when force-rerun is active
+            Map<String, Object> cached = forceRerun ? null : findCachedOutput(sessionEvents, node.name(), inputsHash);
             if (cached != null) {
                 log.info("[RAM][DagExecutor] sid={} node={} CACHE HIT inputsHash={} cachedOutput.keys={}",
                         sessionId, node.name(), inputsHash, cached.keySet());
@@ -89,8 +106,8 @@ public class DagExecutor {
                 continue;
             }
 
-            log.info("[RAM][DagExecutor] sid={} node={} EXECUTE inputsHash={} input.keys={}",
-                    sessionId, node.name(), inputsHash, input.keySet());
+            log.info("[RAM][DagExecutor] sid={} node={} EXECUTE inputsHash={} input.keys={} forceRerun={}",
+                    sessionId, node.name(), inputsHash, input.keySet(), forceRerun);
             Map<String, Object> output;
             try {
                 output = node.execute(input);
@@ -119,8 +136,9 @@ public class DagExecutor {
 
             // ★ Inter-node confirmation gate: pause after each node (except the last)
             // to let the user review the output before proceeding.
+            // When force-rerun is active, skip HITL gate for rerun nodes.
             boolean isLastNode = (nodeIdx == orderedNodes.size() - 1);
-            if (!isLastNode && !isNodeConfirmed(sessionEvents, node.name())) {
+            if (!isLastNode && !forceRerun && !isNodeConfirmed(sessionEvents, node.name())) {
                 log.info("[RAM][DagExecutor] sid={} node={} HITL_REQ — awaiting confirmation",
                         sessionId, node.name());
                 appendHitlReq(sessionId, node.name(), safeOutput);
@@ -133,6 +151,9 @@ public class DagExecutor {
         log.info("[RAM][DagExecutor] sid={} DONE executed={} skipped={}",
                 sessionId, executed, skipped);
         sessionRepo.updateStatus(sessionId, SessionStatus.DONE);
+        if (rerunFromNode != null) {
+            sessionRepo.clearRerunFromNode(sessionId);
+        }
         return new ExecutionResult(sessionId, SessionStatus.DONE, executed, skipped, previousOutput);
     }
 
@@ -191,6 +212,7 @@ public class DagExecutor {
     private void appendClarifyReq(long sessionId, String nodeName, List<String> questions,
                                    Map<String, Object> originalInput,
                                    Map<String, Object> partialOutput) {
+        int roundNo = (int) eventRepo.countBySessionIdAndType(sessionId, EventType.CLARIFY_REQ) + 1;
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("nodeName", nodeName);
         payload.put("questions", questions);
@@ -204,6 +226,7 @@ public class DagExecutor {
                 .type(EventType.CLARIFY_REQ)
                 .payload(toJson(payload))
                 .idempotencyKey(key)
+                .clarifyRoundNo(roundNo)
                 .circuitState("OK")
                 .validatorStatus("OK")
                 .createdAt(nowEpoch())

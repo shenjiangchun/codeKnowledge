@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.PreparedStatement;
 import java.sql.Statement;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -24,14 +25,50 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
     private static final String INSERT_SQL = """
             INSERT INTO agent_session
                 (user_id, plan_id, status, current_node, step_count,
-                 last_checkpoint_event_id, cache_key, version, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 last_checkpoint_event_id, cache_key, uuid, intent, project_paths, rerun_from_node,
+                 source_branch, target_branch,
+                 version, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
     private static final String SELECT_SQL = """
             SELECT id, user_id, plan_id, status, current_node, step_count,
-                   last_checkpoint_event_id, cache_key, version, created_at, updated_at
+                   last_checkpoint_event_id, cache_key, uuid, intent, project_paths, rerun_from_node,
+                   source_branch, target_branch,
+                   version, created_at, updated_at
             FROM agent_session WHERE id = ?
+            """;
+
+    private static final String SELECT_BY_UUID_SQL = """
+            SELECT id, user_id, plan_id, status, current_node, step_count,
+                   last_checkpoint_event_id, cache_key, uuid, intent, project_paths, rerun_from_node,
+                   source_branch, target_branch,
+                   version, created_at, updated_at
+            FROM agent_session WHERE uuid = ?
+            """;
+
+    private static final String LIST_RECENT_SQL = """
+            SELECT id, user_id, plan_id, status, current_node, step_count,
+                   last_checkpoint_event_id, cache_key, uuid, intent, project_paths, rerun_from_node,
+                   source_branch, target_branch,
+                   version, created_at, updated_at
+            FROM agent_session ORDER BY updated_at DESC LIMIT ?
+            """;
+
+    private static final String LIST_RECENT_BY_USER_SQL = """
+            SELECT id, user_id, plan_id, status, current_node, step_count,
+                   last_checkpoint_event_id, cache_key, uuid, intent, project_paths, rerun_from_node,
+                   source_branch, target_branch,
+                   version, created_at, updated_at
+            FROM agent_session WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?
+            """;
+
+    private static final String LIST_RECENT_EXCLUDING_USER_SQL = """
+            SELECT id, user_id, plan_id, status, current_node, step_count,
+                   last_checkpoint_event_id, cache_key, uuid, intent, project_paths, rerun_from_node,
+                   source_branch, target_branch,
+                   version, created_at, updated_at
+            FROM agent_session WHERE user_id != ? ORDER BY updated_at DESC LIMIT ?
             """;
 
     private final JdbcTemplate jdbc;
@@ -49,6 +86,12 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
             .stepCount(rs.getInt("step_count"))
             .lastCheckpointEventId(nullableLong(rs.getObject("last_checkpoint_event_id")))
             .cacheKey(rs.getString("cache_key"))
+            .uuid(rs.getString("uuid"))
+            .intent(rs.getString("intent"))
+            .projectPaths(rs.getString("project_paths"))
+            .rerunFromNode(rs.getString("rerun_from_node"))
+            .sourceBranch(rs.getString("source_branch"))
+            .targetBranch(rs.getString("target_branch"))
             .version(rs.getInt("version"))
             .createdAt(rs.getLong("created_at"))
             .updatedAt(rs.getLong("updated_at"))
@@ -70,9 +113,15 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
                 ps.setLong(6, s.getLastCheckpointEventId());
             }
             ps.setString(7, s.getCacheKey());
-            ps.setInt(8, s.getVersion());
-            ps.setLong(9, s.getCreatedAt());
-            ps.setLong(10, s.getUpdatedAt());
+            ps.setString(8, s.getUuid());
+            ps.setString(9, s.getIntent());
+            ps.setString(10, s.getProjectPaths());
+            ps.setString(11, s.getRerunFromNode());
+            ps.setString(12, s.getSourceBranch());
+            ps.setString(13, s.getTargetBranch());
+            ps.setInt(14, s.getVersion());
+            ps.setLong(15, s.getCreatedAt());
+            ps.setLong(16, s.getUpdatedAt());
             return ps;
         }, kh);
         Number key = kh.getKey();
@@ -110,6 +159,8 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
                 UPDATE agent_session
                 SET plan_id = ?, status = ?, current_node = ?, step_count = ?,
                     last_checkpoint_event_id = ?, cache_key = ?,
+                    uuid = ?, intent = ?, project_paths = ?, rerun_from_node = ?,
+                    source_branch = ?, target_branch = ?,
                     version = version + 1,
                     updated_at = strftime('%s','now')
                 WHERE id = ? AND version = ?
@@ -117,6 +168,8 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
         int rows = jdbc.update(sql,
                 s.getPlanId(), s.getStatus().name(), s.getCurrentNode(), s.getStepCount(),
                 s.getLastCheckpointEventId(), s.getCacheKey(),
+                s.getUuid(), s.getIntent(), s.getProjectPaths(), s.getRerunFromNode(),
+                s.getSourceBranch(), s.getTargetBranch(),
                 s.getId(), s.getVersion());
         if (rows == 0) {
             return Optional.empty();
@@ -129,6 +182,38 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
         return jdbc.update(
                 "UPDATE agent_session SET status = ?, updated_at = strftime('%s','now') WHERE id = ?",
                 status.name(), id);
+    }
+
+    @Override
+    public Optional<AgentSession> findByUuid(String uuid) {
+        if (uuid == null || uuid.isBlank()) return Optional.empty();
+        try {
+            return Optional.ofNullable(jdbc.queryForObject(SELECT_BY_UUID_SQL, mapper, uuid));
+        } catch (EmptyResultDataAccessException ex) {
+            return Optional.empty();
+        }
+    }
+
+    @Override
+    public List<AgentSession> listRecent(int limit) {
+        return jdbc.query(LIST_RECENT_SQL, mapper, limit);
+    }
+
+    @Override
+    public List<AgentSession> listRecentByUserId(String userId, int limit) {
+        return jdbc.query(LIST_RECENT_BY_USER_SQL, mapper, userId, limit);
+    }
+
+    @Override
+    public List<AgentSession> listRecentExcludingUserId(String excludeUserId, int limit) {
+        return jdbc.query(LIST_RECENT_EXCLUDING_USER_SQL, mapper, excludeUserId, limit);
+    }
+
+    @Override
+    public int clearRerunFromNode(long id) {
+        return jdbc.update(
+                "UPDATE agent_session SET rerun_from_node = NULL, updated_at = strftime('%s','now') WHERE id = ?",
+                id);
     }
 
     private static Long nullableLong(Object o) {

@@ -147,17 +147,56 @@ public class MethodTargetResolver {
     }
 
     /**
-     * Map hybrid-search seeds directly to MethodTarget records, using the seed's
-     * summary as the reason field.
+     * Map hybrid-search seeds to MethodTarget records, extracting className and
+     * methodName from the nodeId format {@code projectPath:com.xxx.ClassName.methodName.hash}.
+     * Falls back to empty strings if the nodeId format is unrecognisable.
      */
     private List<MethodTarget> resolveFromSeeds(List<Seed> seeds) {
         return seeds.stream()
                 .filter(s -> s != null && s.nodeId() != null)
-                .map(s -> new MethodTarget(
-                        s.nodeId(),
-                        "",
-                        "",
-                        s.summary() != null ? s.summary() : ""))
+                .map(s -> {
+                    String className = extractClassNameFromNodeId(s.nodeId());
+                    String methodName = extractMethodNameFromNodeId(s.nodeId());
+                    return new MethodTarget(
+                            s.nodeId(),
+                            className != null ? className : "",
+                            methodName != null ? methodName : "",
+                            s.summary() != null ? s.summary() : "");
+                })
                 .toList();
+    }
+
+    /**
+     * Extract className from a nodeId of the format
+     * {@code projectPath:com.xxx.ClassName.methodName.signatureHash}.
+     * Returns {@code null} if the format is unrecognisable.
+     */
+    static String extractClassNameFromNodeId(String nodeId) {
+        if (nodeId == null) return null;
+        int colon = nodeId.indexOf(':');
+        if (colon < 0 || colon >= nodeId.length() - 1) return null;
+        String afterColon = nodeId.substring(colon + 1);
+        int lastDot = afterColon.lastIndexOf('.');
+        if (lastDot <= 0) return null;
+        int secondLastDot = afterColon.lastIndexOf('.', lastDot - 1);
+        if (secondLastDot <= 0) return null;
+        return afterColon.substring(0, secondLastDot);
+    }
+
+    /**
+     * Extract methodName from a nodeId of the format
+     * {@code projectPath:com.xxx.ClassName.methodName.signatureHash}.
+     * Returns {@code null} if the format is unrecognisable.
+     */
+    static String extractMethodNameFromNodeId(String nodeId) {
+        if (nodeId == null) return null;
+        int colon = nodeId.indexOf(':');
+        if (colon < 0 || colon >= nodeId.length() - 1) return null;
+        String afterColon = nodeId.substring(colon + 1);
+        int lastDot = afterColon.lastIndexOf('.');
+        if (lastDot <= 0) return null;
+        int secondLastDot = afterColon.lastIndexOf('.', lastDot - 1);
+        if (secondLastDot < 0) return null;
+        return afterColon.substring(secondLastDot + 1, lastDot);
     }
 }

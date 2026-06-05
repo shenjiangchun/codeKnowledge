@@ -3,13 +3,13 @@
   "hostname": "desktop-j6asme4",
   "model": "GLM-5.1-w4a8",
   "firstSeen": "2026-05-30T01:37:45.023Z",
-  "lastUpdated": "2026-06-04T11:29:37.734Z",
+  "lastUpdated": "2026-06-04T11:33:23.638Z",
   "stats": {
     "totalOperations": 696,
     "totalFilesEdited": 253,
-    "totalAiLines": 3391,
-    "totalAiLinesDeleted": 1221,
-    "totalCommits": 22
+    "totalAiLines": 3836,
+    "totalAiLinesDeleted": 1294,
+    "totalCommits": 23
   },
   "pendingFiles": [
     {
@@ -158,24 +158,6 @@
       "lastModified": "2026-06-01T02:17:56.676Z"
     },
     {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/repository/Neo4jMethodNodeRepository.java",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-06-03T04:43:47.662Z",
-      "lastModified": "2026-06-04T02:31:51.383Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/repository/Neo4jMethodNodeRepository.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 2,
-      "timestamp": "2026-06-03T04:43:47.726Z",
-      "lastModified": "2026-06-04T02:31:51.613Z",
-      "lastTool": "Edit"
-    },
-    {
       "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/controller/VectorGenerationController.java",
       "tool": "Edit",
       "operations": 1,
@@ -278,40 +260,6 @@
       "operations": 1,
       "timestamp": "2026-06-04T00:39:10.556Z",
       "lastModified": "2026-06-04T00:39:10.556Z"
-    },
-    {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/ram/kg/impl/DirectKgClient.java",
-      "tool": "Edit",
-      "operations": 3,
-      "timestamp": "2026-06-04T00:39:19.855Z",
-      "lastModified": "2026-06-04T02:33:48.478Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/kg/impl/DirectKgClient.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 3,
-      "timestamp": "2026-06-04T00:39:20.266Z",
-      "lastModified": "2026-06-04T02:33:48.615Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/repository/Neo4jEntryPointNodeRepository.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-04T02:31:35.348Z",
-      "lastModified": "2026-06-04T02:31:35.348Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/repository/Neo4jEntryPointNodeRepository.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 1,
-      "timestamp": "2026-06-04T02:31:36.197Z",
-      "lastModified": "2026-06-04T02:31:36.197Z"
     },
     {
       "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/ram/config/RamSchemaInitializer.java",
@@ -450,14 +398,6 @@
       "lastTool": "Edit"
     },
     {
-      "path": "hisi-dev-tool-frontend/src/stores/app.ts",
-      "tool": "Edit",
-      "operations": 3,
-      "timestamp": "2026-06-04T03:21:39.713Z",
-      "lastModified": "2026-06-04T08:55:18.029Z",
-      "lastTool": "Edit"
-    },
-    {
       "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/controller/MergeAnalysisController.java",
       "tool": "Edit",
       "operations": 12,
@@ -497,14 +437,6 @@
       "operations": 1,
       "timestamp": "2026-06-04T03:39:41.265Z",
       "lastModified": "2026-06-04T03:39:41.265Z"
-    },
-    {
-      "path": "hisi-dev-tool-frontend/src/views/merge-analysis/AnalysisPage.vue",
-      "tool": "Edit",
-      "operations": 9,
-      "timestamp": "2026-06-04T03:39:51.759Z",
-      "lastModified": "2026-06-04T11:13:03.135Z",
-      "lastTool": "Edit"
     },
     {
       "path": "hisi-dev-tool-frontend/src/views/merge-analysis/DiffPreviewPage.vue",
@@ -578,22 +510,6 @@
       "timestamp": "2026-06-04T06:38:54.521Z",
       "lastModified": "2026-06-04T06:39:51.947Z",
       "lastTool": "Edit"
-    },
-    {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/service/ImpactAnalysisService.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-04T06:47:37.253Z",
-      "lastModified": "2026-06-04T06:47:37.253Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/service/ImpactAnalysisService.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 1,
-      "timestamp": "2026-06-04T06:47:37.832Z",
-      "lastModified": "2026-06-04T06:47:37.832Z"
     },
     {
       "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/service/DiffExtractDagNode.java",
@@ -720,109 +636,6 @@
       "operations": 1,
       "timestamp": "2026-06-04T08:32:17.660Z",
       "lastModified": "2026-06-04T08:32:17.660Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool-frontend/src/stores/app.ts",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 1,
-      "timestamp": "2026-06-04T08:55:18.364Z",
-      "lastModified": "2026-06-04T08:55:18.364Z"
-    },
-    {
-      "path": "hisi-dev-tool-frontend/src/components/layout/AppSidebar.vue",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-06-04T08:56:34.797Z",
-      "lastModified": "2026-06-04T08:57:23.388Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool-frontend/src/components/layout/AppSidebar.vue",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 2,
-      "timestamp": "2026-06-04T08:56:35.119Z",
-      "lastModified": "2026-06-04T08:57:23.807Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "hisi-dev-tool-frontend/src/views/project/ProjectList.vue",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-04T09:05:06.353Z",
-      "lastModified": "2026-06-04T09:05:06.353Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool-frontend/src/views/project/ProjectList.vue",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 1,
-      "timestamp": "2026-06-04T09:05:06.819Z",
-      "lastModified": "2026-06-04T09:05:06.819Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool-frontend/src/views/merge-analysis/AnalysisPage.vue",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 3,
-      "timestamp": "2026-06-04T09:57:14.927Z",
-      "lastModified": "2026-06-04T11:13:03.248Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/model/TestScopeResult.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-04T11:11:23.709Z",
-      "lastModified": "2026-06-04T11:11:23.709Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/model/TestScopeResult.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 1,
-      "timestamp": "2026-06-04T11:11:24.297Z",
-      "lastModified": "2026-06-04T11:11:24.297Z"
-    },
-    {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/service/TestScopeService.java",
-      "tool": "Write",
-      "operations": 6,
-      "timestamp": "2026-06-04T11:12:30.852Z",
-      "lastModified": "2026-06-04T11:29:37.453Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/service/TestScopeService.java",
-      "tool": "Write",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 4,
-      "timestamp": "2026-06-04T11:12:30.971Z",
-      "lastModified": "2026-06-04T11:29:37.734Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "hisi-dev-tool-frontend/src/types/merge-analysis.ts",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-04T11:12:46.706Z",
-      "lastModified": "2026-06-04T11:12:46.706Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool-frontend/src/types/merge-analysis.ts",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 1,
-      "timestamp": "2026-06-04T11:12:46.823Z",
-      "lastModified": "2026-06-04T11:12:46.823Z"
     }
   ],
   "repoPath": "D:/hisi-code-analyser/codeKnowledge1"

@@ -81,6 +81,10 @@ public class RequirementAnalysisOrchestrator {
         if (!allRounds.isEmpty()) {
             merged.put("clarify_history", allRounds);
         }
+        // Override project paths from AgentSession so rerun uses the original project
+        sessionRepo.findById(sessionId).ifPresent(s -> {
+            injectProjectPaths(s, merged);
+        });
         return executor.run(nodes, sessionId, merged);
     }
 
@@ -229,6 +233,10 @@ public class RequirementAnalysisOrchestrator {
         if (!allRounds.isEmpty()) {
             fullInput.put("clarify_history", allRounds);
         }
+        // Override project paths from AgentSession so rerun uses the original project
+        sessionRepo.findById(sessionId).ifPresent(s -> {
+            injectProjectPaths(s, fullInput);
+        });
         return executor.run(nodes, sessionId, fullInput);
     }
 
@@ -241,6 +249,15 @@ public class RequirementAnalysisOrchestrator {
     }
 
     private void appendClarifyRes(long sessionId, Map<String, Object> answers) {
+        // Find the latest CLARIFY_REQ roundNo for this session
+        Integer roundNo = null;
+        List<AgentEvent> events = eventRepo.findBySessionId(sessionId);
+        for (int i = events.size() - 1; i >= 0; i--) {
+            if (events.get(i).getType() == EventType.CLARIFY_REQ && events.get(i).getClarifyRoundNo() != null) {
+                roundNo = events.get(i).getClarifyRoundNo();
+                break;
+            }
+        }
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("answers", answers == null ? Map.of() : answers);
         String key = "clarify-res-" + sessionId + "-" + System.nanoTime();
@@ -249,6 +266,7 @@ public class RequirementAnalysisOrchestrator {
                 .type(EventType.CLARIFY_RES)
                 .payload(toJson(payload))
                 .idempotencyKey(key)
+                .clarifyRoundNo(roundNo)
                 .circuitState("OK")
                 .validatorStatus("OK")
                 .createdAt(System.currentTimeMillis() / 1000L)
@@ -312,6 +330,27 @@ public class RequirementAnalysisOrchestrator {
             return objectMapper.writeValueAsString(payload);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to serialize event payload", e);
+        }
+    }
+
+    /**
+     * Inject project paths from AgentSession into the input map.
+     * Handles JSON array format (e.g. '["/path/a","/path/b"]') or plain string.
+     */
+    @SuppressWarnings("unchecked")
+    private void injectProjectPaths(AgentSession session, Map<String, Object> input) {
+        String pp = session.getProjectPaths();
+        if (pp == null || pp.isBlank()) return;
+        try {
+            List<String> paths = objectMapper.readValue(pp, List.class);
+            if (!paths.isEmpty()) {
+                input.put("project_paths", paths);
+                input.put("projectPath", paths.get(0));
+            }
+        } catch (Exception e) {
+            // Not JSON — treat as single path
+            input.put("project_paths", List.of(pp));
+            input.put("projectPath", pp);
         }
     }
 }

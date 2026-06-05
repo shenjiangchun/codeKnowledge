@@ -283,7 +283,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { projectApi } from '@/api/project'
@@ -301,6 +301,7 @@ import CrossServiceBridgeTab from './components/CrossServiceBridgeTab.vue'
 import GraphExplorerTab from './components/GraphExplorerTab.vue'
 
 const route = useRoute()
+const router = useRouter()
 const appStore = useAppStore()
 
 interface ProjectInfo {
@@ -531,6 +532,12 @@ const loadProjects = async () => {
     } else if (projects.value.length === 1 && selectedProjectNames.value.length === 0) {
       selectedProjectNames.value = [projects.value[0].name]
     }
+    // Restore from URL query param if still unselected
+    const urlProject = route.query.project as string | undefined
+    if (urlProject && selectedProjectNames.value.length === 0) {
+      const names = urlProject.split(',').filter(n => nameMap.has(n))
+      if (names.length > 0) selectedProjectNames.value = names
+    }
   } catch (error) {
     console.error('Failed to load projects:', error)
   }
@@ -585,6 +592,8 @@ const handleProjectChange = () => {
   loadGraphStatus()
   loadGitStatus()
   loadVectorStatus()
+  // Persist project selection to URL so refresh/bookmark restores it
+  router.replace({ query: { ...route.query, project: selectedProjectNames.value.join(',') } })
 }
 
 // 加载 Git 状态

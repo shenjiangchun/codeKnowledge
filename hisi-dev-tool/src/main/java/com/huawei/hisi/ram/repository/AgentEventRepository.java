@@ -1,6 +1,7 @@
 package com.huawei.hisi.ram.repository;
 
 import com.huawei.hisi.ram.model.AgentEvent;
+import com.huawei.hisi.ram.model.EventType;
 
 import java.util.List;
 import java.util.Optional;
@@ -28,4 +29,7 @@ public interface AgentEventRepository {
 
     /** Maximum seq for the session, or 0 if the session has no events. */
     long findMaxSeq(long sessionId);
+
+    /** Count events for a session filtered by type. */
+    long countBySessionIdAndType(long sessionId, EventType type);
 }

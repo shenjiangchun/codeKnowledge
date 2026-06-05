@@ -57,8 +57,8 @@ public class MultiQuerySearcher {
      * @param subQueries    list of intent-tagged sub-queries (from {@link QueryDecomposer})
      * @param projectPaths  target project directory paths
      * @param perQueryLimit max results per sub-query
-     * @param topK          number of final seeds to return (unused — returns all)
-     * @return ranked list of seeds with RRF-based scores
+     * @param topK          max number of final seeds to return after RRF fusion
+     * @return ranked list of seeds with RRF-based scores, truncated to topK
      */
     public List<Seed> search(List<SubQuery> subQueries, List<String> projectPaths,
                              int perQueryLimit, int topK) {
@@ -119,17 +119,18 @@ public class MultiQuerySearcher {
             return List.of();
         }
 
-        // 5. Sort by RRF score descending
+        // 5. Sort by RRF score descending, then truncate to topK
         List<Seed> ranked = rrfScores.entrySet().stream()
                 .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
                 .map(e -> {
                     Seed original = seedMap.get(e.getKey());
                     return new Seed(e.getKey(), e.getValue(), original.summary());
                 })
+                .limit(topK > 0 ? topK : Long.MAX_VALUE)
                 .toList();
 
-        log.info("[MultiQuerySearcher] {} sub-queries ({} expanded) → {} unique nodes → seeds (scores: {}-{})",
-                subQueries.size(), expanded.size(), ranked.size(),
+        log.info("[MultiQuerySearcher] {} sub-queries ({} expanded) → {} unique nodes → {} seeds (topK={}) (scores: {}-{})",
+                subQueries.size(), expanded.size(), rrfScores.size(), ranked.size(), topK,
                 ranked.isEmpty() ? "N/A" : String.format("%.4f", ranked.get(0).score()),
                 ranked.isEmpty() ? "N/A" : String.format("%.4f", ranked.get(ranked.size() - 1).score()));
 

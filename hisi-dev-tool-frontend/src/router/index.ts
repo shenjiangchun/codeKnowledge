@@ -109,9 +109,15 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/ram',
+    name: 'RamSessions',
+    component: () => import('@/views/ram/SessionListPage.vue'),
+    meta: { title: '需求分析大师' }
+  },
+  {
+    path: '/ram/new',
     name: 'RamInput',
     component: () => import('@/views/ram/InputPage.vue'),
-    meta: { title: '需求分析大师' }
+    meta: { title: '新建需求分析' }
   },
   {
     path: '/ram/draft/:sid',
@@ -127,9 +133,15 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/merge-analysis',
+    name: 'MergeAnalysisSessions',
+    component: () => import('@/views/merge-analysis/SessionListPage.vue'),
+    meta: { title: '合入分析' }
+  },
+  {
+    path: '/merge-analysis/new',
     name: 'MergeAnalysisInput',
     component: () => import('@/views/merge-analysis/InputPage.vue'),
-    meta: { title: '合入分析' }
+    meta: { title: '新建合入分析' }
   },
   {
     path: '/merge-analysis/diff',
