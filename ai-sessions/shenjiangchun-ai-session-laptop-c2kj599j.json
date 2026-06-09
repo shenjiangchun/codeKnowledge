@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-26T07:44:32.573Z",
-  "lastUpdated": "2026-06-09T03:56:11.729Z",
+  "lastUpdated": "2026-06-09T04:29:23.949Z",
   "stats": {
-    "totalOperations": 311,
-    "totalFilesEdited": 124,
-    "totalAiLines": 11012,
+    "totalOperations": 318,
+    "totalFilesEdited": 127,
+    "totalAiLines": 11038,
     "totalAiLinesDeleted": 606,
-    "totalCommits": 34
+    "totalCommits": 35
   },
   "pendingFiles": [
     {
@@ -98,13 +98,32 @@
       "lastModified": "2026-06-09T02:07:15.171Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/model/EntryPointNode.java",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/api/knowledgeGraph.ts",
       "tool": "Edit",
       "aiTool": "claude-code",
       "model": "Ali-glm-5-cc",
       "operations": 2,
-      "timestamp": "2026-06-09T03:55:45.556Z",
-      "lastModified": "2026-06-09T03:56:11.729Z",
+      "timestamp": "2026-06-09T04:27:24.016Z",
+      "lastModified": "2026-06-09T04:27:41.748Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/knowledge-graph/components/EntryPointList.vue",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 1,
+      "timestamp": "2026-06-09T04:28:22.776Z",
+      "lastModified": "2026-06-09T04:28:22.776Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/knowledge-graph/components/CodeUnderstandingTab.vue",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 4,
+      "timestamp": "2026-06-09T04:28:53.674Z",
+      "lastModified": "2026-06-09T04:29:23.949Z",
       "lastTool": "Edit"
     }
   ]

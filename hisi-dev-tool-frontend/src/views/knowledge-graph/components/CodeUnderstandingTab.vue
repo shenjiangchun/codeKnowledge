@@ -86,6 +86,7 @@
         </div>
         <EntryPointList
           :entry-points="filteredEntryPoints"
+          :entry-groups="entryGroups"
           :loading="loading"
           @select="handleSelectEntry"
         />
@@ -109,7 +110,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { knowledgeGraphApi, type EntryPoint, type KnowledgeGraphStatus } from '@/api/knowledgeGraph'
+import { knowledgeGraphApi, type EntryPoint, type KnowledgeGraphStatus, type ServiceEntryGroup, type EntrySummary } from '@/api/knowledgeGraph'
 import EntryPointList from './EntryPointList.vue'
 import EntryDetail from './EntryDetail.vue'
 
@@ -121,6 +122,7 @@ const props = defineProps<{
 const loading = ref(false)
 const status = ref<KnowledgeGraphStatus | null>(null)
 const entryPoints = ref<EntryPoint[]>([])
+const entryGroups = ref<ServiceEntryGroup[]>([])
 const selectedEntryType = ref<string>('')
 const selectedEntryKey = ref<string>('')
 const selectedEntry = ref<EntryPoint | null>(null)
@@ -158,7 +160,8 @@ const loadStatus = async () => {
   if (!props.projectPath) return
 
   try {
-    const result = await knowledgeGraphApi.getStatus(props.projectPaths)
+    const paths = props.projectPaths ?? [props.projectPath]
+    const result = await knowledgeGraphApi.getStatus(paths)
     status.value = result as unknown as KnowledgeGraphStatus
   } catch (error) {
     console.error('Failed to load status:', error)
@@ -171,12 +174,17 @@ const loadEntryPoints = async () => {
 
   loading.value = true
   try {
+    const paths = props.projectPaths ?? [props.projectPath]
     // 加载全部入口点，不按类型过滤（用于下拉选择）
-    const result = await knowledgeGraphApi.getEntryPoints(props.projectPaths, undefined, 1, 10000)
-    entryPoints.value = (result?.items ?? []) as unknown as EntryPoint[]
+    const result = await knowledgeGraphApi.getEntryPoints(paths, undefined, 1, 10000) as unknown as { items: EntryPoint[] }
+    entryPoints.value = result?.items ?? []
+    // 同时加载分组数据
+    const groups = await knowledgeGraphApi.getEntryPointsGrouped(paths) as unknown as ServiceEntryGroup[]
+    entryGroups.value = groups ?? []
   } catch (error: any) {
     ElMessage.error(`加载入口点失败: ${error.message || error}`)
     entryPoints.value = []
+    entryGroups.value = []
   } finally {
     loading.value = false
   }
@@ -202,11 +210,22 @@ const handleEntrySelect = (nodeId: string) => {
   }
 }
 
-// 处理列表点击选择
-const handleSelectEntry = (entry: EntryPoint) => {
-  selectedEntry.value = entry
-  selectedEntryKey.value = entry.nodeId
-  selectedEntryType.value = entry.entryType
+// 处理列表点击选择（支持 EntryPoint 或 EntrySummary）
+const handleSelectEntry = (entry: EntryPoint | EntrySummary) => {
+  // EntrySummary 只有 entryId，需要查找完整 EntryPoint
+  if ('nodeId' in entry) {
+    selectedEntry.value = entry as EntryPoint
+    selectedEntryKey.value = entry.nodeId
+    selectedEntryType.value = entry.entryType
+  } else {
+    // EntrySummary: 从 entryPoints 查找完整数据
+    const fullEntry = entryPoints.value.find(ep => ep.nodeId === entry.entryId)
+    if (fullEntry) {
+      selectedEntry.value = fullEntry
+      selectedEntryKey.value = fullEntry.nodeId
+      selectedEntryType.value = fullEntry.entryType
+    }
+  }
 }
 
 // 监听项目路径变化

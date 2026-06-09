@@ -73,6 +73,25 @@ export interface EntryPoint {
   entryKey: string
   entryInfo: string
   projectPath: string
+  /** 简要描述（LLM生成） */
+  briefDescription?: string
+  /** 服务名（文根聚合） */
+  serviceName?: string
+}
+
+/** 入口摘要（用于聚合展示） */
+export interface EntrySummary {
+  entryId: string
+  entryType: string
+  entryKey: string
+  briefDescription?: string
+}
+
+/** 服务入口分组 */
+export interface ServiceEntryGroup {
+  serviceName: string
+  entries: EntrySummary[]
+  totalCount: number
 }
 
 /**
@@ -464,6 +483,13 @@ export const knowledgeGraphApi = {
   getEntryPoints(projectPaths: string[], entryType?: string, page = 1, pageSize = 20) {
     return request.get<PageResult<EntryPoint>>('/v2/knowledge-graph/entry-points', {
       params: { projectPaths, entryType, page, pageSize }
+    })
+  },
+
+  /** 按 serviceName 聚合查询入口点 */
+  getEntryPointsGrouped(projectPaths: string[]) {
+    return request.get<ServiceEntryGroup[]>('/v2/knowledge-graph/entry-points/grouped', {
+      params: { projectPaths }
     })
   },
 
