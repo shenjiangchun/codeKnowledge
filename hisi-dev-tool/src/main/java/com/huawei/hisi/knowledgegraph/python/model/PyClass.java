@@ -15,6 +15,7 @@ public class PyClass {
     List<String> baseClasses;
     List<String> decorators;
     List<PyFunction> methods;
+    List<PyClassAttribute> classAttributes;
     int lineStart;
     int lineEnd;
 
@@ -23,6 +24,7 @@ public class PyClass {
                     List<String> baseClasses,
                     List<String> decorators,
                     List<PyFunction> methods,
+                    List<PyClassAttribute> classAttributes,
                     int lineStart,
                     int lineEnd) {
         this.name = name;
@@ -35,6 +37,9 @@ public class PyClass {
         this.methods = methods == null
                 ? Collections.emptyList()
                 : Collections.unmodifiableList(List.copyOf(methods));
+        this.classAttributes = classAttributes == null
+                ? Collections.emptyList()
+                : Collections.unmodifiableList(List.copyOf(classAttributes));
         this.lineStart = lineStart;
         this.lineEnd = lineEnd;
     }

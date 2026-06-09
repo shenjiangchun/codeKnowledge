@@ -8,6 +8,7 @@ import java.util.List;
 
 import com.huawei.hisi.knowledgegraph.python.model.PyCall;
 import com.huawei.hisi.knowledgegraph.python.model.PyClass;
+import com.huawei.hisi.knowledgegraph.python.model.PyClassAttribute;
 import com.huawei.hisi.knowledgegraph.python.model.PyFunction;
 import com.huawei.hisi.knowledgegraph.python.model.PyImport;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
@@ -18,8 +19,10 @@ import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser.ClassdefContex
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser.DecoratedContext;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser.DecoratorContext;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser.DecoratorsContext;
+import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser.Expr_stmtContext;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser.File_inputContext;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser.FuncdefContext;
+import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser.If_stmtContext;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser.Import_fromContext;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser.Import_nameContext;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser.NameContext;
@@ -50,6 +53,9 @@ public class PythonAstVisitor extends Python3ParserBaseVisitor<Void> {
     private final Deque<String> functionQualNameStack = new ArrayDeque<>();
 
     private List<String> pendingDecorators = Collections.emptyList();
+
+    /** Depth counter for nested if __name__ == "__main__": blocks. */
+    private int mainBlockDepth = 0;
 
     /**
      * Public entry point. Visits the {@code file_input} root and returns a fully
@@ -121,6 +127,7 @@ public class PythonAstVisitor extends Python3ParserBaseVisitor<Void> {
                     .baseClasses(frame.baseClasses)
                     .decorators(frame.decorators)
                     .methods(frame.methods)
+                    .classAttributes(frame.classAttributes)
                     .lineStart(frame.lineStart)
                     .lineEnd(frame.lineEnd)
                     .build());
@@ -136,13 +143,19 @@ public class PythonAstVisitor extends Python3ParserBaseVisitor<Void> {
         String qualName = isMethod ? enclosingClass + "." + name : name;
 
         List<String> params = new ArrayList<>();
+        List<String> paramTypeList = new ArrayList<>();
         if (ctx.parameters() != null && ctx.parameters().typedargslist() != null) {
             ctx.parameters().typedargslist().typedelem().forEach(elem -> {
                 if (elem.tfpdef() != null && elem.tfpdef().name() != null) {
                     params.add(elem.tfpdef().name().getText());
+                    paramTypeList.add(elem.tfpdef().test() != null
+                            ? elem.tfpdef().test().getText() : "");
                 }
             });
         }
+
+        // Extract return type annotation: 'def' name ... parameters ('->' test)? ':' block
+        String retType = ctx.test() != null ? ctx.test().getText() : null;
 
         List<String> decs = consumePendingDecorators();
 
@@ -153,6 +166,8 @@ public class PythonAstVisitor extends Python3ParserBaseVisitor<Void> {
                 .name(name)
                 .qualName(qualName)
                 .paramNames(params)
+                .paramTypes(paramTypeList)
+                .returnType(retType)
                 .decorators(decs)
                 .lineStart(lineStart)
                 .lineEnd(lineEnd)
@@ -184,6 +199,59 @@ public class PythonAstVisitor extends Python3ParserBaseVisitor<Void> {
         }
         // Delegate directly to visitFuncdef - it already handles both top-level and method cases
         return visitFuncdef(ctx.funcdef());
+    }
+
+    @Override
+    public Void visitExpr_stmt(Expr_stmtContext ctx) {
+        if (classFrames.isEmpty()) {
+            return visitChildren(ctx);
+        }
+
+        ClassFrame frame = classFrames.peek();
+
+        // Case 1: Annotated assignment (name: type = value)
+        if (ctx.annassign() != null) {
+            String name = null;
+            if (ctx.testlist_star_expr() != null && !ctx.testlist_star_expr().isEmpty()) {
+                String lhs = ctx.testlist_star_expr(0).getText();
+                if (lhs.matches("[a-zA-Z_]\\w*")) {
+                    name = lhs;
+                }
+            }
+            if (name != null) {
+                String typeAnnotation = ctx.annassign().test() != null
+                        ? ctx.annassign().test(0).getText() : null;
+                String defaultValue = null;
+                if (ctx.annassign().ASSIGN() != null) {
+                    var tests = ctx.annassign().test();
+                    if (tests != null && tests.size() > 1) {
+                        defaultValue = tests.get(1).getText();
+                    }
+                }
+                frame.classAttributes.add(PyClassAttribute.builder()
+                        .name(name)
+                        .typeAnnotation(typeAnnotation)
+                        .defaultValue(defaultValue)
+                        .build());
+            }
+        }
+        // Case 2: Simple assignment (name = value) — capture ORM-style field assignments
+        else if (ctx.ASSIGN() != null && !ctx.ASSIGN().isEmpty()
+                && ctx.testlist_star_expr() != null && ctx.testlist_star_expr().size() >= 2) {
+            String lhs = ctx.testlist_star_expr(0).getText();
+            if (lhs.matches("[a-zA-Z_]\\w*")) {
+                String rhs = ctx.testlist_star_expr(1).getText();
+                if (rhs.matches(".*(Field|Column|mapped_column|relationship)\\s*\\(.*")) {
+                    frame.classAttributes.add(PyClassAttribute.builder()
+                            .name(lhs)
+                            .typeAnnotation(null)
+                            .defaultValue(rhs)
+                            .build());
+                }
+            }
+        }
+
+        return visitChildren(ctx);
     }
 
     @Override
@@ -242,6 +310,28 @@ public class PythonAstVisitor extends Python3ParserBaseVisitor<Void> {
         return null;
     }
 
+    @Override
+    public Void visitIf_stmt(If_stmtContext ctx) {
+        // Detect: if __name__ == "__main__" / if __name__ == '__main__'
+        boolean isMainGuard = false;
+        if (ctx.test() != null && !ctx.test().isEmpty()) {
+            String testText = ctx.test(0).getText();
+            isMainGuard = testText.contains("__name__") && testText.contains("__main__");
+        }
+
+        if (isMainGuard) {
+            mainBlockDepth++;
+        }
+        try {
+            super.visitIf_stmt(ctx);
+        } finally {
+            if (isMainGuard) {
+                mainBlockDepth--;
+            }
+        }
+        return null;
+    }
+
     /**
      * Count the leading {@code .} / {@code ...} tokens in a {@code from ...} import.
      * Each {@code .} contributes 1; each {@code ...} (ELLIPSIS) contributes 3.
@@ -276,6 +366,7 @@ public class PythonAstVisitor extends Python3ParserBaseVisitor<Void> {
                             .enclosingFunction(enclosing)
                             .firstStringArg(extractFirstStringArg(trailer))
                             .secondPositionalArg(extractSecondPositionalArg(trailer))
+                            .inMainBlock(mainBlockDepth > 0)
                             .build());
                 }
                 running.append(trailer.getText());
@@ -413,6 +504,7 @@ public class PythonAstVisitor extends Python3ParserBaseVisitor<Void> {
         final List<String> baseClasses;
         final List<String> decorators;
         final List<PyFunction> methods = new ArrayList<>();
+        final List<PyClassAttribute> classAttributes = new ArrayList<>();
         final int lineStart;
         final int lineEnd;
 

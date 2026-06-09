@@ -91,4 +91,5 @@ public class EntryPointNode {
     public static final String TYPE_DJANGO_VIEW = "DJANGO_VIEW";
     public static final String TYPE_CELERY_TASK = "CELERY_TASK";
     public static final String TYPE_FEIGN_CLIENT = "FEIGN_CLIENT";
+    public static final String TYPE_MAIN = "MAIN";
 }

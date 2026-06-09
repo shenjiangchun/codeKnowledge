@@ -79,6 +79,30 @@ public final class PythonFrameworkDetector {
             }
         }
 
+        // Fallback: if no manifest found, scan Python source files for framework imports
+        if (found.isEmpty()) {
+            log.info("[Python KG] No manifest files found, trying import-based detection");
+            try (java.util.stream.Stream<Path> walk = Files.walk(Paths.get(projectPath))) {
+                String importLines = walk
+                    .filter(p -> p.toString().endsWith(".py"))
+                    .limit(100)
+                    .map(p -> {
+                        try { return Files.readString(p, StandardCharsets.UTF_8); }
+                        catch (IOException e) { return ""; }
+                    })
+                    .collect(java.util.stream.Collectors.joining("\n"));
+
+                String lower = importLines.toLowerCase(Locale.ROOT);
+                for (Framework f : Framework.values()) {
+                    if (lower.contains("import " + f.token()) || lower.contains("from " + f.token())) {
+                        found.add(f);
+                    }
+                }
+            } catch (IOException e) {
+                log.warn("[Python KG] Fallback detection failed: {}", e.getMessage());
+            }
+        }
+
         log.info("[Python KG] Frameworks detected for {}: {}", projectPath, found);
         return found;
     }

@@ -1,10 +1,16 @@
 package com.huawei.hisi.knowledgegraph.python.scanner;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -46,6 +52,10 @@ public class FastApiRouteScanner {
     private static final Pattern FIRST_STRING_ARG_PATTERN = Pattern.compile(
             "^\\s*(?:r|R|b|B|u|U)?(?:\"([^\"]*)\"|'([^']*)')");
 
+    /** Matches {@code varName = APIRouter(...)} at the start of a line. */
+    private static final Pattern ASSIGNMENT_PATTERN = Pattern.compile(
+            "^\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*APIRouter\\b");
+
     private static final String LANGUAGE_PYTHON = "python";
     private static final String FRAMEWORK_FASTAPI = "fastapi";
 
@@ -62,43 +72,60 @@ public class FastApiRouteScanner {
             return List.of();
         }
 
-        String routerPrefix = extractSingleRouterPrefix(module);
+        Map<String, String> routerPrefixMap = buildRouterPrefixMap(module);
 
         List<EntryPointNode> entries = new ArrayList<>();
         for (PyFunction function : module.getTopLevelFunctions()) {
-            entries.addAll(scanFunction(module, function, projectPath, routerPrefix));
+            entries.addAll(scanFunction(module, function, projectPath, routerPrefixMap));
         }
         for (PyClass clazz : module.getClasses()) {
             for (PyFunction method : clazz.getMethods()) {
-                entries.addAll(scanFunction(module, method, projectPath, routerPrefix));
+                entries.addAll(scanFunction(module, method, projectPath, routerPrefixMap));
             }
         }
         return List.copyOf(entries);
     }
 
-    private String extractSingleRouterPrefix(PyModule module) {
-        if (module.getCalls() == null) return null;
-        String prefix = null;
-        int routerCount = 0;
+    private Map<String, String> buildRouterPrefixMap(PyModule module) {
+        if (module.getCalls() == null || module.getFilePath() == null) {
+            return Collections.emptyMap();
+        }
+        List<String> sourceLines = readSourceLines(module.getFilePath());
+        Map<String, String> map = new HashMap<>();
         for (PyCall call : module.getCalls()) {
             if (!"<module>".equals(call.getEnclosingFunction())) continue;
             String expr = call.getCalleeExpression();
             if (expr == null) continue;
             String funcName = expr.contains(".") ? expr.substring(expr.lastIndexOf('.') + 1) : expr;
-            if ("APIRouter".equals(funcName)) {
-                routerCount++;
-                if (call.getFirstStringArg() != null && !call.getFirstStringArg().isEmpty()) {
-                    prefix = call.getFirstStringArg();
-                }
-            }
+            if (!"APIRouter".equals(funcName)) continue;
+            String varName = findAssignmentVarName(sourceLines, call.getLineNumber());
+            if (varName == null) continue;
+            String prefix = call.getFirstStringArg();
+            map.put(varName, (prefix != null && !prefix.isEmpty()) ? prefix : "");
         }
-        return routerCount == 1 ? prefix : null;
+        return Collections.unmodifiableMap(map);
+    }
+
+    private static List<String> readSourceLines(String filePath) {
+        try {
+            return Files.readAllLines(Path.of(filePath), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return Collections.emptyList();
+        }
+    }
+
+    private static String findAssignmentVarName(List<String> sourceLines, int lineNumber) {
+        if (sourceLines == null || lineNumber < 1 || lineNumber > sourceLines.size()) {
+            return null;
+        }
+        Matcher m = ASSIGNMENT_PATTERN.matcher(sourceLines.get(lineNumber - 1));
+        return m.find() ? m.group(1) : null;
     }
 
     private List<EntryPointNode> scanFunction(PyModule module,
                                               PyFunction function,
                                               String projectPath,
-                                              String routerPrefix) {
+                                              Map<String, String> routerPrefixMap) {
         List<EntryPointNode> result = new ArrayList<>();
         for (String decorator : function.getDecorators()) {
             if (decorator == null) {
@@ -120,8 +147,9 @@ public class FastApiRouteScanner {
                         decorator, module.getFilePath(), function.getLineStart());
                 url = "";
             }
-            if (routerPrefix != null && !"app".equals(identifier)) {
-                url = routerPrefix + url;
+            String prefix = routerPrefixMap.get(identifier);
+            if (prefix != null) {
+                url = prefix + url;
             }
             result.add(buildEntry(module, function, httpMethod, url, projectPath));
         }

@@ -30,4 +30,5 @@ public class PyCall {
     String enclosingFunction;
     String firstStringArg;
     String secondPositionalArg;
+    boolean inMainBlock;
 }

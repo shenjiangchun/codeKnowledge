@@ -1,44 +1,244 @@
 {
   "developer": "shenjiangchun",
   "hostname": "laptop-c2kj599j",
-  "model": "Ali-glm-5-cc",
+  "model": "ByteDance-glm-5.1-cc",
   "firstSeen": "2026-05-26T07:44:32.573Z",
-  "lastUpdated": "2026-06-03T01:30:19.466Z",
+  "lastUpdated": "2026-06-05T10:32:02.337Z",
   "stats": {
-    "totalOperations": 203,
-    "totalFilesEdited": 97,
-    "totalAiLines": 9045,
-    "totalAiLinesDeleted": 382,
-    "totalCommits": 32
+    "totalOperations": 307,
+    "totalFilesEdited": 121,
+    "totalAiLines": 9100,
+    "totalAiLinesDeleted": 520,
+    "totalCommits": 33
   },
   "pendingFiles": [
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/merge-analysis/InputPage.vue",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/service/RemoteProjectService.java",
       "tool": "Edit",
       "aiTool": "claude-code",
-      "model": "mimo-v2.5-pro-cc",
-      "operations": 1,
-      "timestamp": "2026-06-02T02:22:11.777Z",
-      "lastModified": "2026-06-02T02:22:11.777Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/call-chain/MethodReferenceGraph.vue",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "mimo-v2.5-pro-cc",
-      "operations": 7,
-      "timestamp": "2026-06-02T02:28:11.796Z",
-      "lastModified": "2026-06-02T02:30:23.463Z",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 5,
+      "timestamp": "2026-06-05T02:49:40.804Z",
+      "lastModified": "2026-06-05T03:02:20.059Z",
       "lastTool": "Edit"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/skill-market/SkillMarket.vue",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/model/RemoteProject.java",
       "tool": "Edit",
       "aiTool": "claude-code",
-      "model": "glm-5.1-cc",
+      "model": "ByteDance-glm-5.1-cc",
       "operations": 1,
-      "timestamp": "2026-06-02T02:53:12.356Z",
-      "lastModified": "2026-06-02T02:53:12.356Z"
+      "timestamp": "2026-06-05T02:57:56.516Z",
+      "lastModified": "2026-06-05T02:57:56.516Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/config/SQLiteSchemaInitializer.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 1,
+      "timestamp": "2026-06-05T02:58:15.205Z",
+      "lastModified": "2026-06-05T02:58:15.205Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/repository/RemoteProjectRepository.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 3,
+      "timestamp": "2026-06-05T02:58:38.448Z",
+      "lastModified": "2026-06-05T02:59:20.997Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/controller/RemoteProjectController.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 3,
+      "timestamp": "2026-06-05T03:02:45.700Z",
+      "lastModified": "2026-06-05T03:03:26.818Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/types/remote-project.ts",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 1,
+      "timestamp": "2026-06-05T03:03:54.214Z",
+      "lastModified": "2026-06-05T03:03:54.214Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/project/ProjectList.vue",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 3,
+      "timestamp": "2026-06-05T03:04:29.008Z",
+      "lastModified": "2026-06-05T03:05:10.940Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/docs/plans/2026-06-05-kg-pipeline-fixes-plan.md",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 5,
+      "timestamp": "2026-06-05T07:04:15.446Z",
+      "lastModified": "2026-06-05T07:23:35.896Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/call/PythonCallGraphResolver.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 19,
+      "timestamp": "2026-06-05T07:38:15.295Z",
+      "lastModified": "2026-06-05T10:32:02.337Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/service/KnowledgeGraphBuilder.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 14,
+      "timestamp": "2026-06-05T07:49:07.236Z",
+      "lastModified": "2026-06-05T08:22:01.482Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/model/PyCall.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 1,
+      "timestamp": "2026-06-05T08:04:06.236Z",
+      "lastModified": "2026-06-05T08:04:06.236Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/PythonAstVisitor.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 9,
+      "timestamp": "2026-06-05T08:04:18.488Z",
+      "lastModified": "2026-06-05T10:14:59.480Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/model/EntryPointNode.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 1,
+      "timestamp": "2026-06-05T08:05:39.511Z",
+      "lastModified": "2026-06-05T08:05:39.511Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/PythonKnowledgeGraphBuilder.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 13,
+      "timestamp": "2026-06-05T08:07:03.524Z",
+      "lastModified": "2026-06-05T10:28:15.345Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/PythonFrameworkDetector.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 1,
+      "timestamp": "2026-06-05T08:34:31.781Z",
+      "lastModified": "2026-06-05T08:34:31.781Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/scanner/DjangoUrlScanner.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 6,
+      "timestamp": "2026-06-05T08:37:34.146Z",
+      "lastModified": "2026-06-05T10:31:51.515Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/scanner/FastApiRouteScanner.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 6,
+      "timestamp": "2026-06-05T08:46:36.385Z",
+      "lastModified": "2026-06-05T08:47:56.703Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/docs/plans/2026-06-05-python-kg-p0-plan.md",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 1,
+      "timestamp": "2026-06-05T10:06:49.598Z",
+      "lastModified": "2026-06-05T10:06:49.598Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/model/PyFunction.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 1,
+      "timestamp": "2026-06-05T10:09:02.439Z",
+      "lastModified": "2026-06-05T10:09:02.439Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/model/PyClassAttribute.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 1,
+      "timestamp": "2026-06-05T10:09:19.945Z",
+      "lastModified": "2026-06-05T10:09:19.945Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/model/PyClass.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 1,
+      "timestamp": "2026-06-05T10:09:21.775Z",
+      "lastModified": "2026-06-05T10:09:21.775Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/scanner/FlaskRouteScanner.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 1,
+      "timestamp": "2026-06-05T10:20:34.206Z",
+      "lastModified": "2026-06-05T10:20:34.206Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/PythonDataModelScanner.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 1,
+      "timestamp": "2026-06-05T10:26:24.537Z",
+      "lastModified": "2026-06-05T10:26:24.537Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/scanner/DjangoViewResolver.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "ByteDance-glm-5.1-cc",
+      "operations": 6,
+      "timestamp": "2026-06-05T10:26:30.419Z",
+      "lastModified": "2026-06-05T10:27:58.553Z",
+      "lastTool": "Edit"
     }
   ]
 }

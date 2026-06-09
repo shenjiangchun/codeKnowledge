@@ -1,9 +1,11 @@
 package com.huawei.hisi.knowledgegraph.python.scanner;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import com.huawei.hisi.knowledgegraph.python.PythonKnowledgeGraphBuilder;
 import com.huawei.hisi.knowledgegraph.python.model.PyClass;
@@ -36,6 +38,33 @@ class DjangoViewResolver {
 
     private static final List<String> CBV_HTTP_METHODS = List.of(
             "get", "post", "put", "delete", "patch", "head", "options");
+
+    /** DRF ViewSet base class names (short names). */
+    private static final Set<String> VIEWSET_BASES = Set.of(
+            "ViewSet", "ModelViewSet", "ReadOnlyModelViewSet", "GenericViewSet");
+
+    /** DRF ViewSet list-level actions: method name -> HTTP method. */
+    private static final Map<String, String> DRF_LIST_ACTIONS = new HashMap<>();
+    static {
+        DRF_LIST_ACTIONS.put("list", "GET");
+        DRF_LIST_ACTIONS.put("create", "POST");
+    }
+
+    /** DRF ViewSet detail-level actions: method name -> HTTP method. */
+    private static final Map<String, String> DRF_DETAIL_ACTIONS = new HashMap<>();
+    static {
+        DRF_DETAIL_ACTIONS.put("retrieve", "GET");
+        DRF_DETAIL_ACTIONS.put("update", "PUT");
+        DRF_DETAIL_ACTIONS.put("partial_update", "PATCH");
+        DRF_DETAIL_ACTIONS.put("destroy", "DELETE");
+    }
+
+    /** Combined DRF action map (list + detail). */
+    private static final Map<String, String> DRF_ALL_ACTIONS = new HashMap<>();
+    static {
+        DRF_ALL_ACTIONS.putAll(DRF_LIST_ACTIONS);
+        DRF_ALL_ACTIONS.putAll(DRF_DETAIL_ACTIONS);
+    }
 
     /** Result of resolving a view expression to a concrete callable. */
     static final class ResolvedView {
@@ -81,7 +110,7 @@ class DjangoViewResolver {
         String remainder = firstDot < 0 ? "" : expr.substring(firstDot + 1);
 
         // 3) Find an import binding for `root`
-        PyImport binding = findBindingFor(root, currentModule);
+        PyImport binding = findBindingFor(root, currentModule, modulesByPath);
         if (binding == null) {
             log.debug("[DjangoViewResolver] No import binding for root '{}' in {}",
                     root, currentModule.getModulePath());
@@ -185,7 +214,7 @@ class DjangoViewResolver {
         int firstDot = expr.indexOf('.');
         String root = firstDot < 0 ? expr : expr.substring(0, firstDot);
         String remainder = firstDot < 0 ? "" : expr.substring(firstDot + 1);
-        PyImport binding = findBindingFor(root, currentModule);
+        PyImport binding = findBindingFor(root, currentModule, modulesByPath);
         if (binding == null) {
             return List.of();
         }
@@ -261,11 +290,46 @@ class DjangoViewResolver {
     /**
      * Find the import binding (if any) that introduces {@code root} into the
      * current module's namespace. Returns {@code null} if no such import exists.
+     *
+     * <p>For wildcard ({@code from X import *}) imports, attempts to resolve
+     * {@code root} by searching the target module's classes and top-level functions.
      */
-    private static PyImport findBindingFor(String root, PyModule currentModule) {
+    private PyImport findBindingFor(String root, PyModule currentModule, Map<String, PyModule> modulesByPath) {
         for (PyImport imp : currentModule.getImports()) {
             if (imp.isFromImport()) {
                 if ("*".equals(imp.getSymbol())) {
+                    // Wildcard import: try to find the symbol in the target module
+                    String containingModule = absolutize(imp.getModuleName(),
+                            imp.getRelativeLevel(), currentModule);
+                    if (containingModule != null) {
+                        PyModule targetModule = modulesByPath.get(containingModule);
+                        if (targetModule != null) {
+                            for (PyClass cls : targetModule.getClasses()) {
+                                if (cls.getName().equals(root)) {
+                                    return PyImport.builder()
+                                            .moduleName(imp.getModuleName())
+                                            .symbol(root)
+                                            .alias(null)
+                                            .fromImport(true)
+                                            .lineNumber(imp.getLineNumber())
+                                            .relativeLevel(imp.getRelativeLevel())
+                                            .build();
+                                }
+                            }
+                            for (PyFunction fn : targetModule.getTopLevelFunctions()) {
+                                if (fn.getName().equals(root)) {
+                                    return PyImport.builder()
+                                            .moduleName(imp.getModuleName())
+                                            .symbol(root)
+                                            .alias(null)
+                                            .fromImport(true)
+                                            .lineNumber(imp.getLineNumber())
+                                            .relativeLevel(imp.getRelativeLevel())
+                                            .build();
+                                }
+                            }
+                        }
+                    }
                     continue;
                 }
                 String effective = imp.getAlias() != null ? imp.getAlias() : imp.getSymbol();
@@ -361,6 +425,11 @@ class DjangoViewResolver {
     }
 
     private static List<PyFunction> pickCbvMethods(PyClass clazz) {
+        // DRF ViewSet: use DRF action names instead of HTTP method names
+        if (isViewSetClass(clazz)) {
+            return pickViewSetMethods(clazz);
+        }
+        // Standard Django CBV: use HTTP method names
         List<PyFunction> httpMethods = new ArrayList<>();
         for (String preferred : CBV_HTTP_METHODS) {
             for (PyFunction m : clazz.getMethods()) {
@@ -381,5 +450,39 @@ class DjangoViewResolver {
             return List.of(clazz.getMethods().get(0));
         }
         return List.of();
+    }
+
+    /** Check if a class inherits from a DRF ViewSet base class. */
+    static boolean isViewSetClass(PyClass clazz) {
+        for (String base : clazz.getBaseClasses()) {
+            String simple = base.contains(".") ? base.substring(base.lastIndexOf('.') + 1) : base;
+            if (VIEWSET_BASES.contains(simple)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Pick ViewSet action methods (list/create/retrieve/update/partial_update/destroy). */
+    private static List<PyFunction> pickViewSetMethods(PyClass clazz) {
+        List<PyFunction> actions = new ArrayList<>();
+        for (String actionName : DRF_ALL_ACTIONS.keySet()) {
+            for (PyFunction m : clazz.getMethods()) {
+                if (m.getName().equals(actionName)) {
+                    actions.add(m);
+                }
+            }
+        }
+        return actions;
+    }
+
+    /** Get the HTTP method for a DRF action name, or null if not a standard action. */
+    static String getDrfHttpMethod(String actionName) {
+        return DRF_ALL_ACTIONS.get(actionName);
+    }
+
+    /** Get whether an action is a list-level action (no URL pk suffix). */
+    static boolean isDrfListAction(String actionName) {
+        return DRF_LIST_ACTIONS.containsKey(actionName);
     }
 }

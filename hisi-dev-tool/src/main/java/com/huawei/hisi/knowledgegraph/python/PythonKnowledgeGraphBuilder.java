@@ -9,19 +9,23 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.HashSet;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import com.huawei.hisi.knowledgegraph.model.ClassExtends;
+import com.huawei.hisi.knowledgegraph.model.MethodOverride;
 import com.huawei.hisi.knowledgegraph.python.PythonFrameworkDetector.Framework;
 import com.huawei.hisi.knowledgegraph.python.call.PythonCallGraphResolver;
 import com.huawei.hisi.knowledgegraph.python.model.PyClass;
 import com.huawei.hisi.knowledgegraph.python.model.PyFunction;
 import com.huawei.hisi.knowledgegraph.python.model.PyModule;
+import com.huawei.hisi.knowledgegraph.python.model.PyCall;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Lexer;
 import com.huawei.hisi.knowledgegraph.python.parser.Python3Parser;
 import com.huawei.hisi.knowledgegraph.python.scanner.CeleryTaskScanner;
@@ -139,6 +143,9 @@ public class PythonKnowledgeGraphBuilder {
         log.info("[Python KG] Saved {} method nodes for project {}",
                 result.methodNodes.size(), projectPath);
 
+        // Build and persist EXTENDS / OVERRIDE relations
+        buildAndSaveInheritanceRelations(result.allModules, result.methodNodes, projectPath);
+
         if (!result.callRelations.isEmpty()) {
             // Diagnostic: count resolved vs unresolved edges, and check node-id matches
             Set<String> validNodeIds = result.methodNodes.stream()
@@ -176,6 +183,17 @@ public class PythonKnowledgeGraphBuilder {
                     .collect(Collectors.toList());
             log.info("[Python KG] Persisting {} call relations (filtered from {} total)",
                     persistableEdges.size(), result.callRelations.size());
+            long mainCallerEdges = persistableEdges.stream()
+                    .filter(rel -> {
+                        String cid = (String) rel.get("callerId");
+                        return cid != null && validNodeIds.contains(cid)
+                                && result.methodNodes.stream()
+                                        .anyMatch(n -> cid.equals(n.getNodeId())
+                                                && "__main__".equals(n.getMethodName()));
+                    })
+                    .count();
+            log.info("[Python KG] Edge filter diagnostics: totalBefore={}, persistable={}, mainCallerEdges={}",
+                    result.callRelations.size(), persistableEdges.size(), mainCallerEdges);
             if (!persistableEdges.isEmpty()) {
                 neo4jStorageService.saveCallRelations(persistableEdges);
             }
@@ -214,6 +232,100 @@ public class PythonKnowledgeGraphBuilder {
         } catch (Exception e) {
             log.warn("[Python KG] 数据模型扫描异常（不影响核心图谱）: {}", e.getMessage());
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Inheritance relations (EXTENDS / OVERRIDE)
+    // ------------------------------------------------------------------
+
+    /**
+     * Build EXTENDS and OVERRIDE relations from Python class inheritance,
+     * then persist them to Neo4j.
+     *
+     * <p>For each class with base classes, resolves the base class reference
+     * to an FQN via {@link PythonCallGraphResolver#resolveBaseClass}, then:
+     * <ul>
+     *   <li>Creates EXTENDS edges between child and parent class methods</li>
+     *   <li>Creates OVERRIDE edges for methods with the same name in both</li>
+     * </ul>
+     */
+    private void buildAndSaveInheritanceRelations(List<PyModule> allModules,
+                                                   List<MethodNode> methodNodes,
+                                                   String projectPath) {
+        // Index: simple class name -> set of method names (for OVERRIDE detection)
+        Map<String, Set<String>> methodsBySimpleClassName = new LinkedHashMap<>();
+        for (MethodNode node : methodNodes) {
+            String cls = node.getClassName();
+            // Top-level functions have className == modulePath; skip those
+            if (cls == null || cls.contains(".") || "__main__".equals(node.getMethodName())) {
+                continue;
+            }
+            methodsBySimpleClassName.computeIfAbsent(cls, k -> new LinkedHashSet<>())
+                    .add(node.getMethodName());
+        }
+
+        List<ClassExtends> extendsRelations = new ArrayList<>();
+        List<MethodOverride> overrideRelations = new ArrayList<>();
+
+        for (PyModule module : allModules) {
+            for (PyClass pyClass : module.getClasses()) {
+                if (pyClass.getBaseClasses() == null || pyClass.getBaseClasses().isEmpty()) {
+                    continue;
+                }
+                String childSimpleName = pyClass.getName();
+                Set<String> childMethodNames = methodsBySimpleClassName.get(childSimpleName);
+
+                for (String baseText : pyClass.getBaseClasses()) {
+                    String parentFqn = pythonCallGraphResolver.resolveBaseClass(baseText, module);
+                    if (parentFqn == null) {
+                        continue;
+                    }
+                    // Extract simple class name from FQN for matching (last segment)
+                    String parentSimpleName = simpleNameFromFqn(parentFqn);
+
+                    extendsRelations.add(ClassExtends.builder()
+                            .subclass(childSimpleName)
+                            .superclass(parentSimpleName)
+                            .projectPath(projectPath)
+                            .build());
+
+                    // Detect overridden methods: methods present in both child and parent
+                    Set<String> parentMethodNames = methodsBySimpleClassName.get(parentSimpleName);
+                    if (childMethodNames == null || parentMethodNames == null) {
+                        continue;
+                    }
+                    for (String methodName : childMethodNames) {
+                        if (parentMethodNames.contains(methodName)) {
+                            overrideRelations.add(MethodOverride.builder()
+                                    .subclass(childSimpleName)
+                                    .superclass(parentSimpleName)
+                                    .methodName(methodName)
+                                    .projectPath(projectPath)
+                                    .build());
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!extendsRelations.isEmpty()) {
+            neo4jStorageService.saveClassExtends(extendsRelations);
+            log.info("[Python KG] Saved {} EXTENDS relations", extendsRelations.size());
+        }
+        if (!overrideRelations.isEmpty()) {
+            neo4jStorageService.saveMethodOverrides(overrideRelations);
+            log.info("[Python KG] Saved {} OVERRIDE relations", overrideRelations.size());
+        }
+    }
+
+    /**
+     * Extract the simple class name from a fully qualified name.
+     * E.g. "myapp.views.UserService" -> "UserService"
+     */
+    private static String simpleNameFromFqn(String fqn) {
+        if (fqn == null) return null;
+        int lastDot = fqn.lastIndexOf('.');
+        return lastDot < 0 ? fqn : fqn.substring(lastDot + 1);
     }
 
     // ------------------------------------------------------------------
@@ -329,6 +441,30 @@ public class PythonKnowledgeGraphBuilder {
             mqCalls.addAll(pythonMqCallScanner.scanModule(module, projectPath, primaryFramework));
         }
 
+        // Create MAIN entry points for modules with if __name__ == "__main__": blocks
+        Set<String> allNodeIds = allNodes.stream()
+                .map(MethodNode::getNodeId).collect(Collectors.toSet());
+        for (PyModule module : allModules) {
+            boolean hasMainCalls = module.getCalls().stream()
+                    .anyMatch(PyCall::isInMainBlock);
+            if (!hasMainCalls) {
+                continue;
+            }
+            String mainNodeId = toNodeId(module.getModulePath() + "::__main__()");
+            if (!allNodeIds.contains(mainNodeId)) {
+                continue;
+            }
+            entryPoints.add(EntryPointNode.builder()
+                    .entryId(projectPath + ":MAIN:" + module.getModulePath())
+                    .entryType(EntryPointNode.TYPE_MAIN)
+                    .entryKey("__main__")
+                    .entryInfo(module.getModulePath())
+                    .projectPath(projectPath)
+                    .language(LANGUAGE)
+                    .methodNodeId(mainNodeId)
+                    .build());
+        }
+
         if (!djangoIncludes.isEmpty()) {
             DjangoUrlScanner.applyIncludes(entryPoints, djangoIncludes, modulesByPath);
         }
@@ -389,6 +525,8 @@ public class PythonKnowledgeGraphBuilder {
                     .endLine(func.getLineEnd())
                     .language(LANGUAGE)
                     .projectPath(projectPath)
+                    .complexity(calculateComplexity(filePath, func.getLineStart(), func.getLineEnd()))
+                    .methodBody(extractMethodBody(filePath, func.getLineStart(), func.getLineEnd()))
                     .build());
         }
 
@@ -407,8 +545,29 @@ public class PythonKnowledgeGraphBuilder {
                         .endLine(method.getLineEnd())
                         .language(LANGUAGE)
                         .projectPath(projectPath)
+                        .complexity(calculateComplexity(filePath, method.getLineStart(), method.getLineEnd()))
+                        .methodBody(extractMethodBody(filePath, method.getLineStart(), method.getLineEnd()))
                         .build());
             }
+        }
+
+        // Create pseudo method node for if __name__ == "__main__": blocks
+        boolean hasMainBlockCalls = module.getCalls().stream()
+                .anyMatch(PyCall::isInMainBlock);
+        if (hasMainBlockCalls) {
+            String mainSignature = modulePath + ".__main__()";
+            String mainNodeIdSource = modulePath + "::__main__()";
+            nodes.add(MethodNode.builder()
+                    .nodeId(toNodeId(mainNodeIdSource))
+                    .className(modulePath)
+                    .methodName("__main__")
+                    .signature(mainSignature)
+                    .filePath(filePath)
+                    .startLine(0)
+                    .endLine(0)
+                    .language(LANGUAGE)
+                    .projectPath(projectPath)
+                    .build());
         }
 
         return new ParsedFile(module, Collections.unmodifiableList(nodes));
@@ -684,6 +843,80 @@ public class PythonKnowledgeGraphBuilder {
             return hex.substring(0, 16);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 not available", e);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // McCabe cyclomatic complexity
+    // ------------------------------------------------------------------
+
+    /**
+     * Calculate McCabe cyclomatic complexity for a Python function by counting
+     * decision-point keywords in the source body. Returns 1 (base complexity)
+     * on any error or invalid input.
+     */
+    private int calculateComplexity(String filePath, int startLine, int endLine) {
+        if (filePath == null || startLine <= 0 || endLine < startLine) {
+            return 1;
+        }
+        try {
+            List<String> allLines = Files.readAllLines(Path.of(filePath), StandardCharsets.UTF_8);
+            if (startLine > allLines.size()) return 1;
+            int end = Math.min(endLine, allLines.size());
+            List<String> bodyLines = allLines.subList(startLine - 1, end);
+            String body = String.join(" ", bodyLines);
+
+            int complexity = 1; // Base complexity
+
+            // Count decision points
+            complexity += countOccurrences(body, "if ");
+            complexity += countOccurrences(body, "elif ");
+            complexity += countOccurrences(body, "for ");
+            complexity += countOccurrences(body, "while ");
+            complexity += countOccurrences(body, "except ");
+            complexity += countOccurrences(body, " and ");
+            complexity += countOccurrences(body, " or ");
+
+            return Math.max(1, complexity);
+        } catch (IOException e) {
+            return 1;
+        }
+    }
+
+    private static int countOccurrences(String text, String keyword) {
+        int count = 0;
+        int idx = 0;
+        while ((idx = text.indexOf(keyword, idx)) != -1) {
+            count++;
+            idx += keyword.length();
+        }
+        return count;
+    }
+
+    /**
+     * Extract and compress a method body from source file for storage in the
+     * knowledge graph. Returns an empty string on any I/O error or invalid input.
+     */
+    private String extractMethodBody(String filePath, int startLine, int endLine) {
+        if (filePath == null || startLine <= 0 || endLine < startLine) {
+            return "";
+        }
+        try {
+            List<String> allLines = Files.readAllLines(Path.of(filePath), StandardCharsets.UTF_8);
+            if (startLine > allLines.size()) return "";
+            int end = Math.min(endLine, allLines.size());
+            List<String> bodyLines = allLines.subList(startLine - 1, end);
+            // Compress: remove excessive whitespace, join to single line
+            String body = String.join(" ", bodyLines)
+                    .replaceAll("\\s+", " ")
+                    .trim();
+            // Truncate if too long (match Java pipeline behavior)
+            if (body.length() > 2000) {
+                body = body.substring(0, 2000);
+            }
+            return body;
+        } catch (IOException e) {
+            return "";
         }
     }
 

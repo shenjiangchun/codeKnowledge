@@ -69,7 +69,16 @@ public class DjangoUrlScanner {
         if (module == null) {
             return List.of();
         }
-        if (module.getFilePath() == null || !module.getFilePath().endsWith("urls.py")) {
+        if (module.getFilePath() == null) {
+            return List.of();
+        }
+        boolean isPrimary = module.getFilePath().endsWith("urls.py");
+        boolean hasUrlPatterns = module.getCalls().stream()
+            .anyMatch(c -> {
+                String expr = c.getCalleeExpression();
+                return expr != null && (expr.equals("path") || expr.equals("re_path") || expr.equals("url"));
+            });
+        if (!isPrimary && !hasUrlPatterns) {
             return List.of();
         }
 
@@ -77,6 +86,8 @@ public class DjangoUrlScanner {
         for (PyCall call : module.getCalls()) {
             entries.addAll(classifyUrlCall(call, module, projectPath, modulesByPath));
         }
+        // DRF router.register() detection
+        scanRouterRegisters(module, projectPath, modulesByPath, entries);
         return List.copyOf(entries);
     }
 
@@ -135,6 +146,70 @@ public class DjangoUrlScanner {
                         ep.setEntryKey(inc.prefix() + oldKey);
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Scan for DRF {@code router.register()} calls and emit entry points for
+     * each ViewSet action method (list/create/retrieve/update/partial_update/destroy).
+     */
+    private void scanRouterRegisters(PyModule module,
+                                     String projectPath,
+                                     Map<String, PyModule> modulesByPath,
+                                     List<EntryPointNode> entries) {
+        if (module.getCalls() == null || modulesByPath == null || modulesByPath.isEmpty()) return;
+        for (PyCall call : module.getCalls()) {
+            if (!"<module>".equals(call.getEnclosingFunction())) continue;
+            String expr = call.getCalleeExpression();
+            if (expr == null || !expr.endsWith(".register")) continue;
+
+            String prefix = call.getFirstStringArg();
+            String viewsetExpr = call.getSecondPositionalArg();
+            if (viewsetExpr == null) continue;
+
+            // Resolve ViewSet class via imports
+            List<DjangoViewResolver.ResolvedView> actions =
+                    viewResolver.resolveAll(viewsetExpr, module, modulesByPath);
+            if (actions.isEmpty()) {
+                log.warn("[DjangoUrlScanner] Cannot resolve ViewSet '{}' at {}:{} — "
+                                + "skipping router.register entry points",
+                        viewsetExpr, module.getFilePath(), call.getLineNumber());
+                continue;
+            }
+
+            // Check if the resolved class is actually a ViewSet
+            // (resolveAll returns individual methods for CBV; we need to find the class)
+            for (DjangoViewResolver.ResolvedView rv : actions) {
+                String actionName = rv.qualName.contains(".")
+                        ? rv.qualName.substring(rv.qualName.lastIndexOf('.') + 1)
+                        : rv.qualName;
+                String httpMethod = DjangoViewResolver.getDrfHttpMethod(actionName);
+                if (httpMethod == null) {
+                    // Not a standard DRF action — skip
+                    continue;
+                }
+
+                String urlBase = (prefix != null ? prefix : "");
+                // Detail actions get a {pk} suffix
+                String urlSuffix = DjangoViewResolver.isDrfListAction(actionName) ? "" : "/{pk}";
+                String url = urlBase + urlSuffix;
+
+                String entryId = sha256Prefix(module.getFilePath() + ":DJANGO_VIEWSET:"
+                        + url + ":" + actionName + ":" + call.getLineNumber());
+                String entryInfo = buildViewSetEntryInfoJson(prefix, viewsetExpr, actionName,
+                        httpMethod, module.getFilePath(), call.getLineNumber());
+
+                entries.add(EntryPointNode.builder()
+                        .entryId(entryId)
+                        .entryType(EntryPointNode.TYPE_DJANGO_VIEW)
+                        .entryKey(url + " [" + httpMethod + "]")
+                        .entryInfo(entryInfo)
+                        .projectPath(projectPath)
+                        .language(LANGUAGE_PYTHON)
+                        .framework(FRAMEWORK_DJANGO)
+                        .methodNodeId(rv.computeNodeId())
+                        .build());
             }
         }
     }
@@ -225,6 +300,25 @@ public class DjangoUrlScanner {
         appendField(sb, "callExpression", callExpression, false);
         appendField(sb, "viewExpression", viewExpression, false);
         appendField(sb, "enclosingFunction", enclosingFunction, false);
+        appendField(sb, "filePath", filePath, false);
+        sb.append(",\"lineNumber\":").append(lineNumber);
+        sb.append('}');
+        return sb.toString();
+    }
+
+    private static String buildViewSetEntryInfoJson(String prefix,
+                                                     String viewsetExpression,
+                                                     String actionName,
+                                                     String httpMethod,
+                                                     String filePath,
+                                                     int lineNumber) {
+        StringBuilder sb = new StringBuilder(200);
+        sb.append('{');
+        appendField(sb, "subType", "DRF_VIEWSET", true);
+        appendField(sb, "routerPrefix", prefix, false);
+        appendField(sb, "viewsetExpression", viewsetExpression, false);
+        appendField(sb, "actionName", actionName, false);
+        appendField(sb, "httpMethod", httpMethod, false);
         appendField(sb, "filePath", filePath, false);
         sb.append(",\"lineNumber\":").append(lineNumber);
         sb.append('}');

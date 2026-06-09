@@ -14,6 +14,8 @@ public class PyFunction {
     String name;
     String qualName;
     List<String> paramNames;
+    List<String> paramTypes;
+    String returnType;
     List<String> decorators;
     int lineStart;
     int lineEnd;
@@ -24,6 +26,8 @@ public class PyFunction {
     private PyFunction(String name,
                        String qualName,
                        List<String> paramNames,
+                       List<String> paramTypes,
+                       String returnType,
                        List<String> decorators,
                        int lineStart,
                        int lineEnd,
@@ -34,6 +38,10 @@ public class PyFunction {
         this.paramNames = paramNames == null
                 ? Collections.emptyList()
                 : Collections.unmodifiableList(List.copyOf(paramNames));
+        this.paramTypes = paramTypes == null
+                ? Collections.emptyList()
+                : Collections.unmodifiableList(List.copyOf(paramTypes));
+        this.returnType = returnType;
         this.decorators = decorators == null
                 ? Collections.emptyList()
                 : Collections.unmodifiableList(List.copyOf(decorators));

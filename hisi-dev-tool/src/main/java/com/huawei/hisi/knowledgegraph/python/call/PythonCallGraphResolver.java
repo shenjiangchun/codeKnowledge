@@ -3,6 +3,7 @@ package com.huawei.hisi.knowledgegraph.python.call;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,21 +42,31 @@ public class PythonCallGraphResolver {
 
     private static final String CALL_TYPE_DIRECT = "DIRECT";
     private static final String CALL_TYPE_SELF = "SELF";
+    private static final String CALL_TYPE_SUPER = "SUPER";
     private static final String CALL_TYPE_IMPORT = "IMPORT";
     private static final String CALL_TYPE_UNRESOLVED = "UNRESOLVED";
 
-    /** Common Python builtins — skip these, they have no KG node. */
-    private static final Set<String> PYTHON_BUILTINS = Set.of(
-            "print", "len", "range", "enumerate", "zip", "map", "filter", "sorted",
-            "reversed", "list", "dict", "set", "tuple", "str", "int", "float", "bool",
-            "type", "isinstance", "issubclass", "hasattr", "getattr", "setattr", "delattr",
-            "super", "property", "classmethod", "staticmethod", "abs", "min", "max", "sum",
-            "any", "all", "round", "repr", "hash", "id", "input", "open", "iter", "next",
-            "callable", "vars", "dir", "globals", "locals", "exec", "eval", "compile",
-            "format", "chr", "ord", "hex", "oct", "bin", "pow", "divmod",
-            "object", "Exception", "ValueError", "TypeError", "KeyError", "IndexError",
-            "AttributeError", "RuntimeError", "StopIteration", "NotImplementedError",
-            "OSError", "IOError", "FileNotFoundError", "ImportError", "ModuleNotFoundError");
+    /** Common Python builtins — skip these, they have no KG node. "super" is excluded; handled separately. */
+    private static final Set<String> PYTHON_BUILTINS;
+    static {
+        Set<String> builtins = new HashSet<>(Set.of(
+                "print", "len", "range", "enumerate", "zip", "map", "filter", "sorted",
+                "reversed", "list", "dict", "set", "tuple", "str", "int", "float", "bool",
+                "type", "isinstance", "issubclass", "hasattr", "getattr", "setattr", "delattr",
+                "property", "classmethod", "staticmethod", "abs", "min", "max", "sum",
+                "any", "all", "round", "repr", "hash", "id", "input", "open", "iter", "next",
+                "callable", "vars", "dir", "globals", "locals", "exec", "eval", "compile",
+                "format", "chr", "ord", "hex", "oct", "bin", "pow", "divmod",
+                "object", "Exception", "ValueError", "TypeError", "KeyError", "IndexError",
+                "AttributeError", "RuntimeError", "StopIteration", "NotImplementedError",
+                "OSError", "IOError", "FileNotFoundError", "ImportError", "ModuleNotFoundError"));
+        PYTHON_BUILTINS = Collections.unmodifiableSet(builtins);
+    }
+
+    // Cross-module class indices (populated by indexModules)
+    Map<String, PyModule> moduleByPath;
+    Map<String, PyClass> classByQualifiedName;  // "module.path.ClassName" -> PyClass
+    Map<String, List<PyClass>> classesBySimpleName;  // "ClassName" -> [PyClass, ...]
 
     /**
      * Resolve calls for a single module. Cross-module resolution uses {@code allModules}
@@ -146,7 +157,24 @@ public class PythonCallGraphResolver {
      */
     private String normalizeExpression(String expression) {
         // Strip constructor parens in chain: Foo().bar → Foo.bar, Foo(arg).bar → Foo.bar
-        return expression.replaceAll("\\([^)]*\\)\\.", ".");
+        // Uses iterative paren-depth tracking to handle nested parens correctly.
+        StringBuilder result = new StringBuilder();
+        int depth = 0;
+        for (int i = 0; i < expression.length(); i++) {
+            char c = expression.charAt(i);
+            if (c == '(') {
+                depth++;
+            } else if (c == ')' && depth > 0) {
+                depth--;
+                if (i + 1 < expression.length() && expression.charAt(i + 1) == '.') {
+                    result.append('.');
+                    i++;
+                }
+            } else if (depth == 0) {
+                result.append(c);
+            }
+        }
+        return result.toString();
     }
 
     private Map<String, Object> resolveCall(PyCall call, String callerNodeId, ResolutionContext ctx) {
@@ -159,6 +187,13 @@ public class PythonCallGraphResolver {
         String expression = normalizeExpression(rawExpression);
         String[] parts = expression.split("\\.");
         String head = parts[0];
+
+        // super().method() → resolve to parent class method
+        if ("super".equals(head)) {
+            Map<String, Object> superResult = resolveSuperCall(head, parts, callerNodeId, call, ctx);
+            if (superResult != null) return superResult;
+            return null; // Can't resolve super call — skip silently
+        }
 
         // Skip Python builtins — no KG node exists for these
         if (PYTHON_BUILTINS.contains(head)) {
@@ -187,9 +222,9 @@ public class PythonCallGraphResolver {
             if (wildcard != null) {
                 return wildcard;
             }
-            log.trace("[CallGraph] Skipping unresolvable call '{}' in {}",
-                    head, call.getEnclosingFunction());
-            return null;
+            log.debug("[CallGraph] Unresolved call '{}' in {} at line {}",
+                    head, call.getEnclosingFunction(), call.getLineNumber());
+            return unresolvedEdge(callerNodeId, head, call.getLineNumber());
         }
 
         // Multi-part call: module.func() or Class.method()
@@ -201,10 +236,9 @@ public class PythonCallGraphResolver {
         if (localClass != null) {
             return localClass;
         }
-        // Can't resolve — skip
-        log.trace("[CallGraph] Skipping unresolvable call '{}' in {}",
-                expression, call.getEnclosingFunction());
-        return null;
+        log.debug("[CallGraph] Unresolved call '{}' in {} at line {}",
+                expression, call.getEnclosingFunction(), call.getLineNumber());
+        return unresolvedEdge(callerNodeId, expression, call.getLineNumber());
     }
 
     /** {@code self.method()} → method on the call's enclosing class. */
@@ -225,6 +259,99 @@ public class PythonCallGraphResolver {
         }
         String calleeId = methodNodeId(ctx.module().getModulePath(), owner.getName(), method);
         return edge(callerNodeId, calleeId, CALL_TYPE_SELF, call.getLineNumber(), false);
+    }
+
+    /**
+     * {@code super().method()} → resolve to the parent class's method.
+     *
+     * <p>After normalization, {@code super().method} becomes {@code super.method}
+     * with parts = ["super", "method"]. We find the enclosing class, resolve its
+     * base classes via {@link #resolveBaseClass}, then look up the method in the
+     * parent class.
+     */
+    private Map<String, Object> resolveSuperCall(String head, String[] parts,
+                                                  String callerNodeId, PyCall call,
+                                                  ResolutionContext ctx) {
+        if (parts.length < 2) return null;
+        String methodName = parts[1];
+
+        // Find the enclosing class
+        String enclosingClassName = enclosingClassOf(call, ctx.classesByName());
+        if (enclosingClassName == null) return null;
+
+        List<PyClass> enclosingCandidates = ctx.classesByName().get(enclosingClassName);
+        if (enclosingCandidates == null || enclosingCandidates.isEmpty()) return null;
+        PyClass enclosingClass = enclosingCandidates.get(0);
+
+        if (enclosingClass.getBaseClasses() == null || enclosingClass.getBaseClasses().isEmpty()) {
+            return null;
+        }
+
+        // Try each base class
+        for (String base : enclosingClass.getBaseClasses()) {
+            String parentFqn = resolveBaseClass(base, ctx.module());
+            if (parentFqn == null) continue;
+
+            PyClass parentClass = findClassByFqn(parentFqn);
+            if (parentClass == null) continue;
+
+            PyFunction method = findMethodInClassHierarchy(parentClass, methodName);
+            if (method != null) {
+                // Extract the module path from the parent FQN (everything before the last dot)
+                String parentModulePath = parentFqn.contains(".")
+                        ? parentFqn.substring(0, parentFqn.lastIndexOf('.'))
+                        : ctx.module().getModulePath();
+                String parentSimpleName = parentFqn.contains(".")
+                        ? parentFqn.substring(parentFqn.lastIndexOf('.') + 1)
+                        : parentFqn;
+                String calleeId = methodNodeId(parentModulePath, parentSimpleName, method);
+                return edge(callerNodeId, calleeId, CALL_TYPE_SUPER, call.getLineNumber(), false);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Find a method in a class, searching parent classes if not found locally.
+     */
+    private PyFunction findMethodInClassHierarchy(PyClass cls, String methodName) {
+        // Search locally first
+        PyFunction local = findMethod(cls, methodName);
+        if (local != null) return local;
+
+        // Search parent classes
+        if (cls.getBaseClasses() == null || cls.getBaseClasses().isEmpty()) return null;
+
+        for (String base : cls.getBaseClasses()) {
+            // Try to resolve the base class to a known class
+            // We need a module context — look it up from classByQualifiedName
+            String fqn = findFqnForClass(cls);
+            if (fqn == null) continue;
+            String modulePath = fqn.contains(".") ? fqn.substring(0, fqn.lastIndexOf('.')) : null;
+            if (modulePath == null) continue;
+            PyModule ownerModule = moduleByPath != null ? moduleByPath.get(modulePath) : null;
+            if (ownerModule == null) continue;
+
+            String parentFqn = resolveBaseClass(base, ownerModule);
+            if (parentFqn == null) continue;
+            PyClass parentClass = findClassByFqn(parentFqn);
+            if (parentClass == null) continue;
+
+            PyFunction inherited = findMethodInClassHierarchy(parentClass, methodName);
+            if (inherited != null) return inherited;
+        }
+        return null;
+    }
+
+    /**
+     * Find the FQN for a PyClass by looking it up in the classByQualifiedName index.
+     */
+    private String findFqnForClass(PyClass cls) {
+        if (classByQualifiedName == null) return null;
+        for (var entry : classByQualifiedName.entrySet()) {
+            if (entry.getValue() == cls) return entry.getKey();
+        }
+        return null;
     }
 
     /** Plain {@code foo()} → top-level function in the current module. */
@@ -372,6 +499,10 @@ public class PythonCallGraphResolver {
                 return topLevelNodeId(module.getModulePath(), f);
             }
         }
+        // Module-level calls inside if __name__ == "__main__": block
+        if ("<module>".equals(enclosing) && call.isInMainBlock()) {
+            return mainBlockNodeId(module.getModulePath());
+        }
         return null;
     }
 
@@ -432,6 +563,11 @@ public class PythonCallGraphResolver {
         return PythonKnowledgeGraphBuilder.toNodeId(modulePath + "::" + signature);
     }
 
+    /** Pseudo node ID for the {@code if __name__ == "__main__":} block. */
+    private String mainBlockNodeId(String modulePath) {
+        return PythonKnowledgeGraphBuilder.toNodeId(modulePath + "::__main__()");
+    }
+
     // ---------------------------------------------------------------------
     // Indexing
     // ---------------------------------------------------------------------
@@ -471,12 +607,28 @@ public class PythonCallGraphResolver {
 
     private Map<String, PyModule> indexModules(List<PyModule> modules) {
         if (modules == null || modules.isEmpty()) {
+            moduleByPath = Collections.emptyMap();
+            classByQualifiedName = Collections.emptyMap();
+            classesBySimpleName = Collections.emptyMap();
             return Collections.emptyMap();
         }
         Map<String, PyModule> out = new HashMap<>();
         for (PyModule m : modules) {
             if (m != null && m.getModulePath() != null) {
                 out.put(m.getModulePath(), m);
+            }
+        }
+        // Store module index for cross-module class resolution
+        moduleByPath = out;
+        // Populate cross-module class indices
+        classByQualifiedName = new HashMap<>();
+        classesBySimpleName = new HashMap<>();
+        for (var entry : out.entrySet()) {
+            String modulePath = entry.getKey();
+            for (PyClass cls : entry.getValue().getClasses()) {
+                String fqn = modulePath + "." + cls.getName();
+                classByQualifiedName.put(fqn, cls);
+                classesBySimpleName.computeIfAbsent(cls.getName(), k -> new ArrayList<>()).add(cls);
             }
         }
         return out;
@@ -561,6 +713,104 @@ public class PythonCallGraphResolver {
             }
         }
         return result;
+    }
+
+    // ---------------------------------------------------------------------
+    // Cross-module class resolution
+    // ---------------------------------------------------------------------
+
+    /**
+     * Resolve a raw base class reference to a fully qualified class name
+     * (e.g., "BaseView" -> "myapp.views.BaseView").
+     * Returns null if the base class cannot be resolved.
+     */
+    public String resolveBaseClass(String baseClassText, PyModule currentModule) {
+        if (baseClassText == null || baseClassText.isBlank()) return null;
+
+        // Skip 'object' — every Python class inherits from it
+        if ("object".equals(baseClassText)) return null;
+
+        // 1. Direct match in current module's classes
+        for (PyClass cls : currentModule.getClasses()) {
+            if (cls.getName().equals(baseClassText)) {
+                return currentModule.getModulePath() + "." + cls.getName();
+            }
+        }
+
+        // 2. Try to resolve through imports
+        String head = baseClassText.contains(".")
+                ? baseClassText.substring(0, baseClassText.indexOf("."))
+                : baseClassText;
+        String tail = baseClassText.contains(".")
+                ? baseClassText.substring(baseClassText.indexOf(".") + 1)
+                : null;
+
+        for (PyImport imp : currentModule.getImports()) {
+            String localName = importLocalName(imp);
+            if (!head.equals(localName)) continue;
+
+            String targetModulePath = absolutizeModuleName(
+                    imp.getModuleName(), imp.getRelativeLevel(), currentModule);
+
+            if (tail == null) {
+                // Simple name: "from myapp.views import BaseView"
+                if (imp.getSymbol() != null && !"*".equals(imp.getSymbol())) {
+                    String fqn = targetModulePath + "." + imp.getSymbol();
+                    if (classByQualifiedName.containsKey(fqn)) return fqn;
+                } else if (imp.getSymbol() == null) {
+                    // import myapp.views -> head="myapp", class is in myapp.views
+                    PyModule targetModule = moduleByPath != null ? moduleByPath.get(targetModulePath) : null;
+                    if (targetModule != null) {
+                        for (PyClass cls : targetModule.getClasses()) {
+                            if (cls.getName().equals(baseClassText)) {
+                                return targetModulePath + "." + cls.getName();
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Dotted name: "serializers.ModelSerializer"
+                // head="serializers", tail="ModelSerializer"
+                PyModule targetModule = moduleByPath != null ? moduleByPath.get(targetModulePath) : null;
+                if (targetModule != null) {
+                    for (PyClass cls : targetModule.getClasses()) {
+                        if (cls.getName().equals(tail)) {
+                            return targetModulePath + "." + cls.getName();
+                        }
+                    }
+                }
+                // Try nested module: targetModulePath + "." + head as module, tail as class
+                String nestedModulePath = targetModulePath + "." + head;
+                PyModule nestedModule = moduleByPath != null ? moduleByPath.get(nestedModulePath) : null;
+                if (nestedModule != null) {
+                    for (PyClass cls : nestedModule.getClasses()) {
+                        if (cls.getName().equals(tail)) {
+                            return nestedModulePath + "." + cls.getName();
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Global search by simple name (last resort — may be ambiguous)
+        List<PyClass> candidates = classesBySimpleName != null ? classesBySimpleName.get(baseClassText) : null;
+        if (candidates != null && candidates.size() == 1) {
+            PyClass cls = candidates.get(0);
+            for (var entry : moduleByPath.entrySet()) {
+                if (entry.getValue().getClasses().contains(cls)) {
+                    return entry.getKey() + "." + cls.getName();
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Find a PyClass by its fully qualified name (modulePath.ClassName).
+     */
+    private PyClass findClassByFqn(String fqn) {
+        return classByQualifiedName != null ? classByQualifiedName.get(fqn) : null;
     }
 
     // ---------------------------------------------------------------------

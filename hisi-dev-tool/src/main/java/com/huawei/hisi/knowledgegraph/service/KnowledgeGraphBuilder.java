@@ -302,6 +302,7 @@ public class KnowledgeGraphBuilder {
         List<Map<String, Object>> allCallRelations = new ArrayList<>();
         List<EntryPointNode> allEntryPoints = new ArrayList<>();
         Map<String, String> methodSignatureToNodeId = new HashMap<>();
+        Map<String, String> methodFullKeyToNodeId = new HashMap<>();
 
         // 第一遍：扫描方法节点和入口点
         for (File javaFile : javaFiles) {
@@ -317,7 +318,9 @@ public class KnowledgeGraphBuilder {
             // 建立映射
             for (MethodNode node : methodNodes) {
                 String key = node.getClassName() + "." + node.getMethodName();
+                String fullKey = key + "." + Integer.toHexString(node.getSignature().hashCode());
                 methodSignatureToNodeId.put(key, node.getNodeId());
+                methodFullKeyToNodeId.put(fullKey, node.getNodeId());
             }
 
             // 扫描入口点（复用核心服务）
@@ -334,7 +337,7 @@ public class KnowledgeGraphBuilder {
             if (cu == null) continue;
 
             List<Map<String, Object>> relations = scanCallRelationsWithCoreService(cu, projectPath,
-                methodSignatureToNodeId, javaParser);
+                methodSignatureToNodeId, methodFullKeyToNodeId, javaParser);
             allCallRelations.addAll(relations);
         }
 
@@ -350,7 +353,9 @@ public class KnowledgeGraphBuilder {
             // 同步更新 methodSignatureToNodeId 映射
             for (MethodNode node : syntheticNodes) {
                 String key = node.getClassName() + "." + node.getMethodName();
+                String fullKey = key + "." + Integer.toHexString(node.getSignature().hashCode());
                 methodSignatureToNodeId.putIfAbsent(key, node.getNodeId());
+                methodFullKeyToNodeId.putIfAbsent(fullKey, node.getNodeId());
             }
         }
 
@@ -754,6 +759,58 @@ public class KnowledgeGraphBuilder {
 
                 nodes.add(node);
             });
+
+            // 扫描构造方法
+            clazz.findAll(com.github.javaparser.ast.body.ConstructorDeclaration.class).forEach(ctor -> {
+                String methodId = className + ".<init>." +
+                    Integer.toHexString(ctor.getSignature().hashCode());
+                String nodeId = projectPath + ":" + methodId;
+
+                MethodNode node = MethodNode.builder()
+                    .nodeId(nodeId)
+                    .className(className)
+                    .methodName("<init>")
+                    .signature(ctor.getSignature().toString())
+                    .filePath(filePath)
+                    .startLine(ctor.getBegin().map(p -> p.line).orElse(0))
+                    .endLine(ctor.getEnd().map(p -> p.line).orElse(0))
+                    .complexity(1)
+                    .methodBody("")
+                    .projectPath(projectPath)
+                    .serviceName(extractServiceName(className))
+                    .build();
+
+                nodes.add(node);
+            });
+        });
+
+        // Scan enum methods
+        cu.findAll(com.github.javaparser.ast.body.EnumDeclaration.class).forEach(enumDecl -> {
+            String className = packageName.isEmpty() ?
+                enumDecl.getNameAsString() :
+                packageName + "." + enumDecl.getNameAsString();
+
+            enumDecl.findAll(MethodDeclaration.class).forEach(method -> {
+                String methodId = className + "." + method.getNameAsString() + "." +
+                    Integer.toHexString(method.getSignature().hashCode());
+                String nodeId = projectPath + ":" + methodId;
+
+                MethodNode node = MethodNode.builder()
+                    .nodeId(nodeId)
+                    .className(className)
+                    .methodName(method.getNameAsString())
+                    .signature(method.getSignature().toString())
+                    .filePath(filePath)
+                    .startLine(method.getBegin().map(p -> p.line).orElse(0))
+                    .endLine(method.getEnd().map(p -> p.line).orElse(0))
+                    .complexity(calculateComplexity(method))
+                    .methodBody(coreService.compressMethodBody(method))
+                    .projectPath(projectPath)
+                    .serviceName(extractServiceName(className))
+                    .build();
+
+                nodes.add(node);
+            });
         });
 
         return nodes;
@@ -881,6 +938,7 @@ public class KnowledgeGraphBuilder {
     private List<Map<String, Object>> scanCallRelationsWithCoreService(
             CompilationUnit cu, String projectPath,
             Map<String, String> methodSignatureToNodeId,
+            Map<String, String> methodFullKeyToNodeId,
             JavaParser javaParser) {
 
         List<Map<String, Object>> relations = new ArrayList<>();
@@ -895,7 +953,10 @@ public class KnowledgeGraphBuilder {
                 packageName + "." + clazz.getNameAsString();
 
             clazz.findAll(MethodDeclaration.class).forEach(method -> {
-                String callerNodeId = methodSignatureToNodeId.get(className + "." + method.getNameAsString());
+                String callerKey = className + "." + method.getNameAsString();
+                String callerFullKey = callerKey + "." + Integer.toHexString(method.getSignature().hashCode());
+                String callerNodeId = methodFullKeyToNodeId.getOrDefault(callerFullKey,
+                    methodSignatureToNodeId.get(callerKey));
                 if (callerNodeId == null) return;
 
                 final String finalCallerId = callerNodeId;
@@ -914,7 +975,9 @@ public class KnowledgeGraphBuilder {
                         // 获取目标方法的类名
                         String targetClassName = getMethodClassName(target);
                         String targetMethodKey = targetClassName + "." + target.getNameAsString();
-                        String calleeNodeId = methodSignatureToNodeId.get(targetMethodKey);
+                        String targetFullKey = targetMethodKey + "." + Integer.toHexString(target.getSignature().hashCode());
+                        String calleeNodeId = methodFullKeyToNodeId.getOrDefault(targetFullKey,
+                            methodSignatureToNodeId.get(targetMethodKey));
 
                         if (calleeNodeId != null && !calleeNodeId.equals(finalCallerId)) {
                             // Proxy-aware call type: check @Async/@Transactional on target
@@ -950,6 +1013,103 @@ public class KnowledgeGraphBuilder {
                         if (staticRelation != null) {
                             relations.add(staticRelation);
                         }
+                    }
+                });
+
+                // 2. 扫描构造调用: new ClassName(...)
+                method.findAll(com.github.javaparser.ast.expr.ObjectCreationExpr.class).forEach(newExpr -> {
+                    String targetClassName;
+                    try {
+                        targetClassName = newExpr.getType().resolve().describe();
+                    } catch (Exception e) {
+                        // Fallback to simple name if symbol resolution fails
+                        targetClassName = newExpr.getType().getNameAsString();
+                    }
+
+                    // Look up constructor method node: className.<init>
+                    String constructorKey = targetClassName + ".<init>";
+                    String calleeNodeId = methodSignatureToNodeId.get(constructorKey);
+                    if (calleeNodeId == null) {
+                        // Try by simple name as fallback
+                        String simpleName = newExpr.getType().getNameAsString();
+                        for (Map.Entry<String, String> entry : methodSignatureToNodeId.entrySet()) {
+                            if (entry.getKey().startsWith(simpleName + ".<init>")) {
+                                calleeNodeId = entry.getValue();
+                                break;
+                            }
+                        }
+                        if (calleeNodeId == null) return;
+                    }
+
+                    if (!calleeNodeId.equals(finalCallerId)) {
+                        Map<String, Object> relation = new LinkedHashMap<>();
+                        relation.put("callerId", finalCallerId);
+                        relation.put("calleeId", calleeNodeId);
+                        relation.put("callType", "DIRECT");
+                        relation.put("callLine", newExpr.getBegin().map(p -> p.line).orElse(0));
+                        relations.add(relation);
+                    }
+                });
+            });
+        });
+
+        // Scan enum method calls
+        // Note: findMethodCallTargets requires ClassOrInterfaceDeclaration, so for enum methods
+        // we rely on static method resolution only. Full call resolution for enums would require
+        // extending CodeAnalysisCoreService.findMethodCallTargets to accept TypeDeclaration.
+        cu.findAll(com.github.javaparser.ast.body.EnumDeclaration.class).forEach(enumDecl -> {
+            String className = packageName.isEmpty() ?
+                enumDecl.getNameAsString() :
+                packageName + "." + enumDecl.getNameAsString();
+
+            enumDecl.findAll(MethodDeclaration.class).forEach(method -> {
+                String callerKey = className + "." + method.getNameAsString();
+                String callerFullKey = callerKey + "." + Integer.toHexString(method.getSignature().hashCode());
+                String callerNodeId = methodFullKeyToNodeId.getOrDefault(callerFullKey,
+                    methodSignatureToNodeId.get(callerKey));
+                if (callerNodeId == null) return;
+
+                final String finalCallerId = callerNodeId;
+
+                method.findAll(MethodCallExpr.class).forEach(call -> {
+                    // For enum methods, skip findMethodCallTargets (requires ClassOrInterfaceDeclaration)
+                    // and go straight to static method resolution
+                    Map<String, Object> staticRelation = resolveStaticMethodCall(call, finalCallerId,
+                        methodSignatureToNodeId, projectPath);
+                    if (staticRelation != null) {
+                        relations.add(staticRelation);
+                    }
+                });
+
+                // Scan constructor calls within enum methods
+                method.findAll(com.github.javaparser.ast.expr.ObjectCreationExpr.class).forEach(newExpr -> {
+                    String targetClassName;
+                    try {
+                        targetClassName = newExpr.getType().resolve().describe();
+                    } catch (Exception e) {
+                        targetClassName = newExpr.getType().getNameAsString();
+                    }
+
+                    String constructorKey = targetClassName + ".<init>";
+                    String calleeNodeId = methodSignatureToNodeId.get(constructorKey);
+                    if (calleeNodeId == null) {
+                        String simpleName = newExpr.getType().getNameAsString();
+                        for (Map.Entry<String, String> entry : methodSignatureToNodeId.entrySet()) {
+                            if (entry.getKey().startsWith(simpleName + ".<init>")) {
+                                calleeNodeId = entry.getValue();
+                                break;
+                            }
+                        }
+                        if (calleeNodeId == null) return;
+                    }
+
+                    if (!calleeNodeId.equals(finalCallerId)) {
+                        Map<String, Object> relation = new LinkedHashMap<>();
+                        relation.put("callerId", finalCallerId);
+                        relation.put("calleeId", calleeNodeId);
+                        relation.put("callType", "DIRECT");
+                        relation.put("callLine", newExpr.getBegin().map(p -> p.line).orElse(0));
+                        relations.add(relation);
                     }
                 });
             });
@@ -1753,8 +1913,19 @@ public class KnowledgeGraphBuilder {
     }
 
     private int calculateComplexity(MethodDeclaration method) {
-        // 简化实现：返回1
-        return 1;
+        int complexity = 1;
+        complexity += method.findAll(com.github.javaparser.ast.stmt.IfStmt.class).size();
+        complexity += method.findAll(com.github.javaparser.ast.stmt.ForStmt.class).size();
+        complexity += method.findAll(com.github.javaparser.ast.stmt.WhileStmt.class).size();
+        complexity += method.findAll(com.github.javaparser.ast.stmt.DoStmt.class).size();
+        complexity += method.findAll(com.github.javaparser.ast.stmt.CatchClause.class).size();
+        complexity += method.findAll(com.github.javaparser.ast.stmt.SwitchEntry.class).size();
+        complexity += method.findAll(com.github.javaparser.ast.expr.ConditionalExpr.class).size();
+        complexity += (int) method.findAll(com.github.javaparser.ast.expr.BinaryExpr.class).stream()
+            .filter(b -> b.getOperator() == com.github.javaparser.ast.expr.BinaryExpr.Operator.AND
+                      || b.getOperator() == com.github.javaparser.ast.expr.BinaryExpr.Operator.OR)
+            .count();
+        return complexity;
     }
 
     private String getMethodClassName(MethodDeclaration method) {

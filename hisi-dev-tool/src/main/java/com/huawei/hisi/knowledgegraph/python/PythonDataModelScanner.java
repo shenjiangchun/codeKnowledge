@@ -45,14 +45,26 @@ public class PythonDataModelScanner {
                 String className = modulePath + "." + pyClass.getName();
 
                 List<String> annotations = new ArrayList<>(pyClass.getDecorators());
-                List<String> fields = pyClass.getMethods().stream()
-                    .filter(m -> m.getName().equals("__init__"))
-                    .flatMap(m -> m.getParamNames().stream())
-                    .filter(p -> !p.equals("self"))
-                    .collect(Collectors.toList());
-
-                // For Pydantic/dataclass, class-level attributes are also fields
-                // but PyClass doesn't expose them directly; __init__ params are a proxy
+                // 1. Priority: class-level attributes (Pydantic/dataclass/Django Model standard pattern)
+                List<String> fields = new ArrayList<>();
+                if (pyClass.getClassAttributes() != null && !pyClass.getClassAttributes().isEmpty()) {
+                    fields = pyClass.getClassAttributes().stream()
+                            .map(attr -> {
+                                if (attr.getTypeAnnotation() != null && !attr.getTypeAnnotation().isEmpty()) {
+                                    return attr.getName() + ": " + attr.getTypeAnnotation();
+                                }
+                                return attr.getName();
+                            })
+                            .collect(Collectors.toList());
+                }
+                // 2. Fallback: __init__ parameters (traditional pattern)
+                if (fields.isEmpty()) {
+                    fields = pyClass.getMethods().stream()
+                            .filter(m -> "__init__".equals(m.getName()))
+                            .flatMap(m -> m.getParamNames().stream())
+                            .filter(p -> !"self".equals(p))
+                            .collect(Collectors.toList());
+                }
 
                 DataModelNode node = DataModelNode.builder()
                     .nodeId(DataModelNode.generateNodeId(projectPath, className))
