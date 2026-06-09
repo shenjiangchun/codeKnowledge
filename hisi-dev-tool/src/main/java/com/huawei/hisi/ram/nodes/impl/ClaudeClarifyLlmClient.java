@@ -314,11 +314,12 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
             3. If still unclear: ask NEW questions only (never repeat).
             4. If now clear: fill all fields completely.
 
-            ## Output schema (PURE JSON only — no prose, no markdown fences, no text before or after):
+            ## Output schema (PURE JSON only — no prose, no markdown fences, no markdown tables, no text before or after):
 
             Your final response MUST be a single JSON object and NOTHING ELSE.
             Do NOT start with "I now have..." or "Let me compile..." or any text.
             Do NOT wrap JSON in ```json``` code blocks.
+            Any multi-line string values must use \\n for line breaks, not literal newlines.
             Output ONLY the raw JSON starting with { and ending with }.
 
             {

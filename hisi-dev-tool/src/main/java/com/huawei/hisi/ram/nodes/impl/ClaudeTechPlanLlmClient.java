@@ -73,6 +73,8 @@ public class ClaudeTechPlanLlmClient implements TechPlanLlmClient {
             6. risk_mitigations 每个风险必须有对应的缓解措施
             7. 所有自然语言值使用简体中文
             8. JSON key、文件路径、类名/方法名保持原样
+            9. markdown_report 值中可以使用 markdown 语法（表格、列表、标题等），但换行必须用 \\n 转义，不可使用字面换行符
+            10. **绝对禁止**在 JSON 之外添加任何文本或说明——只输出纯 JSON
             """;
 
     private final RamClaudeJsonClient claude;

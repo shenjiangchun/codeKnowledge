@@ -784,7 +784,9 @@ public class RamController {
         payload.put("nodeName", "tech_plan");
         payload.put("inputsHash", inputsHash);
         payload.put("output", output);
-        String key = "ckpt-" + backendId + "-tech_plan-" + inputsHash;
+        // Use timestamp in key to avoid idempotency collision on rerun:
+        // same inputs can produce different LLM outputs, so old events must not be reused.
+        String key = "ckpt-" + backendId + "-tech_plan-" + System.nanoTime();
         AgentEvent ev = AgentEvent.builder()
                 .sessionId(backendId)
                 .type(EventType.CHECKPOINT)

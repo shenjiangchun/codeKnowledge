@@ -1,5 +1,6 @@
 package com.huawei.hisi.ram.nodes.impl;
 
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hisi.ram.sdk.SendOptions;
@@ -30,6 +31,12 @@ public class RamClaudeJsonClient {
 
     private static final String FALLBACK_MODEL = "claude-sonnet-4-20250514";
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    /** Lenient mapper for LLM responses: allows trailing commas, comments, single quotes. */
+    private static final ObjectMapper LENIENT_MAPPER = new ObjectMapper()
+            .enable(JsonParser.Feature.ALLOW_TRAILING_COMMA)
+            .enable(JsonParser.Feature.ALLOW_SINGLE_QUOTES)
+            .enable(JsonParser.Feature.ALLOW_COMMENTS)
+            .enable(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES);
 
     /** Maximum number of tool_use round-trips before forcing termination. */
     private static final int MAX_TOOL_ROUNDS = 10;
@@ -427,6 +434,16 @@ public class RamClaudeJsonClient {
         raw = raw.trim();
         log.debug("[RamClaudeJsonClient] raw response length={}", raw.length());
 
+        // Strategy 0: escape bare newlines inside JSON string values
+        // LLMs often write multi-line content (markdown tables, lists) inside JSON
+        // string values without proper \n escaping — this is invalid JSON.
+        String escaped = escapeBareNewlinesInJsonStrings(raw);
+        if (escaped != null && !escaped.equals(raw)) {
+            log.info("[RamClaudeJsonClient] Escaped bare newlines in JSON strings ({}→{} chars)",
+                    raw.length(), escaped.length());
+            raw = escaped;
+        }
+
         // Strategy 1: raw starts with ``` — strip fences
         if (raw.startsWith("```")) {
             String extracted = stripLeadingFence(raw);
@@ -453,23 +470,43 @@ public class RamClaudeJsonClient {
             }
         }
 
-        // Strategy 4: balanced-brace extraction — properly handles braces inside strings
+        // Strategy 4: balanced-brace extraction — try every { position, not just the first
+        // Handles cases where prose/markdown before JSON contains stray {
         int firstBrace = raw.indexOf('{');
         if (firstBrace >= 0) {
-            String candidate = extractBalancedJson(raw, firstBrace);
-            if (candidate != null) {
-                Map<String, Object> result = tryParseJson(candidate);
-                if (result != null) {
-                    log.info("[RamClaudeJsonClient] Extracted JSON via balanced-brace ({}→{} chars)",
-                            raw.length(), candidate.length());
-                    return result;
+            for (int pos = firstBrace; pos >= 0; pos = raw.indexOf('{', pos + 1)) {
+                String candidate = extractBalancedJson(raw, pos);
+                if (candidate != null) {
+                    Map<String, Object> result = tryParseJson(candidate);
+                    if (result != null) {
+                        log.info("[RamClaudeJsonClient] Extracted JSON via balanced-brace at pos={} ({}→{} chars)",
+                                pos, raw.length(), candidate.length());
+                        return result;
+                    }
                 }
-                log.warn("[RamClaudeJsonClient] Balanced-brace extraction found candidate ({} chars) but parse failed",
-                        candidate.length());
+            }
+            log.warn("[RamClaudeJsonClient] Balanced-brace extraction tried all {{ positions but none parsed");
+        }
+
+        // Strategy 5: strip trailing markdown (tables, headings, prose) then balanced extraction
+        // Common LLM pattern: valid JSON followed by explanatory markdown
+        String stripped = stripTrailingMarkdown(raw);
+        if (stripped != null && stripped.length() < raw.length()) {
+            int sBrace = stripped.indexOf('{');
+            for (int pos = sBrace; pos >= 0; pos = stripped.indexOf('{', pos + 1)) {
+                String candidate = extractBalancedJson(stripped, pos);
+                if (candidate != null) {
+                    Map<String, Object> result = tryParseJson(candidate);
+                    if (result != null) {
+                        log.info("[RamClaudeJsonClient] Extracted JSON after stripping trailing markdown ({}→{} chars)",
+                                raw.length(), candidate.length());
+                        return result;
+                    }
+                }
             }
         }
 
-        // Strategy 5: simple first { / last } (fallback for imperfect JSON)
+        // Strategy 6: simple first { / last } (fallback for imperfect JSON)
         int lastBrace = raw.lastIndexOf('}');
         if (firstBrace >= 0 && lastBrace > firstBrace) {
             String candidate = raw.substring(firstBrace, lastBrace + 1).trim();
@@ -479,7 +516,7 @@ public class RamClaudeJsonClient {
                         raw.length(), candidate.length());
                 return result;
             }
-            // Strategy 6: JSON might be truncated — try to repair by closing open structures
+            // Strategy 7: JSON might be truncated — try to repair by closing open structures
             String repaired = repairTruncatedJson(candidate);
             if (repaired != null) {
                 result = tryParseJson(repaired);
@@ -492,12 +529,99 @@ public class RamClaudeJsonClient {
         }
 
         // All strategies failed — log full details for debugging
-        log.error("[RamClaudeJsonClient] ALL {} strategies failed to extract JSON from response (len={}).",
-                "6", raw.length());
+        log.error("[RamClaudeJsonClient] ALL 7 strategies failed to extract JSON from response (len={}).",
+                raw.length());
         log.error("[RamClaudeJsonClient] First 800 chars: {}", raw.substring(0, Math.min(800, raw.length())));
         log.error("[RamClaudeJsonClient] Last 300 chars: {}",
                 raw.length() > 300 ? raw.substring(raw.length() - 300) : raw);
         throw new IllegalStateException("Claude response is not valid JSON");
+    }
+
+    /**
+     * Strip trailing markdown content (tables, headings, prose) that appears after a JSON object.
+     * Looks for the last '}' that likely closes the JSON, then removes everything after it.
+     * A '}' is considered a JSON closure if the line it's on doesn't look like markdown table content.
+     */
+    private String stripTrailingMarkdown(String raw) {
+        // Walk backwards to find the last } that isn't part of a markdown table line
+        int lastJsonClose = -1;
+        for (int i = raw.length() - 1; i >= 0; i--) {
+            if (raw.charAt(i) != '}') continue;
+            // Get the line this } is on
+            int lineStart = raw.lastIndexOf('\n', i);
+            if (lineStart < 0) lineStart = 0;
+            int lineEnd = raw.indexOf('\n', i);
+            if (lineEnd < 0) lineEnd = raw.length();
+            String line = raw.substring(lineStart, lineEnd).trim();
+            // Skip lines that look like markdown table rows (contain | and aren't just })
+            if (line.contains("|") && line.length() > 5) continue;
+            lastJsonClose = i;
+            break;
+        }
+        if (lastJsonClose > 0) {
+            return raw.substring(0, lastJsonClose + 1);
+        }
+        return null;
+    }
+
+    /**
+     * Escape bare newlines (and carriage returns) that appear inside JSON string values.
+     * LLMs often write multi-line markdown content inside string values without
+     * escaping the newlines, producing invalid JSON like:
+     *   {"markdown_report": "## Heading\n| col1 | col2 |"}
+     * where the \n are actual newline characters instead of the JSON escape \n.
+     * This method walks the text, tracks whether we're inside a JSON string,
+     * and replaces bare \n/\r with their escaped equivalents \\n/\\r.
+     * Returns null if the input doesn't look like it starts with JSON.
+     */
+    private String escapeBareNewlinesInJsonStrings(String text) {
+        if (text == null || text.isEmpty()) return null;
+        // Only apply if text starts with { or [ (looks like JSON)
+        String trimmed = text.trim();
+        if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return null;
+
+        StringBuilder sb = new StringBuilder(text.length());
+        boolean inString = false;
+        boolean escaped = false;
+        boolean modified = false;
+
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (escaped) {
+                sb.append(c);
+                escaped = false;
+                continue;
+            }
+            if (c == '\\' && inString) {
+                sb.append(c);
+                escaped = true;
+                continue;
+            }
+            if (c == '"') {
+                inString = !inString;
+                sb.append(c);
+                continue;
+            }
+            if (inString) {
+                if (c == '\n') {
+                    sb.append("\\n");
+                    modified = true;
+                    continue;
+                }
+                if (c == '\r') {
+                    sb.append("\\r");
+                    modified = true;
+                    continue;
+                }
+                if (c == '\t') {
+                    sb.append("\\t");
+                    modified = true;
+                    continue;
+                }
+            }
+            sb.append(c);
+        }
+        return modified ? sb.toString() : null;
     }
 
     /** Strip leading ```json or ``` fence from text that starts with it */
@@ -540,9 +664,17 @@ public class RamClaudeJsonClient {
     private Map<String, Object> tryParseJson(String json) {
         try {
             return MAPPER.readValue(json, new TypeReference<>() {});
-        } catch (Exception ex) {
-            log.debug("[RamClaudeJsonClient] tryParseJson failed: {}", ex.getMessage());
-            return null;
+        } catch (Exception strictEx) {
+            // Retry with lenient mapper (allows trailing commas, comments, etc.)
+            try {
+                Map<String, Object> result = LENIENT_MAPPER.readValue(json, new TypeReference<>() {});
+                log.info("[RamClaudeJsonClient] Strict parse failed but lenient parse succeeded (len={})", json.length());
+                return result;
+            } catch (Exception lenientEx) {
+                log.debug("[RamClaudeJsonClient] tryParseJson both strict and lenient failed: strict={}, lenient={}",
+                        strictEx.getMessage(), lenientEx.getMessage());
+                return null;
+            }
         }
     }
 
