@@ -3,8 +3,10 @@ package com.huawei.hisi.knowledgegraph.service;
 import com.huawei.hisi.knowledgegraph.model.GenerationTask;
 import com.huawei.hisi.knowledgegraph.model.VectorGenerationTask;
 import com.huawei.hisi.knowledgegraph.repository.GenerationTaskRepository;
+import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
 import com.huawei.hisi.neo4j.model.SqlNode;
+import com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jSqlNodeRepository;
 import com.huawei.hisi.neo4j.service.EmbeddingService;
@@ -55,9 +57,11 @@ public class VectorGenerationService {
 
     private final Neo4jMethodNodeRepository neo4jMethodNodeRepository;
     private final Neo4jSqlNodeRepository neo4jSqlNodeRepository;
+    private final Neo4jEntryPointNodeRepository neo4jEntryPointNodeRepository;
     private final GenerationTaskRepository taskRepository;
     private final LLMDescriptionService llmDescriptionService;
     private final EmbeddingService embeddingService;
+    private final EntryPointDescriptionService entryPointDescriptionService;
 
     /**
      * 工作线程数。默认 6 = min(embedding.burst=10, text-model.burst=6)，
@@ -86,14 +90,18 @@ public class VectorGenerationService {
     @Autowired
     public VectorGenerationService(Neo4jMethodNodeRepository neo4jMethodNodeRepository,
                                     Neo4jSqlNodeRepository neo4jSqlNodeRepository,
+                                    Neo4jEntryPointNodeRepository neo4jEntryPointNodeRepository,
                                     GenerationTaskRepository taskRepository,
                                     LLMDescriptionService llmDescriptionService,
-                                    EmbeddingService embeddingService) {
+                                    EmbeddingService embeddingService,
+                                    EntryPointDescriptionService entryPointDescriptionService) {
         this.neo4jMethodNodeRepository = neo4jMethodNodeRepository;
         this.neo4jSqlNodeRepository = neo4jSqlNodeRepository;
+        this.neo4jEntryPointNodeRepository = neo4jEntryPointNodeRepository;
         this.taskRepository = taskRepository;
         this.llmDescriptionService = llmDescriptionService;
         this.embeddingService = embeddingService;
+        this.entryPointDescriptionService = entryPointDescriptionService;
     }
 
     @PostConstruct
@@ -236,7 +244,11 @@ public class VectorGenerationService {
             fileLog("[向量生成] 开始处理 SQL 向量...");
             processSqlNodes(projectPath, task);
 
-            // 5. 完成
+            // 5. 生成入口点描述和向量
+            fileLog("[入口描述] 开始处理入口点描述...");
+            processEntryPointDescriptions(projectPath);
+
+            // 6. 完成
             long totalTime = System.currentTimeMillis() - startTime;
             Optional<GenerationTask> latestTask = taskRepository.findLatestByProjectPathAndType(projectPath, TASK_TYPE);
             if (latestTask.isPresent()) {
@@ -420,6 +432,72 @@ public class VectorGenerationService {
 
         float[] sqlEmbedding = embeddingService.generateEmbedding(sqlStatement);
         neo4jSqlNodeRepository.updateSqlEmbedding(sqlNode.getNodeId(), sqlEmbedding);
+    }
+
+    /**
+     * 处理入口点描述和向量生成（分批并发提交到线程池）
+     */
+    private void processEntryPointDescriptions(String projectPath) {
+        List<EntryPointNode> entryPoints = neo4jEntryPointNodeRepository.findByProjectPath(projectPath);
+        fileLog("[入口描述] 查询到入口点数: {}", entryPoints.size());
+
+        if (entryPoints.isEmpty()) {
+            fileLog("[入口描述] 没有入口点需要处理");
+            return;
+        }
+
+        // 过滤已处理的入口点（已有 briefDescription）
+        List<EntryPointNode> toProcess = entryPoints.stream()
+                .filter(e -> e.getBriefDescription() == null || e.getBriefDescription().isEmpty())
+                .collect(Collectors.toList());
+
+        int skippedCount = entryPoints.size() - toProcess.size();
+        fileLog("[入口描述] 断点续传: 总入口数={}, 跳过已处理={}, 待处理={}",
+                entryPoints.size(), skippedCount, toProcess.size());
+
+        if (toProcess.isEmpty()) {
+            fileLog("[入口描述] 所有入口点已处理，跳过");
+            return;
+        }
+
+        AtomicInteger entrySuccess = new AtomicInteger(0);
+        AtomicInteger entryFail = new AtomicInteger(0);
+        int batchSz = getBatchSize();
+        int totalEntry = toProcess.size();
+
+        for (int offset = 0; offset < totalEntry; offset += batchSz) {
+            int end = Math.min(offset + batchSz, totalEntry);
+            List<EntryPointNode> batch = toProcess.subList(offset, end);
+
+            List<CompletableFuture<Void>> futures = new ArrayList<>(batch.size());
+            for (EntryPointNode entry : batch) {
+                CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                    try {
+                        EntryPointDescriptionService.EntryPointDescription desc =
+                            entryPointDescriptionService.generateDescription(entry, projectPath);
+                        neo4jEntryPointNodeRepository.updateDescriptionAndEmbedding(
+                            entry.getEntryId(),
+                            desc.brief(),
+                            desc.detailed(),
+                            toDoubleList(desc.briefEmbedding()),
+                            toDoubleList(desc.detailedEmbedding())
+                        );
+                        entrySuccess.incrementAndGet();
+                        fileLog("[入口描述] 生成成功: {}", entry.getEntryKey());
+                    } catch (Exception e) {
+                        entryFail.incrementAndGet();
+                        fileLog("[ERROR] 入口描述生成失败: entryId={}, error={}",
+                                entry.getEntryId(), e.getMessage());
+                    }
+                }, executorService);
+                futures.add(future);
+            }
+
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            fileLog("[入口描述] 批次完成: {}/{}, 批次大小={}", end, totalEntry, batch.size());
+        }
+
+        fileLog("[入口描述] 完成: 成功={}, 失败={}", entrySuccess.get(), entryFail.get());
     }
 
     public VectorGenerationTask getTaskStatus(String projectPath) {

@@ -8,6 +8,8 @@ import org.springframework.data.neo4j.core.schema.Id;
 import org.springframework.data.neo4j.core.schema.Node;
 import org.springframework.data.neo4j.core.schema.Property;
 
+import java.util.List;
+
 /**
  * 入口点节点实体 (Neo4j)
  * 表示代码的入口点，如HTTP接口、定时任务、消息消费者等
@@ -77,6 +79,30 @@ public class EntryPointNode {
      */
     @Property("methodNodeId")
     private String methodNodeId;
+
+    /**
+     * 简要描述（30字以内，一句话概括入口核心功能）
+     */
+    @Property("briefDescription")
+    private String briefDescription;
+
+    /**
+     * 详细描述（100-200字，包含业务场景、处理流程、数据流转）
+     */
+    @Property("detailedDescription")
+    private String detailedDescription;
+
+    /**
+     * 简要描述向量（用于语义检索）
+     */
+    @Property("briefEmbedding")
+    private List<Double> briefEmbedding;
+
+    /**
+     * 详细描述向量（用于语义检索）
+     */
+    @Property("detailedEmbedding")
+    private List<Double> detailedEmbedding;
 
     /**
      * 入口类型常量

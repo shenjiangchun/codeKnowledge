@@ -4,7 +4,9 @@ import com.huawei.hisi.knowledgegraph.model.BridgeRelation;
 import com.huawei.hisi.knowledgegraph.model.BridgeStats;
 import com.huawei.hisi.knowledgegraph.model.CallChainGraphResponse;
 import com.huawei.hisi.model.ApiResponse;
+import com.huawei.hisi.neo4j.model.ServiceEntryGroup;
 import com.huawei.hisi.neo4j.model.SqlNode;
+import com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -22,6 +24,7 @@ import java.util.Map;
 public class KnowledgeGraphV2Controller {
 
     private final KnowledgeGraphController v1;
+    private final Neo4jEntryPointNodeRepository neo4jEntryPointNodeRepository;
 
     @GetMapping("/status")
     public ApiResponse<Map<String, Object>> getStatus(
@@ -225,5 +228,15 @@ public class KnowledgeGraphV2Controller {
     @GetMapping("/projects")
     public ApiResponse<List<String>> getProjects() {
         return v1.getProjects();
+    }
+
+    /**
+     * 按 serviceName 聚合查询入口点
+     */
+    @GetMapping("/entry-points/grouped")
+    public ApiResponse<List<ServiceEntryGroup>> getEntryPointsGrouped(
+            @RequestParam List<String> projectPaths) {
+        List<ServiceEntryGroup> groups = neo4jEntryPointNodeRepository.findByProjectPathsGroupedByServiceName(projectPaths);
+        return ApiResponse.success(groups);
     }
 }

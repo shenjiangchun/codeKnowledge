@@ -1,6 +1,7 @@
 package com.huawei.hisi.neo4j.repository;
 
 import com.huawei.hisi.neo4j.model.EntryPointNode;
+import com.huawei.hisi.neo4j.model.ServiceEntryGroup;
 import org.springframework.data.neo4j.repository.Neo4jRepository;
 import org.springframework.data.neo4j.repository.query.Query;
 import org.springframework.data.repository.query.Param;
@@ -276,4 +277,40 @@ public interface Neo4jEntryPointNodeRepository extends Neo4jRepository<EntryPoin
         ORDER BY entry.entryType
         """)
     List<String> findDistinctEntryTypesByProjectPaths(@Param("projectPaths") List<String> projectPaths);
+
+    /**
+     * 更新入口点的描述和向量
+     */
+    @Query("""
+        MATCH (e:EntryPoint {entryId: $entryId})
+        SET e.briefDescription = $briefDescription,
+            e.detailedDescription = $detailedDescription,
+            e.briefEmbedding = $briefEmbedding,
+            e.detailedEmbedding = $detailedEmbedding
+        """)
+    void updateDescriptionAndEmbedding(
+        @Param("entryId") String entryId,
+        @Param("briefDescription") String briefDescription,
+        @Param("detailedDescription") String detailedDescription,
+        @Param("briefEmbedding") List<Double> briefEmbedding,
+        @Param("detailedEmbedding") List<Double> detailedEmbedding
+    );
+
+    /**
+     * 按 serviceName 聚合查询入口点
+     */
+    @Query("""
+        MATCH (e:EntryPoint)
+        WHERE e.projectPath IN $projectPaths
+        RETURN e.serviceName as serviceName,
+               collect({
+                   entryId: e.entryId,
+                   entryType: e.entryType,
+                   entryKey: e.entryKey,
+                   briefDescription: e.briefDescription
+               }) as entries,
+               count(e) as totalCount
+        ORDER BY serviceName
+        """)
+    List<ServiceEntryGroup> findByProjectPathsGroupedByServiceName(@Param("projectPaths") List<String> projectPaths);
 }

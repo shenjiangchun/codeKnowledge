@@ -68,7 +68,23 @@ public class Neo4jInitializer {
         "CREATE INDEX entryPoint_projectPath_index IF NOT EXISTS FOR (e:EntryPoint) ON (e.projectPath)",
         "CREATE INDEX entryPoint_entryKey_index IF NOT EXISTS FOR (e:EntryPoint) ON (e.entryKey)",
         "CREATE INDEX entryPoint_entryType_index IF NOT EXISTS FOR (e:EntryPoint) ON (e.entryType)",
-        "CREATE INDEX entryPoint_methodNodeId_index IF NOT EXISTS FOR (e:EntryPoint) ON (e.methodNodeId)"
+        "CREATE INDEX entryPoint_methodNodeId_index IF NOT EXISTS FOR (e:EntryPoint) ON (e.methodNodeId)",
+        "CREATE INDEX entryPoint_serviceName_index IF NOT EXISTS FOR (e:EntryPoint) ON (e.serviceName)"
+    );
+
+    /**
+     * 向量索引列表
+     * 用于语义检索（description/code/sql embedding）
+     */
+    private static final List<String> VECTOR_INDEXES = List.of(
+        // Method 向量索引（双向量：description + code）
+        "CREATE VECTOR INDEX method_description_vector_index IF NOT EXISTS FOR (m:Method) ON m.descriptionEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}",
+        "CREATE VECTOR INDEX method_code_vector_index IF NOT EXISTS FOR (m:Method) ON m.codeEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}",
+        // SQL 向量索引
+        "CREATE VECTOR INDEX sql_vector_index IF NOT EXISTS FOR (s:SQL) ON s.sqlEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}",
+        // EntryPoint 向量索引（双向量：brief + detailed）
+        "CREATE VECTOR INDEX entry_point_brief_vector_index IF NOT EXISTS FOR (e:EntryPoint) ON e.briefEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}",
+        "CREATE VECTOR INDEX entry_point_detailed_vector_index IF NOT EXISTS FOR (e:EntryPoint) ON e.detailedEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}"
     );
 
     /**
@@ -152,6 +168,19 @@ public class Neo4jInitializer {
                     log.debug("成功创建范围索引: {}", extractIndexName(cypher));
                 } catch (Exception e) {
                     log.warn("创建范围索引失败: {} - {}", extractIndexName(cypher), e.getMessage());
+                    failCount++;
+                }
+            }
+
+            // 创建向量索引
+            log.info("创建向量索引...");
+            for (String cypher : VECTOR_INDEXES) {
+                try {
+                    session.run(cypher).consume();
+                    successCount++;
+                    log.debug("成功创建向量索引: {}", extractIndexName(cypher));
+                } catch (Exception e) {
+                    log.warn("创建向量索引失败: {} - {}", extractIndexName(cypher), e.getMessage());
                     failCount++;
                 }
             }

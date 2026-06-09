@@ -525,7 +525,7 @@ public class IncrementalRefreshService {
                             .complexity(calculateComplexity(method))
                             .methodBody(MethodBodyCompressor.compress(method))
                             .projectPath(projectPath)
-                            .serviceName(extractServiceName(className))
+                            .serviceName(extractServiceName(className, projectPath))
                             .build();
                     nodes.add(node);
                 });
@@ -619,13 +619,20 @@ public class IncrementalRefreshService {
         return c;
     }
 
-    private String extractServiceName(String className) {
+    private String extractServiceName(String className, String projectPath) {
         if (className == null || className.isEmpty()) return "unknown";
         int lastDot = className.lastIndexOf('.');
-        if (lastDot > 0) {
-            return className.substring(lastDot + 1).replaceAll("(Controller|Service|Impl|Repository)$", "");
-        }
-        return className;
+        String simpleClassName = lastDot > 0 ? className.substring(lastDot + 1) : className;
+        String coreName = simpleClassName.replaceAll("(Controller|Service|Impl|Repository|Handler|Endpoint)$", "");
+        String projectShortName = extractProjectShortName(projectPath);
+        return projectShortName + ":" + coreName;
+    }
+
+    private String extractProjectShortName(String projectPath) {
+        if (projectPath == null || projectPath.isEmpty()) return "default";
+        java.nio.file.Path p = java.nio.file.Paths.get(projectPath);
+        String name = p.getFileName() != null ? p.getFileName().toString() : "default";
+        return name.replaceAll("(^hisi-|-dev-tool$|-backend$|-service$|-api$)", "");
     }
 
     private boolean isHttpAnnotation(String annName) {

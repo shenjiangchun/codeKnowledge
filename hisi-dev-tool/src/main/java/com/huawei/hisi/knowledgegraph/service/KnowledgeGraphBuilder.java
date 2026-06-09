@@ -754,7 +754,7 @@ public class KnowledgeGraphBuilder {
                     .complexity(calculateComplexity(method))
                     .methodBody(coreService.compressMethodBody(method))
                     .projectPath(projectPath)
-                    .serviceName(extractServiceName(className))
+                    .serviceName(extractServiceName(className, projectPath))
                     .build();
 
                 nodes.add(node);
@@ -777,7 +777,7 @@ public class KnowledgeGraphBuilder {
                     .complexity(1)
                     .methodBody("")
                     .projectPath(projectPath)
-                    .serviceName(extractServiceName(className))
+                    .serviceName(extractServiceName(className, projectPath))
                     .build();
 
                 nodes.add(node);
@@ -806,7 +806,7 @@ public class KnowledgeGraphBuilder {
                     .complexity(calculateComplexity(method))
                     .methodBody(coreService.compressMethodBody(method))
                     .projectPath(projectPath)
-                    .serviceName(extractServiceName(className))
+                    .serviceName(extractServiceName(className, projectPath))
                     .build();
 
                 nodes.add(node);
@@ -903,7 +903,7 @@ public class KnowledgeGraphBuilder {
                             .language(template.getLanguage())
                             .framework(template.getFramework())
                             .projectPath(projectPath)
-                            .serviceName(extractServiceName(implName))
+                            .serviceName(extractServiceName(implName, projectPath))
                             .build();
 
                         syntheticNodes.add(syntheticNode);
@@ -1943,20 +1943,36 @@ public class KnowledgeGraphBuilder {
 
     /**
      * 从类名提取服务名
-     * 例如: com.example.service.UserServiceImpl -> User
+     * 结合项目路径生成唯一 serviceName，避免不同项目同名类冲突
+     * 例如: hisi-devtool + com.example.service.UserServiceImpl -> hisi-devtool:User
      */
-    private String extractServiceName(String className) {
+    private String extractServiceName(String className, String projectPath) {
         if (className == null || className.isEmpty()) {
             return "unknown";
         }
-        // 从类名提取服务名
+
+        // 1. 从类名提取核心名称
         int lastDot = className.lastIndexOf('.');
-        if (lastDot > 0) {
-            String simpleClassName = className.substring(lastDot + 1);
-            // 移除 Controller, Service, Impl, Repository 等后缀
-            return simpleClassName.replaceAll("(Controller|Service|Impl|Repository)$", "");
-        }
-        return className;
+        String simpleClassName = lastDot > 0 ? className.substring(lastDot + 1) : className;
+
+        // 2. 移除常见后缀
+        String coreName = simpleClassName.replaceAll("(Controller|Service|Impl|Repository|Handler|Endpoint)$", "");
+
+        // 3. 结合项目路径生成唯一 serviceName
+        String projectShortName = extractProjectShortName(projectPath);
+        return projectShortName + ":" + coreName;
+    }
+
+    /**
+     * 从项目路径提取短名称
+     * 例如: /path/to/hisi-dev-tool -> hisi-devtool
+     */
+    private String extractProjectShortName(String projectPath) {
+        if (projectPath == null || projectPath.isEmpty()) return "default";
+        Path p = Paths.get(projectPath);
+        String name = p.getFileName() != null ? p.getFileName().toString() : "default";
+        // 移除常见前缀后缀，保持简洁
+        return name.replaceAll("(^hisi-|-dev-tool$|-backend$|-service$|-api$)", "");
     }
 
     /**

@@ -119,6 +119,9 @@ public class PythonKnowledgeGraphBuilder {
         // Guard: clear dangling methodNodeId references
         clearDanglingMethodNodeIds(entryPoints, parsed.nodes());
 
+        // Post-process: set serviceName for all EntryPoints
+        applyServiceNames(entryPoints, projectPath);
+
         log.debug("[Python KG] Built {} entry points from file: {}", entryPoints.size(), filePath);
         return entryPoints;
     }
@@ -468,6 +471,9 @@ public class PythonKnowledgeGraphBuilder {
         if (!djangoIncludes.isEmpty()) {
             DjangoUrlScanner.applyIncludes(entryPoints, djangoIncludes, modulesByPath);
         }
+
+        // Post-process: set serviceName for all EntryPoints
+        applyServiceNames(entryPoints, projectPath);
 
         // Guard: clear methodNodeId references that don't point to a known Method node.
         // This prevents broken call-chain queries from returning empty for resolvable URLs
@@ -918,6 +924,58 @@ public class PythonKnowledgeGraphBuilder {
         } catch (IOException e) {
             return "";
         }
+    }
+
+    /**
+     * Post-process EntryPoints to set serviceName based on module path.
+     * serviceName format: projectShortName:moduleCoreName
+     * e.g., hisi-devtool:user_service
+     */
+    private void applyServiceNames(List<EntryPointNode> entryPoints, String projectPath) {
+        String projectShortName = extractProjectShortName(projectPath);
+        for (int i = 0; i < entryPoints.size(); i++) {
+            EntryPointNode ep = entryPoints.get(i);
+            if (ep.getServiceName() == null || ep.getServiceName().isEmpty()) {
+                String serviceName = projectShortName + ":" + extractModuleCoreName(ep.getEntryInfo());
+                // Create new EntryPointNode with serviceName (record-like builder pattern)
+                EntryPointNode updated = EntryPointNode.builder()
+                        .entryId(ep.getEntryId())
+                        .entryType(ep.getEntryType())
+                        .entryKey(ep.getEntryKey())
+                        .entryInfo(ep.getEntryInfo())
+                        .projectPath(ep.getProjectPath())
+                        .language(ep.getLanguage())
+                        .framework(ep.getFramework())
+                        .serviceName(serviceName)
+                        .methodNodeId(ep.getMethodNodeId())
+                        .build();
+                entryPoints.set(i, updated);
+            }
+        }
+    }
+
+    /**
+     * Extract short name from project path.
+     * e.g., /path/to/hisi-dev-tool -> hisi-devtool
+     */
+    private String extractProjectShortName(String projectPath) {
+        if (projectPath == null || projectPath.isEmpty()) return "default";
+        Path p = Paths.get(projectPath);
+        String name = p.getFileName() != null ? p.getFileName().toString() : "default";
+        return name.replaceAll("(^hisi-|-dev-tool$|-backend$|-service$|-api$)", "");
+    }
+
+    /**
+     * Extract core module name from entry info (typically module path).
+     * e.g., "services/user_service.py" -> "user"
+     */
+    private String extractModuleCoreName(String entryInfo) {
+        if (entryInfo == null || entryInfo.isEmpty()) return "default";
+        // entryInfo is typically a module path like "services/user_service.py"
+        String[] parts = entryInfo.replace("\\", "/").split("/");
+        String lastPart = parts[parts.length - 1];
+        // Remove file extension and common suffixes
+        return lastPart.replaceAll("(\\.py$|_service$|_handler$|_controller$|_api$)", "");
     }
 
     private record ParsedFile(PyModule module, List<MethodNode> nodes) {
