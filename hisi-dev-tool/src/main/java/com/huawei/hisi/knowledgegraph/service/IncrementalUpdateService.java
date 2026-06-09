@@ -96,8 +96,8 @@ public class IncrementalUpdateService {
         // 8. 执行新增操作
         List<MethodNode> newMethods = new ArrayList<>();
         for (MethodNode newMethod : changeResult.getNewMethods()) {
-            // 生成描述
-            String description = llmDescriptionService.generateDescription(newMethod);
+            // 生成描述（使用一致性校验版本，含方法体）
+            String description = llmDescriptionService.generateDescriptionWithBody(newMethod);
             newMethod.setDescription(description);
 
             // 保存
@@ -108,8 +108,8 @@ public class IncrementalUpdateService {
         // 9. 执行更新操作
         List<MethodNode> updatedMethods = new ArrayList<>();
         for (MethodNode modifiedMethod : changeResult.getModifiedMethods()) {
-            // 生成新的描述
-            String description = llmDescriptionService.generateDescription(modifiedMethod);
+            // 生成新的描述（使用一致性校验版本，含方法体）
+            String description = llmDescriptionService.generateDescriptionWithBody(modifiedMethod);
             modifiedMethod.setDescription(description);
 
             // 保存

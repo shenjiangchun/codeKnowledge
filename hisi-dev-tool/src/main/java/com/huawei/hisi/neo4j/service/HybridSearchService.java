@@ -85,6 +85,7 @@ public class HybridSearchService {
     private final Neo4jVectorIndexService vectorIndexService;
     private final QueryEmbeddingCache queryEmbeddingCache;
     private final com.huawei.hisi.neo4j.config.SearchIntentProperties intentProperties;
+    private final TokenRouter tokenRouter;
 
     public HybridSearchService(
             Neo4jMethodNodeRepository methodNodeRepository,
@@ -94,7 +95,8 @@ public class HybridSearchService {
             QueryTypeDetector queryTypeDetector,
             Neo4jVectorIndexService vectorIndexService,
             QueryEmbeddingCache queryEmbeddingCache,
-            com.huawei.hisi.neo4j.config.SearchIntentProperties intentProperties) {
+            com.huawei.hisi.neo4j.config.SearchIntentProperties intentProperties,
+            TokenRouter tokenRouter) {
         this.methodNodeRepository = methodNodeRepository;
         this.sqlNodeRepository = sqlNodeRepository;
         this.entryPointRepository = entryPointRepository;
@@ -103,6 +105,7 @@ public class HybridSearchService {
         this.vectorIndexService = vectorIndexService;
         this.queryEmbeddingCache = queryEmbeddingCache;
         this.intentProperties = intentProperties;
+        this.tokenRouter = tokenRouter;
     }
 
     /**
@@ -293,9 +296,16 @@ public class HybridSearchService {
 
     /**
      * NATURAL_LANGUAGE 搜索策略 (带分数)
-     * descriptionEmbedding 向量检索 + 关键词补充召回
+     * 多向量检索：分词路由 + 拉通排序 + 命中次数系数
      */
     private VectorSearchResult<MethodNode> searchByNaturalLanguageWithScores(String query, List<String> projectPaths, int limit) {
+        // 优先走多向量检索（分词路由）
+        List<TokenRouter.TokenRoute> tokenRoutes = tokenRouter.tokenizeAndRoute(query);
+        if (!tokenRoutes.isEmpty()) {
+            return multiTokenVectorSearchWithScores(query, projectPaths, limit);
+        }
+
+        // 降级：原有单向量检索逻辑
         float[] embedding = getOrGenerateEmbedding(query);
         log.info("[EMBEDDING-DIAG] query='{}', embeddingDim={}, embeddingServiceDim={}, first5={}, useVectorIndex={}, projectPaths={}",
                 query, embedding.length, embeddingService.getEmbeddingDimension(),
@@ -444,6 +454,155 @@ public class HybridSearchService {
         }
 
         return new VectorSearchResult<>(methods, scoreMap);
+    }
+
+    /**
+     * 多分词向量检索：分词路由 + 拉通排序 + 命中次数系数
+     *
+     * <p>核心改进：</p>
+     * <ul>
+     *   <li>分词路由：中文词走语义向量，代码词走代码向量（权重0.7）</li>
+     *   <li>拉通排序：所有分词结果按相似度统一排名，而非各自排名</li>
+     *   <li>命中次数系数：score = (1/(k+rank)) × sqrt(hitCount)，保留多证据效应</li>
+     * </ul>
+     */
+    private VectorSearchResult<MethodNode> multiTokenVectorSearchWithScores(
+            String query, List<String> projectPaths, int limit) {
+
+        // 1. 分词路由
+        List<TokenRouter.TokenRoute> tokenRoutes = tokenRouter.tokenizeAndRoute(query);
+        if (tokenRoutes.isEmpty()) {
+            // 降级到单向量检索
+            float[] embedding = getOrGenerateEmbedding(query);
+            return singleVectorSearch(query, projectPaths, embedding, limit);
+        }
+
+        log.debug("[MULTI-VECTOR] token routes: {}", tokenRoutes);
+
+        // 2. 各分词按路由走对应向量检索
+        Map<String, List<MethodWithScore>> tokenResults = new HashMap<>();
+
+        for (TokenRouter.TokenRoute tr : tokenRoutes) {
+            float[] embedding = getOrGenerateEmbedding(tr.token());
+            List<Double> embeddingList = toEmbeddingList(embedding);
+
+            List<MethodWithScore> hits;
+            double weight;
+            if (tr.route() == TokenRouter.RouteType.DESCRIPTION) {
+                hits = methodNodeRepository.findByDescriptionVectorIndexWithScoreByProjectPaths(
+                        projectPaths, embeddingList, SIMILARITY_THRESHOLD, limit * VECTOR_INDEX_TOPK_MULTIPLIER);
+                weight = 1.0;
+            } else {
+                hits = methodNodeRepository.findByCodeVectorIndexWithScoreByProjectPaths(
+                        projectPaths, embeddingList, SIMILARITY_THRESHOLD, limit * VECTOR_INDEX_TOPK_MULTIPLIER);
+                weight = 0.7; // 代码向量权重调低
+            }
+
+            // 应用权重
+            hits = hits.stream()
+                .map(h -> new MethodWithScore(
+                    h.nodeId(), h.className(), h.methodName(), h.signature(),
+                    h.filePath(), h.startLine(), h.endLine(), h.complexity(),
+                    h.thrownExceptions(), h.caughtExceptions(), h.methodBody(),
+                    h.projectPath(), h.serviceName(), h.comment(), h.description(),
+                    h.score() != null ? h.score() * weight : null))
+                .collect(Collectors.toList());
+
+            tokenResults.put(tr.token(), hits);
+            log.debug("[MULTI-VECTOR] token '{}' route={} hits={}", tr.token(), tr.route(), hits.size());
+        }
+
+        // 3. 拉通排序：所有分词结果按相似度统一排名
+        List<MethodWithScore> unified = unifiedRanking(tokenResults);
+
+        // 4. 统计命中次数
+        Map<String, Integer> hitCountMap = new HashMap<>();
+        for (MethodWithScore m : unified) {
+            hitCountMap.merge(m.nodeId(), 1, Integer::sum);
+        }
+
+        // 5. 计算最终得分：RRF基础分数 × sqrt(命中次数)
+        Map<String, Double> scoreMap = new HashMap<>();
+        Map<String, MethodNode> nodeMap = new HashMap<>();
+
+        for (int i = 0; i < unified.size(); i++) {
+            MethodWithScore m = unified.get(i);
+            String nodeId = m.nodeId();
+            int hitCount = hitCountMap.getOrDefault(nodeId, 1);
+
+            double baseScore = 1.0 / (RRF_K + i + 1);
+            double bonus = Math.sqrt(hitCount);
+            double finalScore = baseScore * bonus;
+
+            scoreMap.merge(nodeId, finalScore, Double::sum);
+            nodeMap.putIfAbsent(nodeId, m.toMethodNode());
+        }
+
+        // 6. 按最终得分排序，截取 limit
+        List<MethodNode> sorted = scoreMap.entrySet().stream()
+            .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+            .limit(limit)
+            .map(e -> nodeMap.get(e.getKey()))
+            .filter(Objects::nonNull)
+            .collect(Collectors.toList());
+
+        Map<String, Double> finalScores = scoreMap.entrySet().stream()
+            .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+            .limit(limit)
+            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a, LinkedHashMap::new));
+
+        log.info("[MULTI-VECTOR] query='{}' final results={}, topScore={}", query, sorted.size(),
+                finalScores.isEmpty() ? 0 : finalScores.values().iterator().next());
+
+        return new VectorSearchResult<>(sorted, finalScores);
+    }
+
+    /**
+     * 单向量检索（降级用）
+     */
+    private VectorSearchResult<MethodNode> singleVectorSearch(
+            String query, List<String> projectPaths, float[] embedding, int limit) {
+        List<Double> embeddingList = toEmbeddingList(embedding);
+        List<MethodWithScore> results = methodNodeRepository.findByDescriptionVectorIndexWithScoreByProjectPaths(
+                projectPaths, embeddingList, SIMILARITY_THRESHOLD, limit * VECTOR_INDEX_TOPK_MULTIPLIER);
+
+        List<MethodNode> methods = new ArrayList<>();
+        Map<String, Double> scoreMap = new HashMap<>();
+        for (MethodWithScore r : results) {
+            methods.add(r.toMethodNode());
+            if (r.score() != null) {
+                scoreMap.put(r.nodeId(), r.score());
+            }
+        }
+        return new VectorSearchResult<>(methods, scoreMap);
+    }
+
+    /**
+     * 拉通排序：所有分词结果按相似度统一排名
+     */
+    private List<MethodWithScore> unifiedRanking(Map<String, List<MethodWithScore>> tokenResults) {
+        List<MethodWithScore> all = new ArrayList<>();
+        for (List<MethodWithScore> hits : tokenResults.values()) {
+            all.addAll(hits);
+        }
+
+        // 按相似度降序排列
+        return all.stream()
+            .sorted((a, b) -> {
+                double sa = a.score() != null ? a.score() : 0;
+                double sb = b.score() != null ? b.score() : 0;
+                return Double.compare(sb, sa);
+            })
+            .collect(Collectors.toList());
+    }
+
+    /**
+     * float[] 转 List<Double>（Neo4j Java 驱动要求）
+     */
+    private List<Double> toEmbeddingList(float[] arr) {
+        List<Double> list = new ArrayList<>(arr.length);
+        for (float v : arr) list.add((double) v);
+        return list;
     }
 
     /**
