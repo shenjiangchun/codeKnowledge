@@ -327,6 +327,15 @@
                   拉取
                 </el-button>
                 <el-button
+                  type="info"
+                  link
+                  @click="showCommitDialogForRemote(row)"
+                  :disabled="row.cloneStatus !== 'CLONED'"
+                >
+                  <el-icon><Document /></el-icon>
+                  提交分析
+                </el-button>
+                <el-button
                   type="success"
                   link
                   @click="handleRemoteGenerateKg(row)"
@@ -1394,6 +1403,25 @@ const loadCommits = async () => {
     const res = await gitApi.getCommits(path, 50)
     commits.value = res.data || []
   } catch (error) {
+    ElMessage.error('加载提交列表失败')
+  } finally {
+    commitsLoading.value = false
+  }
+}
+
+// 提交分析 — 远端项目
+const showCommitDialogForRemote = (row: RemoteProject) => {
+  selectedProjectForCommit.value = row.name
+  commitDialogVisible.value = true
+  loadCommitsForRemote(row.localPath)
+}
+
+const loadCommitsForRemote = async (localPath: string) => {
+  commitsLoading.value = true
+  try {
+    const res = await gitApi.getCommits(localPath, 50)
+    commits.value = res.data || []
+  } catch {
     ElMessage.error('加载提交列表失败')
   } finally {
     commitsLoading.value = false
