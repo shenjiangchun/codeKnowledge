@@ -18,6 +18,21 @@ import java.util.Optional;
 public interface Neo4jEntryPointNodeRepository extends Neo4jRepository<EntryPointNode, String> {
 
     /**
+     * 轻量投影，避免加载 briefEmbedding / detailedEmbedding
+     */
+    interface EntryPointListItem {
+        String getEntryId();
+        String getEntryType();
+        String getEntryKey();
+        String getEntryInfo();
+        String getMethodNodeId();
+        String getProjectPath();
+        String getBriefDescription();
+        String getDetailedDescription();
+        String getServiceName();
+    }
+
+    /**
      * 根据入口ID查询
      */
     Optional<EntryPointNode> findByEntryId(String entryId);
@@ -70,6 +85,17 @@ public interface Neo4jEntryPointNodeRepository extends Neo4jRepository<EntryPoin
         DETACH DELETE entry
         """)
     void deleteByProjectPath(String projectPath);
+
+    /**
+     * 分批删除项目下的入口点，避免单事务内存溢出
+     */
+    @Query("""
+        MATCH (entry:EntryPoint {projectPath: $projectPath})
+        WITH entry LIMIT $batchSize
+        DETACH DELETE entry
+        RETURN count(*) AS deleted
+        """)
+    long deleteByProjectPathBatch(@Param("projectPath") String projectPath, @Param("batchSize") int batchSize);
 
     /**
      * 删除指定文件关联的入口点（通过 methodNodeId 关联到 Method 节点的 filePath）
@@ -222,32 +248,38 @@ public interface Neo4jEntryPointNodeRepository extends Neo4jRepository<EntryPoin
     List<EntryPointNode> findByProjectPathsAndEntryType(@Param("projectPaths") List<String> projectPaths, @Param("entryType") String entryType);
 
     /**
-     * 分页查询多个项目的入口点
+     * 分页查询多个项目的入口点（投影，不含 embedding）
      */
     @Query("""
         MATCH (entry:EntryPoint)
         WHERE entry.projectPath IN $projectPaths
-        RETURN entry
+        RETURN entry.entryId AS entryId, entry.entryType AS entryType, entry.entryKey AS entryKey,
+               entry.entryInfo AS entryInfo, entry.methodNodeId AS methodNodeId, entry.projectPath AS projectPath,
+               entry.briefDescription AS briefDescription, entry.detailedDescription AS detailedDescription,
+               entry.serviceName AS serviceName
         ORDER BY entry.entryKey
         SKIP $skip LIMIT $limit
         """)
-    List<EntryPointNode> findByProjectPathsPaged(
+    List<EntryPointListItem> findByProjectPathsPaged(
         @Param("projectPaths") List<String> projectPaths,
         @Param("skip") long skip,
         @Param("limit") int limit
     );
 
     /**
-     * 分页按类型查询多个项目的入口点
+     * 分页按类型查询多个项目的入口点（投影，不含 embedding）
      */
     @Query("""
         MATCH (entry:EntryPoint)
         WHERE entry.projectPath IN $projectPaths AND entry.entryType = $entryType
-        RETURN entry
+        RETURN entry.entryId AS entryId, entry.entryType AS entryType, entry.entryKey AS entryKey,
+               entry.entryInfo AS entryInfo, entry.methodNodeId AS methodNodeId, entry.projectPath AS projectPath,
+               entry.briefDescription AS briefDescription, entry.detailedDescription AS detailedDescription,
+               entry.serviceName AS serviceName
         ORDER BY entry.entryKey
         SKIP $skip LIMIT $limit
         """)
-    List<EntryPointNode> findByProjectPathsAndEntryTypePaged(
+    List<EntryPointListItem> findByProjectPathsAndEntryTypePaged(
         @Param("projectPaths") List<String> projectPaths,
         @Param("entryType") String entryType,
         @Param("skip") long skip,
@@ -313,4 +345,36 @@ public interface Neo4jEntryPointNodeRepository extends Neo4jRepository<EntryPoin
         ORDER BY serviceName
         """)
     List<ServiceEntryGroup> findByProjectPathsGroupedByServiceName(@Param("projectPaths") List<String> projectPaths);
+
+    /**
+     * 按 serviceName 分页聚合查询入口点
+     */
+    @Query("""
+        MATCH (e:EntryPoint)
+        WHERE e.projectPath IN $projectPaths
+        WITH e.serviceName as serviceName, collect({
+            entryId: e.entryId,
+            entryType: e.entryType,
+            entryKey: e.entryKey,
+            briefDescription: e.briefDescription
+        }) as entries, count(e) as totalCount
+        RETURN serviceName, entries, totalCount
+        ORDER BY serviceName
+        SKIP $skip LIMIT $limit
+        """)
+    List<ServiceEntryGroup> findByProjectPathsGroupedByServiceNamePaged(
+        @Param("projectPaths") List<String> projectPaths,
+        @Param("skip") long skip,
+        @Param("limit") int limit
+    );
+
+    /**
+     * 统计多个项目下的服务分组数量
+     */
+    @Query("""
+        MATCH (e:EntryPoint)
+        WHERE e.projectPath IN $projectPaths
+        RETURN count(DISTINCT e.serviceName)
+        """)
+    long countServiceNamesByProjectPaths(@Param("projectPaths") List<String> projectPaths);
 }

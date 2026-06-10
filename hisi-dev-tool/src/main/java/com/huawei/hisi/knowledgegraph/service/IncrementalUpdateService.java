@@ -308,7 +308,7 @@ public class IncrementalUpdateService {
      */
     private String generateNodeId(String projectPath, String className, MethodDeclaration method) {
         String methodId = className + "." + method.getNameAsString() + "." +
-                Integer.toHexString(method.getSignature().hashCode());
+                signatureHash(method.getSignature().toString());
         return projectPath + ":" + methodId;
     }
 
@@ -435,6 +435,10 @@ public class IncrementalUpdateService {
         } catch (Exception e) {
             return UUID.randomUUID().toString();
         }
+    }
+
+    private static String signatureHash(String signature) {
+        return Integer.toHexString(signature.hashCode());
     }
 
     /**

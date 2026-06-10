@@ -316,12 +316,17 @@ public class VectorGenerationService {
         try {
             fileLog("[双向量生成] 处理方法: " + method.getClassName() + "." + method.getMethodName());
 
-            // 1. LLM 描述生成
-            String description = llmDescriptionService.generateDescriptionWithBody(method);
-
-            if (description == null || description.trim().isEmpty()) {
+            // 1. LLM 描述生成（失败时降级为方法签名）
+            String description;
+            try {
+                description = llmDescriptionService.generateDescriptionWithBody(method);
+                if (description == null || description.trim().isEmpty()) {
+                    description = method.getClassName() + "." + method.getMethodName() + " - " + method.getSignature();
+                    fileLog("[双向量生成] LLM返回空描述，使用方法签名: " + description);
+                }
+            } catch (Exception e) {
                 description = method.getClassName() + "." + method.getMethodName() + " - " + method.getSignature();
-                fileLog("[双向量生成] LLM返回空描述，使用方法签名: " + description);
+                fileLog("[双向量生成] LLM描述生成失败，降级为方法签名: " + description + ", error=" + e.getMessage());
             }
 
             // 2. descriptionEmbedding

@@ -318,9 +318,8 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
     // ==================== 数据清理操作 ====================
 
     @Override
-    @Transactional(transactionManager = "neo4jTransactionManager")
     public void cleanProjectData(String projectPath) {
-        log.info("[Neo4j] 清理项目数据: {}", projectPath);
+        log.info("[Neo4j] 清理项目数据（分批分事务）: {}", projectPath);
         // 清理 DataModel 节点和 USES_MODEL 关系
         try {
             dataModelNodeRepository.deleteUsesModelRelationsByProjectPath(projectPath);
@@ -332,9 +331,21 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
         methodNodeRepository.deleteExtendsRelationsByProjectPath(projectPath);
         methodNodeRepository.deleteOverrideRelationsByProjectPath(projectPath);
         methodNodeRepository.deleteProxyRelationsByProjectPath(projectPath);
-        // 清理节点
-        methodNodeRepository.deleteByProjectPath(projectPath);
-        entryPointRepository.deleteByProjectPath(projectPath);
+        // 分批清理方法节点（避免大事务内存溢出）
+        int totalDeleted = 0;
+        long deleted;
+        do {
+            deleted = methodNodeRepository.deleteByProjectPathBatch(projectPath, 5000);
+            totalDeleted += deleted;
+        } while (deleted > 0);
+        log.info("[Neo4j] 分批删除方法节点完成: projectPath={}, 共删除 {} 个", projectPath, totalDeleted);
+        // 分批清理入口点
+        totalDeleted = 0;
+        do {
+            deleted = entryPointRepository.deleteByProjectPathBatch(projectPath, 1000);
+            totalDeleted += deleted;
+        } while (deleted > 0);
+        log.info("[Neo4j] 分批删除入口点完成: projectPath={}, 共删除 {} 个", projectPath, totalDeleted);
     }
 
 }

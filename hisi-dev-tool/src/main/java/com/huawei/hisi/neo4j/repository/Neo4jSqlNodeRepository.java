@@ -96,6 +96,38 @@ public interface Neo4jSqlNodeRepository extends Neo4jRepository<SqlNode, String>
     void deleteByProjectPath(@Param("projectPath") String projectPath);
 
     /**
+     * 分批删除项目下的 SQL 节点，避免单事务内存溢出
+     */
+    @Query("""
+        MATCH (s:Sql {projectPath: $projectPath})
+        WITH s LIMIT $batchSize
+        DETACH DELETE s
+        RETURN count(*) AS deleted
+        """)
+    long deleteByProjectPathBatch(@Param("projectPath") String projectPath, @Param("batchSize") int batchSize);
+
+    /**
+     * 批量 MERGE 保存 SQL 节点（幂等，遇到重复 nodeId 会更新而非报错）
+     */
+    @Query("""
+        UNWIND $nodes AS n
+        MERGE (s:Sql {nodeId: n.nodeId})
+        SET s.sqlId = n.sqlId,
+            s.statementType = n.statementType,
+            s.sqlStatement = n.sqlStatement,
+            s.parameterType = n.parameterType,
+            s.resultType = n.resultType,
+            s.resultMap = n.resultMap,
+            s.mapperInterface = n.mapperInterface,
+            s.methodName = n.methodName,
+            s.xmlFilePath = n.xmlFilePath,
+            s.projectPath = n.projectPath,
+            s.language = n.language,
+            s.framework = n.framework
+        """)
+    void mergeAll(@Param("nodes") List<Map<String, Object>> nodes);
+
+    /**
      * 获取项目下所有不同的 Mapper 接口
      */
     @Query("""

@@ -89,6 +89,17 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     void deleteByProjectPath(String projectPath);
 
     /**
+     * 分批删除项目下的方法节点，避免单事务内存溢出
+     */
+    @Query("""
+        MATCH (m:Method {projectPath: $projectPath})
+        WITH m LIMIT $batchSize
+        DETACH DELETE m
+        RETURN count(*) AS deleted
+        """)
+    long deleteByProjectPathBatch(@Param("projectPath") String projectPath, @Param("batchSize") int batchSize);
+
+    /**
      * 统计项目下的方法节点数量
      */
     long countByProjectPath(String projectPath);

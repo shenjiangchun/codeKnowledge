@@ -57,10 +57,10 @@ public class LLMDescriptionService {
      */
     private static final String PROMPT_TEMPLATE = """
             请用一句话描述以下Java方法的功能（50字以内）：
-            类名：%s
-            方法名：%s
-            签名：%s
-            注释：%s
+            类名：{{className}}
+            方法名：{{methodName}}
+            签名：{{signature}}
+            注释：{{comment}}
             """;
 
     /**
@@ -78,12 +78,12 @@ public class LLMDescriptionService {
 3. 若注释无实质内容（如"TODO"、"默认方法"），直接从方法体推断
 
 ## 输入
-类名：%s
-方法名：%s
-签名：%s
-注释：%s
+类名：{{className}}
+方法名：{{methodName}}
+签名：{{signature}}
+注释：{{comment}}
 方法体：
-%s
+{{methodBody}}
 
 ## 输出要求
 - 50字以内，精准描述实际功能
@@ -91,7 +91,7 @@ public class LLMDescriptionService {
 - 不要输出代码或实现细节
 
 ## 术语规范
-%s
+{{glossary}}
 
 直接输出描述，无额外内容。
 """;
@@ -205,7 +205,11 @@ public class LLMDescriptionService {
      */
     public static String buildPrompt(String className, String methodName, String signature, String comment) {
         String commentStr = (comment == null || comment.isEmpty()) ? "无" : comment;
-        return String.format(PROMPT_TEMPLATE, className, methodName, signature, commentStr);
+        return PROMPT_TEMPLATE
+            .replace("{{className}}", className)
+            .replace("{{methodName}}", methodName)
+            .replace("{{signature}}", signature)
+            .replace("{{comment}}", commentStr);
     }
 
     /**
@@ -219,10 +223,17 @@ public class LLMDescriptionService {
      * @return 构建好的 Prompt
      */
     public static String buildPromptWithBody(String className, String methodName, String signature,
-                                              String comment, String methodBody) {
+                                              String comment, String methodBody, String glossary) {
         String commentStr = (comment == null || comment.isEmpty()) ? "无" : comment;
         String bodyStr = (methodBody == null || methodBody.isEmpty()) ? "无" : truncateMethodBody(methodBody);
-        return String.format(PROMPT_TEMPLATE_WITH_BODY, className, methodName, signature, commentStr, bodyStr);
+        String glossaryStr = (glossary == null || glossary.isEmpty()) ? "" : glossary;
+        return PROMPT_TEMPLATE_WITH_BODY
+            .replace("{{className}}", className)
+            .replace("{{methodName}}", methodName)
+            .replace("{{signature}}", signature)
+            .replace("{{comment}}", commentStr)
+            .replace("{{methodBody}}", bodyStr)
+            .replace("{{glossary}}", glossaryStr);
     }
 
     /**
@@ -270,9 +281,9 @@ public class LLMDescriptionService {
                     node.getMethodName(),
                     node.getSignature(),
                     node.getComment(),
-                    node.getMethodBody()
+                    node.getMethodBody(),
+                    buildGlossarySegment(node.getProjectPath())
             );
-            prompt += buildGlossarySegment(node.getProjectPath());
             String description = textService.generateText(prompt);
             fileLog(methodId + " 文本模型生成成功（含方法体）: " + description);
             return description;

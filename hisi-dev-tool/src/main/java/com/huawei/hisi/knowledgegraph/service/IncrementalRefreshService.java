@@ -175,7 +175,7 @@ public class IncrementalRefreshService {
                     clazz.findAll(MethodDeclaration.class).forEach(method -> {
                         String nodeId = normalizedProjectPath + ":" + className + "."
                                 + method.getNameAsString() + "."
-                                + Integer.toHexString(method.getSignature().hashCode());
+                                + signatureHash(method.getSignature().toString());
                         methodSignatureToNodeId.put(className + "." + method.getNameAsString(), nodeId);
                     });
                 });
@@ -438,6 +438,10 @@ public class IncrementalRefreshService {
         return dataModelNodes.size();
     }
 
+    private static String signatureHash(String signature) {
+        return Integer.toHexString(signature.hashCode());
+    }
+
     // ==================== IMPLEMENTS/EXTENDS Re-materialization ====================
 
     /**
@@ -512,7 +516,7 @@ public class IncrementalRefreshService {
                 clazz.findAll(MethodDeclaration.class).forEach(method -> {
                     String nodeId = projectPath + ":" + className + "." +
                             method.getNameAsString() + "." +
-                            Integer.toHexString(method.getSignature().hashCode());
+                            signatureHash(method.getSignature().toString());
 
                     MethodNode node = MethodNode.builder()
                             .nodeId(nodeId)
@@ -552,7 +556,7 @@ public class IncrementalRefreshService {
 
             clazz.findAll(MethodDeclaration.class).forEach(method -> {
                 String methodId = className + "." + method.getNameAsString() + "." +
-                        Integer.toHexString(method.getSignature().hashCode());
+                        signatureHash(method.getSignature().toString());
                 String nodeId = projectPath + ":" + methodId;
 
                 if (isFeignClient) {

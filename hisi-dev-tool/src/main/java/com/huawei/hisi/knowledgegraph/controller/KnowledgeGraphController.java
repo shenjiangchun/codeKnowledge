@@ -824,16 +824,12 @@ public class KnowledgeGraphController {
         }
 
         long skip = (long) (page - 1) * pageSize;
-        List<com.huawei.hisi.neo4j.model.EntryPointNode> neo4jEntryPoints;
-        long total;
-
-        if (resolvedType != null && !resolvedType.isEmpty()) {
-            neo4jEntryPoints = neo4jEntryPointNodeRepository.findByProjectPathsAndEntryTypePaged(paths, resolvedType, skip, pageSize);
-            total = neo4jEntryPointNodeRepository.countByProjectPathsAndEntryType(paths, resolvedType);
-        } else {
-            neo4jEntryPoints = neo4jEntryPointNodeRepository.findByProjectPathsPaged(paths, skip, pageSize);
-            total = neo4jEntryPointNodeRepository.countByProjectPaths(paths);
-        }
+        var neo4jEntryPoints = resolvedType != null && !resolvedType.isEmpty()
+                ? neo4jEntryPointNodeRepository.findByProjectPathsAndEntryTypePaged(paths, resolvedType, skip, pageSize)
+                : neo4jEntryPointNodeRepository.findByProjectPathsPaged(paths, skip, pageSize);
+        long total = resolvedType != null && !resolvedType.isEmpty()
+                ? neo4jEntryPointNodeRepository.countByProjectPathsAndEntryType(paths, resolvedType)
+                : neo4jEntryPointNodeRepository.countByProjectPaths(paths);
 
         List<Map<String, Object>> items = new ArrayList<>();
         for (var ep : neo4jEntryPoints) {
@@ -844,6 +840,9 @@ public class KnowledgeGraphController {
             map.put("entryInfo", ep.getEntryInfo());
             map.put("methodNodeId", ep.getMethodNodeId());
             map.put("projectPath", ep.getProjectPath());
+            map.put("briefDescription", ep.getBriefDescription());
+            map.put("detailedDescription", ep.getDetailedDescription());
+            map.put("serviceName", ep.getServiceName());
             items.add(map);
         }
 

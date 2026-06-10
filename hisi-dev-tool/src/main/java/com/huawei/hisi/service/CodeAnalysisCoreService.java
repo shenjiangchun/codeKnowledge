@@ -888,8 +888,12 @@ public class CodeAnalysisCoreService {
      */
     private String generateNodeId(String projectPath, String className, MethodDeclaration method) {
         String methodId = className + "." + method.getNameAsString() + "." +
-            Integer.toHexString(method.getSignature().hashCode());
+            signatureHash(method.getSignature().toString());
         return projectPath + ":" + methodId;
+    }
+
+    private static String signatureHash(String signature) {
+        return Integer.toHexString(signature.hashCode());
     }
 
     private String extractPathFromClassAnnotations(ClassOrInterfaceDeclaration clazz) {
@@ -1068,17 +1072,23 @@ public class CodeAnalysisCoreService {
                         log.debug("[EnhancedFieldCall] 字段 {} 有注入注解，将查找接口实现", scopeName);
                     }
 
-                    // 获取所有可能的类型名（包括简单名称和完整限定名）
-                    Set<String> typeNamesToTry = new LinkedHashSet<>();
-                    typeNamesToTry.add(fullTypeName);
-                    typeNamesToTry.add(fieldTypeName);
+                    // 分离接口类型和实现类类型，优先解析实现类，无实现时回退到接口
+                    Set<String> interfaceTypes = new LinkedHashSet<>();
+                    interfaceTypes.add(fullTypeName);
+                    // 仅当简单名与FQN不同且FQN未通过import解析时，才添加简单名作为fallback
+                    if (fieldTypeName.equals(fullTypeName)) {
+                        // fieldTypeName 未被 import 解析过，本身可能就是简单名
+                        interfaceTypes.add(fieldTypeName);
+                    }
 
-                    // 对于注入字段，同时查找接口的所有实现类
+                    Set<String> implTypes = new LinkedHashSet<>();
+
                     if (isInjectedField) {
-                        for (String typeName : new ArrayList<>(typeNamesToTry)) {
+                        // 查找接口的所有实现类
+                        for (String typeName : new ArrayList<>(interfaceTypes)) {
                             Set<String> implementations = globalCache.getImplementationMap().get(typeName);
                             if (implementations != null) {
-                                typeNamesToTry.addAll(implementations);
+                                implTypes.addAll(implementations);
                                 if (featureConfig.isDebugLogging()) {
                                     log.debug("[EnhancedFieldCall] 接口 {} 的实现类: {}", typeName, implementations);
                                 }
@@ -1086,7 +1096,7 @@ public class CodeAnalysisCoreService {
                         }
 
                         // @Qualifier 过滤：多实现时根据 bean 名称缩小范围
-                        if (typeNamesToTry.size() > 2) { // 超过原始2个类型名说明有多个实现
+                        if (implTypes.size() > 1) {
                             Optional<String> qualifier = field.getAnnotations().stream()
                                 .filter(a -> "Qualifier".equals(a.getNameAsString()))
                                 .filter(a -> a.isSingleMemberAnnotationExpr())
@@ -1104,8 +1114,8 @@ public class CodeAnalysisCoreService {
                             if (qualifier.isPresent()) {
                                 String qualifiedBean = globalCache.getBeanNameMap().get(qualifier.get());
                                 if (qualifiedBean != null) {
-                                    typeNamesToTry.clear();
-                                    typeNamesToTry.add(qualifiedBean);
+                                    implTypes.clear();
+                                    implTypes.add(qualifiedBean);
                                     if (featureConfig.isDebugLogging()) {
                                         log.debug("[EnhancedFieldCall] @Qualifier(\"{}\") 过滤到 bean: {}",
                                             qualifier.get(), qualifiedBean);
@@ -1115,13 +1125,26 @@ public class CodeAnalysisCoreService {
                         }
                     }
 
-                    // 尝试每种类型名解析方法
-                    for (String typeName : typeNamesToTry) {
+                    // 第一阶段：优先尝试实现类方法（caller → impl，保持现有行为）
+                    for (String typeName : implTypes) {
                         List<MethodDeclaration> methods = resolveMethodByType(methodCall, typeName);
                         if (!methods.isEmpty()) {
                             results.addAll(methods);
                             if (featureConfig.isDebugLogging()) {
-                                log.debug("[EnhancedFieldCall] 通过类型 {} 找到 {} 个方法", typeName, methods.size());
+                                log.debug("[EnhancedFieldCall] 通过实现类 {} 找到 {} 个方法", typeName, methods.size());
+                            }
+                        }
+                    }
+
+                    // 第二阶段：无实现类结果时，回退到接口本身（覆盖 @FeignClient 等无 impl 场景）
+                    if (results.isEmpty()) {
+                        for (String typeName : interfaceTypes) {
+                            List<MethodDeclaration> methods = resolveMethodByType(methodCall, typeName);
+                            if (!methods.isEmpty()) {
+                                results.addAll(methods);
+                                if (featureConfig.isDebugLogging()) {
+                                    log.debug("[EnhancedFieldCall] 通过接口类型 {} 找到 {} 个方法（无实现类回退）", typeName, methods.size());
+                                }
                             }
                         }
                     }
@@ -1312,27 +1335,30 @@ public class CodeAnalysisCoreService {
             log.debug("[resolveMethodByType] 开始解析: typeName={}, methodName={}", typeName, methodName);
         }
 
-        // 获取所有可能的类名（包括实现类）
-        Set<String> classNames = new LinkedHashSet<>();
-        classNames.add(typeName);
+        // 第一层：FQN + FQN 对应的实现类
+        Set<String> fqnClassNames = new LinkedHashSet<>();
+        fqnClassNames.add(typeName);
 
-        // 尝试用完整限定名查找实现类
         Set<String> implementations = globalCache.getImplementationMap().get(typeName);
         if (implementations != null) {
-            classNames.addAll(implementations);
+            fqnClassNames.addAll(implementations);
             if (featureConfig.isDebugLogging()) {
-                log.debug("[resolveMethodByType] 用完整名 {} 找到实现类: {}", typeName, implementations);
+                log.debug("[resolveMethodByType] 用FQN {} 找到实现类: {}", typeName, implementations);
             }
         }
 
-        // 【关键修复】同时尝试用简单名称查找实现类
+        // 第二层（fallback）：简单名对应的实现类
+        Set<String> simpleNameClassNames = new LinkedHashSet<>();
         String simpleName = typeName.contains(".") ? typeName.substring(typeName.lastIndexOf(".") + 1) : typeName;
         if (!simpleName.equals(typeName)) {
             Set<String> implsBySimpleName = globalCache.getImplementationMap().get(simpleName);
             if (implsBySimpleName != null) {
-                classNames.addAll(implsBySimpleName);
-                if (featureConfig.isDebugLogging()) {
-                    log.debug("[resolveMethodByType] 用简单名 {} 找到实现类: {}", simpleName, implsBySimpleName);
+                simpleNameClassNames.addAll(implsBySimpleName);
+                // 排除已在 FQN 层中的类
+                simpleNameClassNames.removeAll(fqnClassNames);
+                if (featureConfig.isDebugLogging() && !simpleNameClassNames.isEmpty()) {
+                    log.debug("[resolveMethodByType][SimpleName-Fallback] 用简单名 {} 找到额外实现类: {} (FQN层已有: {})",
+                        simpleName, simpleNameClassNames, fqnClassNames);
                 }
             }
         }
@@ -1346,6 +1372,8 @@ public class CodeAnalysisCoreService {
             return results;
         }
 
+        // 先用 FQN 层搜索
+        Set<String> resolvedFQNs = new LinkedHashSet<>();
         try {
             java.lang.reflect.Field elementsField = CombinedTypeSolver.class.getDeclaredField("elements");
             elementsField.setAccessible(true);
@@ -1354,46 +1382,74 @@ public class CodeAnalysisCoreService {
 
             for (Object typeSolver : typeSolvers) {
                 if (typeSolver instanceof com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver) {
-                    for (String className : classNames) {
+                    for (String className : fqnClassNames) {
+                        // 已在某个 solver 中匹配过的 className 不再重复搜索
+                        if (resolvedFQNs.contains(className)) continue;
                         try {
-                            // 尝试解析类型（可能是类或接口）
-                            com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserClassDeclaration classDecl =
-                                (com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserClassDeclaration)
-                                ((com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver) typeSolver)
-                                    .solveType(className);
-
-                            java.lang.reflect.Field wrappedNodeField = classDecl.getClass().getDeclaredField("wrappedNode");
-                            wrappedNodeField.setAccessible(true);
-                            ClassOrInterfaceDeclaration classDeclaration =
-                                (ClassOrInterfaceDeclaration) wrappedNodeField.get(classDecl);
-
-                            List<MethodDeclaration> foundMethods = classDeclaration.getMethods().stream()
-                                .filter(m -> m.getName().asString().equals(methodName))
-                                .collect(Collectors.toList());
-
-                            if (!foundMethods.isEmpty()) {
-                                results.addAll(foundMethods);
+                            List<MethodDeclaration> found = resolveMethodsInTypeSolver(
+                                (com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver) typeSolver,
+                                className, methodName);
+                            if (!found.isEmpty()) {
+                                results.addAll(found);
+                                resolvedFQNs.add(className);
                                 if (featureConfig.isDebugLogging()) {
-                                    log.debug("[resolveMethodByType] 在 {} 中找到方法 {}: {} 个",
-                                        className, methodName, foundMethods.size());
+                                    log.debug("[resolveMethodByType] FQN层: 在 {} 中找到方法 {}: {} 个",
+                                        className, methodName, found.size());
                                 }
-                            }
-                        } catch (ClassCastException cce) {
-                            // 类型转换失败，可能是接口而不是类
-                            if (featureConfig.isDebugLogging()) {
-                                log.debug("[resolveMethodByType] {} 可能是接口，尝试其他方式解析: {}",
-                                    className, cce.getMessage());
                             }
                         } catch (Exception e) {
                             if (featureConfig.isDebugLogging()) {
-                                log.debug("[resolveMethodByType] 解析 {} 失败: {}", className, e.getMessage());
+                                log.debug("[resolveMethodByType] FQN层: 解析 {} 失败: {}", className, e.getMessage());
                             }
                         }
                     }
                 }
             }
         } catch (Exception e) {
-            log.debug("[resolveMethodByType] TypeSolver解析失败: {}", e.getMessage());
+            log.debug("[resolveMethodByType] TypeSolver反射失败: {}", e.getMessage());
+        }
+
+        // FQN 层有结果时，跳过简单名 fallback
+        if (!results.isEmpty()) {
+            if (featureConfig.isDebugLogging()) {
+                log.debug("[resolveMethodByType] FQN层已匹配 {} 个方法，跳过简单名fallback", results.size());
+            }
+        } else if (!simpleNameClassNames.isEmpty()) {
+            // FQN 层无结果，尝试简单名 fallback
+            if (featureConfig.isDebugLogging()) {
+                log.info("[resolveMethodByType][SimpleName-Fallback] FQN层无结果，尝试简单名搜索: candidates={}", simpleNameClassNames);
+            }
+            try {
+                java.lang.reflect.Field elementsField = CombinedTypeSolver.class.getDeclaredField("elements");
+                elementsField.setAccessible(true);
+                @SuppressWarnings("unchecked")
+                List<?> typeSolvers = (List<?>) elementsField.get(solver);
+
+                for (Object typeSolver : typeSolvers) {
+                    if (typeSolver instanceof com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver) {
+                        for (String className : simpleNameClassNames) {
+                            try {
+                                List<MethodDeclaration> found = resolveMethodsInTypeSolver(
+                                    (com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver) typeSolver,
+                                    className, methodName);
+                                if (!found.isEmpty()) {
+                                    results.addAll(found);
+                                    if (featureConfig.isDebugLogging()) {
+                                        log.info("[resolveMethodByType][SimpleName-Fallback] 在 {} 中找到方法 {}: {} 个",
+                                            className, methodName, found.size());
+                                    }
+                                }
+                            } catch (Exception e) {
+                                if (featureConfig.isDebugLogging()) {
+                                    log.debug("[resolveMethodByType][SimpleName-Fallback] 解析 {} 失败: {}", className, e.getMessage());
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("[resolveMethodByType] SimpleName fallback TypeSolver反射失败: {}", e.getMessage());
+            }
         }
 
         if (featureConfig.isDebugLogging()) {
@@ -1401,6 +1457,34 @@ public class CodeAnalysisCoreService {
         }
 
         return results;
+    }
+
+    /**
+     * 在 TypeSolver 中解析指定类名的方法声明（自动处理类/接口两种情况）
+     */
+    private List<MethodDeclaration> resolveMethodsInTypeSolver(
+            com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver typeSolver,
+            String className,
+            String methodName) throws Exception {
+        try {
+            var classDecl = (com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserClassDeclaration)
+                typeSolver.solveType(className);
+            java.lang.reflect.Field wrappedNodeField = classDecl.getClass().getDeclaredField("wrappedNode");
+            wrappedNodeField.setAccessible(true);
+            var classDeclaration = (ClassOrInterfaceDeclaration) wrappedNodeField.get(classDecl);
+            return classDeclaration.getMethods().stream()
+                .filter(m -> m.getName().asString().equals(methodName))
+                .collect(Collectors.toList());
+        } catch (ClassCastException cce) {
+            var interfaceDecl = (com.github.javaparser.symbolsolver.javaparsermodel.declarations.JavaParserInterfaceDeclaration)
+                typeSolver.solveType(className);
+            java.lang.reflect.Field wrappedNodeField = interfaceDecl.getClass().getDeclaredField("wrappedNode");
+            wrappedNodeField.setAccessible(true);
+            var interfaceDeclaration = (ClassOrInterfaceDeclaration) wrappedNodeField.get(interfaceDecl);
+            return interfaceDeclaration.getMethods().stream()
+                .filter(m -> m.getName().asString().equals(methodName))
+                .collect(Collectors.toList());
+        }
     }
 
     /**

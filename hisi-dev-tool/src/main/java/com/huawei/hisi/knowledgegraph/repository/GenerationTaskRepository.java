@@ -105,15 +105,17 @@ public class GenerationTaskRepository {
     public int updateCompleted(Long id, int progress, int totalCount, int successCount, int failCount) {
         LOG.info("[updateCompleted] Called with id={}, progress={}, totalCount={}, successCount={}, failCount={}",
             id, progress, totalCount, successCount, failCount);
+        // 全部失败时标记为 FAILED，而非 COMPLETED
+        String status = (totalCount > 0 && successCount == 0 && failCount > 0) ? "FAILED" : "COMPLETED";
         String sql = """
-            UPDATE generation_task SET status = 'COMPLETED',
+            UPDATE generation_task SET status = ?,
                 progress = ?, total_count = ?, success_count = ?, fail_count = ?,
                 finished_at = strftime('%s','now')
             WHERE id = ?
             """;
-        int rows = jdbcTemplate.update(sql, progress, totalCount, successCount, failCount, id);
-        LOG.info("[updateCompleted] Updated {} rows for id={}, final progress={}/{}, success={}, fail={}",
-            rows, id, progress, totalCount, successCount, failCount);
+        int rows = jdbcTemplate.update(sql, status, progress, totalCount, successCount, failCount, id);
+        LOG.info("[updateCompleted] Updated {} rows for id={}, final progress={}/{}, success={}, fail={}, status={}",
+            rows, id, progress, totalCount, successCount, failCount, status);
         return rows;
     }
 

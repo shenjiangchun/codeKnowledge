@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -231,12 +232,22 @@ public class KnowledgeGraphV2Controller {
     }
 
     /**
-     * 按 serviceName 聚合查询入口点
+     * 按 serviceName 聚合查询入口点（支持分页）
      */
     @GetMapping("/entry-points/grouped")
-    public ApiResponse<List<ServiceEntryGroup>> getEntryPointsGrouped(
-            @RequestParam List<String> projectPaths) {
-        List<ServiceEntryGroup> groups = neo4jEntryPointNodeRepository.findByProjectPathsGroupedByServiceName(projectPaths);
-        return ApiResponse.success(groups);
+    public ApiResponse<Map<String, Object>> getEntryPointsGrouped(
+            @RequestParam List<String> projectPaths,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize) {
+        long skip = (long) (page - 1) * pageSize;
+        List<ServiceEntryGroup> groups = neo4jEntryPointNodeRepository
+                .findByProjectPathsGroupedByServiceNamePaged(projectPaths, skip, pageSize);
+        long total = neo4jEntryPointNodeRepository.countServiceNamesByProjectPaths(projectPaths);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("items", groups);
+        result.put("total", total);
+        result.put("page", page);
+        result.put("pageSize", pageSize);
+        return ApiResponse.success(result);
     }
 }

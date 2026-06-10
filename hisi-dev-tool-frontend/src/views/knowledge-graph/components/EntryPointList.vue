@@ -18,31 +18,42 @@
     </div>
 
     <!-- 树形分组展示 -->
-    <el-tree
-      v-if="showGrouped"
-      :data="treeData"
-      :props="treeProps"
-      highlight-current
-      default-expand-all
-      @node-click="handleTreeClick"
-      class="entry-tree"
-    >
-      <template #default="{ data }">
-        <span v-if="data.isGroup" class="group-node">
-          <el-tag type="info" size="small">{{ data.serviceName }}</el-tag>
-          <span class="group-count">{{ data.totalCount }} 个入口</span>
-        </span>
-        <span v-else class="entry-node">
-          <el-tooltip :content="getEntryLabel(data.entryType)" placement="top">
-            <el-tag :type="getEntryTagType(data.entryType)" size="small">
-              {{ getEntryIcon(data.entryType) }}
-            </el-tag>
-          </el-tooltip>
-          <span class="entry-key">{{ formatEntryKey(data.entryKey, data.entryType) }}</span>
-          <span v-if="data.briefDescription" class="entry-desc">{{ data.briefDescription }}</span>
-        </span>
-      </template>
-    </el-tree>
+    <div v-if="showGrouped" class="tree-wrapper">
+      <el-tree
+        :data="treeData"
+        :props="treeProps"
+        highlight-current
+        default-expand-all
+        @node-click="handleTreeClick"
+        class="entry-tree"
+      >
+        <template #default="{ data }">
+          <span v-if="data.isGroup" class="group-node">
+            <el-tag type="info" size="small">{{ data.serviceName }}</el-tag>
+            <span class="group-count">{{ data.totalCount }} 个入口</span>
+          </span>
+          <span v-else class="entry-node">
+            <el-tooltip :content="getEntryLabel(data.entryType)" placement="top">
+              <el-tag :type="getEntryTagType(data.entryType)" size="small">
+                {{ getEntryIcon(data.entryType) }}
+              </el-tag>
+            </el-tooltip>
+            <span class="entry-key">{{ formatEntryKey(data.entryKey, data.entryType) }}</span>
+            <span v-if="data.briefDescription" class="entry-desc">{{ data.briefDescription }}</span>
+          </span>
+        </template>
+      </el-tree>
+      <div v-if="groupedPagination.total > groupedPagination.pageSize" class="pagination-wrapper">
+        <el-pagination
+          :current-page="groupedPagination.page"
+          :page-size="groupedPagination.pageSize"
+          :total="groupedPagination.total"
+          layout="prev, pager, next"
+          small
+          @current-change="handleGroupedPageChange"
+        />
+      </div>
+    </div>
 
     <!-- 平铺列表展示 -->
     <el-table
@@ -87,7 +98,19 @@
       </el-table-column>
     </el-table>
 
-    <div v-if="!loading && (showGrouped ? treeData.length === 0 : filteredEntryPoints.length === 0)" class="empty-state">
+    <!-- 平铺模式分页 -->
+    <div v-if="!showGrouped && pagination.total > pagination.pageSize" class="pagination-wrapper">
+      <el-pagination
+        :current-page="pagination.page"
+        :page-size="pagination.pageSize"
+        :total="pagination.total"
+        layout="prev, pager, next"
+        small
+        @current-change="handlePageChange"
+      />
+    </div>
+
+    <div v-if="!loading && (showGrouped ? treeData.length === 0 : (filteredEntryPoints.length === 0 && pagination.total === 0))" class="empty-state">
       <el-empty description="暂无入口点数据" :image-size="80" />
     </div>
   </div>
@@ -102,10 +125,14 @@ const props = defineProps<{
   entryPoints: EntryPoint[]
   entryGroups?: ServiceEntryGroup[]
   loading?: boolean
+  pagination: { page: number; pageSize: number; total: number }
+  groupedPagination: { page: number; pageSize: number; total: number }
 }>()
 
 const emit = defineEmits<{
   select: [entry: EntryPoint | EntrySummary]
+  'page-change': [page: number]
+  'grouped-page-change': [page: number]
 }>()
 
 const searchKeyword = ref('')
@@ -181,6 +208,14 @@ const extractHttpMethod = (entryInfo: string): string => {
     return ''
   }
 }
+
+const handlePageChange = (page: number) => {
+  emit('page-change', page)
+}
+
+const handleGroupedPageChange = (page: number) => {
+  emit('grouped-page-change', page)
+}
 </script>
 
 <style scoped>
@@ -199,6 +234,20 @@ const extractHttpMethod = (entryInfo: string): string => {
 .entry-tree {
   flex: 1;
   overflow: auto;
+}
+
+.tree-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pagination-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
+  border-top: 1px solid #e4e7ed;
 }
 
 .group-node {

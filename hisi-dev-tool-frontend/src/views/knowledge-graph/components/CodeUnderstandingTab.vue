@@ -82,13 +82,17 @@
       <div class="left-panel">
         <div class="panel-header">
           <span>入口点列表</span>
-          <el-tag size="small">{{ filteredEntryPoints.length }}</el-tag>
+          <el-tag size="small">{{ entryPagination.total }}</el-tag>
         </div>
         <EntryPointList
           :entry-points="filteredEntryPoints"
           :entry-groups="entryGroups"
           :loading="loading"
+          :pagination="entryPagination"
+          :grouped-pagination="groupedPagination"
           @select="handleSelectEntry"
+          @page-change="handlePageChange"
+          @grouped-page-change="handleGroupedPageChange"
         />
       </div>
 
@@ -126,6 +130,8 @@ const entryGroups = ref<ServiceEntryGroup[]>([])
 const selectedEntryType = ref<string>('')
 const selectedEntryKey = ref<string>('')
 const selectedEntry = ref<EntryPoint | null>(null)
+const entryPagination = ref({ page: 1, pageSize: 20, total: 0 })
+const groupedPagination = ref({ page: 1, pageSize: 10, total: 0 })
 
 // 入口类型标签映射
 const entryTypeLabels: Record<string, string> = {
@@ -143,17 +149,8 @@ const getEntryTypeLabel = (type: string) => {
   return entryTypeLabels[type] || type
 }
 
-// 过滤后的入口点（用于左侧列表）
-const filteredEntryPoints = computed(() => {
-  let result = entryPoints.value
-
-  // 按类型筛选
-  if (selectedEntryType.value) {
-    result = result.filter(ep => ep.entryType === selectedEntryType.value)
-  }
-
-  return result
-})
+// 当前页的入口点（服务端已分页，直接使用）
+const filteredEntryPoints = computed(() => entryPoints.value)
 
 // 加载状态
 const loadStatus = async () => {
@@ -168,19 +165,23 @@ const loadStatus = async () => {
   }
 }
 
-// 加载入口点
+// 加载入口点（服务端分页）
 const loadEntryPoints = async () => {
   if (!props.projectPath) return
 
   loading.value = true
   try {
     const paths = props.projectPaths ?? [props.projectPath]
-    // 加载全部入口点，不按类型过滤（用于下拉选择）
-    const result = await knowledgeGraphApi.getEntryPoints(paths, undefined, 1, 10000) as unknown as { items: EntryPoint[] }
+    const entryType = selectedEntryType.value || undefined
+    const { page, pageSize } = entryPagination.value
+    const result = await knowledgeGraphApi.getEntryPoints(paths, entryType, page, pageSize) as unknown as { items: EntryPoint[], total: number }
     entryPoints.value = result?.items ?? []
+    entryPagination.value.total = result?.total ?? 0
     // 同时加载分组数据
-    const groups = await knowledgeGraphApi.getEntryPointsGrouped(paths) as unknown as ServiceEntryGroup[]
-    entryGroups.value = groups ?? []
+    const { page: gPage, pageSize: gSize } = groupedPagination.value
+    const groupsResult = await knowledgeGraphApi.getEntryPointsGrouped(paths, gPage, gSize) as unknown as { items: ServiceEntryGroup[], total: number }
+    entryGroups.value = groupsResult?.items ?? []
+    groupedPagination.value.total = groupsResult?.total ?? 0
   } catch (error: any) {
     ElMessage.error(`加载入口点失败: ${error.message || error}`)
     entryPoints.value = []
@@ -194,6 +195,20 @@ const loadEntryPoints = async () => {
 const handleTypeChange = () => {
   selectedEntry.value = null
   selectedEntryKey.value = ''
+  entryPagination.value.page = 1
+  loadEntryPoints()
+}
+
+// 处理分页变化
+const handlePageChange = (page: number) => {
+  entryPagination.value.page = page
+  loadEntryPoints()
+}
+
+// 处理分组分页变化
+const handleGroupedPageChange = (page: number) => {
+  groupedPagination.value.page = page
+  loadEntryPoints()
 }
 
 // 处理下拉选择入口

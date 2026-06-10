@@ -318,7 +318,7 @@ public class KnowledgeGraphBuilder {
             // 建立映射
             for (MethodNode node : methodNodes) {
                 String key = node.getClassName() + "." + node.getMethodName();
-                String fullKey = key + "." + Integer.toHexString(node.getSignature().hashCode());
+                String fullKey = key + "." + signatureHash(node.getSignature());
                 methodSignatureToNodeId.put(key, node.getNodeId());
                 methodFullKeyToNodeId.put(fullKey, node.getNodeId());
             }
@@ -353,7 +353,7 @@ public class KnowledgeGraphBuilder {
             // 同步更新 methodSignatureToNodeId 映射
             for (MethodNode node : syntheticNodes) {
                 String key = node.getClassName() + "." + node.getMethodName();
-                String fullKey = key + "." + Integer.toHexString(node.getSignature().hashCode());
+                String fullKey = key + "." + signatureHash(node.getSignature());
                 methodSignatureToNodeId.putIfAbsent(key, node.getNodeId());
                 methodFullKeyToNodeId.putIfAbsent(fullKey, node.getNodeId());
             }
@@ -432,11 +432,30 @@ public class KnowledgeGraphBuilder {
             log.warn("[Neo4j] Dispatch 边物化异常（不影响基础调用链）: {}", e.getMessage());
         }
 
-        // 11. 保存 SQL 节点到 Neo4j
+        // 11. 保存 SQL 节点到 Neo4j（使用 MERGE 幂等写入，避免 Duplicate key）
         List<SqlNode> sqlNodes = myBatisResult.getSqlNodes();
         if (!sqlNodes.isEmpty()) {
             log.info("[Neo4j] 保存 SQL 节点: {}", sqlNodes.size());
-            neo4jSqlNodeRepository.saveAll(sqlNodes);
+            List<Map<String, Object>> sqlNodeMaps = sqlNodes.stream()
+                .map(s -> {
+                    Map<String, Object> map = new LinkedHashMap<>();
+                    map.put("nodeId", s.getNodeId());
+                    map.put("sqlId", s.getSqlId());
+                    map.put("statementType", s.getStatementType());
+                    map.put("sqlStatement", s.getSqlStatement());
+                    map.put("parameterType", s.getParameterType());
+                    map.put("resultType", s.getResultType());
+                    map.put("resultMap", s.getResultMap());
+                    map.put("mapperInterface", s.getMapperInterface());
+                    map.put("methodName", s.getMethodName());
+                    map.put("xmlFilePath", s.getXmlFilePath());
+                    map.put("projectPath", s.getProjectPath());
+                    map.put("language", s.getLanguage());
+                    map.put("framework", s.getFramework());
+                    return map;
+                })
+                .toList();
+            neo4jSqlNodeRepository.mergeAll(sqlNodeMaps);
         }
 
         // 12. 创建 EXECUTES_SQL 关系（Mapper 调用 -> SQL）
@@ -740,7 +759,7 @@ public class KnowledgeGraphBuilder {
                 // nodeId 格式: projectPath:className.methodName.签名hash
                 // 确保全局唯一，同时冗余存储 projectPath、className、methodName
                 String methodId = className + "." + method.getNameAsString() + "." +
-                    Integer.toHexString(method.getSignature().hashCode());
+                    signatureHash(method.getSignature().toString());
                 String nodeId = projectPath + ":" + methodId;
 
                 MethodNode node = MethodNode.builder()
@@ -763,7 +782,7 @@ public class KnowledgeGraphBuilder {
             // 扫描构造方法
             clazz.findAll(com.github.javaparser.ast.body.ConstructorDeclaration.class).forEach(ctor -> {
                 String methodId = className + ".<init>." +
-                    Integer.toHexString(ctor.getSignature().hashCode());
+                    signatureHash(ctor.getSignature().toString());
                 String nodeId = projectPath + ":" + methodId;
 
                 MethodNode node = MethodNode.builder()
@@ -792,7 +811,7 @@ public class KnowledgeGraphBuilder {
 
             enumDecl.findAll(MethodDeclaration.class).forEach(method -> {
                 String methodId = className + "." + method.getNameAsString() + "." +
-                    Integer.toHexString(method.getSignature().hashCode());
+                    signatureHash(method.getSignature().toString());
                 String nodeId = projectPath + ":" + methodId;
 
                 MethodNode node = MethodNode.builder()
@@ -840,7 +859,7 @@ public class KnowledgeGraphBuilder {
                 .computeIfAbsent(node.getClassName(), k -> new ArrayList<>())
                 .add(node);
             String sigHash = node.getSignature() != null
-                ? Integer.toHexString(node.getSignature().hashCode()) : "0";
+                ? signatureHash(node.getSignature()) : "0";
             classMethodIds
                 .computeIfAbsent(node.getClassName(), k -> new HashSet<>())
                 .add(node.getMethodName() + "." + sigHash);
@@ -874,7 +893,7 @@ public class KnowledgeGraphBuilder {
 
                     for (MethodNode template : interfaceNodes) {
                         String sigHash = template.getSignature() != null
-                            ? Integer.toHexString(template.getSignature().hashCode()) : "0";
+                            ? signatureHash(template.getSignature().toString()) : "0";
                         String methodIdSuffix = template.getMethodName() + "." + sigHash;
 
                         // 实现类已有同名同签名的方法，跳过
@@ -954,7 +973,7 @@ public class KnowledgeGraphBuilder {
 
             clazz.findAll(MethodDeclaration.class).forEach(method -> {
                 String callerKey = className + "." + method.getNameAsString();
-                String callerFullKey = callerKey + "." + Integer.toHexString(method.getSignature().hashCode());
+                String callerFullKey = callerKey + "." + signatureHash(method.getSignature().toString());
                 String callerNodeId = methodFullKeyToNodeId.getOrDefault(callerFullKey,
                     methodSignatureToNodeId.get(callerKey));
                 if (callerNodeId == null) return;
@@ -975,7 +994,7 @@ public class KnowledgeGraphBuilder {
                         // 获取目标方法的类名
                         String targetClassName = getMethodClassName(target);
                         String targetMethodKey = targetClassName + "." + target.getNameAsString();
-                        String targetFullKey = targetMethodKey + "." + Integer.toHexString(target.getSignature().hashCode());
+                        String targetFullKey = targetMethodKey + "." + signatureHash(target.getSignature().toString());
                         String calleeNodeId = methodFullKeyToNodeId.getOrDefault(targetFullKey,
                             methodSignatureToNodeId.get(targetMethodKey));
 
@@ -1007,11 +1026,31 @@ public class KnowledgeGraphBuilder {
                         }
                     }
 
+                    boolean staticResolved = false;
                     if (shouldTryStatic) {
                         Map<String, Object> staticRelation = resolveStaticMethodCall(call, finalCallerId,
                             methodSignatureToNodeId, projectPath);
                         if (staticRelation != null) {
                             relations.add(staticRelation);
+                            staticResolved = true;
+                        }
+                    }
+
+                    // 增强Fallback：字段调用兜底 — 当 findMethodCallTargets 和静态解析都未匹配时，
+                    // 通过字段声明解析类型名，直接在 methodSignatureToNodeId 中查找接口方法。
+                    // 覆盖场景：MyBatis Mapper、Feign Client 等无实现类的接口方法调用，
+                    // TypeSolver 无法解析到目标方法时，至少保证建立与接口方法的 CALLS 关系。
+                    boolean primaryResolved = !targets.isEmpty() &&
+                        targets.stream().anyMatch(t -> !t.getNameAsString().startsWith("no match:"));
+                    if (!primaryResolved && !staticResolved && call.getScope().isPresent()) {
+                        String scopeStr = call.getScope().get().toString().trim();
+                        // 仅处理简单字段引用（小写字母开头的标识符，排除 this/super 和链式调用）
+                        if (scopeStr.matches("[a-z][a-zA-Z0-9]*") && !"this".equals(scopeStr) && !"super".equals(scopeStr)) {
+                            Map<String, Object> inferredRelation = resolveInferredFieldCall(
+                                call, clazz, scopeStr, finalCallerId, methodSignatureToNodeId);
+                            if (inferredRelation != null) {
+                                relations.add(inferredRelation);
+                            }
                         }
                     }
                 });
@@ -1064,7 +1103,7 @@ public class KnowledgeGraphBuilder {
 
             enumDecl.findAll(MethodDeclaration.class).forEach(method -> {
                 String callerKey = className + "." + method.getNameAsString();
-                String callerFullKey = callerKey + "." + Integer.toHexString(method.getSignature().hashCode());
+                String callerFullKey = callerKey + "." + signatureHash(method.getSignature().toString());
                 String callerNodeId = methodFullKeyToNodeId.getOrDefault(callerFullKey,
                     methodSignatureToNodeId.get(callerKey));
                 if (callerNodeId == null) return;
@@ -1202,6 +1241,69 @@ public class KnowledgeGraphBuilder {
     }
 
     /**
+     * 字段调用兜底解析 — 当 findMethodCallTargets 和静态解析都失败时，
+     * 通过字段声明获取类型名，直接在 methodSignatureToNodeId 中查找接口方法节点。
+     *
+     * 覆盖场景：MyBatis Mapper、Feign Client 等无 Java 实现类的接口方法调用，
+     * TypeSolver 无法解析到目标方法时，至少保证建立与接口方法的 CALLS 关系，
+     * 而不是静默丢弃调用边。
+     */
+    private Map<String, Object> resolveInferredFieldCall(
+            MethodCallExpr call, com.github.javaparser.ast.body.ClassOrInterfaceDeclaration clazz,
+            String scopeName, String callerId,
+            Map<String, String> methodSignatureToNodeId) {
+
+        String methodName = call.getNameAsString();
+
+        // 从类的直接字段声明中查找 scope 对应的类型（不递归内部类，避免同名字段误匹配）
+        for (com.github.javaparser.ast.body.FieldDeclaration field : clazz.getFields()) {
+            for (com.github.javaparser.ast.body.VariableDeclarator var : field.getVariables()) {
+                if (!var.getNameAsString().equals(scopeName)) continue;
+
+                String simpleTypeName = var.getType().asString();
+                // 去掉泛型参数：List<Xxx> → List, Mapper<X,Y> → Mapper
+                String baseTypeName = simpleTypeName.replaceAll("<.*>", "");
+
+                // 解析全限定名：优先从 import 查找
+                String fullTypeName = resolveFieldTypeNameFromImports(baseTypeName, clazz);
+
+                // 按优先级尝试：全限定名 → 简单名（fullTypeName 可能为 null）
+                for (String typeName : new String[]{fullTypeName, baseTypeName}) {
+                    if (typeName == null) continue;
+                    String targetMethodKey = typeName + "." + methodName;
+                    String calleeNodeId = methodSignatureToNodeId.get(targetMethodKey);
+                    if (calleeNodeId != null && !calleeNodeId.equals(callerId)) {
+                        log.info("[InferredCall] 字段调用兜底命中: scope={}.{}() → type={}, calleeNodeId={}",
+                            scopeName, methodName, typeName, calleeNodeId);
+                        Map<String, Object> relation = new LinkedHashMap<>();
+                        relation.put("callerId", callerId);
+                        relation.put("calleeId", calleeNodeId);
+                        relation.put("callType", "INFERRED");
+                        relation.put("callLine", call.getBegin().map(p -> p.line).orElse(0));
+                        return relation;
+                    }
+                }
+                break; // 字段名唯一，找到后无需继续
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * 从 CompilationUnit 的 import 声明中解析字段类型的全限定名
+     */
+    private String resolveFieldTypeNameFromImports(String simpleTypeName, com.github.javaparser.ast.body.ClassOrInterfaceDeclaration clazz) {
+        return clazz.findCompilationUnit()
+            .map(cu -> cu.getImports().stream()
+                .filter(imp -> imp.getNameAsString().endsWith("." + simpleTypeName))
+                .map(imp -> imp.getNameAsString())
+                .findFirst()
+                .orElse(null))
+            .orElse(null);
+    }
+
+    /**
      * 创建入口点（从 CompilationUnit 解析）
      * 支持多种入口类型：HTTP、MQ、定时任务、事件监听等
      */
@@ -1245,7 +1347,7 @@ public class KnowledgeGraphBuilder {
             clazz.findAll(MethodDeclaration.class).forEach(method -> {
                 // methodNodeId 必须与 MethodNode 的 nodeId 格式一致: projectPath:className.methodName.hash
                 String methodId = className + "." + method.getNameAsString() + "." +
-                    Integer.toHexString(method.getSignature().hashCode());
+                    signatureHash(method.getSignature().toString());
                 String nodeId = projectPath + ":" + methodId;
 
                 // FeignClient 接口的方法 → 注册为 FEIGN_CLIENT 入口点
@@ -1881,22 +1983,20 @@ public class KnowledgeGraphBuilder {
     }
 
     private void cleanOldData(String projectPath) {
-        // 0. 清理 DataModel 节点和 USES_MODEL 关系
-        try {
-            neo4jDataModelNodeRepository.deleteUsesModelRelationsByProjectPath(projectPath);
-            neo4jDataModelNodeRepository.deleteByProjectPath(projectPath);
-        } catch (Exception e) {
-            log.warn("[Neo4j] 清理 DataModel 数据异常: {}", e.getMessage());
-        }
-
-        // 1. 清理 Neo4j 核心图数据（方法节点、入口点、调用关系、向量和描述）
+        // 1. 清理 Neo4j 核心图数据（方法节点、入口点、调用关系、DataModel、向量和描述）
         log.info("[Neo4j] 清理旧数据: {}", projectPath);
         storageService.cleanProjectData(projectPath);
 
         // 2. 清理 Neo4j SQL 节点和 EXECUTES_SQL 关系
         log.info("[Neo4j] 清理 SQL 节点和 EXECUTES_SQL 关系: {}", projectPath);
         neo4jSqlNodeRepository.deleteExecutesSqlRelationsByProjectPath(projectPath);
-        neo4jSqlNodeRepository.deleteByProjectPath(projectPath);
+        long sqlDeleted;
+        int sqlTotal = 0;
+        do {
+            sqlDeleted = neo4jSqlNodeRepository.deleteByProjectPathBatch(projectPath, 2000);
+            sqlTotal += sqlDeleted;
+        } while (sqlDeleted > 0);
+        log.info("[Neo4j] 分批删除 SQL 节点完成: projectPath={}, 共删除 {} 个", projectPath, sqlTotal);
 
         // 3. 清理向量生成任务状态
         log.info("[SQLite] 清理生成任务状态: {}", projectPath);
@@ -2139,5 +2239,13 @@ public class KnowledgeGraphBuilder {
         }
 
         return relations;
+    }
+
+    /**
+     * 计算方法签名的稳定 hash（基于签名字符串，不依赖 AST 对象身份）
+     * 解决两次独立 parseFile 导致 getSignature().hashCode() 不一致的问题
+     */
+    private static String signatureHash(String signature) {
+        return Integer.toHexString(signature.hashCode());
     }
 }

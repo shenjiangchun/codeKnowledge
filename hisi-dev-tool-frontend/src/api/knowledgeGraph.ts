@@ -486,10 +486,10 @@ export const knowledgeGraphApi = {
     })
   },
 
-  /** 按 serviceName 聚合查询入口点 */
-  getEntryPointsGrouped(projectPaths: string[]) {
-    return request.get<ServiceEntryGroup[]>('/v2/knowledge-graph/entry-points/grouped', {
-      params: { projectPaths }
+  /** 按 serviceName 聚合查询入口点（支持分页） */
+  getEntryPointsGrouped(projectPaths: string[], page = 1, pageSize = 10) {
+    return request.get<PageResult<ServiceEntryGroup>>('/v2/knowledge-graph/entry-points/grouped', {
+      params: { projectPaths, page, pageSize }
     })
   },
 

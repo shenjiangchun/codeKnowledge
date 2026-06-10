@@ -41,12 +41,12 @@ public class EntryPointDescriptionService {
 你是代码语义解析专家，请为以下代码入口点生成简要描述（30字以内）。
 
 ## 入口信息
-类型：%s
-标识：%s
-方法签名：%s
+类型：{{entryType}}
+标识：{{entryKey}}
+方法签名：{{signature}}
 
 ## 调用链关键方法（按重要性排序）
-%s
+{{methodDescriptions}}
 
 ## 输出要求
 - 一句话概括该入口的核心功能
@@ -54,7 +54,7 @@ public class EntryPointDescriptionService {
 - 必须使用术语表中的术语
 
 ## 术语规范
-%s
+{{glossary}}
 
 直接输出描述，无额外内容。
 """;
@@ -63,12 +63,12 @@ public class EntryPointDescriptionService {
 你是代码语义解析专家，请为以下代码入口点生成详细描述（100-200字）。
 
 ## 入口信息
-类型：%s
-标识：%s
-方法签名：%s
+类型：{{entryType}}
+标识：{{entryKey}}
+方法签名：{{signature}}
 
 ## 完整调用链
-%s
+{{methodDescriptions}}
 
 ## 输出要求
 - 描述该入口的业务场景和触发条件
@@ -77,7 +77,7 @@ public class EntryPointDescriptionService {
 - 使用术语表中的术语
 
 ## 术语规范
-%s
+{{glossary}}
 
 直接输出描述，无额外内容。
 """;
@@ -105,19 +105,19 @@ public class EntryPointDescriptionService {
         String glossarySegment = buildGlossarySegment(projectPath);
 
         // 5. 构建 Prompt 并调用 LLM
-        String briefPrompt = String.format(ENTRY_BRIEF_PROMPT,
-                entry.getEntryType(),
-                entry.getEntryKey(),
-                extractSignature(entry),
-                formatMethodDescriptions(methodDescriptions),
-                glossarySegment);
+        String briefPrompt = ENTRY_BRIEF_PROMPT
+                .replace("{{entryType}}", entry.getEntryType())
+                .replace("{{entryKey}}", entry.getEntryKey())
+                .replace("{{signature}}", extractSignature(entry))
+                .replace("{{methodDescriptions}}", formatMethodDescriptions(methodDescriptions))
+                .replace("{{glossary}}", glossarySegment);
 
-        String detailedPrompt = String.format(ENTRY_DETAILED_PROMPT,
-                entry.getEntryType(),
-                entry.getEntryKey(),
-                extractSignature(entry),
-                formatMethodDescriptions(methodDescriptions),
-                glossarySegment);
+        String detailedPrompt = ENTRY_DETAILED_PROMPT
+                .replace("{{entryType}}", entry.getEntryType())
+                .replace("{{entryKey}}", entry.getEntryKey())
+                .replace("{{signature}}", extractSignature(entry))
+                .replace("{{methodDescriptions}}", formatMethodDescriptions(methodDescriptions))
+                .replace("{{glossary}}", glossarySegment);
 
         String brief = textService.generateText(briefPrompt);
         String detailed = textService.generateText(detailedPrompt);
