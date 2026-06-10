@@ -75,6 +75,8 @@ export interface EntryPoint {
   projectPath: string
   /** 简要描述（LLM生成） */
   briefDescription?: string
+  /** 详细描述（LLM生成） */
+  detailedDescription?: string
   /** 服务名（文根聚合） */
   serviceName?: string
 }

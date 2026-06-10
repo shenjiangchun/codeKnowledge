@@ -12,9 +12,18 @@
         <el-button type="primary" size="small" @click="loadChain" :loading="loading">
           查看调用链
         </el-button>
-        <el-button type="success" size="small" @click="handleAIAnalysis" :disabled="!chainData">
-          AI 分析
-        </el-button>
+      </div>
+    </div>
+
+    <!-- 入口描述 -->
+    <div class="entry-description" v-if="entry.briefDescription || entry.detailedDescription">
+      <div class="desc-section" v-if="entry.briefDescription">
+        <span class="desc-label">简要描述</span>
+        <span class="desc-text">{{ entry.briefDescription }}</span>
+      </div>
+      <div class="desc-section" v-if="entry.detailedDescription">
+        <span class="desc-label">详细描述</span>
+        <span class="desc-text">{{ entry.detailedDescription }}</span>
       </div>
     </div>
 
@@ -73,8 +82,6 @@
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { knowledgeGraphApi, type EntryPoint, type CallChainView, type CallChainNode, type CallChainGraphData } from '@/api/knowledgeGraph'
-import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { useRouter } from 'vue-router'
 import { getEntryTagType, getEntryIcon, getEntryLabel } from '../utils/entryTypeUtils'
 import ChainChart from '@/views/call-chain/components/ChainChart.vue'
 import ContextMenu from '@/views/call-chain/components/ContextMenu.vue'
@@ -84,9 +91,6 @@ const props = defineProps<{
   projectPath: string
   projectPaths?: string[]
 }>()
-
-const router = useRouter()
-const workspaceStore = useWorkspaceStore()
 
 const loading = ref(false)
 const chainData = ref<CallChainView | null>(null)
@@ -168,13 +172,6 @@ const treeData = computed((): TreeNode | null => {
     // 找到入口节点（depth=0）
     const entryNode = graphData.value.nodes.find(n => n.depth === 0)
     if (!entryNode) return null
-
-    console.log('[treeData] Using graphData, entryNode:', entryNode.name, 'id:', entryNode.id)
-    console.log('[treeData] graphData stats:', {
-      nodes: graphData.value.nodes.length,
-      edges: graphData.value.edges.length,
-      maxDepth: graphData.value.maxDepth
-    })
 
     // 使用 DFS 构建树，避免重复节点（DAG 转 树）
     const buildTreeFromGraph = (nodeId: string, visited: Set<string>): TreeNode | null => {
@@ -292,37 +289,6 @@ const loadChain = async () => {
   }
 }
 
-// AI 分析
-// 混合模式：后端从 Neo4j 组装完整调用链数据 → 前端创建 workspace session → PTY 终端
-const handleAIAnalysis = async () => {
-  if (!chainData.value) return
-
-  try {
-    // 1. 调后端接口，从 Neo4j 拉取完整调用链数据组装为富提示词
-    const { aiAnalysisApi } = await import('@/api/aiAnalysis')
-    const result = await aiAnalysisApi.buildCallChainPrompt({
-      entryKey: props.entry.entryKey,
-      projectPath: props.projectPath
-    }) as any
-
-    const prompt = result?.prompt || result
-    if (!prompt || (typeof prompt === 'string' && prompt.length < 10)) {
-      ElMessage.warning('未找到调用链数据，请先生成知识图谱')
-      return
-    }
-
-    // 2. 创建 workspace session，通过 PTY 终端发送到 Claude CLI
-    const session = await workspaceStore.createSession(
-      'call-chain-analysis',
-      typeof prompt === 'string' ? prompt : JSON.stringify(prompt),
-      props.projectPath || undefined
-    )
-    router.push({ name: 'ClaudeTerminal', query: { sessionId: session.id } })
-  } catch (error: any) {
-    ElMessage.error(`创建 AI 分析会话失败: ${error.message || error}`)
-  }
-}
-
 // 右键菜单
 const handleContextMenu = (event: MouseEvent, node: any) => {
   contextMenuVisible.value = true
@@ -375,6 +341,28 @@ watch(() => props.entry, () => {
   font-family: monospace;
   font-size: 14px;
   font-weight: 500;
+}
+
+.entry-description {
+  padding: 0 12px 12px;
+}
+
+.desc-section {
+  margin-bottom: 8px;
+}
+
+.desc-label {
+  display: inline-block;
+  font-size: 12px;
+  color: #909399;
+  margin-right: 8px;
+  min-width: 60px;
+}
+
+.desc-text {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.6;
 }
 
 .entry-actions {

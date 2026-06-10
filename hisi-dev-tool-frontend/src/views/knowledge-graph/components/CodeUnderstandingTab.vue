@@ -227,18 +227,30 @@ const handleEntrySelect = (nodeId: string) => {
 
 // 处理列表点击选择（支持 EntryPoint 或 EntrySummary）
 const handleSelectEntry = (entry: EntryPoint | EntrySummary) => {
-  // EntrySummary 只有 entryId，需要查找完整 EntryPoint
   if ('nodeId' in entry) {
     selectedEntry.value = entry as EntryPoint
     selectedEntryKey.value = entry.nodeId
     selectedEntryType.value = entry.entryType
   } else {
-    // EntrySummary: 从 entryPoints 查找完整数据
+    // EntrySummary: 优先从 entryPoints 查找完整数据，找不到则构造
     const fullEntry = entryPoints.value.find(ep => ep.nodeId === entry.entryId)
     if (fullEntry) {
       selectedEntry.value = fullEntry
       selectedEntryKey.value = fullEntry.nodeId
       selectedEntryType.value = fullEntry.entryType
+    } else {
+      // 分组视图中的入口可能不在当前平铺页中，用 EntrySummary 构造
+      selectedEntry.value = {
+        nodeId: entry.entryId,
+        methodNodeId: '',
+        entryType: entry.entryType,
+        entryKey: entry.entryKey,
+        entryInfo: '',
+        projectPath: props.projectPath,
+        briefDescription: entry.briefDescription,
+      }
+      selectedEntryKey.value = entry.entryId
+      selectedEntryType.value = entry.entryType
     }
   }
 }

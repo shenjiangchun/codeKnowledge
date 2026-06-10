@@ -1138,6 +1138,7 @@ public class CodeAnalysisCoreService {
 
                     // 第二阶段：无实现类结果时，回退到接口本身（覆盖 @FeignClient 等无 impl 场景）
                     if (results.isEmpty()) {
+                        log.info("[EnhancedFieldCall] Phase2接口回退: scopeName={}, interfaceTypes={}", scopeName, interfaceTypes);
                         for (String typeName : interfaceTypes) {
                             List<MethodDeclaration> methods = resolveMethodByType(methodCall, typeName);
                             if (!methods.isEmpty()) {
@@ -1392,6 +1393,11 @@ public class CodeAnalysisCoreService {
                             if (!found.isEmpty()) {
                                 results.addAll(found);
                                 resolvedFQNs.add(className);
+                                // 接口方法匹配时始终打印 info（追踪跨模块同名误匹配）
+                                if (className.contains("Feign") || className.contains("Mapper") || className.contains("Repository")) {
+                                    log.info("[resolveMethodByType] FQN层命中接口方法: className={}, methodName={}, found={}",
+                                        className, methodName, found.size());
+                                }
                                 if (featureConfig.isDebugLogging()) {
                                     log.debug("[resolveMethodByType] FQN层: 在 {} 中找到方法 {}: {} 个",
                                         className, methodName, found.size());
