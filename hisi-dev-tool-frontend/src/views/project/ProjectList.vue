@@ -335,6 +335,10 @@
                   <el-icon><Document /></el-icon>
                   提交分析
                 </el-button>
+                <GitOperations
+                  v-if="row.cloneStatus === 'CLONED'"
+                  :project-path="row.localPath"
+                />
                 <el-button
                   type="success"
                   link
