@@ -23,4 +23,10 @@ public class RemoteProject {
     private String cloneError;
     private Long lastSyncAt;
     private Long createdAt;
+
+    // Auth type fields
+    @Builder.Default
+    private String authType = "PASSWORD"; // PASSWORD / SSH_KEY / TOKEN
+    private String sshKeyPath; // SSH private key file path
+    private String encryptedToken; // AES encrypted token
 }

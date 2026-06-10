@@ -1,6 +1,7 @@
 package com.huawei.hisi.project.remote.repository;
 
 import com.huawei.hisi.project.remote.model.RemoteProject;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,6 +22,18 @@ public class RemoteProjectRepository {
 
     private final JdbcTemplate jdbcTemplate;
 
+    @PostConstruct
+    public void migrateSchema() {
+        try {
+            jdbcTemplate.queryForRowSet("SELECT auth_type FROM remote_project LIMIT 1");
+        } catch (Exception e) {
+            jdbcTemplate.execute("ALTER TABLE remote_project ADD COLUMN auth_type VARCHAR(20) DEFAULT 'PASSWORD'");
+            jdbcTemplate.execute("ALTER TABLE remote_project ADD COLUMN ssh_key_path VARCHAR(255)");
+            jdbcTemplate.execute("ALTER TABLE remote_project ADD COLUMN encrypted_token VARCHAR(500)");
+            log.info("[Migration] Added auth_type, ssh_key_path, encrypted_token columns to remote_project");
+        }
+    }
+
     private static final RowMapper<RemoteProject> ROW_MAPPER = (rs, rowNum) ->
         RemoteProject.builder()
             .id(rs.getLong("id"))
@@ -34,6 +47,9 @@ public class RemoteProjectRepository {
             .cloneError(rs.getString("clone_error"))
             .lastSyncAt(rs.getObject("last_sync_at") != null ? rs.getLong("last_sync_at") : null)
             .createdAt(rs.getObject("created_at") != null ? rs.getLong("created_at") : null)
+            .authType(rs.getString("auth_type") != null ? rs.getString("auth_type") : "PASSWORD")
+            .sshKeyPath(rs.getString("ssh_key_path"))
+            .encryptedToken(rs.getString("encrypted_token"))
             .build();
 
     public List<RemoteProject> findAll() {
@@ -51,8 +67,8 @@ public class RemoteProjectRepository {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(
-                "INSERT INTO remote_project (name, git_url, username, encrypted_password, branch, local_path, clone_status) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO remote_project (name, git_url, username, encrypted_password, branch, local_path, clone_status, auth_type, ssh_key_path, encrypted_token) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS
             );
             ps.setString(1, p.getName());
@@ -62,6 +78,9 @@ public class RemoteProjectRepository {
             ps.setString(5, p.getBranch());
             ps.setString(6, p.getLocalPath());
             ps.setString(7, p.getCloneStatus());
+            ps.setString(8, p.getAuthType());
+            ps.setString(9, p.getSshKeyPath());
+            ps.setString(10, p.getEncryptedToken());
             return ps;
         }, keyHolder);
 
@@ -72,9 +91,10 @@ public class RemoteProjectRepository {
     public int update(RemoteProject p) {
         return jdbcTemplate.update(
             "UPDATE remote_project SET name = ?, git_url = ?, username = ?, encrypted_password = ?, " +
-            "branch = ?, local_path = ?, clone_status = ? WHERE id = ?",
+            "branch = ?, local_path = ?, clone_status = ?, auth_type = ?, ssh_key_path = ?, encrypted_token = ? WHERE id = ?",
             p.getName(), p.getGitUrl(), p.getUsername(), p.getEncryptedPassword(),
-            p.getBranch(), p.getLocalPath(), p.getCloneStatus(), p.getId()
+            p.getBranch(), p.getLocalPath(), p.getCloneStatus(),
+            p.getAuthType(), p.getSshKeyPath(), p.getEncryptedToken(), p.getId()
         );
     }
 

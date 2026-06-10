@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-26T07:44:32.573Z",
-  "lastUpdated": "2026-06-10T03:49:17.683Z",
+  "lastUpdated": "2026-06-10T03:51:04.049Z",
   "stats": {
     "totalOperations": 353,
     "totalFilesEdited": 134,
-    "totalAiLines": 11394,
-    "totalAiLinesDeleted": 622,
-    "totalCommits": 39
+    "totalAiLines": 11462,
+    "totalAiLinesDeleted": 633,
+    "totalCommits": 40
   },
   "pendingFiles": [
     {
@@ -59,16 +59,6 @@
       "operations": 4,
       "timestamp": "2026-06-05T03:02:45.700Z",
       "lastModified": "2026-06-10T03:09:45.176Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/types/remote-project.ts",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "Ali-glm-5-cc",
-      "operations": 4,
-      "timestamp": "2026-06-05T03:03:54.214Z",
-      "lastModified": "2026-06-10T03:48:08.534Z",
       "lastTool": "Edit"
     },
     {
@@ -124,16 +114,6 @@
       "operations": 1,
       "timestamp": "2026-06-10T03:07:02.297Z",
       "lastModified": "2026-06-10T03:07:02.298Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/project/ProjectList.vue",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "Ali-glm-5-cc",
-      "operations": 5,
-      "timestamp": "2026-06-10T03:48:18.638Z",
-      "lastModified": "2026-06-10T03:49:17.683Z",
-      "lastTool": "Edit"
     }
   ]
 }

@@ -19,10 +19,22 @@ public class RemoteProjectController {
 
     private final RemoteProjectService service;
 
-    public record CreateRequest(String name, String gitUrl, String username, String password, String branch) {}
-    public record UpdateRequest(String name, String gitUrl, String username, String password, String branch) {}
-    public record ProjectResponse(Long id, String name, String gitUrl, String username, String branch,
-                                  String localPath, String cloneStatus, String cloneError, Long lastSyncAt) {}
+    // Enhanced request/response records with auth type support
+    public record CreateRequest(
+        String name, String gitUrl, String username, String password,
+        String authType, String sshKeyPath, String token, String branch
+    ) {}
+
+    public record UpdateRequest(
+        String name, String gitUrl, String username, String password,
+        String authType, String sshKeyPath, String token, String branch
+    ) {}
+
+    public record ProjectResponse(
+        Long id, String name, String gitUrl, String username, String branch,
+        String localPath, String cloneStatus, String cloneError, Long lastSyncAt,
+        String authType, String sshKeyPath
+    ) {}
 
     @GetMapping
     public ApiResponse<List<ProjectResponse>> list() {
@@ -34,13 +46,19 @@ public class RemoteProjectController {
 
     @PostMapping
     public ApiResponse<Map<String, Long>> create(@RequestBody CreateRequest req) {
-        long id = service.create(req.name(), req.gitUrl(), req.username(), req.password(), req.branch());
+        long id = service.create(
+            req.name(), req.gitUrl(), req.username(), req.password(),
+            req.authType(), req.sshKeyPath(), req.token(), req.branch()
+        );
         return ApiResponse.success(Map.of("id", id));
     }
 
     @PutMapping("/{id}")
     public ApiResponse<String> update(@PathVariable long id, @RequestBody UpdateRequest req) {
-        service.update(id, req.name(), req.gitUrl(), req.username(), req.password(), req.branch());
+        service.update(
+            id, req.name(), req.gitUrl(), req.username(), req.password(),
+            req.authType(), req.sshKeyPath(), req.token(), req.branch()
+        );
         return ApiResponse.success("Updated");
     }
 
@@ -76,7 +94,8 @@ public class RemoteProjectController {
         Long lastSyncAtMs = p.getLastSyncAt() != null ? p.getLastSyncAt() * 1000 : null;
         return new ProjectResponse(
             p.getId(), p.getName(), p.getGitUrl(), p.getUsername(),
-            p.getBranch(), fullPath, p.getCloneStatus(), p.getCloneError(), lastSyncAtMs
+            p.getBranch(), fullPath, p.getCloneStatus(), p.getCloneError(), lastSyncAtMs,
+            p.getAuthType(), p.getSshKeyPath()
         );
     }
 }
