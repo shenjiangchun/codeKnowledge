@@ -337,9 +337,9 @@ const buildSubtreeFromCalleesTree = (graph: any, rootFqn: string): ChainNode => 
   const nodeMap = new Map<string, ChainNode>()
   for (const n of graph.nodes) {
     const cn: ChainNode = {
-      name: n.methodName || n.label || '',
+      name: n.name || n.methodName || n.label || '',
       className: n.className || '',
-      methodSignature: `${n.className || ''}.${n.methodName || n.label || ''}`,
+      methodSignature: `${n.className || ''}.${n.name || n.methodName || n.label || ''}`,
       description: n.description,
       children: []
     }
