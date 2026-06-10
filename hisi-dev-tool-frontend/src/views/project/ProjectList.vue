@@ -234,6 +234,32 @@
                 <el-icon><Select /></el-icon>
                 选择 ({{ selectedRemoteProjects.filter((p: any) => p.cloneStatus === 'CLONED').length }})
               </el-button>
+              <!-- 公共功能按钮 -->
+              <el-button @click="openKgExcludeDialog">
+                <el-icon><Setting /></el-icon>
+                图谱屏蔽目录
+              </el-button>
+              <el-button @click="openGlossaryDialogForRemote">
+                <el-icon><EditPen /></el-icon>
+                术语配置
+              </el-button>
+              <el-button
+                type="warning"
+                @click="handleCrossServiceBuildRemote"
+                :disabled="selectedRemoteProjectsWithKg.length < 2"
+                :loading="crossServiceBuilding"
+              >
+                跨服务依赖构建 ({{ selectedRemoteProjectsWithKg.length }})
+              </el-button>
+              <el-button
+                type="success"
+                @click="handleBatchGenerateKGRemote"
+                :disabled="selectedRemoteClonedProjects.length === 0"
+                :loading="batchGeneratingKG"
+              >
+                <el-icon><DataAnalysis /></el-icon>
+                批量生成图谱 ({{ selectedRemoteClonedProjects.length }})
+              </el-button>
             </div>
           </div>
           <el-table :data="remoteProjects" v-loading="remoteLoading" stripe @selection-change="handleRemoteSelectionChange">
@@ -339,6 +365,15 @@
                   v-if="row.cloneStatus === 'CLONED'"
                   :project-path="row.localPath"
                 />
+                <el-button
+                  type="info"
+                  link
+                  @click="handleRefreshProjectRemote(row)"
+                  :disabled="row.cloneStatus !== 'CLONED'"
+                >
+                  <el-icon><Refresh /></el-icon>
+                  图谱刷新
+                </el-button>
                 <el-button
                   type="success"
                   link
@@ -1432,6 +1467,27 @@ const loadCommitsForRemote = async (localPath: string) => {
   }
 }
 
+// 图谱刷新 — 远端项目
+const handleRefreshProjectRemote = async (row: RemoteProject) => {
+  try {
+    const res = await knowledgeGraphApi.refresh(row.localPath)
+    if (res.isNoop) {
+      ElMessage.info('无变更，图谱已是最新')
+    } else {
+      ElMessage.success(`刷新完成：${res.changedFiles} 个文件变更`)
+      await loadRemoteProjectTaskStatuses()
+    }
+  } catch (e: unknown) {
+    if ((e as { response?: { status?: number } })?.response?.status === 412) {
+      ElMessage.warning('工作区不干净，请先提交所有改动')
+    } else if ((e as { response?: { status?: number } })?.response?.status === 409) {
+      ElMessage.warning('无检查点记录，请先全量生成图谱')
+    } else {
+      ElMessage.error('图谱刷新失败')
+    }
+  }
+}
+
 // Handle commit selection
 const handleCommitSelection = (selection: GitCommit[]) => {
   selectedCommits.value = selection
@@ -1686,6 +1742,68 @@ function handleRemoteConfirmMultiSelect() {
   appStore.selectProjects(projects)
   const names = projects.map(p => p.name)
   ElMessage.success(`已选择 ${names.length} 个项目: ${names.join(', ')}`)
+}
+
+// 术语配置 — 远端项目
+const openGlossaryDialogForRemote = () => {
+  const cloned = remoteProjects.value.filter(p => p.cloneStatus === 'CLONED')
+  if (cloned.length >= 1) {
+    glossaryProjectPath.value = normalizePath(cloned[0].localPath)
+  } else {
+    glossaryProjectPath.value = ''
+  }
+  showGlossaryDialog.value = true
+  if (glossaryProjectPath.value) loadGlossaryTerms()
+}
+
+// 跨服务构建 — 远端项目
+const selectedRemoteProjectsWithKg = computed(() =>
+  selectedRemoteProjects.value.filter((p: RemoteProject) => {
+    if (p.cloneStatus !== 'CLONED') return false
+    const status = knowledgeGraphStatusMap.value[normalizePath(p.localPath)]
+    return status && (status.status === 'generated' || status.status === 'completed')
+  })
+)
+
+const handleCrossServiceBuildRemote = async () => {
+  crossServiceBuilding.value = true
+  try {
+    const paths = selectedRemoteProjectsWithKg.value.map((p: RemoteProject) => normalizePath(p.localPath))
+    await knowledgeGraphApi.crossServiceBuild(paths)
+    ElMessage.success('跨服务依赖构建完成')
+  } catch {
+    ElMessage.error('跨服务依赖构建失败')
+  } finally {
+    crossServiceBuilding.value = false
+  }
+}
+
+// 批量生成图谱 — 远端项目
+const selectedRemoteClonedProjects = computed(() =>
+  selectedRemoteProjects.value.filter((p: RemoteProject) => p.cloneStatus === 'CLONED')
+)
+
+const handleBatchGenerateKGRemote = async () => {
+  if (selectedRemoteClonedProjects.value.length === 0) {
+    ElMessage.warning('请先勾选已克隆的项目')
+    return
+  }
+  const paths = selectedRemoteClonedProjects.value.map((p: RemoteProject) => normalizePath(p.localPath))
+  batchGeneratingKG.value = true
+  try {
+    const tasks = await knowledgeGraphApi.startGenerateTaskBatch(paths, kgExcludePaths.value.length > 0 ? kgExcludePaths.value : undefined)
+    if (tasks && tasks.length > 0) {
+      for (const task of tasks) {
+        knowledgeGraphTaskStatusMap.value[normalizePath(task.projectPath)] = task
+      }
+      ElMessage.success(`已入队 ${tasks.length} 个项目`)
+      startKgPolling()
+    }
+  } catch {
+    ElMessage.error('批量生成入队失败')
+  } finally {
+    batchGeneratingKG.value = false
+  }
 }
 
 const selectedProjectsWithKg = computed(() =>

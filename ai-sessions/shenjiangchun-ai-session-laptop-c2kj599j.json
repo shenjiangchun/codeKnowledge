@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-26T07:44:32.573Z",
-  "lastUpdated": "2026-06-09T04:35:57.454Z",
+  "lastUpdated": "2026-06-10T02:52:50.565Z",
   "stats": {
-    "totalOperations": 318,
-    "totalFilesEdited": 127,
-    "totalAiLines": 11244,
+    "totalOperations": 323,
+    "totalFilesEdited": 130,
+    "totalAiLines": 11276,
     "totalAiLinesDeleted": 622,
-    "totalCommits": 36
+    "totalCommits": 38
   },
   "pendingFiles": [
     {
@@ -70,16 +70,6 @@
       "lastModified": "2026-06-05T03:03:54.214Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/project/ProjectList.vue",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "ByteDance-glm-5.1-cc",
-      "operations": 3,
-      "timestamp": "2026-06-05T03:04:29.008Z",
-      "lastModified": "2026-06-05T03:05:10.940Z",
-      "lastTool": "Edit"
-    },
-    {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/service/LLMDescriptionService.java",
       "tool": "Edit",
       "aiTool": "claude-code",
@@ -96,6 +86,24 @@
       "operations": 1,
       "timestamp": "2026-06-09T02:07:15.171Z",
       "lastModified": "2026-06-09T02:07:15.171Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/docs/plans/2026-06-10-remote-project-enhancement-design.md",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 1,
+      "timestamp": "2026-06-10T02:20:07.022Z",
+      "lastModified": "2026-06-10T02:20:07.022Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/docs/plans/2026-06-10-remote-project-enhancement-plan.md",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 1,
+      "timestamp": "2026-06-10T02:37:22.449Z",
+      "lastModified": "2026-06-10T02:37:22.449Z"
     }
   ]
 }
