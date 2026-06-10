@@ -8,6 +8,8 @@ export interface RemoteProject {
   cloneStatus: 'PENDING' | 'CLONING' | 'CLONED' | 'FAILED'
   cloneError: string | null
   lastSyncAt: number | null
+  authType: 'PASSWORD' | 'SSH_KEY' | 'TOKEN'
+  sshKeyPath?: string
 }
 
 export interface CreateRemoteProjectRequest {
@@ -15,7 +17,10 @@ export interface CreateRemoteProjectRequest {
   gitUrl: string
   username?: string
   password?: string
-  branch: string
+  branch?: string
+  authType?: 'PASSWORD' | 'SSH_KEY' | 'TOKEN'
+  sshKeyPath?: string
+  token?: string
 }
 
 export interface UpdateRemoteProjectRequest {
@@ -23,7 +28,10 @@ export interface UpdateRemoteProjectRequest {
   gitUrl: string
   username?: string
   password?: string
-  branch: string
+  branch?: string
+  authType?: 'PASSWORD' | 'SSH_KEY' | 'TOKEN'
+  sshKeyPath?: string
+  token?: string
 }
 
 export interface KgSchedule {

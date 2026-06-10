@@ -538,11 +538,24 @@
         <el-form-item label="Git地址" required>
           <el-input v-model="remoteForm.gitUrl" placeholder="https://github.com/xxx/xxx.git" />
         </el-form-item>
-        <el-form-item label="用户名">
+        <el-form-item label="认证方式" required>
+          <el-select v-model="remoteForm.authType" @change="handleAuthTypeChange">
+            <el-option value="PASSWORD" label="账号密码" />
+            <el-option value="SSH_KEY" label="SSH密钥" />
+            <el-option value="TOKEN" label="Token" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="remoteForm.authType === 'PASSWORD'" label="用户名">
           <el-input v-model="remoteForm.username" placeholder="可选，私有仓库需要" />
         </el-form-item>
-        <el-form-item label="密码">
+        <el-form-item v-if="remoteForm.authType === 'PASSWORD'" label="密码">
           <el-input v-model="remoteForm.password" type="password" show-password placeholder="可选，私有仓库需要" />
+        </el-form-item>
+        <el-form-item v-if="remoteForm.authType === 'SSH_KEY'" label="私钥路径">
+          <el-input v-model="remoteForm.sshKeyPath" placeholder="如 ~/.ssh/id_rsa 或 C:\Users\xxx\.ssh\id_rsa" />
+        </el-form-item>
+        <el-form-item v-if="remoteForm.authType === 'TOKEN'" label="Token">
+          <el-input v-model="remoteForm.token" type="password" show-password placeholder="OAuth Token 或 Personal Access Token" />
         </el-form-item>
         <el-form-item label="分支">
           <el-input v-model="remoteForm.branch" placeholder="默认: main" />
@@ -1898,12 +1911,15 @@ const showRemoteDialog = ref(false)
 const remoteIsEdit = ref(false)
 const remoteEditId = ref<number | null>(null)
 const remoteSubmitting = ref(false)
-const remoteForm = ref<CreateRemoteProjectRequest & { password?: string }>({
+const remoteForm = ref<CreateRemoteProjectRequest & { password?: string; token?: string }>({
   name: '',
   gitUrl: '',
   username: '',
   password: '',
-  branch: 'main'
+  branch: 'main',
+  authType: 'PASSWORD',
+  sshKeyPath: '',
+  token: ''
 })
 
 const remoteCloneStatusType = (status: string) => {
@@ -1981,8 +1997,21 @@ const loadRemoteProjectTaskStatuses = async () => {
 const handleAddRemote = () => {
   remoteIsEdit.value = false
   remoteEditId.value = null
-  remoteForm.value = { name: '', gitUrl: '', username: '', password: '', branch: 'main' }
+  remoteForm.value = { name: '', gitUrl: '', username: '', password: '', branch: 'main', authType: 'PASSWORD', sshKeyPath: '', token: '' }
   showRemoteDialog.value = true
+}
+
+const handleAuthTypeChange = () => {
+  if (remoteForm.value.authType !== 'PASSWORD') {
+    remoteForm.value.username = ''
+    remoteForm.value.password = ''
+  }
+  if (remoteForm.value.authType !== 'SSH_KEY') {
+    remoteForm.value.sshKeyPath = ''
+  }
+  if (remoteForm.value.authType !== 'TOKEN') {
+    remoteForm.value.token = ''
+  }
 }
 
 const handleEditRemote = (row: RemoteProject) => {
@@ -1993,7 +2022,10 @@ const handleEditRemote = (row: RemoteProject) => {
     gitUrl: row.gitUrl,
     username: row.username || '',
     password: '',
-    branch: row.branch
+    branch: row.branch,
+    authType: row.authType || 'PASSWORD',
+    sshKeyPath: row.sshKeyPath || '',
+    token: ''
   }
   showRemoteDialog.value = true
 }
@@ -2003,14 +2035,31 @@ const handleRemoteSubmit = async () => {
     ElMessage.warning('项目名称和Git地址不能为空')
     return
   }
+  // 验证认证方式相关字段
+  if (remoteForm.value.authType === 'SSH_KEY' && !remoteForm.value.sshKeyPath?.trim()) {
+    ElMessage.warning('SSH密钥认证需要填写私钥路径')
+    return
+  }
+  if (remoteForm.value.authType === 'TOKEN' && !remoteForm.value.token?.trim()) {
+    ElMessage.warning('Token认证需要填写Token')
+    return
+  }
   remoteSubmitting.value = true
   try {
     const payload: CreateRemoteProjectRequest = {
       name: remoteForm.value.name.trim(),
       gitUrl: remoteForm.value.gitUrl.trim(),
-      username: remoteForm.value.username?.trim() || undefined,
-      password: remoteForm.value.password?.trim() || undefined,
-      branch: remoteForm.value.branch.trim() || 'main'
+      branch: remoteForm.value.branch.trim() || 'main',
+      authType: remoteForm.value.authType
+    }
+    // 根据认证方式填充相关字段
+    if (remoteForm.value.authType === 'PASSWORD') {
+      payload.username = remoteForm.value.username?.trim() || undefined
+      payload.password = remoteForm.value.password?.trim() || undefined
+    } else if (remoteForm.value.authType === 'SSH_KEY') {
+      payload.sshKeyPath = remoteForm.value.sshKeyPath?.trim() || undefined
+    } else if (remoteForm.value.authType === 'TOKEN') {
+      payload.token = remoteForm.value.token?.trim() || undefined
     }
     if (remoteIsEdit.value && remoteEditId.value != null) {
       await updateRemoteProject(remoteEditId.value, payload as UpdateRemoteProjectRequest)

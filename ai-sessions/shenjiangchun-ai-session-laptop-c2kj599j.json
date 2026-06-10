@@ -3,33 +3,34 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-26T07:44:32.573Z",
-  "lastUpdated": "2026-06-10T02:52:50.565Z",
+  "lastUpdated": "2026-06-10T03:49:17.683Z",
   "stats": {
-    "totalOperations": 323,
-    "totalFilesEdited": 130,
-    "totalAiLines": 11276,
+    "totalOperations": 353,
+    "totalFilesEdited": 134,
+    "totalAiLines": 11394,
     "totalAiLinesDeleted": 622,
-    "totalCommits": 38
+    "totalCommits": 39
   },
   "pendingFiles": [
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/service/RemoteProjectService.java",
       "tool": "Edit",
       "aiTool": "claude-code",
-      "model": "ByteDance-glm-5.1-cc",
-      "operations": 5,
+      "model": "Ali-glm-5-cc",
+      "operations": 17,
       "timestamp": "2026-06-05T02:49:40.804Z",
-      "lastModified": "2026-06-05T03:02:20.059Z",
+      "lastModified": "2026-06-10T03:23:25.330Z",
       "lastTool": "Edit"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/model/RemoteProject.java",
       "tool": "Edit",
       "aiTool": "claude-code",
-      "model": "ByteDance-glm-5.1-cc",
-      "operations": 1,
+      "model": "Ali-glm-5-cc",
+      "operations": 2,
       "timestamp": "2026-06-05T02:57:56.516Z",
-      "lastModified": "2026-06-05T02:57:56.516Z"
+      "lastModified": "2026-06-10T03:06:59.766Z",
+      "lastTool": "Edit"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/config/SQLiteSchemaInitializer.java",
@@ -44,30 +45,31 @@
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/repository/RemoteProjectRepository.java",
       "tool": "Edit",
       "aiTool": "claude-code",
-      "model": "ByteDance-glm-5.1-cc",
-      "operations": 3,
+      "model": "Ali-glm-5-cc",
+      "operations": 5,
       "timestamp": "2026-06-05T02:58:38.448Z",
-      "lastModified": "2026-06-05T02:59:20.997Z",
+      "lastModified": "2026-06-10T03:07:32.317Z",
       "lastTool": "Edit"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/controller/RemoteProjectController.java",
       "tool": "Edit",
       "aiTool": "claude-code",
-      "model": "ByteDance-glm-5.1-cc",
-      "operations": 3,
+      "model": "Ali-glm-5-cc",
+      "operations": 4,
       "timestamp": "2026-06-05T03:02:45.700Z",
-      "lastModified": "2026-06-05T03:03:26.818Z",
+      "lastModified": "2026-06-10T03:09:45.176Z",
       "lastTool": "Edit"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/types/remote-project.ts",
       "tool": "Edit",
       "aiTool": "claude-code",
-      "model": "ByteDance-glm-5.1-cc",
-      "operations": 1,
+      "model": "Ali-glm-5-cc",
+      "operations": 4,
       "timestamp": "2026-06-05T03:03:54.214Z",
-      "lastModified": "2026-06-05T03:03:54.214Z"
+      "lastModified": "2026-06-10T03:48:08.534Z",
+      "lastTool": "Edit"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/service/LLMDescriptionService.java",
@@ -104,6 +106,34 @@
       "operations": 1,
       "timestamp": "2026-06-10T02:37:22.449Z",
       "lastModified": "2026-06-10T02:37:22.449Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/pom.xml",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 1,
+      "timestamp": "2026-06-10T03:06:25.977Z",
+      "lastModified": "2026-06-10T03:06:25.977Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/model/AuthType.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 1,
+      "timestamp": "2026-06-10T03:07:02.297Z",
+      "lastModified": "2026-06-10T03:07:02.298Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/project/ProjectList.vue",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 5,
+      "timestamp": "2026-06-10T03:48:18.638Z",
+      "lastModified": "2026-06-10T03:49:17.683Z",
+      "lastTool": "Edit"
     }
   ]
 }
