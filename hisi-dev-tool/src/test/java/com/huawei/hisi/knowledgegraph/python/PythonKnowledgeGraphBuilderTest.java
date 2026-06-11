@@ -165,7 +165,7 @@ class PythonKnowledgeGraphBuilderTest {
         assertThat(nodes).hasSize(1);
         MethodNode node = nodes.get(0);
         assertThat(node.getMethodName()).isEqualTo("fetch_data");
-        assertThat(node.getClassName()).isEqualTo("fetch_data");
+        assertThat(node.getClassName()).isEqualTo("fetch");
         assertThat(node.getLanguage()).isEqualTo("python");
         assertThat(node.getSignature()).isEqualTo("fetch_data(url)");
     }

@@ -509,6 +509,7 @@ public class PythonKnowledgeGraphBuilder {
     private ParsedFile parseFileInternal(String filePath, String projectPath) throws IOException {
         String source = Files.readString(Path.of(filePath), StandardCharsets.UTF_8);
         source = normalizeFstringsForParser(source);
+        source = joinImplicitLineContinuations(source);
         String relativePath = KnowledgeGraphCommonUtils.relativeFilePath(projectPath, filePath);
         String modulePath = toModulePath(relativePath);
 
@@ -575,6 +576,7 @@ public class PythonKnowledgeGraphBuilder {
                     .projectPath(projectPath)
                     .build());
         }
+
 
         return new ParsedFile(module, Collections.unmodifiableList(nodes));
     }
@@ -664,6 +666,125 @@ public class PythonKnowledgeGraphBuilder {
 
     private static boolean isFstringPrefixChar(char c) {
         return c == 'f' || c == 'F' || c == 'r' || c == 'R';
+    }
+
+    /**
+     * Pre-process Python source to join implicit line continuations into single lines.
+     *
+     * <p>The ANTLR Python 3 lexer's implicit line joining (NEWLINE skipped when
+     * {@code opened > 0}) has known issues with certain constructs. This method
+     * eliminates the problem by physically merging continuation lines: when an
+     * unclosed {@code (}, {@code [}, or {@code {} exists, newlines and their
+     * following indentation are replaced with a single space.</p>
+     *
+     * <p>String literals (including f-strings) are skipped — they may contain
+     * brackets that should not affect depth counting.</p>
+     */
+    static String joinImplicitLineContinuations(String source) {
+        StringBuilder out = new StringBuilder(source.length());
+        int i = 0;
+        int len = source.length();
+        int depth = 0;
+
+        while (i < len) {
+            char c = source.charAt(i);
+
+            // Skip string literals (including f-strings) — brackets inside are not structural
+            if (isStringPrefix(source, i)) {
+                // Find the opening quote
+                int prefixEnd = i;
+                while (prefixEnd < len && isFstringPrefixChar(source.charAt(prefixEnd))) {
+                    prefixEnd++;
+                }
+                if (prefixEnd < len && (source.charAt(prefixEnd) == '"' || source.charAt(prefixEnd) == '\'')) {
+                    char quote = source.charAt(prefixEnd);
+                    boolean triple = (prefixEnd + 2 < len
+                            && source.charAt(prefixEnd + 1) == quote
+                            && source.charAt(prefixEnd + 2) == quote);
+                    int contentStart = triple ? prefixEnd + 3 : prefixEnd + 1;
+                    // Copy prefix + opening quotes
+                    out.append(source, i, contentStart);
+                    // Find closing quote
+                    int j = contentStart;
+                    while (j < len) {
+                        if (source.charAt(j) == '\\' && j + 1 < len) {
+                            out.append(source.charAt(j)).append(source.charAt(j + 1));
+                            j += 2;
+                            continue;
+                        }
+                        if (triple) {
+                            if (j + 2 < len && source.charAt(j) == quote
+                                    && source.charAt(j + 1) == quote
+                                    && source.charAt(j + 2) == quote) {
+                                out.append(source, j, j + 3);
+                                j += 3;
+                                break;
+                            }
+                        } else {
+                            if (source.charAt(j) == quote) {
+                                out.append(source.charAt(j));
+                                j++;
+                                break;
+                            }
+                        }
+                        out.append(source.charAt(j));
+                        j++;
+                    }
+                    i = j;
+                    continue;
+                }
+            }
+
+            // Skip comments — they may contain brackets
+            if (c == '#') {
+                while (i < len && source.charAt(i) != '\n' && source.charAt(i) != '\r') {
+                    out.append(source.charAt(i));
+                    i++;
+                }
+                continue;
+            }
+
+            // Track bracket depth
+            if (c == '(' || c == '[' || c == '{') {
+                depth++;
+                out.append(c);
+                i++;
+                continue;
+            }
+            if (c == ')' || c == ']' || c == '}') {
+                depth = Math.max(0, depth - 1);
+                out.append(c);
+                i++;
+                continue;
+            }
+
+            // When inside brackets, replace newlines + indentation with a space
+            if (depth > 0 && (c == '\r' || c == '\n')) {
+                out.append(' ');
+                // Skip \r\n pair
+                if (c == '\r' && i + 1 < len && source.charAt(i + 1) == '\n') {
+                    i += 2;
+                } else {
+                    i++;
+                }
+                // Skip following whitespace/indentation
+                while (i < len && (source.charAt(i) == ' ' || source.charAt(i) == '\t')) {
+                    i++;
+                }
+                continue;
+            }
+
+            out.append(c);
+            i++;
+        }
+        return out.toString();
+    }
+
+    private static boolean isStringPrefix(String source, int i) {
+        if (i >= source.length()) return false;
+        char c = source.charAt(i);
+        return c == '"' || c == '\'' || c == 'f' || c == 'F' || c == 'r' || c == 'R'
+                || c == 'b' || c == 'B' || c == 'u' || c == 'U';
     }
 
     // ------------------------------------------------------------------
