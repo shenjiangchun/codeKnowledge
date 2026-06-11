@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { Document, Folder, Monitor, Search, Shop, DataAnalysis, Setting, Cpu, MagicStick, Connection } from '@element-plus/icons-vue'
+import { Document, Folder, Monitor, Search, Shop, DataAnalysis, Setting, Cpu, MagicStick, Connection, User } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import { computed } from 'vue'
 import type { Component } from 'vue'
 import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
 
 // Define menu key type that matches availableMenus keys
 type MenuKey = 'log-analysis' | 'project-management' | 'claude-terminal' | 'prompt-config' | 'search' | 'skill-market' | 'knowledge-graph' | 'settings' | 'apm-debug' | 'ram' | 'merge-analysis'
@@ -18,6 +19,7 @@ interface MenuItem {
 
 const route = useRoute()
 const appStore = useAppStore()
+const authStore = useAuthStore()
 
 const baseMenuItems: MenuItem[] = [
   {
@@ -88,12 +90,23 @@ const baseMenuItems: MenuItem[] = [
   },
 ]
 
-const menuItems = computed(() =>
-  baseMenuItems.map(item => ({
+const menuItems = computed(() => {
+  const items = baseMenuItems.map(item => ({
     ...item,
     disabled: !appStore.availableMenus[item.menuKey]
   }))
-)
+  // Add admin-only menu items
+  if (authStore.isAdmin) {
+    items.splice(items.length - 1, 0, {
+      index: '/admin/users',
+      title: '用户管理',
+      icon: User,
+      menuKey: 'settings' as MenuKey,
+      disabled: false
+    })
+  }
+  return items
+})
 
 // Check if a submenu should be opened based on current route
 const defaultOpeneds = computed(() => {

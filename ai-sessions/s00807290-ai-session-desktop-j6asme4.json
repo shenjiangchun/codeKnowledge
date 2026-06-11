@@ -3,13 +3,13 @@
   "hostname": "desktop-j6asme4",
   "model": "GLM-5.1-w4a8",
   "firstSeen": "2026-05-30T01:37:45.023Z",
-  "lastUpdated": "2026-06-10T10:12:05.952Z",
+  "lastUpdated": "2026-06-11T10:52:27.897Z",
   "stats": {
-    "totalOperations": 894,
-    "totalFilesEdited": 305,
-    "totalAiLines": 6680,
-    "totalAiLinesDeleted": 1713,
-    "totalCommits": 27
+    "totalOperations": 964,
+    "totalFilesEdited": 351,
+    "totalAiLines": 6736,
+    "totalAiLinesDeleted": 1761,
+    "totalCommits": 28
   },
   "pendingFiles": [
     {
@@ -172,71 +172,365 @@
       "lastModified": "2026-06-10T05:01:41.816Z"
     },
     {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/service/CodeAnalysisCoreService.java",
+      "path": "hisi-dev-tool/pom.xml",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:00:58.850Z",
+      "lastModified": "2026-06-11T04:00:58.850Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/pom.xml",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "GLM-5.1-w4a8",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:00:59.648Z",
+      "lastModified": "2026-06-11T04:00:59.648Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/resources/application.yml",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:01:05.663Z",
+      "lastModified": "2026-06-11T04:01:05.663Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/resources/application.yml",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "GLM-5.1-w4a8",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:01:06.781Z",
+      "lastModified": "2026-06-11T04:01:06.781Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/config/SecurityContext.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:03:03.543Z",
+      "lastModified": "2026-06-11T04:03:03.543Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/config/SecurityContext.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "GLM-5.1-w4a8",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:03:03.718Z",
+      "lastModified": "2026-06-11T04:03:03.718Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/config/JwtProperties.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:03:04.887Z",
+      "lastModified": "2026-06-11T04:03:04.887Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/config/JwtProperties.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "GLM-5.1-w4a8",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:03:05.158Z",
+      "lastModified": "2026-06-11T04:03:05.158Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/config/JwtTokenProvider.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:03:07.861Z",
+      "lastModified": "2026-06-11T04:03:07.861Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/config/JwtTokenProvider.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "GLM-5.1-w4a8",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:03:08.080Z",
+      "lastModified": "2026-06-11T04:03:08.080Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/config/SecurityConfig.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:03:09.335Z",
+      "lastModified": "2026-06-11T04:03:09.335Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/config/SecurityConfig.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "GLM-5.1-w4a8",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:03:09.662Z",
+      "lastModified": "2026-06-11T04:03:09.662Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/config/JwtAuthFilter.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:04:42.040Z",
+      "lastModified": "2026-06-11T04:04:42.040Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/config/JwtAuthFilter.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "GLM-5.1-w4a8",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:04:42.117Z",
+      "lastModified": "2026-06-11T04:04:42.117Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/model/User.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:04:42.483Z",
+      "lastModified": "2026-06-11T04:04:42.483Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/model/User.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "GLM-5.1-w4a8",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:04:42.551Z",
+      "lastModified": "2026-06-11T04:04:42.551Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/repository/UserRepository.java",
+      "tool": "Write",
+      "operations": 3,
+      "timestamp": "2026-06-11T04:04:58.380Z",
+      "lastModified": "2026-06-11T04:07:18.262Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/repository/UserRepository.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "GLM-5.1-w4a8",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:04:58.445Z",
+      "lastModified": "2026-06-11T04:04:58.445Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/controller/AuthController.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:05:21.682Z",
+      "lastModified": "2026-06-11T04:05:21.682Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/controller/AuthController.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "GLM-5.1-w4a8",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:05:21.747Z",
+      "lastModified": "2026-06-11T04:05:21.747Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/controller/UserController.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:05:22.124Z",
+      "lastModified": "2026-06-11T04:05:22.124Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/controller/UserController.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "GLM-5.1-w4a8",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:05:22.194Z",
+      "lastModified": "2026-06-11T04:05:22.194Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/config/AdminOnlyInterceptor.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:05:34.397Z",
+      "lastModified": "2026-06-11T04:05:34.397Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/config/AdminOnlyInterceptor.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "GLM-5.1-w4a8",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:05:34.495Z",
+      "lastModified": "2026-06-11T04:05:34.495Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/config/CorsConfig.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:05:47.630Z",
+      "lastModified": "2026-06-11T04:05:47.630Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/config/CorsConfig.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "GLM-5.1-w4a8",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:05:47.706Z",
+      "lastModified": "2026-06-11T04:05:47.706Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/config/SQLiteSchemaInitializer.java",
+      "tool": "Edit",
+      "operations": 3,
+      "timestamp": "2026-06-11T04:05:56.522Z",
+      "lastModified": "2026-06-11T04:06:17.510Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/config/SQLiteSchemaInitializer.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "GLM-5.1-w4a8",
+      "operations": 3,
+      "timestamp": "2026-06-11T04:05:56.624Z",
+      "lastModified": "2026-06-11T04:06:17.579Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "hisi-dev-tool-frontend/src/types/api.ts",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:08:03.196Z",
+      "lastModified": "2026-06-11T04:08:03.196Z"
+    },
+    {
+      "path": "hisi-dev-tool-frontend/src/api/auth.ts",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:08:10.135Z",
+      "lastModified": "2026-06-11T04:08:10.135Z"
+    },
+    {
+      "path": "hisi-dev-tool-frontend/src/api/user.ts",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:08:10.558Z",
+      "lastModified": "2026-06-11T04:08:10.558Z"
+    },
+    {
+      "path": "hisi-dev-tool-frontend/src/stores/auth.ts",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:08:22.227Z",
+      "lastModified": "2026-06-11T04:08:22.227Z"
+    },
+    {
+      "path": "hisi-dev-tool-frontend/src/utils/request.ts",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:08:49.007Z",
+      "lastModified": "2026-06-11T04:08:49.007Z"
+    },
+    {
+      "path": "hisi-dev-tool-frontend/src/components/auth/LoginDialog.vue",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:09:19.291Z",
+      "lastModified": "2026-06-11T04:09:19.291Z"
+    },
+    {
+      "path": "hisi-dev-tool-frontend/src/components/auth/UserDropdown.vue",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:09:19.681Z",
+      "lastModified": "2026-06-11T04:09:19.681Z"
+    },
+    {
+      "path": "hisi-dev-tool-frontend/src/components/layout/AppHeader.vue",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:09:28.133Z",
+      "lastModified": "2026-06-11T04:09:28.133Z"
+    },
+    {
+      "path": "hisi-dev-tool-frontend/src/views/admin/UserManagement.vue",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:09:41.448Z",
+      "lastModified": "2026-06-11T04:09:41.448Z"
+    },
+    {
+      "path": "hisi-dev-tool-frontend/src/router/index.ts",
       "tool": "Edit",
       "operations": 2,
-      "timestamp": "2026-06-10T08:31:24.444Z",
-      "lastModified": "2026-06-10T08:35:49.854Z",
+      "timestamp": "2026-06-11T04:09:52.128Z",
+      "lastModified": "2026-06-11T04:09:59.505Z",
       "lastTool": "Edit"
     },
     {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/service/CodeAnalysisCoreService.java",
+      "path": "hisi-dev-tool-frontend/src/components/layout/AppSidebar.vue",
+      "tool": "Edit",
+      "operations": 4,
+      "timestamp": "2026-06-11T04:10:10.364Z",
+      "lastModified": "2026-06-11T04:10:29.575Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "hisi-dev-tool-frontend/src/components/layout/AppLayout.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-11T04:10:44.024Z",
+      "lastModified": "2026-06-11T04:10:44.024Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/PythonKnowledgeGraphBuilder.java",
+      "tool": "Edit",
+      "operations": 12,
+      "timestamp": "2026-06-11T05:31:14.370Z",
+      "lastModified": "2026-06-11T10:52:27.897Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/python/PythonKnowledgeGraphBuilder.java",
       "tool": "Edit",
       "aiTool": "claude-code",
       "model": "GLM-5.1-w4a8",
+      "operations": 3,
+      "timestamp": "2026-06-11T05:31:14.651Z",
+      "lastModified": "2026-06-11T08:27:25.851Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "hisi-dev-tool/src/test/java/com/huawei/hisi/knowledgegraph/python/JoinImplicitLineContinuationsTest.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-11T05:56:36.415Z",
+      "lastModified": "2026-06-11T05:56:36.416Z"
+    },
+    {
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/test/java/com/huawei/hisi/knowledgegraph/python/JoinImplicitLineContinuationsTest.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "GLM-5.1-w4a8",
+      "operations": 1,
+      "timestamp": "2026-06-11T05:56:40.719Z",
+      "lastModified": "2026-06-11T05:56:40.719Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/test/java/com/huawei/hisi/knowledgegraph/python/AsyncDefDebug2Test.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-11T09:56:36.347Z",
+      "lastModified": "2026-06-11T09:56:36.347Z"
+    },
+    {
+      "path": "hisi-dev-tool/src/test/java/com/huawei/hisi/knowledgegraph/python/PythonKnowledgeGraphBuilderTest.java",
+      "tool": "Edit",
       "operations": 2,
-      "timestamp": "2026-06-10T08:31:29.007Z",
-      "lastModified": "2026-06-10T08:35:50.086Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "hisi-dev-tool-frontend/src/api/knowledgeGraph.ts",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-10T09:50:21.473Z",
-      "lastModified": "2026-06-10T09:50:21.473Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool-frontend/src/api/knowledgeGraph.ts",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 1,
-      "timestamp": "2026-06-10T09:50:22.223Z",
-      "lastModified": "2026-06-10T09:50:22.223Z"
-    },
-    {
-      "path": "hisi-dev-tool-frontend/src/views/knowledge-graph/components/CodeUnderstandingTab.vue",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-10T09:52:42.009Z",
-      "lastModified": "2026-06-10T09:52:42.009Z"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool-frontend/src/views/knowledge-graph/components/CodeUnderstandingTab.vue",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 1,
-      "timestamp": "2026-06-10T09:52:48.810Z",
-      "lastModified": "2026-06-10T09:52:48.810Z"
-    },
-    {
-      "path": "hisi-dev-tool-frontend/src/views/knowledge-graph/components/EntryDetail.vue",
-      "tool": "Edit",
-      "operations": 6,
-      "timestamp": "2026-06-10T09:57:42.696Z",
-      "lastModified": "2026-06-10T10:12:05.851Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool-frontend/src/views/knowledge-graph/components/EntryDetail.vue",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "GLM-5.1-w4a8",
-      "operations": 6,
-      "timestamp": "2026-06-10T09:57:43.527Z",
-      "lastModified": "2026-06-10T10:12:05.952Z",
+      "timestamp": "2026-06-11T10:47:12.387Z",
+      "lastModified": "2026-06-11T10:51:10.481Z",
       "lastTool": "Edit"
     }
   ],

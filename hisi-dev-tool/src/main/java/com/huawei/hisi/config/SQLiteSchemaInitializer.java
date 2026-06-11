@@ -3,6 +3,7 @@ package com.huawei.hisi.config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
@@ -17,9 +18,11 @@ public class SQLiteSchemaInitializer {
     private static final Logger log = LoggerFactory.getLogger(SQLiteSchemaInitializer.class);
 
     private final JdbcTemplate jdbcTemplate;
+    private final PasswordEncoder passwordEncoder;
 
-    public SQLiteSchemaInitializer(JdbcTemplate jdbcTemplate) {
+    public SQLiteSchemaInitializer(JdbcTemplate jdbcTemplate, PasswordEncoder passwordEncoder) {
         this.jdbcTemplate = jdbcTemplate;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @PostConstruct
@@ -229,7 +232,21 @@ public class SQLiteSchemaInitializer {
             )
             """);
 
-        log.info("[SQLite] Schema initialization complete - 13 tables ensured");
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS sys_user (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                username   TEXT    NOT NULL UNIQUE,
+                password   TEXT    NOT NULL,
+                role       TEXT    NOT NULL DEFAULT 'MEMBER',
+                created_at INTEGER DEFAULT (strftime('%s','now')),
+                updated_at INTEGER DEFAULT (strftime('%s','now'))
+            )
+            """);
+
+        // Seed root admin account (idempotent)
+        seedRootAccount();
+
+        log.info("[SQLite] Schema initialization complete - 14 tables ensured");
     }
 
     private void migrateGlossaryColumns(JdbcTemplate jdbcTemplate) {
@@ -245,6 +262,18 @@ public class SQLiteSchemaInitializer {
             log.info("[SQLite] Migrated glossary_term: correct_term → synonym");
         } catch (Exception ignored) {
             // 列不存在或已迁移，忽略
+        }
+    }
+
+    private void seedRootAccount() {
+        Integer rootCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM sys_user WHERE username = 'root'", Integer.class);
+        if (rootCount != null && rootCount == 0) {
+            String encodedPassword = passwordEncoder.encode("123456");
+            jdbcTemplate.update(
+                    "INSERT INTO sys_user (username, password, role) VALUES ('root', ?, 'ADMIN')",
+                    encodedPassword);
+            log.info("[SQLite] Seeded root admin account");
         }
     }
 }

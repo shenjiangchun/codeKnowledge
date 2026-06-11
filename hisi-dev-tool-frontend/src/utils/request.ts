@@ -4,6 +4,8 @@ import { ElMessage } from 'element-plus'
 import type { ApiResponse, ValidationError } from '@/types/api'
 import { parseValidationErrors } from '@/types/api'
 
+const TOKEN_KEY = 'hisi-token'
+
 const request = axios.create({
   baseURL: '/api',
   timeout: 120000,  // 默认超时 2 分钟
@@ -17,10 +19,13 @@ const request = axios.create({
   }
 })
 
-// 请求拦截器
+// 请求拦截器：注入 JWT token
 request.interceptors.request.use(
   (config) => {
-    // 可以在这里添加 token 等
+    const token = localStorage.getItem(TOKEN_KEY)
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
     return config
   },
   (error: AxiosError) => {
@@ -90,9 +95,26 @@ request.interceptors.response.use(
         return Promise.reject(error)
       }
 
-      // 处理 403 — 非本地访问禁止写入
+      // 处理 401 — 未登录或 token 过期
+      if (status === 401) {
+        const msg = apiResponse?.message || '登录已过期，请重新登录'
+        ElMessage({
+          type: 'warning',
+          message: msg,
+          duration: 5000,
+          showClose: true
+        })
+        // 延迟导入避免循环依赖
+        import('@/stores/auth').then(({ useAuthStore }) => {
+          const authStore = useAuthStore()
+          authStore.showLoginDialog = true
+        })
+        return Promise.reject(error)
+      }
+
+      // 处理 403 — 权限不足
       if (status === 403) {
-        const forbiddenMsg = apiResponse?.message || '拒绝访问：仅限本地操作'
+        const forbiddenMsg = apiResponse?.message || '仅管理员可执行此操作'
         ElMessage({
           type: 'error',
           message: forbiddenMsg,

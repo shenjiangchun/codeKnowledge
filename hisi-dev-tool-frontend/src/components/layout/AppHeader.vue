@@ -1,11 +1,14 @@
 <script setup lang="ts">
-// AppHeader - Header component with title
+import UserDropdown from '@/components/auth/UserDropdown.vue'
 </script>
 
 <template>
   <el-header class="app-header">
     <div class="header-content">
       <h1 class="app-title">HiSi DevTool</h1>
+      <div class="header-right">
+        <UserDropdown />
+      </div>
     </div>
   </el-header>
 </template>
@@ -33,5 +36,11 @@
   margin: 0;
   color: #fff;
   letter-spacing: 0.5px;
+}
+
+.header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
 }
 </style>

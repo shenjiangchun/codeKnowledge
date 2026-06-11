@@ -13,14 +13,13 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import java.util.Arrays;
 
 /**
- * CORS 跨域配置
- * M1.4 - 支持前端跨域访问
+ * CORS 跨域配置 + 角色拦截器注册
  */
 @Configuration
 @RequiredArgsConstructor
 public class CorsConfig implements WebMvcConfigurer {
 
-    private final LocalhostOnlyInterceptor localhostOnlyInterceptor;
+    private final AdminOnlyInterceptor adminOnlyInterceptor;
 
     // 默认允许所有来源（内网环境）
     private static final String DEFAULT_ALLOWED_ORIGINS = "*";
@@ -30,15 +29,9 @@ public class CorsConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(localhostOnlyInterceptor)
-                .addPathPatterns(
-                        "/api/knowledge-graph/tasks/generate",
-                        "/api/knowledge-graph/tasks/generate-batch",
-                        "/api/knowledge-graph/generate",
-                        "/api/knowledge-graph/incremental",
-                        "/api/vector-generation/start",
-                        "/api/vector-generation/regenerate"
-                );
+        registry.addInterceptor(adminOnlyInterceptor)
+                .addPathPatterns("/**")
+                .excludePathPatterns("/api/auth/**");
     }
 
     @Bean

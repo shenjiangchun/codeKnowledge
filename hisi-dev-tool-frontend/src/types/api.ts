@@ -23,6 +23,19 @@ export interface ApiResponse<T = unknown> {
   data: T | null
 }
 
+export interface UserInfo {
+  id: number
+  username: string
+  role: 'ADMIN' | 'MEMBER'
+  createdAt: number
+}
+
+export interface AuthResponse {
+  token: string
+  username: string
+  role: string
+}
+
 /**
  * 验证错误详情
  * 解析后端 400 响应中的 message 字段

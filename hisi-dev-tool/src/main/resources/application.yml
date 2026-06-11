@@ -92,6 +92,11 @@ app:
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
 
+# JWT 认证配置
+jwt:
+  secret: ${JWT_SECRET:***REMOVED_JWT_SECRET***}
+  expiration-ms: 86400000  # 24小时
+
 # 影响分析配置
 impact:
   # 默认测试覆盖率分数（当实际覆盖率数据不可用时使用）

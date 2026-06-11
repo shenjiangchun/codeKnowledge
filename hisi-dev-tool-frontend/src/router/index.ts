@@ -163,6 +163,15 @@ const routes: RouteRecordRaw[] = [
       title: '系统设置'
     }
   },
+  {
+    path: '/admin/users',
+    name: 'UserManagement',
+    component: () => import('@/views/admin/UserManagement.vue'),
+    meta: {
+      title: '用户管理',
+      requiresAdmin: true
+    }
+  },
 ]
 
 const router = createRouter({
@@ -175,6 +184,19 @@ router.beforeEach(async (to, _from, next) => {
   const title = to.meta.title as string
   if (title) {
     document.title = `${title} - HiSi Dev Tool`
+  }
+
+  // Admin route guard
+  if (to.meta.requiresAdmin) {
+    const { useAuthStore } = await import('@/stores/auth')
+    const authStore = useAuthStore()
+    if (!authStore.initialized) {
+      await authStore.init()
+    }
+    if (!authStore.isAdmin) {
+      ElMessage.warning('仅管理员可访问此页面')
+      return next('/')
+    }
   }
 
   // Load config on first navigation
