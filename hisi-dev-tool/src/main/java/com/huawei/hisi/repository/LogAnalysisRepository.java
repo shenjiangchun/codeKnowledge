@@ -280,6 +280,51 @@ public class LogAnalysisRepository {
     }
 
     /**
+     * Task 7: 统计在指定时间之前创建的pending报告数量（用于队列位置计算）
+     */
+    public int countPendingBefore(LocalDateTime createdAt) {
+        String sql = """
+            SELECT COUNT(*) FROM log_analysis_report
+            WHERE analysis_status = 'pending'
+            AND created_at < strftime('%s', ?)
+            """;
+        try {
+            long epochSeconds = createdAt.atZone(java.time.ZoneId.systemDefault()).toEpochSecond();
+            Integer count = jdbcTemplate.queryForObject(sql, Integer.class, epochSeconds);
+            return count != null ? count : 0;
+        } catch (Exception e) {
+            log.warn("统计pending报告数量失败: {}", e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Task 12: 更新分析状态
+     */
+    public void updateAnalysisStatus(Long reportId, String analysisStatus) {
+        String sql = """
+            UPDATE log_analysis_report
+            SET analysis_status = ?, status = ?, updated_at = strftime('%s','now')
+            WHERE report_id = ?
+            """;
+        try {
+            // Map analysis_status to status
+            String status = "pending";
+            if ("completed".equals(analysisStatus)) {
+                status = "completed";
+            } else if ("failed".equals(analysisStatus)) {
+                status = "failed";
+            } else {
+                status = "processing";
+            }
+            jdbcTemplate.update(sql, analysisStatus, status, reportId);
+            log.debug("分析状态更新成功 (reportId={}, analysisStatus={})", reportId, analysisStatus);
+        } catch (Exception e) {
+            log.error("分析状态更新失败 (reportId={}): {}", reportId, e.getMessage());
+        }
+    }
+
+    /**
      * 报告实体类
      */
     @SuppressWarnings("unused")
