@@ -54,4 +54,20 @@ public interface Neo4jLogChunkRepository extends Neo4jRepository<LogChunkNode, S
         @Param("threshold") double threshold,
         @Param("limit") int limit
     );
+
+    /**
+     * 批量 MERGE 保存日志块节点（幂等，遇到重复 nodeId 会更新而非报错）
+     */
+    @Query("""
+        UNWIND $nodes AS n
+        MERGE (l:LogChunk {nodeId: n.nodeId})
+        SET l.errorType = n.errorType,
+            l.message = n.message,
+            l.stackTrace = n.stackTrace,
+            l.fingerprint = n.fingerprint,
+            l.projectPath = n.projectPath,
+            l.reportId = n.reportId,
+            l.createdAt = n.createdAt
+        """)
+    void mergeAll(@Param("nodes") List<Map<String, Object>> nodes);
 }

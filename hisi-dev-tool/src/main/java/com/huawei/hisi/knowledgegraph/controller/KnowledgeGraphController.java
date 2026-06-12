@@ -309,14 +309,17 @@ public class KnowledgeGraphController {
     }
 
     /**
-     * 执行增量生成
+     * 执行增量生成 (V1 - 已废弃)
      * POST /api/knowledge-graph/incremental
      *
+     * @deprecated Use POST /api/knowledge-graph/refresh instead (IncrementalRefreshService V2)
      * @param request 请求体，包含 projectPath
      * @return 增量更新结果
      */
+    @Deprecated(since = "5.0")
     @PostMapping("/incremental")
     public ResponseEntity<Map<String, Object>> incrementalGenerate(@RequestBody Map<String, String> request) {
+        log.warn("[DEPRECATED] /incremental endpoint is deprecated. Use /refresh instead.");
         String projectPath = request.get("projectPath");
         Map<String, Object> result = new HashMap<>();
 

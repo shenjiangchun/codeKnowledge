@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -377,4 +378,21 @@ public interface Neo4jEntryPointNodeRepository extends Neo4jRepository<EntryPoin
         RETURN count(DISTINCT e.serviceName)
         """)
     long countServiceNamesByProjectPaths(@Param("projectPaths") List<String> projectPaths);
+
+    /**
+     * 批量 MERGE 保存入口点节点（幂等，遇到重复 entryId 会更新而非报错）
+     */
+    @Query("""
+        UNWIND $nodes AS n
+        MERGE (e:EntryPoint {entryId: n.entryId})
+        SET e.entryType = n.entryType,
+            e.entryKey = n.entryKey,
+            e.entryInfo = n.entryInfo,
+            e.methodNodeId = n.methodNodeId,
+            e.projectPath = n.projectPath,
+            e.briefDescription = n.briefDescription,
+            e.detailedDescription = n.detailedDescription,
+            e.serviceName = n.serviceName
+        """)
+    void mergeAll(@Param("nodes") List<Map<String, Object>> nodes);
 }

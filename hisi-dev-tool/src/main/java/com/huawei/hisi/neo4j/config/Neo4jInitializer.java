@@ -32,7 +32,9 @@ public class Neo4jInitializer {
     private static final List<String> UNIQUE_CONSTRAINTS = List.of(
         "CREATE CONSTRAINT method_nodeId_unique IF NOT EXISTS FOR (m:Method) REQUIRE m.nodeId IS UNIQUE",
         "CREATE CONSTRAINT entryPoint_entryId_unique IF NOT EXISTS FOR (e:EntryPoint) REQUIRE e.entryId IS UNIQUE",
-        "CREATE CONSTRAINT service_name_unique IF NOT EXISTS FOR (s:Service) REQUIRE s.name IS UNIQUE"
+        "CREATE CONSTRAINT service_name_unique IF NOT EXISTS FOR (s:Service) REQUIRE s.name IS UNIQUE",
+        "CREATE CONSTRAINT log_chunk_nodeId_unique IF NOT EXISTS FOR (l:LogChunk) REQUIRE l.nodeId IS UNIQUE",
+        "CREATE CONSTRAINT sql_nodeId_unique IF NOT EXISTS FOR (s:Sql) REQUIRE s.nodeId IS UNIQUE"
     );
 
     /**

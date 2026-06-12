@@ -34,7 +34,8 @@ public class RefreshController {
         }
 
         try {
-            var result = refreshService.refresh(request.projectPath());
+            boolean preview = request.preview() != null && request.preview();
+            var result = refreshService.refresh(request.projectPath(), preview);
             return ResponseEntity.ok(ApiResponse.success(result));
         } catch (NoCheckpointException e) {
             log.warn("Refresh rejected — no checkpoint: {}", e.getMessage());
@@ -51,5 +52,5 @@ public class RefreshController {
         }
     }
 
-    public record RefreshRequest(String projectPath) {}
+    public record RefreshRequest(String projectPath, Boolean preview) {}
 }

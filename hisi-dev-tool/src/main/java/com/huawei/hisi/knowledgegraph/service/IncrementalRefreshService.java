@@ -95,8 +95,10 @@ public class IncrementalRefreshService {
 
     /**
      * Incrementally refresh the knowledge graph for a project.
+     * @param projectPath the project path
+     * @param preview if true, skip clean working directory check (allow uncommitted changes)
      */
-    public RefreshResult refresh(String projectPath) throws IOException {
+    public RefreshResult refresh(String projectPath, boolean preview) throws IOException {
         Objects.requireNonNull(projectPath, "projectPath");
 
         String normalizedProjectPath = com.huawei.hisi.knowledgegraph.util.ProjectPathResolver.normalize(projectPath);
@@ -107,8 +109,12 @@ public class IncrementalRefreshService {
                 .findByProjectPath(normalizedProjectPath)
                 .orElseThrow(() -> new NoCheckpointException(normalizedProjectPath));
 
-        // 2. Assert clean working directory
-        gitStatusService.assertClean(normalizedProjectPath);
+        // 2. Assert clean working directory (skip if preview mode)
+        if (!preview) {
+            gitStatusService.assertClean(normalizedProjectPath);
+        } else {
+            log.info("[IncrementalRefresh] Preview mode - skipping clean working directory check");
+        }
 
         // 3. Get current commit
         String currentCommit = gitStatusService.getCurrentCommitHash(normalizedProjectPath);
@@ -215,6 +221,13 @@ public class IncrementalRefreshService {
                 changedFiles.size(), deleted, rebuiltMethods, callRelations, rebuiltEntryPoints, dataModels);
         return new RefreshResult(false, changedFiles.size(), deleted, rebuiltMethods,
                 rebuiltEntryPoints, callRelations, dataModels);
+    }
+
+    /**
+     * Convenience overload - refresh without preview mode.
+     */
+    public RefreshResult refresh(String projectPath) throws IOException {
+        return refresh(projectPath, false);
     }
 
     // ==================== Method Node Rebuild ====================

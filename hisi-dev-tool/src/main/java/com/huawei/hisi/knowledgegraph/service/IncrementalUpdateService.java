@@ -25,9 +25,14 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * 增量更新服务
+ * 增量更新服务 (V1 - 已废弃)
  * 基于Git变更实现知识图谱的增量更新
+ *
+ * @deprecated Use IncrementalRefreshService instead. This V1 implementation stores
+ * checkpoint in SQLite errorMessage field which is unreliable. Will be removed in v5.1.
+ * @see IncrementalRefreshService
  */
+@Deprecated(since = "5.0", forRemoval = true)
 @Service
 @Slf4j
 @RequiredArgsConstructor

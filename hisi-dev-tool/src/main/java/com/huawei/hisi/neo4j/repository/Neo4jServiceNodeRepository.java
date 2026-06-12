@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -76,4 +77,20 @@ public interface Neo4jServiceNodeRepository extends Neo4jRepository<ServiceNode,
         RETURN count(entry)
         """)
     long countEntriesByServiceId(@Param("serviceId") String serviceId);
+
+    /**
+     * 批量 MERGE 保存服务节点（幂等，遇到重复 serviceId 会更新而非报错）
+     */
+    @Query("""
+        UNWIND $nodes AS n
+        MERGE (s:Service {serviceId: n.serviceId})
+        SET s.serviceName = n.serviceName,
+            s.description = n.description,
+            s.projectPath = n.projectPath,
+            s.language = n.language,
+            s.framework = n.framework,
+            s.techStack = n.techStack,
+            s.version = n.version
+        """)
+    void mergeAll(@Param("nodes") List<Map<String, Object>> nodes);
 }

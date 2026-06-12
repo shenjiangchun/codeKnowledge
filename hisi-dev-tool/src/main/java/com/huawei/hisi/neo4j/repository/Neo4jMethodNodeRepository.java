@@ -1989,4 +1989,27 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
         @Param("shortClassName") String shortClassName,
         @Param("methodName") String methodName
     );
+
+    /**
+     * 批量 MERGE 保存方法节点（幂等，遇到重复 nodeId 会更新而非报错）
+     */
+    @Query("""
+        UNWIND $nodes AS n
+        MERGE (m:Method {nodeId: n.nodeId})
+        SET m.className = n.className,
+            m.methodName = n.methodName,
+            m.signature = n.signature,
+            m.description = n.description,
+            m.filePath = n.filePath,
+            m.startLine = n.startLine,
+            m.endLine = n.endLine,
+            m.complexity = n.complexity,
+            m.methodBody = n.methodBody,
+            m.projectPath = n.projectPath,
+            m.serviceName = n.serviceName,
+            m.comment = n.comment,
+            m.thrownExceptions = n.thrownExceptions,
+            m.caughtExceptions = n.caughtExceptions
+        """)
+    void mergeAll(@Param("nodes") List<Map<String, Object>> nodes);
 }

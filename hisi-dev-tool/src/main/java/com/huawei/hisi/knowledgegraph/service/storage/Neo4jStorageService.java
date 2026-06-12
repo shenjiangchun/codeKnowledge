@@ -57,8 +57,30 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
         }
         List<MethodNode> deduplicatedNodes = new ArrayList<>(uniqueNodes.values());
 
-        methodNodeRepository.saveAll(deduplicatedNodes);
-        log.info("[Neo4j] 保存方法节点: {} 个 (去重前: {} 个)", deduplicatedNodes.size(), nodes.size());
+        // Convert to Map format for mergeAll
+        List<Map<String, Object>> nodeMaps = deduplicatedNodes.stream()
+            .map(n -> {
+                Map<String, Object> map = new LinkedHashMap<>();
+                map.put("nodeId", n.getNodeId());
+                map.put("className", n.getClassName());
+                map.put("methodName", n.getMethodName());
+                map.put("signature", n.getSignature());
+                map.put("description", n.getDescription());
+                map.put("filePath", n.getFilePath());
+                map.put("startLine", n.getStartLine());
+                map.put("endLine", n.getEndLine());
+                map.put("complexity", n.getComplexity());
+                map.put("methodBody", n.getMethodBody());
+                map.put("projectPath", n.getProjectPath());
+                map.put("serviceName", n.getServiceName());
+                map.put("comment", n.getComment());
+                map.put("thrownExceptions", n.getThrownExceptions());
+                map.put("caughtExceptions", n.getCaughtExceptions());
+                return map;
+            })
+            .toList();
+        methodNodeRepository.mergeAll(nodeMaps);
+        log.info("[Neo4j] MERGE 方法节点: {} 个 (去重前: {} 个)", deduplicatedNodes.size(), nodes.size());
     }
 
     @Override
@@ -119,8 +141,24 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
         }
         List<EntryPointNode> deduplicatedEntries = new ArrayList<>(uniqueEntries.values());
 
-        entryPointRepository.saveAll(deduplicatedEntries);
-        log.info("[Neo4j] 保存入口点: {} 个 (去重前: {} 个)", deduplicatedEntries.size(), entries.size());
+        // Convert to Map format for mergeAll
+        List<Map<String, Object>> entryMaps = deduplicatedEntries.stream()
+            .map(e -> {
+                Map<String, Object> map = new LinkedHashMap<>();
+                map.put("entryId", e.getEntryId());
+                map.put("entryType", e.getEntryType());
+                map.put("entryKey", e.getEntryKey());
+                map.put("entryInfo", e.getEntryInfo());
+                map.put("methodNodeId", e.getMethodNodeId());
+                map.put("projectPath", e.getProjectPath());
+                map.put("briefDescription", e.getBriefDescription());
+                map.put("detailedDescription", e.getDetailedDescription());
+                map.put("serviceName", e.getServiceName());
+                return map;
+            })
+            .toList();
+        entryPointRepository.mergeAll(entryMaps);
+        log.info("[Neo4j] MERGE 入口点: {} 个 (去重前: {} 个)", deduplicatedEntries.size(), entries.size());
     }
 
     @Override
