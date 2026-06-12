@@ -246,6 +246,39 @@ public class LogAnalysisRepository {
         }
     }
 
+    // ==================== Task 4: Fingerprint Deduplication Methods ====================
+
+    /**
+     * 根据指纹查找报告
+     */
+    public LogAnalysisReportEntity findByFingerprint(String fingerprint) {
+        String sql = "SELECT * FROM log_analysis_report WHERE error_fingerprint = ? ORDER BY created_at DESC LIMIT 1";
+        try {
+            return jdbcTemplate.queryForObject(sql, new LogAnalysisReportRowMapper(), fingerprint);
+        } catch (Exception e) {
+            log.debug("未找到指纹匹配的报告 (fingerprint={}): {}", fingerprint, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 增加出现次数
+     */
+    public void incrementOccurrenceCount(Long reportId) {
+        String sql = """
+            UPDATE log_analysis_report
+            SET occurrence_count = occurrence_count + 1,
+                updated_at = strftime('%s','now')
+            WHERE report_id = ?
+            """;
+        try {
+            jdbcTemplate.update(sql, reportId);
+            log.debug("增加出现次数 (reportId={})", reportId);
+        } catch (Exception e) {
+            log.error("增加出现次数失败 (reportId={}): {}", reportId, e.getMessage());
+        }
+    }
+
     /**
      * 报告实体类
      */

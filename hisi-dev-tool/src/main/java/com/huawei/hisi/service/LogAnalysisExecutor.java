@@ -2,8 +2,10 @@ package com.huawei.hisi.service;
 
 import com.huawei.hisi.repository.LogAnalysisRepository;
 import com.huawei.hisi.repository.LogAnalysisRepository.LogAnalysisReportEntity;
+import com.huawei.hisi.utils.SnowflakeIdGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -28,6 +30,62 @@ public class LogAnalysisExecutor {
 
     private final RootCauseAnalysisService rootCauseAnalysisService;
     private final LogAnalysisRepository repository;
+    private final SnowflakeIdGenerator snowflakeIdGenerator;
+
+    @Autowired(required = false)
+    private FingerprintService fingerprintService;
+
+    /**
+     * 提交日志分析请求（带指纹去重）
+     *
+     * @param message 日志消息
+     * @param stackTrace 堆栈跟踪
+     * @param userId 用户ID
+     * @param queryParams 查询参数
+     * @return 报告ID（新日志返回新ID，重复日志返回已有ID）
+     */
+    public Long submitForAnalysis(String message, String stackTrace, String userId, Map<String, Object> queryParams) {
+        if (fingerprintService == null) {
+            log.warn("FingerprintService未注入，跳过去重检查");
+            return createNewReport(message, stackTrace, userId, queryParams, "00000000000000000000000000000000");
+        }
+
+        // Generate fingerprint
+        String fingerprint = fingerprintService.generateFingerprint(message + "\n" + stackTrace);
+        log.debug("生成指纹: {}", fingerprint);
+
+        // Check for duplicate
+        LogAnalysisReportEntity existing = repository.findByFingerprint(fingerprint);
+        if (existing != null) {
+            // Duplicate found - increment count and return existing reportId
+            repository.incrementOccurrenceCount(existing.getReportId());
+            log.info("重复日志检测到 (fingerprint={}), 出现次数增加", fingerprint);
+            return existing.getReportId();
+        }
+
+        // New log - create report
+        return createNewReport(message, stackTrace, userId, queryParams, fingerprint);
+    }
+
+    private Long createNewReport(String message, String stackTrace, String userId, Map<String, Object> queryParams, String fingerprint) {
+        Long reportId = snowflakeIdGenerator.nextId();
+        LogAnalysisReportEntity report = new LogAnalysisReportEntity();
+        report.setReportId(reportId);
+        report.setReportNo("RPT-" + reportId);
+        report.setUserId(userId);
+        report.setQueryParams(queryParams);
+        report.setLogMessage(message);
+        report.setLogStackTrace(stackTrace);
+        report.setErrorFingerprint(fingerprint);
+        report.setAnalysisStatus("pending");
+        report.setOccurrenceCount(1);
+        report.setSimilarityThreshold(0.85);
+        report.setStatus("pending");
+
+        repository.save(report);
+        log.info("新报告已创建 (reportId={}, fingerprint={})", reportId, fingerprint);
+        return reportId;
+    }
 
     /**
      * 异步执行日志分析任务
