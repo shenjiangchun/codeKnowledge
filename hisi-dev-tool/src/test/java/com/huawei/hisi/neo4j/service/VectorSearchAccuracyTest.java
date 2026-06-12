@@ -64,6 +64,9 @@ class VectorSearchAccuracyTest {
     @Mock
     private SearchIntentProperties searchIntentProperties;
 
+    @Mock
+    private TokenRouter tokenRouter;
+
     private HybridSearchService hybridSearchService;
 
     private static final String PROJECT_PATH = "C:\\Users\\test\\project";
@@ -84,7 +87,8 @@ class VectorSearchAccuracyTest {
                 queryTypeDetector,
                 vectorIndexService,
                 queryEmbeddingCache,
-                searchIntentProperties
+                searchIntentProperties,
+                tokenRouter
         );
 
         methodDataset = buildSimulatedDataset();

@@ -196,6 +196,9 @@ public class SQLiteSchemaInitializer {
 
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_glossary_project ON glossary_term(project_path)");
 
+        // Task 1: Add fingerprint and analysis columns to log_analysis_report
+        addLogAnalysisReportColumns(jdbcTemplate);
+
         jdbcTemplate.execute("""
             CREATE TABLE IF NOT EXISTS remote_project (
                 id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -262,6 +265,29 @@ public class SQLiteSchemaInitializer {
             log.info("[SQLite] Migrated glossary_term: correct_term → synonym");
         } catch (Exception ignored) {
             // 列不存在或已迁移，忽略
+        }
+    }
+
+    /**
+     * Task 1: Add fingerprint and analysis columns to log_analysis_report
+     */
+    private void addLogAnalysisReportColumns(JdbcTemplate jdbcTemplate) {
+        String[] columns = {
+            "ALTER TABLE log_analysis_report ADD COLUMN error_fingerprint TEXT DEFAULT ''",
+            "ALTER TABLE log_analysis_report ADD COLUMN embedding_id TEXT",
+            "ALTER TABLE log_analysis_report ADD COLUMN similarity_threshold REAL DEFAULT 0.85",
+            "ALTER TABLE log_analysis_report ADD COLUMN analysis_status VARCHAR(20) DEFAULT 'pending'",
+            "ALTER TABLE log_analysis_report ADD COLUMN occurrence_count INTEGER DEFAULT 1",
+            "ALTER TABLE log_analysis_report ADD COLUMN root_cause_text TEXT",
+            "ALTER TABLE log_analysis_report ADD COLUMN fix_suggestion_text TEXT"
+        };
+        for (String columnSql : columns) {
+            try {
+                jdbcTemplate.execute(columnSql);
+                log.info("[SQLite] Added column to log_analysis_report: {}", columnSql.split("ADD COLUMN ")[1].split(" ")[0]);
+            } catch (Exception ignored) {
+                // Column already exists
+            }
         }
     }
 

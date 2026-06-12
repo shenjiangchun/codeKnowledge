@@ -595,6 +595,52 @@ class LogAnalysisRepositoryTest {
         assertTrue(paginated.getList().isEmpty());
     }
 
+    // ==================== Fingerprint Field Tests (Task 1) ====================
+
+    @Test
+    @DisplayName("保存报告 - 包含指纹字段")
+    void testSaveReportWithFingerprint() throws Exception {
+        // Given
+        LogAnalysisRepository.LogAnalysisReportEntity entity = createSampleEntity();
+        entity.setErrorFingerprint("abc123def456");
+        entity.setAnalysisStatus("pending");
+        entity.setOccurrenceCount(1);
+        entity.setSimilarityThreshold(0.85);
+
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+
+        // When
+        assertDoesNotThrow(() -> repository.save(entity));
+
+        // Then
+        verify(jdbcTemplate, times(1)).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    @DisplayName("实体类 - 指纹字段 Getter 和 Setter")
+    void testEntity_FingerprintFields() {
+        // Given
+        LogAnalysisRepository.LogAnalysisReportEntity entity = new LogAnalysisRepository.LogAnalysisReportEntity();
+
+        // When
+        entity.setErrorFingerprint("abc123def456");
+        entity.setEmbeddingId("neo4j-node-xyz");
+        entity.setSimilarityThreshold(0.85);
+        entity.setAnalysisStatus("pending");
+        entity.setOccurrenceCount(2);
+        entity.setRootCauseText("Null reference detected");
+        entity.setFixSuggestionText("Add null check before method call");
+
+        // Then
+        assertEquals("abc123def456", entity.getErrorFingerprint());
+        assertEquals("neo4j-node-xyz", entity.getEmbeddingId());
+        assertEquals(0.85, entity.getSimilarityThreshold());
+        assertEquals("pending", entity.getAnalysisStatus());
+        assertEquals(2, entity.getOccurrenceCount());
+        assertEquals("Null reference detected", entity.getRootCauseText());
+        assertEquals("Add null check before method call", entity.getFixSuggestionText());
+    }
+
     // ==================== Helper Methods ====================
 
     private LogAnalysisRepository.LogAnalysisReportEntity createSampleEntity() {

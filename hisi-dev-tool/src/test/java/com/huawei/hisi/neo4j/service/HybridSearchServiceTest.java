@@ -56,6 +56,9 @@ class HybridSearchServiceTest {
     @Mock
     private SearchIntentProperties searchIntentProperties;
 
+    @Mock
+    private TokenRouter tokenRouter;
+
     private HybridSearchService hybridSearchService;
 
     @BeforeEach
@@ -68,7 +71,8 @@ class HybridSearchServiceTest {
                 queryTypeDetector,
                 vectorIndexService,
                 queryEmbeddingCache,
-                searchIntentProperties
+                searchIntentProperties,
+                tokenRouter
         );
     }
 

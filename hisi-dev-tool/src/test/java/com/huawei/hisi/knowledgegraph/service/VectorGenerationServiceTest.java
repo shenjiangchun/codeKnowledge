@@ -3,6 +3,7 @@ package com.huawei.hisi.knowledgegraph.service;
 import com.huawei.hisi.knowledgegraph.model.GenerationTask;
 import com.huawei.hisi.knowledgegraph.repository.GenerationTaskRepository;
 import com.huawei.hisi.neo4j.model.MethodNode;
+import com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jSqlNodeRepository;
 import com.huawei.hisi.neo4j.service.EmbeddingService;
@@ -40,6 +41,9 @@ class VectorGenerationServiceTest {
     private Neo4jSqlNodeRepository neo4jSqlNodeRepository;
 
     @Mock
+    private Neo4jEntryPointNodeRepository neo4jEntryPointNodeRepository;
+
+    @Mock
     private GenerationTaskRepository taskRepository;
 
     @Mock
@@ -47,6 +51,9 @@ class VectorGenerationServiceTest {
 
     @Mock
     private EmbeddingService embeddingService;
+
+    @Mock
+    private EntryPointDescriptionService entryPointDescriptionService;
 
     private VectorGenerationService service;
     private ExecutorService testExecutor;
@@ -56,9 +63,11 @@ class VectorGenerationServiceTest {
         service = new VectorGenerationService(
                 neo4jMethodNodeRepository,
                 neo4jSqlNodeRepository,
+                neo4jEntryPointNodeRepository,
                 taskRepository,
                 llmDescriptionService,
-                embeddingService
+                embeddingService,
+                entryPointDescriptionService
         );
 
         // 设置默认并发配置
@@ -82,9 +91,11 @@ class VectorGenerationServiceTest {
         VectorGenerationService newService = new VectorGenerationService(
                 neo4jMethodNodeRepository,
                 neo4jSqlNodeRepository,
+                neo4jEntryPointNodeRepository,
                 taskRepository,
                 llmDescriptionService,
-                embeddingService
+                embeddingService,
+                entryPointDescriptionService
         );
 
         // When & Then - 默认值应该是5（通过@Value注解的默认值）

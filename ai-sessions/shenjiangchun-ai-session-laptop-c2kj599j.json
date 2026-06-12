@@ -3,35 +3,15 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-26T07:44:32.573Z",
-  "lastUpdated": "2026-06-10T03:51:04.049Z",
+  "lastUpdated": "2026-06-10T03:53:13.063Z",
   "stats": {
     "totalOperations": 353,
     "totalFilesEdited": 134,
-    "totalAiLines": 11462,
-    "totalAiLinesDeleted": 633,
-    "totalCommits": 40
+    "totalAiLines": 13625,
+    "totalAiLinesDeleted": 671,
+    "totalCommits": 41
   },
   "pendingFiles": [
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/service/RemoteProjectService.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "Ali-glm-5-cc",
-      "operations": 17,
-      "timestamp": "2026-06-05T02:49:40.804Z",
-      "lastModified": "2026-06-10T03:23:25.330Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/model/RemoteProject.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "Ali-glm-5-cc",
-      "operations": 2,
-      "timestamp": "2026-06-05T02:57:56.516Z",
-      "lastModified": "2026-06-10T03:06:59.766Z",
-      "lastTool": "Edit"
-    },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/config/SQLiteSchemaInitializer.java",
       "tool": "Edit",
@@ -40,26 +20,6 @@
       "operations": 1,
       "timestamp": "2026-06-05T02:58:15.205Z",
       "lastModified": "2026-06-05T02:58:15.205Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/repository/RemoteProjectRepository.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "Ali-glm-5-cc",
-      "operations": 5,
-      "timestamp": "2026-06-05T02:58:38.448Z",
-      "lastModified": "2026-06-10T03:07:32.317Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/controller/RemoteProjectController.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "Ali-glm-5-cc",
-      "operations": 4,
-      "timestamp": "2026-06-05T03:02:45.700Z",
-      "lastModified": "2026-06-10T03:09:45.176Z",
-      "lastTool": "Edit"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/service/LLMDescriptionService.java",
@@ -78,42 +38,6 @@
       "operations": 1,
       "timestamp": "2026-06-09T02:07:15.171Z",
       "lastModified": "2026-06-09T02:07:15.171Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/docs/plans/2026-06-10-remote-project-enhancement-design.md",
-      "tool": "Write",
-      "aiTool": "claude-code",
-      "model": "Ali-glm-5-cc",
-      "operations": 1,
-      "timestamp": "2026-06-10T02:20:07.022Z",
-      "lastModified": "2026-06-10T02:20:07.022Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/docs/plans/2026-06-10-remote-project-enhancement-plan.md",
-      "tool": "Write",
-      "aiTool": "claude-code",
-      "model": "Ali-glm-5-cc",
-      "operations": 1,
-      "timestamp": "2026-06-10T02:37:22.449Z",
-      "lastModified": "2026-06-10T02:37:22.449Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/pom.xml",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "Ali-glm-5-cc",
-      "operations": 1,
-      "timestamp": "2026-06-10T03:06:25.977Z",
-      "lastModified": "2026-06-10T03:06:25.977Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/model/AuthType.java",
-      "tool": "Write",
-      "aiTool": "claude-code",
-      "model": "Ali-glm-5-cc",
-      "operations": 1,
-      "timestamp": "2026-06-10T03:07:02.297Z",
-      "lastModified": "2026-06-10T03:07:02.298Z"
     }
   ]
 }

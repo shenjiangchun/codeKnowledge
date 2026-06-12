@@ -57,11 +57,16 @@ public class LogAnalysisRepository {
         String sql = """
             INSERT INTO log_analysis_report (report_id, report_no, user_id, query_params, log_message,
                 log_stack_trace, filtered_stack_trace, error_type, trace_id, service_name,
-                log_summary, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'), strftime('%s','now'))
+                log_summary, status, error_fingerprint, embedding_id, similarity_threshold,
+                analysis_status, occurrence_count, root_cause_text, fix_suggestion_text,
+                created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'), strftime('%s','now'))
             ON CONFLICT(report_id) DO UPDATE SET
                 log_summary = excluded.log_summary,
                 status = excluded.status,
+                error_fingerprint = excluded.error_fingerprint,
+                analysis_status = excluded.analysis_status,
+                occurrence_count = excluded.occurrence_count,
                 updated_at = strftime('%s','now')
             """;
 
@@ -81,7 +86,14 @@ public class LogAnalysisRepository {
                 report.getTraceId(),
                 report.getServiceName(),
                 report.getLogSummary(),
-                report.getStatus()
+                report.getStatus(),
+                report.getErrorFingerprint(),
+                report.getEmbeddingId(),
+                report.getSimilarityThreshold(),
+                report.getAnalysisStatus(),
+                report.getOccurrenceCount(),
+                report.getRootCauseText(),
+                report.getFixSuggestionText()
             );
             log.debug("报告保存成功 (reportId={})", report.getReportId());
         } catch (Exception e) {
@@ -258,6 +270,14 @@ public class LogAnalysisRepository {
         private String status;
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
+        // Task 1: Fingerprint and analysis fields
+        private String errorFingerprint;
+        private String embeddingId;
+        private Double similarityThreshold;
+        private String analysisStatus;
+        private Integer occurrenceCount;
+        private String rootCauseText;
+        private String fixSuggestionText;
 
         public Long getId() { return id; }
         public void setId(Long id) { this.id = id; }
@@ -315,6 +335,22 @@ public class LogAnalysisRepository {
 
         public LocalDateTime getUpdatedAt() { return updatedAt; }
         public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+        // Task 1: Fingerprint and analysis field getters/setters
+        public String getErrorFingerprint() { return errorFingerprint; }
+        public void setErrorFingerprint(String errorFingerprint) { this.errorFingerprint = errorFingerprint; }
+        public String getEmbeddingId() { return embeddingId; }
+        public void setEmbeddingId(String embeddingId) { this.embeddingId = embeddingId; }
+        public Double getSimilarityThreshold() { return similarityThreshold; }
+        public void setSimilarityThreshold(Double similarityThreshold) { this.similarityThreshold = similarityThreshold; }
+        public String getAnalysisStatus() { return analysisStatus; }
+        public void setAnalysisStatus(String analysisStatus) { this.analysisStatus = analysisStatus; }
+        public Integer getOccurrenceCount() { return occurrenceCount; }
+        public void setOccurrenceCount(Integer occurrenceCount) { this.occurrenceCount = occurrenceCount; }
+        public String getRootCauseText() { return rootCauseText; }
+        public void setRootCauseText(String rootCauseText) { this.rootCauseText = rootCauseText; }
+        public String getFixSuggestionText() { return fixSuggestionText; }
+        public void setFixSuggestionText(String fixSuggestionText) { this.fixSuggestionText = fixSuggestionText; }
     }
 
     /**
@@ -405,6 +441,15 @@ public class LogAnalysisRepository {
             } catch (Exception e) {
                 log.warn("解析 code_snippets JSON 字段失败: {}", e.getMessage());
             }
+
+            // Task 1: Map fingerprint and analysis fields
+            report.setErrorFingerprint(rs.getString("error_fingerprint"));
+            report.setEmbeddingId(rs.getString("embedding_id"));
+            report.setSimilarityThreshold(rs.getObject("similarity_threshold") != null ? rs.getDouble("similarity_threshold") : null);
+            report.setAnalysisStatus(rs.getString("analysis_status"));
+            report.setOccurrenceCount(rs.getObject("occurrence_count") != null ? rs.getInt("occurrence_count") : null);
+            report.setRootCauseText(rs.getString("root_cause_text"));
+            report.setFixSuggestionText(rs.getString("fix_suggestion_text"));
 
             return report;
         }
