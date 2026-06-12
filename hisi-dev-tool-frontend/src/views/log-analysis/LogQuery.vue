@@ -1,6 +1,8 @@
 <template>
   <div class="log-query">
-    <el-card header="日志查询">
+    <el-tabs v-model="activeTab" type="border-card">
+      <el-tab-pane label="日志查询" name="query">
+        <el-card header="日志查询">
       <el-form :model="queryForm" label-width="100px">
         <el-row :gutter="20">
           <el-col :span="24">
@@ -265,7 +267,84 @@
         @size-change="handleQuery"
         @current-change="handleQuery"
       />
-    </el-card>
+        </el-card>
+      </el-tab-pane>
+
+      <!-- 定时任务配置页签 -->
+      <el-tab-pane label="定时任务配置" name="config">
+        <el-card header="日志拉取配置">
+          <el-alert type="info" :closable="false" style="margin-bottom: 16px">
+            配置定时任务自动拉取指定应用的错误日志，系统将按设定间隔自动执行日志查询并入库分析。
+          </el-alert>
+
+          <el-button type="primary" @click="showAddConfigDialog" style="margin-bottom: 16px">
+            <el-icon><Plus /></el-icon> 新增配置
+          </el-button>
+
+          <el-table :data="configs" v-loading="configLoading" stripe>
+            <el-table-column prop="appId" label="应用ID" width="120" />
+            <el-table-column prop="projectPath" label="项目路径" min-width="200" show-overflow-tooltip />
+            <el-table-column prop="pullIntervalMinutes" label="拉取间隔(分钟)" width="120" />
+            <el-table-column prop="enabled" label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag :type="row.enabled ? 'success' : 'info'">
+                  {{ row.enabled ? '启用' : '禁用' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="lastPullAt" label="上次拉取" width="180">
+              <template #default="{ row }">
+                {{ row.lastPullAt ? formatConfigTime(row.lastPullAt) : '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="150">
+              <template #default="{ row }">
+                <el-button type="primary" link size="small" @click="editConfig(row)">编辑</el-button>
+                <el-button
+                  :type="row.enabled ? 'warning' : 'success'"
+                  link
+                  size="small"
+                  @click="toggleConfigStatus(row)"
+                >
+                  {{ row.enabled ? '禁用' : '启用' }}
+                </el-button>
+                <el-button type="danger" link size="small" @click="deleteConfig(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-tab-pane>
+    </el-tabs>
+
+    <!-- 新增/编辑配置弹窗 -->
+    <el-dialog v-model="configDialogVisible" :title="editingConfig ? '编辑配置' : '新增配置'" width="600px">
+      <el-form :model="configForm" label-width="120px">
+        <el-form-item label="应用ID" required>
+          <el-input v-model="configForm.appId" placeholder="如: hiapm" :disabled="editingConfig" />
+        </el-form-item>
+        <el-form-item label="项目路径" required>
+          <el-input v-model="configForm.projectPath" placeholder="本地项目路径，用于代码匹配" />
+        </el-form-item>
+        <el-form-item label="DSL查询">
+          <el-input
+            v-model="configForm.dslQuery"
+            type="textarea"
+            :rows="6"
+            placeholder="DSL查询语句(JSON格式)"
+          />
+        </el-form-item>
+        <el-form-item label="拉取间隔(分钟)">
+          <el-input-number v-model="configForm.pullIntervalMinutes" :min="1" :max="60" />
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="configForm.enabled" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="configDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveConfig" :loading="configSaving">保存</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 日志详情弹窗 -->
     <el-dialog v-model="detailVisible" title="日志详情" width="800px" append-to-body>
@@ -462,11 +541,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, nextTick, watch } from 'vue'
+import { ref, reactive, computed, nextTick, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, Loading, Document, Warning, Cpu, Check, Delete, Plus } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
-import { logAnalysisApi } from '@/api/logAnalysis'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { logAnalysisApi, type AppLogConfig } from '@/api/logAnalysis'
 import { aiAnalysisApi } from '@/api/aiAnalysis'
 import { claudeApi } from '@/api/claude'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -480,6 +559,110 @@ const loading = ref(false)
 const logs = ref<LogEntry[]>([])
 const detailVisible = ref(false)
 const selectedLog = ref<LogEntry | null>(null)
+
+// ========== Tab 状态 ==========
+const activeTab = ref('query')
+
+// ========== 配置管理 ==========
+const configLoading = ref(false)
+const configs = ref<AppLogConfig[]>([])
+const configDialogVisible = ref(false)
+const editingConfig = ref<AppLogConfig | null>(null)
+const configSaving = ref(false)
+const configForm = reactive<AppLogConfig>({
+  appId: '',
+  projectPath: '',
+  dslQuery: '',
+  pullIntervalMinutes: 10,
+  enabled: true
+})
+
+const loadConfigs = async () => {
+  configLoading.value = true
+  try {
+    const res = await logAnalysisApi.getConfigs()
+    configs.value = res || []
+  } catch (e: any) {
+    ElMessage.error('加载配置失败: ' + e.message)
+  } finally {
+    configLoading.value = false
+  }
+}
+
+const showAddConfigDialog = () => {
+  editingConfig.value = null
+  Object.assign(configForm, {
+    appId: '',
+    projectPath: '',
+    dslQuery: '',
+    pullIntervalMinutes: 10,
+    enabled: true
+  })
+  configDialogVisible.value = true
+}
+
+const editConfig = (config: AppLogConfig) => {
+  editingConfig.value = config
+  Object.assign(configForm, config)
+  configDialogVisible.value = true
+}
+
+const saveConfig = async () => {
+  if (!configForm.appId || !configForm.projectPath) {
+    ElMessage.warning('请填写应用ID和项目路径')
+    return
+  }
+  configSaving.value = true
+  try {
+    await logAnalysisApi.saveConfig(configForm)
+    ElMessage.success('配置保存成功')
+    configDialogVisible.value = false
+    loadConfigs()
+  } catch (e: any) {
+    ElMessage.error('保存失败: ' + e.message)
+  } finally {
+    configSaving.value = false
+  }
+}
+
+const toggleConfigStatus = async (config: AppLogConfig) => {
+  try {
+    await logAnalysisApi.toggleConfig(config.appId)
+    ElMessage.success('状态已更新')
+    loadConfigs()
+  } catch (e: any) {
+    ElMessage.error('操作失败: ' + e.message)
+  }
+}
+
+const deleteConfig = async (config: AppLogConfig) => {
+  try {
+    await ElMessageBox.confirm(`确认删除配置 "${config.appId}"?`, '提示', { type: 'warning' })
+    await logAnalysisApi.deleteConfig(config.appId)
+    ElMessage.success('已删除')
+    loadConfigs()
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      ElMessage.error('删除失败: ' + e.message)
+    }
+  }
+}
+
+const formatConfigTime = (timestamp: number) => {
+  return new Date(timestamp * 1000).toLocaleString('zh-CN')
+}
+
+onMounted(() => {
+  if (activeTab.value === 'config') {
+    loadConfigs()
+  }
+})
+
+watch(activeTab, (tab) => {
+  if (tab === 'config') {
+    loadConfigs()
+  }
+})
 
 // 解析选中日志的详情
 const parsedLogDetail = computed<ParsedErrorLog | null>(() => {
@@ -832,7 +1015,7 @@ const clearManualDsl = () => {
 const analysisLoading = ref(false)
 const analysisVisible = ref(false)
 const analysisError = ref<string | null>(null)
-const analyzingLog = ref<MockLogEntry | null>(null)
+const analyzingLog = ref<LogEntry | null>(null)
 const streamOutput = ref('')
 const currentSessionId = ref('')
 const chatInput = ref('')
@@ -968,7 +1151,7 @@ const showDetail = (row: LogEntry) => {
   detailVisible.value = true
 }
 
-const handleAnalyze = async (row: MockLogEntry) => {
+const handleAnalyze = async (row: LogEntry) => {
   // 解析日志，区分错误信息和堆栈信息
   const rawLog = row.message || row.stackTrace || ''
   const parsed = parseJavaErrorLog(rawLog)

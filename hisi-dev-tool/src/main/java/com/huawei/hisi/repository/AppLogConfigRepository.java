@@ -30,6 +30,14 @@ public class AppLogConfigRepository {
     }
 
     /**
+     * 查找所有配置
+     */
+    public List<AppLogConfig> findAll() {
+        String sql = "SELECT * FROM app_log_config ORDER BY id";
+        return jdbcTemplate.query(sql, new AppLogConfigRowMapper());
+    }
+
+    /**
      * 根据appId查找配置
      */
     public AppLogConfig findByAppId(String appId) {
@@ -71,6 +79,22 @@ public class AppLogConfigRepository {
     public void updateLastPullAt(String appId) {
         String sql = "UPDATE app_log_config SET last_pull_at = strftime('%s','now') WHERE app_id = ?";
         jdbcTemplate.update(sql, appId);
+    }
+
+    /**
+     * 删除配置
+     */
+    public void deleteByAppId(String appId) {
+        String sql = "DELETE FROM app_log_config WHERE app_id = ?";
+        jdbcTemplate.update(sql, appId);
+    }
+
+    /**
+     * 切换启用状态
+     */
+    public void toggleEnabled(String appId, boolean enabled) {
+        String sql = "UPDATE app_log_config SET enabled = ?, updated_at = strftime('%s','now') WHERE app_id = ?";
+        jdbcTemplate.update(sql, enabled ? 1 : 0, appId);
     }
 
     /**
