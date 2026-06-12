@@ -216,11 +216,13 @@ public class LogAnalysisController {
     }
 
     /**
-     * 查询单个任务状态
+     * 查询单个任务状态（扩展版）
      * GET /api/log/report/{id}/status
      *
+     * Task 7: Extended status API with pipeline progress
+     *
      * @param reportId 报告 ID
-     * @return 任务状态
+     * @return 任务状态（含progress, stage, etaSeconds, queuePosition）
      */
     @GetMapping("/report/{id}/status")
     public ApiResponse<Map<String, Object>> getReportStatus(@PathVariable("id") Long reportId) {
@@ -237,6 +239,14 @@ public class LogAnalysisController {
             status.put("createdAt", report.getCreatedAt());
             status.put("updatedAt", report.getUpdatedAt());
 
+            // Task 7: Extended progress info
+            status.put("progress", calculateProgress(report));
+            status.put("stage", determineStage(report));
+            status.put("etaSeconds", estimateRemainingTime(report));
+            status.put("queuePosition", getQueuePosition(report));
+            status.put("occurrenceCount", report.getOccurrenceCount());
+            status.put("analysisStatus", report.getAnalysisStatus());
+
             return ApiResponse.success(status);
 
         } catch (Exception e) {
@@ -245,4 +255,52 @@ public class LogAnalysisController {
         }
     }
 
+    // ==================== Task 7: Helper methods for extended status ====================
+
+    private int calculateProgress(LogAnalysisReportEntity report) {
+        String analysisStatus = report.getAnalysisStatus();
+        if (analysisStatus == null) analysisStatus = "pending";
+
+        switch (analysisStatus) {
+            case "pending": return 0;
+            case "parsing": return 25;
+            case "deduplicating": return 50;
+            case "analyzing": return 75;
+            case "completed": return 100;
+            case "failed": return 100;
+            default: return 0;
+        }
+    }
+
+    private String determineStage(LogAnalysisReportEntity report) {
+        String analysisStatus = report.getAnalysisStatus();
+        if (analysisStatus == null) {
+            return "pending";
+        }
+        return analysisStatus;
+    }
+
+    private int estimateRemainingTime(LogAnalysisReportEntity report) {
+        String analysisStatus = report.getAnalysisStatus();
+        if ("completed".equals(analysisStatus) || "failed".equals(analysisStatus)) {
+            return 0;
+        }
+        // Rough estimate based on stage (in seconds)
+        switch (analysisStatus) {
+            case "pending": return 120; // ~2 min wait
+            case "parsing": return 90;  // ~1.5 min left
+            case "deduplicating": return 60; // ~1 min left
+            case "analyzing": return 30; // ~30 sec left
+            default: return 60;
+        }
+    }
+
+    private int getQueuePosition(LogAnalysisReportEntity report) {
+        String analysisStatus = report.getAnalysisStatus();
+        if (analysisStatus == null || !"pending".equals(analysisStatus)) {
+            return 0;
+        }
+        // Count pending reports created before this one
+        return repository.countPendingBefore(report.getCreatedAt());
+    }
 }

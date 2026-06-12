@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-26T07:44:32.573Z",
-  "lastUpdated": "2026-06-12T04:05:07.407Z",
+  "lastUpdated": "2026-06-12T06:58:03.107Z",
   "stats": {
-    "totalOperations": 372,
+    "totalOperations": 376,
     "totalFilesEdited": 152,
-    "totalAiLines": 14193,
+    "totalAiLines": 14402,
     "totalAiLinesDeleted": 671,
-    "totalCommits": 46
+    "totalCommits": 47
   },
   "pendingFiles": [
     {
@@ -119,24 +119,6 @@
       "operations": 1,
       "timestamp": "2026-06-12T03:43:56.436Z",
       "lastModified": "2026-06-12T03:43:56.436Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/test/java/com/huawei/hisi/service/CostLimiterTest.java",
-      "tool": "Write",
-      "aiTool": "claude-code",
-      "model": "Ali-glm-5-cc",
-      "operations": 1,
-      "timestamp": "2026-06-12T03:53:56.421Z",
-      "lastModified": "2026-06-12T03:53:56.421Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/service/CostLimiter.java",
-      "tool": "Write",
-      "aiTool": "claude-code",
-      "model": "Ali-glm-5-cc",
-      "operations": 1,
-      "timestamp": "2026-06-12T03:54:18.262Z",
-      "lastModified": "2026-06-12T03:54:18.262Z"
     }
   ]
 }

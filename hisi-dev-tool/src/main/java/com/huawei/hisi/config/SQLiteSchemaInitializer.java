@@ -199,6 +199,35 @@ public class SQLiteSchemaInitializer {
         // Task 1: Add fingerprint and analysis columns to log_analysis_report
         addLogAnalysisReportColumns(jdbcTemplate);
 
+        // Task 2: Create log_error_embedding_map table for vector similarity tracking
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS log_error_embedding_map (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_id INTEGER NOT NULL,
+                embedding_id TEXT NOT NULL,
+                similarity_score REAL NOT NULL,
+                matched_report_id INTEGER,
+                created_at INTEGER DEFAULT (strftime('%s','now'))
+            )
+            """);
+        log.info("[SQLite] Created log_error_embedding_map table");
+
+        // Task 6: Create app_log_config table for scheduled log pulling
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS app_log_config (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                app_id TEXT NOT NULL UNIQUE,
+                project_path TEXT NOT NULL,
+                dsl_query TEXT NOT NULL,
+                pull_interval_minutes INTEGER DEFAULT 10,
+                enabled INTEGER DEFAULT 1,
+                last_pull_at INTEGER,
+                created_at INTEGER DEFAULT (strftime('%s','now')),
+                updated_at INTEGER DEFAULT (strftime('%s','now'))
+            )
+            """);
+        log.info("[SQLite] Created app_log_config table");
+
         jdbcTemplate.execute("""
             CREATE TABLE IF NOT EXISTS remote_project (
                 id                  INTEGER PRIMARY KEY AUTOINCREMENT,
