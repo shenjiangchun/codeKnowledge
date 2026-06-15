@@ -15,6 +15,7 @@ import com.huawei.hisi.neo4j.repository.Neo4jGenerationCheckpointRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.service.CodeAnalysisCoreService;
 import com.huawei.hisi.knowledgegraph.service.GitStatusService;
+import com.huawei.hisi.utils.PathUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -70,22 +71,23 @@ public class IncrementalRefreshServiceV2 {
      * Debug method to check checkpoint status.
      */
     public CheckpointDebugResult debugCheckpoint(String projectPath) {
-        log.info("[V2 Debug] Checking checkpoint for: {}", projectPath);
-        var checkpoint = checkpointRepository.findByProjectPath(projectPath);
+        String normalizedPath = PathUtils.normalize(projectPath);
+        log.info("[V2 Debug] Checking checkpoint for: {}", normalizedPath);
+        var checkpoint = checkpointRepository.findByProjectPath(normalizedPath);
         if (checkpoint.isPresent()) {
             log.info("[V2 Debug] Checkpoint found: lastCommit={}, lastBranch={}",
                 checkpoint.get().getLastCommit(), checkpoint.get().getLastBranch());
             return new CheckpointDebugResult(checkpoint.get().getLastCommit(), checkpoint.get().getLastBranch());
         } else {
-            log.warn("[V2 Debug] No checkpoint found for: {}", projectPath);
+            log.warn("[V2 Debug] No checkpoint found for: {}", normalizedPath);
             // Try to save a checkpoint manually for testing
-            String currentCommit = gitStatusService.getCurrentCommitHash(projectPath);
+            String currentCommit = gitStatusService.getCurrentCommitHash(normalizedPath);
             log.info("[V2 Debug] Current commit from git: {}", currentCommit);
-            checkpointRepository.upsertCheckpoint(projectPath, currentCommit != null ? currentCommit : "DEBUG_COMMIT", "debug");
-            log.info("[V2 Debug] Manually saved checkpoint for: {}", projectPath);
+            checkpointRepository.upsertCheckpoint(normalizedPath, currentCommit != null ? currentCommit : "DEBUG_COMMIT", "debug");
+            log.info("[V2 Debug] Manually saved checkpoint for: {}", normalizedPath);
 
             // Query again
-            var afterSave = checkpointRepository.findByProjectPath(projectPath);
+            var afterSave = checkpointRepository.findByProjectPath(normalizedPath);
             if (afterSave.isPresent()) {
                 log.info("[V2 Debug] After manual save, checkpoint found: {}", afterSave.get().getLastCommit());
                 return new CheckpointDebugResult(afterSave.get().getLastCommit(), afterSave.get().getLastBranch());
@@ -331,7 +333,7 @@ public class IncrementalRefreshServiceV2 {
      * Incremental refresh with full cache initialization.
      */
     public RefreshResult refresh(String projectPath) {
-        String normalizedProjectPath = projectPath.replace('\\', '/');
+        String normalizedProjectPath = PathUtils.normalize(projectPath);
         log.info("[V2] Starting incremental refresh for: {}", normalizedProjectPath);
 
         try {

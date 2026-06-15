@@ -6,6 +6,7 @@ import com.huawei.hisi.knowledgegraph.service.IncrementalRefreshService;
 import com.huawei.hisi.knowledgegraph.service.IncrementalRefreshServiceV2;
 import com.huawei.hisi.knowledgegraph.service.VectorGenerationService;
 import com.huawei.hisi.model.ApiResponse;
+import com.huawei.hisi.utils.PathUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -65,12 +66,14 @@ public class RefreshController {
                     .body(ApiResponse.error(400, "projectPath is required"));
         }
 
+        String normalizedPath = PathUtils.normalize(request.projectPath());
+
         try {
-            var result = refreshServiceV2.refresh(request.projectPath());
+            var result = refreshServiceV2.refresh(normalizedPath);
 
             // Trigger vector generation for empty nodes
             if (result.success() && result.rebuiltNodes() > 0) {
-                vectorGenerationService.startVectorGeneration(request.projectPath());
+                vectorGenerationService.startVectorGeneration(normalizedPath);
             }
 
             return ResponseEntity.ok(ApiResponse.success(result));
@@ -92,17 +95,16 @@ public class RefreshController {
                 .body(ApiResponse.error(400, "projectPath is required"));
         }
 
-        String normalizedPath = projectPath.replace('\\', '/');
-        log.info("[Checkpoint Debug] Checking checkpoint for: {}", normalizedPath);
+        log.info("[Checkpoint Debug] Checking checkpoint for: {}", projectPath);
 
         try {
-            var checkpoint = refreshServiceV2.debugCheckpoint(normalizedPath);
+            var checkpoint = refreshServiceV2.debugCheckpoint(projectPath);
             if (checkpoint != null) {
                 return ResponseEntity.ok(ApiResponse.success(
                     "Checkpoint found: lastCommit=" + checkpoint.lastCommit() +
                     ", lastBranch=" + checkpoint.lastBranch()));
             } else {
-                return ResponseEntity.ok(ApiResponse.success("No checkpoint found for: " + normalizedPath));
+                return ResponseEntity.ok(ApiResponse.success("No checkpoint found for: " + projectPath));
             }
         } catch (Exception e) {
             log.error("[Checkpoint Debug] Error: {}", e.getMessage());
