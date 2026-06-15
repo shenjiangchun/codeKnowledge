@@ -154,10 +154,12 @@ public class IncrementalRefreshService {
         JavaParser typeSolvingParser = coreService.createJavaParser(solver);
 
         // 6. Collect existing method nodeIds from Neo4j (for call relation nodeId lookup)
+        // Key format: className.methodName.signatureHash to distinguish overloaded methods
         Map<String, String> methodSignatureToNodeId = new HashMap<>();
         methodNodeRepository.findByProjectPath(normalizedProjectPath)
                 .forEach(node -> {
-                    String key = node.getClassName() + "." + node.getMethodName();
+                    String sigHash = node.getSignature() != null ? signatureHash(node.getSignature()) : "0";
+                    String key = node.getClassName() + "." + node.getMethodName() + "." + sigHash;
                     methodSignatureToNodeId.put(key, node.getNodeId());
                 });
 
@@ -165,7 +167,9 @@ public class IncrementalRefreshService {
         // Note: We no longer DETACH DELETE method nodes because MERGE preserves existing data
         // and vectorGenerationService will regenerate embeddings for updated nodes
         for (String file : changedFiles) {
-            entryPointRepository.deleteByFilePathAndProjectPath(file, normalizedProjectPath);
+            Path filePath = Paths.get(normalizedProjectPath, file);
+            String absoluteFilePath = filePath.toString();  // 使用绝对路径，与 MethodNode.filePath 一致
+            entryPointRepository.deleteByFilePathAndProjectPath(absoluteFilePath, normalizedProjectPath);
         }
         int deleted = changedFiles.size();
 
@@ -184,10 +188,11 @@ public class IncrementalRefreshService {
                     String className = packageName.isEmpty() ? clazz.getNameAsString()
                             : packageName + "." + clazz.getNameAsString();
                     clazz.findAll(MethodDeclaration.class).forEach(method -> {
+                        String sigHash = signatureHash(method.getSignature().toString());
                         String nodeId = normalizedProjectPath + ":" + className + "."
-                                + method.getNameAsString() + "."
-                                + signatureHash(method.getSignature().toString());
-                        methodSignatureToNodeId.put(className + "." + method.getNameAsString(), nodeId);
+                                + method.getNameAsString() + "." + sigHash;
+                        String key = className + "." + method.getNameAsString() + "." + sigHash;
+                        methodSignatureToNodeId.put(key, nodeId);
                     });
                 });
             } catch (Exception e) {
@@ -258,23 +263,25 @@ public class IncrementalRefreshService {
         int unchanged = 0;
         List<MethodNode> nodesToCreate = new ArrayList<>();
         List<String> nodeIdsToDelete = new ArrayList<>();
+        Map<String, String> oldToNewNodeIdMap = new HashMap<>();  // 用于重建跨文件调用关系
         JavaParser javaParser = new JavaParser();
 
         for (String file : javaFiles) {
             Path filePath = Paths.get(projectPath, file);
+            String absoluteFilePath = filePath.toString();  // 使用绝对路径查询
             if (!Files.exists(filePath)) {
                 // 文件被删除 → 删除该文件的所有方法节点
-                List<MethodNode> deletedFileNodes = methodNodeRepository.findByProjectPathAndFilePath(projectPath, file);
+                List<MethodNode> deletedFileNodes = methodNodeRepository.findByProjectPathAndFilePath(projectPath, absoluteFilePath);
                 deletedFileNodes.forEach(n -> nodeIdsToDelete.add(n.getNodeId()));
                 deleted += deletedFileNodes.size();
                 continue;
             }
             try {
                 // 解析变更文件得到新节点列表
-                List<MethodNode> newNodes = parseJavaFile(javaParser, filePath.toString(), projectPath);
+                List<MethodNode> newNodes = parseJavaFile(javaParser, absoluteFilePath, projectPath);
 
-                // 查询变更文件中的所有旧节点（用 filePath 查询）
-                List<MethodNode> oldNodes = methodNodeRepository.findByProjectPathAndFilePath(projectPath, file);
+                // 查询变更文件中的所有旧节点（用绝对路径 filePath 查询）
+                List<MethodNode> oldNodes = methodNodeRepository.findByProjectPathAndFilePath(projectPath, absoluteFilePath);
 
                 // 构建旧节点查找 Map: className.methodName.signature -> MethodNode
                 Map<String, MethodNode> oldNodeMap = oldNodes.stream()
@@ -305,6 +312,8 @@ public class IncrementalRefreshService {
                             // methodBody 变化 → DELETE + CREATE
                             nodeIdsToDelete.add(oldNode.getNodeId());
                             nodesToCreate.add(newNode);
+                            // 记录 oldNodeId → newNodeId 映射，用于重建跨文件调用关系
+                            oldToNewNodeIdMap.put(oldNode.getNodeId(), newNode.getNodeId());
                             updated++;
                         }
                     }
@@ -323,6 +332,15 @@ public class IncrementalRefreshService {
             }
         }
 
+        // 在删除前查询 incoming CALLS（来自未变更文件的调用关系）
+        List<Map<String, Object>> incomingCalls = new ArrayList<>();
+        if (!nodeIdsToDelete.isEmpty() && !oldToNewNodeIdMap.isEmpty()) {
+            // 只查询有新节点映射的 incoming calls（被更新的方法）
+            List<String> updatedNodeIds = new ArrayList<>(oldToNewNodeIdMap.keySet());
+            incomingCalls = methodNodeRepository.findIncomingCallsByNodeIds(updatedNodeIds);
+            log.info("Found {} incoming CALLS to updated methods (need to rebuild)", incomingCalls.size());
+        }
+
         // 执行删除
         if (!nodeIdsToDelete.isEmpty()) {
             methodNodeRepository.deleteByNodeIds(nodeIdsToDelete);
@@ -333,6 +351,27 @@ public class IncrementalRefreshService {
         if (!nodesToCreate.isEmpty()) {
             methodNodeRepository.saveAll(nodesToCreate);
             log.info("Created {} Java method nodes ({} new, {} updated)", nodesToCreate.size(), created, updated);
+        }
+
+        // 重建 incoming CALLS（来自未变更文件的调用关系）
+        if (!incomingCalls.isEmpty()) {
+            List<Map<String, Object>> relationsToRebuild = new ArrayList<>();
+            for (Map<String, Object> call : incomingCalls) {
+                String oldCalleeId = (String) call.get("calleeId");
+                String newCalleeId = oldToNewNodeIdMap.get(oldCalleeId);
+                if (newCalleeId != null) {
+                    Map<String, Object> relation = new LinkedHashMap<>();
+                    relation.put("callerId", call.get("callerId"));
+                    relation.put("calleeId", newCalleeId);
+                    relation.put("callType", call.get("callType"));
+                    relation.put("callLine", call.get("callLine"));
+                    relationsToRebuild.add(relation);
+                }
+            }
+            if (!relationsToRebuild.isEmpty()) {
+                methodNodeRepository.createCallRelations(relationsToRebuild);
+                log.info("Rebuilt {} incoming CALLS from unchanged files", relationsToRebuild.size());
+            }
         }
 
         log.info("Java method nodes: created={}, updated={}, deleted={}, unchanged={}", created, updated, deleted, unchanged);
@@ -356,22 +395,24 @@ public class IncrementalRefreshService {
         int unchanged = 0;
         List<MethodNode> nodesToCreate = new ArrayList<>();
         List<String> nodeIdsToDelete = new ArrayList<>();
+        Map<String, String> oldToNewNodeIdMap = new HashMap<>();  // 用于重建跨文件调用关系
 
         for (String file : pythonFiles) {
             Path filePath = Paths.get(projectPath, file);
+            String absoluteFilePath = filePath.toString();  // 使用绝对路径查询
             if (!Files.exists(filePath)) {
                 // 文件被删除 → 删除该文件的所有方法节点
-                List<MethodNode> deletedFileNodes = methodNodeRepository.findByProjectPathAndFilePath(projectPath, file);
+                List<MethodNode> deletedFileNodes = methodNodeRepository.findByProjectPathAndFilePath(projectPath, absoluteFilePath);
                 deletedFileNodes.forEach(n -> nodeIdsToDelete.add(n.getNodeId()));
                 deleted += deletedFileNodes.size();
                 continue;
             }
             try {
                 // 解析变更文件得到新节点列表
-                List<MethodNode> newNodes = pythonKnowledgeGraphBuilder.parseFile(filePath.toString(), projectPath);
+                List<MethodNode> newNodes = pythonKnowledgeGraphBuilder.parseFile(absoluteFilePath, projectPath);
 
-                // 查询变更文件中的所有旧节点（用 filePath 查询）
-                List<MethodNode> oldNodes = methodNodeRepository.findByProjectPathAndFilePath(projectPath, file);
+                // 查询变更文件中的所有旧节点（用绝对路径查询）
+                List<MethodNode> oldNodes = methodNodeRepository.findByProjectPathAndFilePath(projectPath, absoluteFilePath);
 
                 // 构建旧节点查找 Map: className.methodName.signature -> MethodNode
                 Map<String, MethodNode> oldNodeMap = oldNodes.stream()
@@ -402,6 +443,8 @@ public class IncrementalRefreshService {
                             // methodBody 变化 → DELETE + CREATE
                             nodeIdsToDelete.add(oldNode.getNodeId());
                             nodesToCreate.add(newNode);
+                            // 记录 oldNodeId → newNodeId 映射，用于重建跨文件调用关系
+                            oldToNewNodeIdMap.put(oldNode.getNodeId(), newNode.getNodeId());
                             updated++;
                         }
                     }
@@ -420,6 +463,14 @@ public class IncrementalRefreshService {
             }
         }
 
+        // 在删除前查询 incoming CALLS（来自未变更文件的调用关系）
+        List<Map<String, Object>> incomingCalls = new ArrayList<>();
+        if (!nodeIdsToDelete.isEmpty() && !oldToNewNodeIdMap.isEmpty()) {
+            List<String> updatedNodeIds = new ArrayList<>(oldToNewNodeIdMap.keySet());
+            incomingCalls = methodNodeRepository.findIncomingCallsByNodeIds(updatedNodeIds);
+            log.info("Found {} incoming CALLS to updated Python methods", incomingCalls.size());
+        }
+
         // 执行删除
         if (!nodeIdsToDelete.isEmpty()) {
             methodNodeRepository.deleteByNodeIds(nodeIdsToDelete);
@@ -430,6 +481,27 @@ public class IncrementalRefreshService {
         if (!nodesToCreate.isEmpty()) {
             methodNodeRepository.saveAll(nodesToCreate);
             log.info("Created {} Python method nodes ({} new, {} updated)", nodesToCreate.size(), created, updated);
+        }
+
+        // 重建 incoming CALLS（来自未变更文件的调用关系）
+        if (!incomingCalls.isEmpty()) {
+            List<Map<String, Object>> relationsToRebuild = new ArrayList<>();
+            for (Map<String, Object> call : incomingCalls) {
+                String oldCalleeId = (String) call.get("calleeId");
+                String newCalleeId = oldToNewNodeIdMap.get(oldCalleeId);
+                if (newCalleeId != null) {
+                    Map<String, Object> relation = new LinkedHashMap<>();
+                    relation.put("callerId", call.get("callerId"));
+                    relation.put("calleeId", newCalleeId);
+                    relation.put("callType", call.get("callType"));
+                    relation.put("callLine", call.get("callLine"));
+                    relationsToRebuild.add(relation);
+                }
+            }
+            if (!relationsToRebuild.isEmpty()) {
+                methodNodeRepository.createCallRelations(relationsToRebuild);
+                log.info("Rebuilt {} incoming CALLS to Python methods from unchanged files", relationsToRebuild.size());
+            }
         }
 
         log.info("Python method nodes: created={}, updated={}, deleted={}, unchanged={}", created, updated, deleted, unchanged);
@@ -481,7 +553,9 @@ public class IncrementalRefreshService {
                     : packageName + "." + clazz.getNameAsString();
 
             clazz.findAll(MethodDeclaration.class).forEach(method -> {
-                String callerNodeId = methodSignatureToNodeId.get(className + "." + method.getNameAsString());
+                String callerSigHash = signatureHash(method.getSignature().toString());
+                String callerKey = className + "." + method.getNameAsString() + "." + callerSigHash;
+                String callerNodeId = methodSignatureToNodeId.get(callerKey);
                 if (callerNodeId == null) return;
 
                 method.findAll(MethodCallExpr.class).forEach(call -> {
@@ -491,7 +565,8 @@ public class IncrementalRefreshService {
                         if (target.getNameAsString().startsWith("no match:")) continue;
 
                         String targetClassName = getMethodClassName(target);
-                        String targetKey = targetClassName + "." + target.getNameAsString();
+                        String targetSigHash = signatureHash(target.getSignature().toString());
+                        String targetKey = targetClassName + "." + target.getNameAsString() + "." + targetSigHash;
                         String calleeNodeId = methodSignatureToNodeId.get(targetKey);
 
                         if (calleeNodeId != null && !calleeNodeId.equals(callerNodeId)) {
@@ -710,6 +785,7 @@ public class IncrementalRefreshService {
                             .methodBody(MethodBodyCompressor.compress(method))
                             .projectPath(projectPath)
                             .serviceName(extractServiceName(className, projectPath))
+                            .language("java")  // 增量生成也需要设置 language 字段
                             .build();
                     nodes.add(node);
                 });

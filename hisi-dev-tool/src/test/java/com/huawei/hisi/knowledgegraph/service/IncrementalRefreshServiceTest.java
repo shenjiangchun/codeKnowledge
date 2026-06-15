@@ -21,6 +21,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.Optional;
 
@@ -119,7 +120,9 @@ class IncrementalRefreshServiceTest {
         assertThat(result.deleted()).isEqualTo(1);
 
         // Note: We no longer DETACH DELETE method nodes, only delete entry points
-        verify(entryPointRepository).deleteByFilePathAndProjectPath("src/Main.java", PROJECT_PATH);
+        // Now uses absolute path for filePath (changed to match MethodNode.filePath storage format)
+        String expectedFilePath = Paths.get(PROJECT_PATH, "src/Main.java").toString();
+        verify(entryPointRepository).deleteByFilePathAndProjectPath(expectedFilePath, PROJECT_PATH);
         // vectorWriter.deleteByFilePath is NOT called anymore (MERGE preserves method nodes)
         verify(checkpointRepository).upsertCheckpoint(PROJECT_PATH, "def456", "main");
     }

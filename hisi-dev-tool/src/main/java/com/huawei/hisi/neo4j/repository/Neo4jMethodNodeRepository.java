@@ -1090,6 +1090,17 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     );
 
     /**
+     * 查询指定节点的 incoming CALLS 关系（哪些方法调用了这些节点）
+     * 用于增量刷新时重建跨文件的调用关系
+     */
+    @Query("""
+        UNWIND $nodeIds AS nodeId
+        MATCH (caller:Method)-[c:CALLS]->(callee:Method {nodeId: nodeId})
+        RETURN callee.nodeId as calleeId, caller.nodeId as callerId, c.callType as callType, c.callLine as callLine
+        """)
+    List<Map<String, Object>> findIncomingCallsByNodeIds(@Param("nodeIds") List<String> nodeIds);
+
+    /**
      * 批量根据 nodeId 删除方法节点
      * 用于增量刷新时批量删除变更的节点
      */
