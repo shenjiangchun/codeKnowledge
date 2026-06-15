@@ -2,6 +2,8 @@ package com.huawei.hisi.knowledgegraph.service;
 
 import com.github.javaparser.JavaParser;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver;
@@ -146,6 +148,99 @@ public class IncrementalRefreshServiceV2 {
 
         log.info("[V2] Deleted {} nodes and their edges (including reverse dependencies)", deletedNodes);
         return deletedNodes;
+    }
+
+    /**
+     * Rebuild MethodNodes from changed files using MERGE.
+     * Returns Set of rebuilt nodeIds for edge generation filtering.
+     */
+    private Set<String> rebuildChangedNodes(String projectPath, List<String> changedJavaFiles, JavaParser javaParser) {
+        log.info("[V2] Rebuilding nodes from {} changed Java files", changedJavaFiles.size());
+
+        List<MethodNode> rebuiltNodes = new ArrayList<>();
+        Set<String> rebuiltNodeIds = new HashSet<>();
+
+        for (String file : changedJavaFiles) {
+            Path filePath = Paths.get(projectPath, file);
+            if (!filePath.toFile().exists()) continue;
+
+            CompilationUnit cu = coreService.parseFile(filePath.toFile(), javaParser);
+            if (cu == null) continue;
+
+            // Use KnowledgeGraphBuilder's scanMethodNodes logic
+            List<MethodNode> nodes = scanMethodNodes(cu, filePath.toString(), projectPath);
+            for (MethodNode node : nodes) {
+                rebuiltNodes.add(node);
+                rebuiltNodeIds.add(node.getNodeId());
+            }
+        }
+
+        // MERGE all nodes (creates new or updates existing)
+        if (!rebuiltNodes.isEmpty()) {
+            methodNodeRepository.mergeAll(rebuiltNodes.stream()
+                .map(this::methodNodeToMap)
+                .collect(Collectors.toList()));
+        }
+
+        log.info("[V2] Rebuilt {} method nodes", rebuiltNodes.size());
+        return rebuiltNodeIds;
+    }
+
+    /**
+     * Convert MethodNode to Map for mergeAll.
+     */
+    private Map<String, Object> methodNodeToMap(MethodNode node) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("nodeId", node.getNodeId());
+        map.put("className", node.getClassName());
+        map.put("methodName", node.getMethodName());
+        map.put("signature", node.getSignature());
+        map.put("filePath", node.getFilePath());
+        map.put("startLine", node.getStartLine());
+        map.put("endLine", node.getEndLine());
+        map.put("description", node.getDescription());
+        map.put("projectPath", node.getProjectPath());
+        map.put("language", node.getLanguage() != null ? node.getLanguage() : "java");
+        return map;
+    }
+
+    /**
+     * Scan method nodes from CompilationUnit (reuse KnowledgeGraphBuilder logic).
+     */
+    private List<MethodNode> scanMethodNodes(CompilationUnit cu, String filePath, String projectPath) {
+        List<MethodNode> nodes = new ArrayList<>();
+        String packageName = cu.getPackageDeclaration().map(pd -> pd.getNameAsString()).orElse("");
+
+        cu.findAll(ClassOrInterfaceDeclaration.class).forEach(clazz -> {
+            String className = packageName.isEmpty() ? clazz.getNameAsString()
+                : packageName + "." + clazz.getNameAsString();
+
+            clazz.findAll(MethodDeclaration.class).forEach(method -> {
+                String nodeId = projectPath + ":" + className + "." + method.getNameAsString();
+                String sigHash = signatureHash(method.getSignature().toString());
+                nodeId += "." + sigHash;
+
+                MethodNode node = MethodNode.builder()
+                    .nodeId(nodeId)
+                    .className(className)
+                    .methodName(method.getNameAsString())
+                    .signature(method.getSignature().toString())
+                    .filePath(filePath)
+                    .startLine(method.getBegin().map(p -> p.line).orElse(0))
+                    .endLine(method.getEnd().map(p -> p.line).orElse(0))
+                    .projectPath(projectPath)
+                    .language("java")
+                    .build();
+
+                nodes.add(node);
+            });
+        });
+
+        return nodes;
+    }
+
+    private String signatureHash(String signature) {
+        return String.valueOf(signature.hashCode());
     }
 
     /**
