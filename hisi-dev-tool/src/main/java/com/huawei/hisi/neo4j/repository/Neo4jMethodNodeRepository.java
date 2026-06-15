@@ -1051,6 +1051,56 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     );
 
     /**
+     * 根据项目路径、类名、方法名、签名精确匹配
+     * 用于增量刷新时精确查找方法节点
+     */
+    @Query("""
+        MATCH (m:Method {projectPath: $projectPath, className: $className, methodName: $methodName, signature: $signature})
+        RETURN m.nodeId as nodeId, m.className as className, m.methodName as methodName,
+               m.signature as signature, m.filePath as filePath, m.startLine as startLine,
+               m.endLine as endLine, m.complexity as complexity, m.thrownExceptions as thrownExceptions,
+               m.caughtExceptions as caughtExceptions, m.methodBody as methodBody, m.projectPath as projectPath,
+               m.serviceName as serviceName, m.comment as comment, m.description as description,
+               m.descriptionEmbedding as descriptionEmbedding, m.codeEmbedding as codeEmbedding
+        """)
+    Optional<MethodNode> findByProjectPathAndClassNameAndMethodNameAndSignature(
+        @Param("projectPath") String projectPath,
+        @Param("className") String className,
+        @Param("methodName") String methodName,
+        @Param("signature") String signature
+    );
+
+    /**
+     * 根据项目路径和文件路径查询所有方法节点
+     * 用于增量刷新时获取变更文件中的所有旧节点
+     */
+    @Query("""
+        MATCH (m:Method {projectPath: $projectPath})
+        WHERE m.filePath = $filePath OR m.filePath CONTAINS $filePath
+        RETURN m.nodeId as nodeId, m.className as className, m.methodName as methodName,
+               m.signature as signature, m.filePath as filePath, m.startLine as startLine,
+               m.endLine as endLine, m.complexity as complexity, m.thrownExceptions as thrownExceptions,
+               m.caughtExceptions as caughtExceptions, m.methodBody as methodBody, m.projectPath as projectPath,
+               m.serviceName as serviceName, m.comment as comment, m.description as description,
+               m.descriptionEmbedding as descriptionEmbedding, m.codeEmbedding as codeEmbedding
+        """)
+    List<MethodNode> findByProjectPathAndFilePath(
+        @Param("projectPath") String projectPath,
+        @Param("filePath") String filePath
+    );
+
+    /**
+     * 批量根据 nodeId 删除方法节点
+     * 用于增量刷新时批量删除变更的节点
+     */
+    @Query("""
+        UNWIND $nodeIds AS nodeId
+        MATCH (m:Method {nodeId: nodeId})
+        DETACH DELETE m
+        """)
+    void deleteByNodeIds(@Param("nodeIds") List<String> nodeIds);
+
+    /**
      * 根据项目路径和方法名模糊匹配
      * 用于 METHOD_NAME 查询类型
      */

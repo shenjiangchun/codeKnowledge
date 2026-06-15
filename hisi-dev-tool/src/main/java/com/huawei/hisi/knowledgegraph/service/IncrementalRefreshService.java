@@ -252,42 +252,188 @@ public class IncrementalRefreshService {
     }
 
     private int rebuildJavaMethodNodes(String projectPath, List<String> javaFiles) {
-        List<MethodNode> allNodes = new ArrayList<>();
+        int created = 0;
+        int updated = 0;
+        int deleted = 0;
+        int unchanged = 0;
+        List<MethodNode> nodesToCreate = new ArrayList<>();
+        List<String> nodeIdsToDelete = new ArrayList<>();
         JavaParser javaParser = new JavaParser();
+
         for (String file : javaFiles) {
             Path filePath = Paths.get(projectPath, file);
-            if (!Files.exists(filePath)) continue;
+            if (!Files.exists(filePath)) {
+                // 文件被删除 → 删除该文件的所有方法节点
+                List<MethodNode> deletedFileNodes = methodNodeRepository.findByProjectPathAndFilePath(projectPath, file);
+                deletedFileNodes.forEach(n -> nodeIdsToDelete.add(n.getNodeId()));
+                deleted += deletedFileNodes.size();
+                continue;
+            }
             try {
-                List<MethodNode> nodes = parseJavaFile(javaParser, filePath.toString(), projectPath);
-                allNodes.addAll(nodes);
+                // 解析变更文件得到新节点列表
+                List<MethodNode> newNodes = parseJavaFile(javaParser, filePath.toString(), projectPath);
+
+                // 查询变更文件中的所有旧节点（用 filePath 查询）
+                List<MethodNode> oldNodes = methodNodeRepository.findByProjectPathAndFilePath(projectPath, file);
+
+                // 构建旧节点查找 Map: className.methodName.signature -> MethodNode
+                Map<String, MethodNode> oldNodeMap = oldNodes.stream()
+                        .collect(Collectors.toMap(
+                                n -> n.getClassName() + "." + n.getMethodName() + "." + n.getSignature(),
+                                n -> n));
+
+                // 构建新节点查找 Map: className.methodName.signature -> MethodNode
+                Map<String, MethodNode> newNodeMap = newNodes.stream()
+                        .collect(Collectors.toMap(
+                                n -> n.getClassName() + "." + n.getMethodName() + "." + n.getSignature(),
+                                n -> n));
+
+                // 处理新节点：新增或更新
+                for (MethodNode newNode : newNodes) {
+                    String key = newNode.getClassName() + "." + newNode.getMethodName() + "." + newNode.getSignature();
+                    MethodNode oldNode = oldNodeMap.get(key);
+
+                    if (oldNode == null) {
+                        // 新方法 → CREATE
+                        nodesToCreate.add(newNode);
+                        created++;
+                    } else {
+                        if (methodBodyEquals(newNode.getMethodBody(), oldNode.getMethodBody())) {
+                            // methodBody 相同 → 不处理
+                            unchanged++;
+                        } else {
+                            // methodBody 变化 → DELETE + CREATE
+                            nodeIdsToDelete.add(oldNode.getNodeId());
+                            nodesToCreate.add(newNode);
+                            updated++;
+                        }
+                    }
+                }
+
+                // 处理删除：旧节点不在新节点列表中 → DELETE
+                for (MethodNode oldNode : oldNodes) {
+                    String key = oldNode.getClassName() + "." + oldNode.getMethodName() + "." + oldNode.getSignature();
+                    if (!newNodeMap.containsKey(key)) {
+                        nodeIdsToDelete.add(oldNode.getNodeId());
+                        deleted++;
+                    }
+                }
             } catch (Exception e) {
                 log.warn("Failed to rebuild methods from {}: {}", file, e.getMessage());
             }
         }
-        if (!allNodes.isEmpty()) {
-            storageService.saveMethodNodes(allNodes);
-            log.info("Rebuilt {} Java method nodes from {} files using MERGE", allNodes.size(), javaFiles.size());
+
+        // 执行删除
+        if (!nodeIdsToDelete.isEmpty()) {
+            methodNodeRepository.deleteByNodeIds(nodeIdsToDelete);
+            log.info("Deleted {} Java method nodes ({} updated, {} deleted)", nodeIdsToDelete.size(), updated, deleted - updated);
         }
-        return allNodes.size();
+
+        // 执行创建
+        if (!nodesToCreate.isEmpty()) {
+            methodNodeRepository.saveAll(nodesToCreate);
+            log.info("Created {} Java method nodes ({} new, {} updated)", nodesToCreate.size(), created, updated);
+        }
+
+        log.info("Java method nodes: created={}, updated={}, deleted={}, unchanged={}", created, updated, deleted, unchanged);
+        return created + updated + deleted;
+    }
+
+    /**
+     * 判断两个 methodBody 是否相等
+     * null 和空字符串视为相等
+     */
+    private boolean methodBodyEquals(String body1, String body2) {
+        if (body1 == null || body1.isEmpty()) return body2 == null || body2.isEmpty();
+        if (body2 == null || body2.isEmpty()) return false;
+        return body1.equals(body2);
     }
 
     private int rebuildPythonMethodNodes(String projectPath, List<String> pythonFiles) {
-        List<MethodNode> allNodes = new ArrayList<>();
+        int created = 0;
+        int updated = 0;
+        int deleted = 0;
+        int unchanged = 0;
+        List<MethodNode> nodesToCreate = new ArrayList<>();
+        List<String> nodeIdsToDelete = new ArrayList<>();
+
         for (String file : pythonFiles) {
             Path filePath = Paths.get(projectPath, file);
-            if (!Files.exists(filePath)) continue;
+            if (!Files.exists(filePath)) {
+                // 文件被删除 → 删除该文件的所有方法节点
+                List<MethodNode> deletedFileNodes = methodNodeRepository.findByProjectPathAndFilePath(projectPath, file);
+                deletedFileNodes.forEach(n -> nodeIdsToDelete.add(n.getNodeId()));
+                deleted += deletedFileNodes.size();
+                continue;
+            }
             try {
-                List<MethodNode> nodes = pythonKnowledgeGraphBuilder.parseFile(filePath.toString(), projectPath);
-                allNodes.addAll(nodes);
+                // 解析变更文件得到新节点列表
+                List<MethodNode> newNodes = pythonKnowledgeGraphBuilder.parseFile(filePath.toString(), projectPath);
+
+                // 查询变更文件中的所有旧节点（用 filePath 查询）
+                List<MethodNode> oldNodes = methodNodeRepository.findByProjectPathAndFilePath(projectPath, file);
+
+                // 构建旧节点查找 Map: className.methodName.signature -> MethodNode
+                Map<String, MethodNode> oldNodeMap = oldNodes.stream()
+                        .collect(Collectors.toMap(
+                                n -> n.getClassName() + "." + n.getMethodName() + "." + n.getSignature(),
+                                n -> n));
+
+                // 构建新节点查找 Map: className.methodName.signature -> MethodNode
+                Map<String, MethodNode> newNodeMap = newNodes.stream()
+                        .collect(Collectors.toMap(
+                                n -> n.getClassName() + "." + n.getMethodName() + "." + n.getSignature(),
+                                n -> n));
+
+                // 处理新节点：新增或更新
+                for (MethodNode newNode : newNodes) {
+                    String key = newNode.getClassName() + "." + newNode.getMethodName() + "." + newNode.getSignature();
+                    MethodNode oldNode = oldNodeMap.get(key);
+
+                    if (oldNode == null) {
+                        // 新方法 → CREATE
+                        nodesToCreate.add(newNode);
+                        created++;
+                    } else {
+                        if (methodBodyEquals(newNode.getMethodBody(), oldNode.getMethodBody())) {
+                            // methodBody 相同 → 不处理
+                            unchanged++;
+                        } else {
+                            // methodBody 变化 → DELETE + CREATE
+                            nodeIdsToDelete.add(oldNode.getNodeId());
+                            nodesToCreate.add(newNode);
+                            updated++;
+                        }
+                    }
+                }
+
+                // 处理删除：旧节点不在新节点列表中 → DELETE
+                for (MethodNode oldNode : oldNodes) {
+                    String key = oldNode.getClassName() + "." + oldNode.getMethodName() + "." + oldNode.getSignature();
+                    if (!newNodeMap.containsKey(key)) {
+                        nodeIdsToDelete.add(oldNode.getNodeId());
+                        deleted++;
+                    }
+                }
             } catch (Exception e) {
                 log.warn("Failed to rebuild Python methods from {}: {}", file, e.getMessage());
             }
         }
-        if (!allNodes.isEmpty()) {
-            storageService.saveMethodNodes(allNodes);
-            log.info("Rebuilt {} Python method nodes from {} files using MERGE", allNodes.size(), pythonFiles.size());
+
+        // 执行删除
+        if (!nodeIdsToDelete.isEmpty()) {
+            methodNodeRepository.deleteByNodeIds(nodeIdsToDelete);
+            log.info("Deleted {} Python method nodes ({} updated, {} deleted)", nodeIdsToDelete.size(), updated, deleted - updated);
         }
-        return allNodes.size();
+
+        // 执行创建
+        if (!nodesToCreate.isEmpty()) {
+            methodNodeRepository.saveAll(nodesToCreate);
+            log.info("Created {} Python method nodes ({} new, {} updated)", nodesToCreate.size(), created, updated);
+        }
+
+        log.info("Python method nodes: created={}, updated={}, deleted={}, unchanged={}", created, updated, deleted, unchanged);
+        return created + updated + deleted;
     }
 
     // ==================== Call Relation Rebuild ====================
