@@ -110,6 +110,45 @@ public class IncrementalRefreshServiceV2 {
     }
 
     /**
+     * Delete MethodNodes from changed files and all related edges.
+     * Includes both outgoing edges and incoming edges (reverse dependencies).
+     */
+    private int cleanupChangedNodes(String projectPath, List<String> changedFiles) {
+        log.info("[V2] Cleaning up {} changed files", changedFiles.size());
+
+        List<String> deletedFilePaths = new ArrayList<>();
+        int deletedNodes = 0;
+
+        for (String file : changedFiles) {
+            Path filePath = Paths.get(projectPath, file);
+            String absoluteFilePath = filePath.toString();
+
+            if (!filePath.toFile().exists()) {
+                // File was deleted
+                deletedFilePaths.add(absoluteFilePath);
+                continue;
+            }
+
+            // Delete nodes from this file (DETACH DELETE removes node + edges)
+            List<MethodNode> nodesInFile = methodNodeRepository.findByProjectPathAndFilePath(
+                projectPath, absoluteFilePath);
+            deletedNodes += nodesInFile.size();
+            deletedFilePaths.add(absoluteFilePath);
+        }
+
+        // Delete nodes and outgoing edges
+        for (String filePath : deletedFilePaths) {
+            methodNodeRepository.detachDeleteByFilePathAndProjectPath(filePath, projectPath);
+        }
+
+        // Delete incoming CALLS edges (reverse dependencies)
+        methodNodeRepository.deleteIncomingCallsToDeletedFiles(deletedFilePaths, projectPath);
+
+        log.info("[V2] Deleted {} nodes and their edges (including reverse dependencies)", deletedNodes);
+        return deletedNodes;
+    }
+
+    /**
      * Incremental refresh with full cache initialization.
      * Implementation will be added in later tasks.
      */
