@@ -774,6 +774,7 @@ public class KnowledgeGraphBuilder {
                     .methodBody(coreService.compressMethodBody(method))
                     .projectPath(projectPath)
                     .serviceName(extractServiceName(className, projectPath))
+                    .language("java")  // 全量生成也需要设置 language 字段
                     .build();
 
                 nodes.add(node);
@@ -797,6 +798,7 @@ public class KnowledgeGraphBuilder {
                     .methodBody("")
                     .projectPath(projectPath)
                     .serviceName(extractServiceName(className, projectPath))
+                    .language("java")  // 全量生成也需要设置 language 字段
                     .build();
 
                 nodes.add(node);
@@ -826,6 +828,7 @@ public class KnowledgeGraphBuilder {
                     .methodBody(coreService.compressMethodBody(method))
                     .projectPath(projectPath)
                     .serviceName(extractServiceName(className, projectPath))
+                    .language("java")  // 全量生成也需要设置 language 字段
                     .build();
 
                 nodes.add(node);

@@ -2036,6 +2036,17 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     void deleteProxyRelationsByProjectPath(@Param("projectPath") String projectPath);
 
     /**
+     * 删除指定方法节点的 outgoing CALLS 关系（用于增量刷新）
+     */
+    @Query("""
+        UNWIND $nodeIds AS nodeId
+        MATCH (m:Method {nodeId: nodeId})
+        MATCH (m)-[r:CALLS]->()
+        DELETE r
+        """)
+    void deleteOutgoingCallsByNodeIds(@Param("nodeIds") List<String> nodeIds);
+
+    /**
      * 按项目路径列表 + 短类名（ENDS WITH） + 方法名精确匹配。
      * 用于 LLM 输出短类名（如 RequireStatusServiceImpl）时的模糊查找。
      */

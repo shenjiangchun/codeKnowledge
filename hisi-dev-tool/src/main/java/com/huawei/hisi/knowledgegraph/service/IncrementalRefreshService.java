@@ -261,8 +261,10 @@ public class IncrementalRefreshService {
         int updated = 0;
         int deleted = 0;
         int unchanged = 0;
+        int lineUpdated = 0;  // 行号更新计数
         List<MethodNode> nodesToCreate = new ArrayList<>();
         List<String> nodeIdsToDelete = new ArrayList<>();
+        List<Map<String, Object>> nodesToUpdateLineNumbers = new ArrayList<>();  // 需要更新行号的节点
         Map<String, String> oldToNewNodeIdMap = new HashMap<>();  // 用于重建跨文件调用关系
         JavaParser javaParser = new JavaParser();
 
@@ -305,9 +307,17 @@ public class IncrementalRefreshService {
                         nodesToCreate.add(newNode);
                         created++;
                     } else {
-                        if (methodBodyEquals(newNode.getMethodBody(), oldNode.getMethodBody())) {
-                            // methodBody 相同 → 不处理
+                        boolean methodBodySame = methodBodyEquals(newNode.getMethodBody(), oldNode.getMethodBody());
+                        boolean lineChanged = newNode.getStartLine() != oldNode.getStartLine()
+                                || newNode.getEndLine() != oldNode.getEndLine();
+
+                        if (methodBodySame && !lineChanged) {
+                            // methodBody 相同且行号不变 → 不处理
                             unchanged++;
+                        } else if (methodBodySame && lineChanged) {
+                            // methodBody 相同但行号变化 → 使用 mergeAll 更新行号
+                            nodesToUpdateLineNumbers.add(methodNodeToMap(newNode));
+                            lineUpdated++;
                         } else {
                             // methodBody 变化 → DELETE + CREATE
                             nodeIdsToDelete.add(oldNode.getNodeId());
@@ -353,6 +363,12 @@ public class IncrementalRefreshService {
             log.info("Created {} Java method nodes ({} new, {} updated)", nodesToCreate.size(), created, updated);
         }
 
+        // 执行行号更新（methodBody 相同但行号变化）
+        if (!nodesToUpdateLineNumbers.isEmpty()) {
+            methodNodeRepository.mergeAll(nodesToUpdateLineNumbers);
+            log.info("Updated {} Java method node line numbers", lineUpdated);
+        }
+
         // 重建 incoming CALLS（来自未变更文件的调用关系）
         if (!incomingCalls.isEmpty()) {
             List<Map<String, Object>> relationsToRebuild = new ArrayList<>();
@@ -374,8 +390,8 @@ public class IncrementalRefreshService {
             }
         }
 
-        log.info("Java method nodes: created={}, updated={}, deleted={}, unchanged={}", created, updated, deleted, unchanged);
-        return created + updated + deleted;
+        log.info("Java method nodes: created={}, updated={}, deleted={}, unchanged={}, lineUpdated={}", created, updated, deleted, unchanged, lineUpdated);
+        return created + updated + deleted + lineUpdated;
     }
 
     /**
@@ -386,6 +402,29 @@ public class IncrementalRefreshService {
         if (body1 == null || body1.isEmpty()) return body2 == null || body2.isEmpty();
         if (body2 == null || body2.isEmpty()) return false;
         return body1.equals(body2);
+    }
+
+    /**
+     * 将 MethodNode 转换为 mergeAll 需要的 Map 格式
+     */
+    private Map<String, Object> methodNodeToMap(MethodNode node) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("nodeId", node.getNodeId());
+        map.put("className", node.getClassName());
+        map.put("methodName", node.getMethodName());
+        map.put("signature", node.getSignature());
+        map.put("description", node.getDescription());
+        map.put("filePath", node.getFilePath());
+        map.put("startLine", node.getStartLine());
+        map.put("endLine", node.getEndLine());
+        map.put("complexity", node.getComplexity());
+        map.put("methodBody", node.getMethodBody());
+        map.put("projectPath", node.getProjectPath());
+        map.put("serviceName", node.getServiceName());
+        map.put("comment", node.getComment());
+        map.put("thrownExceptions", node.getThrownExceptions());
+        map.put("caughtExceptions", node.getCaughtExceptions());
+        return map;
     }
 
     private int rebuildPythonMethodNodes(String projectPath, List<String> pythonFiles) {
@@ -516,6 +555,37 @@ public class IncrementalRefreshService {
      */
     private int rebuildCallRelations(String projectPath, List<String> javaFiles,
                                      JavaParser javaParser, Map<String, String> methodSignatureToNodeId) {
+        // 1. 先删除变更文件中所有方法的 outgoing CALLS 关系
+        List<String> nodeIdsToDeleteCalls = new ArrayList<>();
+        for (String file : javaFiles) {
+            Path filePath = Paths.get(projectPath, file);
+            if (!Files.exists(filePath)) continue;
+            try {
+                CompilationUnit cu = coreService.parseFile(filePath.toFile(), javaParser);
+                if (cu == null) continue;
+                String packageName = cu.getPackageDeclaration().map(pd -> pd.getNameAsString()).orElse("");
+                cu.findAll(ClassOrInterfaceDeclaration.class).forEach(clazz -> {
+                    String className = packageName.isEmpty() ? clazz.getNameAsString()
+                            : packageName + "." + clazz.getNameAsString();
+                    clazz.findAll(MethodDeclaration.class).forEach(method -> {
+                        String sigHash = signatureHash(method.getSignature().toString());
+                        String key = className + "." + method.getNameAsString() + "." + sigHash;
+                        String nodeId = methodSignatureToNodeId.get(key);
+                        if (nodeId != null) {
+                            nodeIdsToDeleteCalls.add(nodeId);
+                        }
+                    });
+                });
+            } catch (Exception e) {
+                log.warn("Failed to collect nodeIds from {}: {}", file, e.getMessage());
+            }
+        }
+        if (!nodeIdsToDeleteCalls.isEmpty()) {
+            methodNodeRepository.deleteOutgoingCallsByNodeIds(nodeIdsToDeleteCalls);
+            log.info("Deleted {} outgoing CALLS from changed files", nodeIdsToDeleteCalls.size());
+        }
+
+        // 2. 创建新调用关系
         int total = 0;
         for (String file : javaFiles) {
             Path filePath = Paths.get(projectPath, file);

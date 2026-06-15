@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-26T07:44:32.573Z",
-  "lastUpdated": "2026-06-15T03:30:25.948Z",
+  "lastUpdated": "2026-06-15T06:23:49.793Z",
   "stats": {
-    "totalOperations": 399,
-    "totalFilesEdited": 163,
-    "totalAiLines": 17100,
-    "totalAiLinesDeleted": 732,
-    "totalCommits": 53
+    "totalOperations": 416,
+    "totalFilesEdited": 172,
+    "totalAiLines": 17191,
+    "totalAiLinesDeleted": 747,
+    "totalCommits": 54
   },
   "pendingFiles": [
     {
@@ -29,6 +29,81 @@
       "operations": 1,
       "timestamp": "2026-06-12T02:35:46.132Z",
       "lastModified": "2026-06-12T02:35:46.132Z"
+    },
+    {
+      "path": "C:/Users/47583/test-projects/java-demo/src/main/java/com/demo/controller/UserController.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 2,
+      "timestamp": "2026-06-15T05:00:46.200Z",
+      "lastModified": "2026-06-15T06:09:36.438Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/test-projects/java-demo/src/main/java/com/demo/service/UserService.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 2,
+      "timestamp": "2026-06-15T05:01:02.752Z",
+      "lastModified": "2026-06-15T06:10:02.550Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/test-projects/java-demo/src/main/java/com/demo/model/User.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 1,
+      "timestamp": "2026-06-15T05:01:30.754Z",
+      "lastModified": "2026-06-15T05:01:30.754Z"
+    },
+    {
+      "path": "C:/Users/47583/test-projects/java-demo/pom.xml",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 1,
+      "timestamp": "2026-06-15T05:01:41.922Z",
+      "lastModified": "2026-06-15T05:01:41.922Z"
+    },
+    {
+      "path": "C:/Users/47583/test-projects/python-demo/app/main.py",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 1,
+      "timestamp": "2026-06-15T05:05:45.348Z",
+      "lastModified": "2026-06-15T05:05:45.348Z"
+    },
+    {
+      "path": "C:/Users/47583/test-projects/python-demo/requirements.txt",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 1,
+      "timestamp": "2026-06-15T05:05:57.474Z",
+      "lastModified": "2026-06-15T05:05:57.474Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/repository/Neo4jMethodNodeRepository.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 1,
+      "timestamp": "2026-06-15T06:20:33.931Z",
+      "lastModified": "2026-06-15T06:20:33.931Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/service/IncrementalRefreshService.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 5,
+      "timestamp": "2026-06-15T06:21:09.542Z",
+      "lastModified": "2026-06-15T06:23:49.793Z",
+      "lastTool": "Edit"
     }
   ]
 }

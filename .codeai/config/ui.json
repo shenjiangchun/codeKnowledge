@@ -11,39 +11,12 @@
   "chatTabs": {
     "tabs": [
       {
-        "name": "帮我生成该项目的 CodeWiki 设计手册",
+        "name": "拉取最新代码",
         "projectPath": "C:\\Users\\47583\\projects\\hisi_dev_tool v5.0",
-        "sessionId": "853d2bbb-90a8-449d-b7a5-8d9678af405d",
+        "sessionId": "af2be6a5-0943-445a-aa1b-ad2648e3d326",
         "agentProvider": "claude",
         "providerSessionIds": {
-          "claude": "853d2bbb-90a8-449d-b7a5-8d9678af405d"
-        }
-      },
-      {
-        "name": "/using-superpowers 我现在要你新建一个worktree实现如下…",
-        "projectPath": "C:\\Users\\47583\\projects\\hisi_dev_tool v5.0",
-        "sessionId": "0739f47f-e8b7-4eea-bb00-998ff53e31a8",
-        "agentProvider": "claude",
-        "providerSessionIds": {
-          "claude": "0739f47f-e8b7-4eea-bb00-998ff53e31a8"
-        }
-      },
-      {
-        "name": "我现在要你帮我树立一个与当前项目无关的需求，现在领导要求我比对两个ai coding工具的能力，要求找一个需求...",
-        "projectPath": "C:\\Users\\47583\\projects\\hisi_dev_tool v5.0",
-        "sessionId": "7c4b0202-1e3e-4def-a324-9df4d9d9d845",
-        "agentProvider": "claude",
-        "providerSessionIds": {
-          "claude": "7c4b0202-1e3e-4def-a324-9df4d9d9d845"
-        }
-      },
-      {
-        "name": "学习codeai项目中claude sdk的用法，将claudesdk能力封装成核心工具能力用来在后端业务流中...",
-        "projectPath": "C:\\Users\\47583\\projects\\hisi_dev_tool v5.0",
-        "sessionId": "1dae5c1c-3341-4642-b796-10bd6751fea8",
-        "agentProvider": "claude",
-        "providerSessionIds": {
-          "claude": "1dae5c1c-3341-4642-b796-10bd6751fea8"
+          "claude": "af2be6a5-0943-445a-aa1b-ad2648e3d326"
         }
       }
     ],
