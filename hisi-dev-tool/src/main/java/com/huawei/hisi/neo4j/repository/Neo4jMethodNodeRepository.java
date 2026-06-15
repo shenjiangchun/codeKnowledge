@@ -668,6 +668,18 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     List<Map<String, Object>> findMissingDescriptionEmbedding(@Param("projectPath") String projectPath, @Param("limit") int limit);
 
     /**
+     * Find all MethodNodes in project with empty description or descriptionEmbedding.
+     * Used for incremental vector generation.
+     */
+    @Query("""
+        MATCH (m:Method)
+        WHERE m.projectPath = $projectPath
+        AND (m.description IS NULL OR m.description = '' OR m.descriptionEmbedding IS NULL)
+        RETURN m
+        """)
+    List<MethodNode> findByProjectPathAndDescriptionEmpty(@Param("projectPath") String projectPath);
+
+    /**
      * 查询带关系属性的调用者
      * 返回调用者和关系属性
      */
@@ -2045,6 +2057,26 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
         DELETE r
         """)
     void deleteOutgoingCallsByNodeIds(@Param("nodeIds") List<String> nodeIds);
+
+    /**
+     * Delete incoming CALLS edges pointing to nodes from deleted files.
+     * This handles reverse dependencies - unchanged methods calling changed methods.
+     *
+     * Query: MATCH (m:Method)-[c:CALLS]->(target:Method)
+     *        WHERE target.filePath IN $deletedFilePaths
+     *        AND m.filePath NOT IN $deletedFilePaths
+     *        DELETE c
+     */
+    @Query("""
+        MATCH (m:Method)-[c:CALLS]->(target:Method)
+        WHERE target.filePath IN $deletedFilePaths
+        AND NOT m.filePath IN $deletedFilePaths
+        AND m.projectPath = $projectPath
+        DELETE c
+        """)
+    void deleteIncomingCallsToDeletedFiles(
+        @Param("deletedFilePaths") List<String> deletedFilePaths,
+        @Param("projectPath") String projectPath);
 
     /**
      * 根据类名、方法名、签名和项目路径查询 nodeId
