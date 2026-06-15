@@ -3,6 +3,8 @@ package com.huawei.hisi.knowledgegraph.controller;
 import com.huawei.hisi.knowledgegraph.exception.NoCheckpointException;
 import com.huawei.hisi.knowledgegraph.exception.WorkingDirDirtyException;
 import com.huawei.hisi.knowledgegraph.service.IncrementalRefreshService;
+import com.huawei.hisi.knowledgegraph.service.IncrementalRefreshServiceV2;
+import com.huawei.hisi.knowledgegraph.service.VectorGenerationService;
 import com.huawei.hisi.model.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +25,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class RefreshController {
 
     private final IncrementalRefreshService refreshService;
+    private final IncrementalRefreshServiceV2 refreshServiceV2;
+    private final VectorGenerationService vectorGenerationService;
 
     @PostMapping("/refresh")
     public ResponseEntity<ApiResponse<IncrementalRefreshService.RefreshResult>> refresh(
@@ -49,6 +53,31 @@ public class RefreshController {
             log.error("Refresh failed unexpectedly", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error(500, "Refresh failed: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/refresh-v2")
+    public ResponseEntity<ApiResponse<IncrementalRefreshServiceV2.RefreshResult>> refreshV2(
+            @RequestBody RefreshRequest request) {
+
+        if (request.projectPath() == null || request.projectPath().isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(400, "projectPath is required"));
+        }
+
+        try {
+            var result = refreshServiceV2.refresh(request.projectPath());
+
+            // Trigger vector generation for empty nodes
+            if (result.success() && result.rebuiltNodes() > 0) {
+                vectorGenerationService.startVectorGeneration(request.projectPath());
+            }
+
+            return ResponseEntity.ok(ApiResponse.success(result));
+        } catch (Exception e) {
+            log.error("V2 Refresh failed unexpectedly", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error(500, "V2 Refresh failed: " + e.getMessage()));
         }
     }
 

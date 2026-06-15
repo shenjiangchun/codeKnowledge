@@ -116,6 +116,12 @@ public class IncrementalRefreshServiceV2 {
      * Includes both outgoing edges and incoming edges (reverse dependencies).
      */
     private int cleanupChangedNodes(String projectPath, List<String> changedFiles) {
+        // Null safety check
+        if (changedFiles == null || changedFiles.isEmpty()) {
+            log.info("[V2] No changed files to clean up");
+            return 0;
+        }
+
         log.info("[V2] Cleaning up {} changed files", changedFiles.size());
 
         List<String> deletedFilePaths = new ArrayList<>();
@@ -244,11 +250,160 @@ public class IncrementalRefreshServiceV2 {
     }
 
     /**
+     * Generate CALLS edges by full scanning all files.
+     * Only record edges involving changed nodes (caller OR callee is in rebuiltNodeIds).
+     */
+    private int rebuildEdges(String projectPath, Set<String> rebuiltNodeIds, JavaParser javaParser) {
+        log.info("[V2] Rebuilding edges, filtering for {} changed nodes", rebuiltNodeIds.size());
+
+        // Build methodSignatureToNodeId from Neo4j (all project nodes)
+        Map<String, String> methodSignatureToNodeId = new HashMap<>();
+        methodNodeRepository.findByProjectPath(projectPath).forEach(node -> {
+            String sigHash = node.getSignature() != null ? signatureHash(node.getSignature()) : "0";
+            String key = node.getClassName() + "." + node.getMethodName() + "." + sigHash;
+            methodSignatureToNodeId.put(key, node.getNodeId());
+        });
+
+        List<File> allJavaFiles = coreService.findJavaFiles(projectPath, Collections.emptyList());
+        List<Map<String, Object>> newCallRelations = new ArrayList<>();
+        int totalScanned = 0;
+
+        for (File javaFile : allJavaFiles) {
+            CompilationUnit cu = coreService.parseFile(javaFile, javaParser);
+            if (cu == null) continue;
+            totalScanned++;
+
+            String filePath = javaFile.getAbsolutePath();
+            cu.findAll(ClassOrInterfaceDeclaration.class).forEach(clazz -> {
+                String className = cu.getPackageDeclaration()
+                    .map(pd -> pd.getNameAsString() + "." + clazz.getNameAsString())
+                    .orElse(clazz.getNameAsString());
+
+                clazz.findAll(MethodDeclaration.class).forEach(method -> {
+                    String sigHash = signatureHash(method.getSignature().toString());
+                    String callerNodeId = projectPath + ":" + className + "." + method.getNameAsString() + "." + sigHash;
+
+                    method.findAll(com.github.javaparser.ast.expr.MethodCallExpr.class).forEach(methodCall -> {
+                        List<MethodDeclaration> targets = coreService.findMethodCallTargets(
+                            methodCall, clazz, method, javaParser);
+
+                        for (MethodDeclaration target : targets) {
+                            String targetClassName = getMethodClassName(target, clazz);
+                            String targetSigHash = signatureHash(target.getSignature().toString());
+                            String calleeKey = targetClassName + "." + target.getNameAsString() + "." + targetSigHash;
+                            String calleeNodeId = methodSignatureToNodeId.get(calleeKey);
+
+                            if (calleeNodeId != null) {
+                                boolean callerChanged = rebuiltNodeIds.contains(callerNodeId);
+                                boolean calleeChanged = rebuiltNodeIds.contains(calleeNodeId);
+
+                                if (callerChanged || calleeChanged) {
+                                    Map<String, Object> relation = new LinkedHashMap<>();
+                                    relation.put("callerId", callerNodeId);
+                                    relation.put("calleeId", calleeNodeId);
+                                    relation.put("callType", "DIRECT");
+                                    relation.put("filePath", filePath);
+                                    newCallRelations.add(relation);
+                                }
+                            }
+                        }
+                    });
+                });
+            });
+        }
+
+        if (!newCallRelations.isEmpty()) {
+            storageService.saveCallRelations(newCallRelations);
+        }
+
+        log.info("[V2] Edge generation complete: {} files scanned, {} edges recorded",
+            totalScanned, newCallRelations.size());
+        return newCallRelations.size();
+    }
+
+    private String getMethodClassName(MethodDeclaration method, ClassOrInterfaceDeclaration contextClass) {
+        return contextClass.getFullyQualifiedName().orElse(contextClass.getNameAsString());
+    }
+
+    /**
      * Incremental refresh with full cache initialization.
-     * Implementation will be added in later tasks.
      */
     public RefreshResult refresh(String projectPath) {
-        // Placeholder - implementation in Task 7
-        return RefreshResult.noop();
+        String normalizedProjectPath = projectPath.replace('\\', '/');
+        log.info("[V2] Starting incremental refresh for: {}", normalizedProjectPath);
+
+        try {
+            // 1. Get checkpoint
+            Optional<GenerationCheckpointNode> checkpoint = checkpointRepository.findByProjectPath(normalizedProjectPath);
+            if (checkpoint.isEmpty()) {
+                log.warn("[V2] No checkpoint found for: {}", normalizedProjectPath);
+                return RefreshResult.noop();
+            }
+
+            String lastCommit = checkpoint.get().getLastCommit();
+            String currentCommit = gitStatusService.getCurrentCommitHash(normalizedProjectPath);
+
+            if (currentCommit != null && currentCommit.equals(lastCommit)) {
+                log.info("[V2] No changes detected (same commit)");
+                return RefreshResult.noop();
+            }
+
+            // 2. Initialize caches (full scan)
+            initializeCaches(normalizedProjectPath);
+
+            // 3. Get changed files
+            List<String> changedFiles = gitStatusService.getChangedFilesJgit(
+                normalizedProjectPath, lastCommit, currentCommit);
+
+            List<String> javaFiles = changedFiles.stream()
+                .filter(f -> f.endsWith(".java"))
+                .collect(Collectors.toList());
+
+            if (javaFiles.isEmpty()) {
+                log.info("[V2] No Java files changed");
+                return new RefreshResult(normalizedProjectPath, lastCommit, currentCommit,
+                    changedFiles.size(), 0, 0, 0, 0, true);
+            }
+
+            // 4. Create JavaParser with initialized TypeSolver
+            JavaParser javaParser = coreService.createJavaParser(globalCache.getTypeSolver());
+
+            // 5. Cleanup changed nodes and edges
+            int deletedNodes = cleanupChangedNodes(normalizedProjectPath, javaFiles);
+
+            // 6. Rebuild changed nodes
+            Set<String> rebuiltNodeIds = rebuildChangedNodes(normalizedProjectPath, javaFiles, javaParser);
+
+            // 7. Rebuild edges (full scan, smart filter)
+            int rebuiltEdges = rebuildEdges(normalizedProjectPath, rebuiltNodeIds, javaParser);
+
+            // 8. Update checkpoint
+            checkpointRepository.save(GenerationCheckpointNode.builder()
+                .projectPath(normalizedProjectPath)
+                .lastCommit(currentCommit)
+                .generatedAt(java.time.Instant.now())
+                .build());
+
+            log.info("[V2] Incremental refresh complete: {} files, {} nodes deleted, {} nodes rebuilt, {} edges rebuilt",
+                javaFiles.size(), deletedNodes, rebuiltNodeIds.size(), rebuiltEdges);
+
+            return new RefreshResult(
+                normalizedProjectPath,
+                lastCommit,
+                currentCommit,
+                changedFiles.size(),
+                deletedNodes,
+                rebuiltNodeIds.size(),
+                rebuiltEdges,
+                0,
+                true
+            );
+        } catch (java.io.IOException e) {
+            log.error("[V2] Failed to get changed files: {}", e.getMessage(), e);
+            return new RefreshResult(normalizedProjectPath, null, null, 0, 0, 0, 0, 0, false);
+        } catch (Exception e) {
+            log.error("[V2] Refresh failed: {}", e.getMessage(), e);
+            return new RefreshResult(normalizedProjectPath, null, null, 0, 0, 0, 0, 0, false);
+        }
     }
 }
