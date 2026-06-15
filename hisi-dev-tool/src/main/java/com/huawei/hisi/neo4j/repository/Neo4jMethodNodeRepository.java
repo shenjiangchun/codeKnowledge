@@ -2047,6 +2047,43 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     void deleteOutgoingCallsByNodeIds(@Param("nodeIds") List<String> nodeIds);
 
     /**
+     * 根据类名、方法名、签名和项目路径查询 nodeId
+     * 用于增量刷新时跨文件调用关系的 callee nodeId 查询
+     */
+    @Query("""
+        MATCH (m:Method)
+        WHERE m.className = $className
+          AND m.methodName = $methodName
+          AND m.signature = $signature
+          AND m.projectPath = $projectPath
+        RETURN m.nodeId
+        LIMIT 1
+        """)
+    String findNodeIdByClassNameAndMethodNameAndSignatureAndProjectPath(
+            @Param("className") String className,
+            @Param("methodName") String methodName,
+            @Param("signature") String signature,
+            @Param("projectPath") String projectPath);
+
+    /**
+     * 根据类名、方法名和项目路径查询 nodeId（不精确匹配签名）
+     * 用于跨文件调用关系重建，当签名格式可能不完全匹配时
+     */
+    @Query("""
+        MATCH (m:Method)
+        WHERE m.className = $className
+          AND m.methodName = $methodName
+          AND m.projectPath = $projectPath
+        RETURN m.nodeId
+        ORDER BY m.startLine
+        LIMIT 1
+        """)
+    String findNodeIdByClassNameAndMethodNameAndProjectPath(
+            @Param("className") String className,
+            @Param("methodName") String methodName,
+            @Param("projectPath") String projectPath);
+
+    /**
      * 按项目路径列表 + 短类名（ENDS WITH） + 方法名精确匹配。
      * 用于 LLM 输出短类名（如 RequireStatusServiceImpl）时的模糊查找。
      */

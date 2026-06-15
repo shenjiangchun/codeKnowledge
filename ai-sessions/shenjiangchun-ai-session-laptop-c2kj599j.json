@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-26T07:44:32.573Z",
-  "lastUpdated": "2026-06-15T06:23:49.793Z",
+  "lastUpdated": "2026-06-15T06:27:47.802Z",
   "stats": {
     "totalOperations": 416,
     "totalFilesEdited": 172,
-    "totalAiLines": 17191,
-    "totalAiLinesDeleted": 747,
-    "totalCommits": 54
+    "totalAiLines": 17276,
+    "totalAiLinesDeleted": 751,
+    "totalCommits": 55
   },
   "pendingFiles": [
     {
@@ -85,25 +85,6 @@
       "operations": 1,
       "timestamp": "2026-06-15T05:05:57.474Z",
       "lastModified": "2026-06-15T05:05:57.474Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/repository/Neo4jMethodNodeRepository.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "Ali-glm-5-cc",
-      "operations": 1,
-      "timestamp": "2026-06-15T06:20:33.931Z",
-      "lastModified": "2026-06-15T06:20:33.931Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/service/IncrementalRefreshService.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "Ali-glm-5-cc",
-      "operations": 5,
-      "timestamp": "2026-06-15T06:21:09.542Z",
-      "lastModified": "2026-06-15T06:23:49.793Z",
-      "lastTool": "Edit"
     }
   ]
 }

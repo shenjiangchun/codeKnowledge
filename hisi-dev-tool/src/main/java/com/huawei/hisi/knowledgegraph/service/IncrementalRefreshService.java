@@ -639,6 +639,18 @@ public class IncrementalRefreshService {
                         String targetKey = targetClassName + "." + target.getNameAsString() + "." + targetSigHash;
                         String calleeNodeId = methodSignatureToNodeId.get(targetKey);
 
+                        // 如果映射中找不到，尝试从图谱查询（跨文件调用场景）
+                        if (calleeNodeId == null) {
+                            // 使用不精确匹配签名的查询（只匹配类名+方法名+项目路径）
+                            String targetNodeId = methodNodeRepository.findNodeIdByClassNameAndMethodNameAndProjectPath(
+                                    targetClassName, target.getNameAsString(), projectPath);
+                            if (targetNodeId != null) {
+                                calleeNodeId = targetNodeId;
+                                // 缓存到映射中，避免重复查询
+                                methodSignatureToNodeId.put(targetKey, calleeNodeId);
+                            }
+                        }
+
                         if (calleeNodeId != null && !calleeNodeId.equals(callerNodeId)) {
                             Map<String, Object> relation = new LinkedHashMap<>();
                             relation.put("callerId", callerNodeId);
