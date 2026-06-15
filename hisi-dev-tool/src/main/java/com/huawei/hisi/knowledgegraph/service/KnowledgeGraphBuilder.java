@@ -537,6 +537,14 @@ public class KnowledgeGraphBuilder {
     }
 
     /**
+     * Scan bridge endpoints (Feign, MQ, HTTP) and populate GlobalCache.
+     * Made public for V2 incremental refresh to reuse.
+     */
+    public void scanBridgeEndpointsPublic(List<Path> javaFilePaths, String projectPath) {
+        scanBridgeEndpoints(javaFilePaths, projectPath);
+    }
+
+    /**
      * 使用桥接扫描器扫描端点信息
      */
     private void scanBridgeEndpoints(List<Path> javaFilePaths, String projectPath) {

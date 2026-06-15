@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-26T07:44:32.573Z",
-  "lastUpdated": "2026-06-15T09:01:33.660Z",
+  "lastUpdated": "2026-06-15T09:03:01.992Z",
   "stats": {
     "totalOperations": 425,
     "totalFilesEdited": 178,
-    "totalAiLines": 18558,
+    "totalAiLines": 18590,
     "totalAiLinesDeleted": 751,
-    "totalCommits": 58
+    "totalCommits": 59
   },
   "pendingFiles": [
     {
@@ -85,16 +85,6 @@
       "operations": 1,
       "timestamp": "2026-06-15T05:05:57.474Z",
       "lastModified": "2026-06-15T05:05:57.474Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/repository/Neo4jMethodNodeRepository.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "Ali-glm-5-cc",
-      "operations": 2,
-      "timestamp": "2026-06-15T08:58:30.430Z",
-      "lastModified": "2026-06-15T08:58:41.327Z",
-      "lastTool": "Edit"
     }
   ]
 }

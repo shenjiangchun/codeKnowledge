@@ -65,6 +65,51 @@ public class IncrementalRefreshServiceV2 {
     }
 
     /**
+     * Initialize GlobalAnalysisCache by scanning all project files.
+     * This ensures implementationMap, extendMap, and typeSolver are populated.
+     */
+    private void initializeCaches(String projectPath) {
+        log.info("[V2] Initializing caches for project: {}", projectPath);
+
+        // Clear existing caches
+        globalCache.clearAll();
+
+        // Build TypeSolver
+        List<Path> sourceRoots = coreService.findSourceRoots(Paths.get(projectPath));
+        CombinedTypeSolver solver = new CombinedTypeSolver();
+        solver.add(new ReflectionTypeSolver());
+        for (Path root : sourceRoots) {
+            solver.add(new JavaParserTypeSolver(root));
+        }
+        globalCache.setTypeSolver(solver);
+        JavaParser javaParser = coreService.createJavaParser(solver);
+
+        // Find all Java files
+        List<File> allJavaFiles = coreService.findJavaFiles(projectPath, Collections.emptyList());
+        log.info("[V2] Found {} Java files for cache initialization", allJavaFiles.size());
+
+        // Scan all files for implementationMap and extendMap
+        int scanned = 0;
+        for (File javaFile : allJavaFiles) {
+            CompilationUnit cu = coreService.parseFile(javaFile, javaParser);
+            if (cu == null) continue;
+            coreService.buildImplementationMap(cu);
+            scanned++;
+        }
+
+        // Scan bridge endpoints (Feign, MQ, HTTP)
+        List<Path> allFilePaths = allJavaFiles.stream()
+            .map(File::toPath)
+            .collect(Collectors.toList());
+        knowledgeGraphBuilder.scanBridgeEndpointsPublic(allFilePaths, projectPath);
+
+        log.info("[V2] Cache initialization complete: {} files scanned, implementationMap size={}, extendMap size={}",
+            scanned,
+            globalCache.getImplementationMap().size(),
+            globalCache.getExtendMap().size());
+    }
+
+    /**
      * Incremental refresh with full cache initialization.
      * Implementation will be added in later tasks.
      */
