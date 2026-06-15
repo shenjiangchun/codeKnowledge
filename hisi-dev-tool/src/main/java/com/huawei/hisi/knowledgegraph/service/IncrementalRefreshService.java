@@ -30,6 +30,7 @@ import com.huawei.hisi.neo4j.repository.Neo4jGenerationCheckpointRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.service.CodeAnalysisCoreService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -65,6 +66,7 @@ public class IncrementalRefreshService {
     private final KnowledgeGraphStorageService storageService;
     private final JavaDataModelScanner javaDataModelScanner;
     private final Neo4jDataModelNodeRepository dataModelNodeRepository;
+    private final VectorGenerationService vectorGenerationService;
 
     public IncrementalRefreshService(
             GitStatusService gitStatusService,
@@ -78,7 +80,8 @@ public class IncrementalRefreshService {
             GlobalAnalysisCache globalCache,
             KnowledgeGraphStorageService storageService,
             JavaDataModelScanner javaDataModelScanner,
-            Neo4jDataModelNodeRepository dataModelNodeRepository) {
+            Neo4jDataModelNodeRepository dataModelNodeRepository,
+            VectorGenerationService vectorGenerationService) {
         this.gitStatusService = gitStatusService;
         this.checkpointRepository = checkpointRepository;
         this.vectorWriter = vectorWriter;
@@ -91,6 +94,7 @@ public class IncrementalRefreshService {
         this.storageService = storageService;
         this.javaDataModelScanner = javaDataModelScanner;
         this.dataModelNodeRepository = dataModelNodeRepository;
+        this.vectorGenerationService = vectorGenerationService;
     }
 
     /**
@@ -157,10 +161,11 @@ public class IncrementalRefreshService {
                     methodSignatureToNodeId.put(key, node.getNodeId());
                 });
 
-        // 7. Delete stale data for each changed file
+        // 7. Delete stale entry points for each changed file (keep method nodes - use MERGE)
+        // Note: We no longer DETACH DELETE method nodes because MERGE preserves existing data
+        // and vectorGenerationService will regenerate embeddings for updated nodes
         for (String file : changedFiles) {
             entryPointRepository.deleteByFilePathAndProjectPath(file, normalizedProjectPath);
-            vectorWriter.deleteByFilePath(file, normalizedProjectPath); // DETACH DELETE — removes method + all relations
         }
         int deleted = changedFiles.size();
 
@@ -213,7 +218,13 @@ public class IncrementalRefreshService {
             log.warn("Cross-service re-linking failed: {}", e.getMessage());
         }
 
-        // 14. Update checkpoint
+        // 14. Trigger vector generation for updated nodes
+        if (rebuiltMethods > 0 || rebuiltEntryPoints > 0) {
+            log.info("[IncrementalRefresh] Starting vector generation for updated nodes: {}", normalizedProjectPath);
+            vectorGenerationService.startVectorGeneration(normalizedProjectPath);
+        }
+
+        // 15. Update checkpoint
         String currentBranch = gitStatusService.getCurrentBranch(normalizedProjectPath);
         checkpointRepository.upsertCheckpoint(normalizedProjectPath, currentCommit, currentBranch);
 
@@ -241,36 +252,42 @@ public class IncrementalRefreshService {
     }
 
     private int rebuildJavaMethodNodes(String projectPath, List<String> javaFiles) {
-        int total = 0;
+        List<MethodNode> allNodes = new ArrayList<>();
         JavaParser javaParser = new JavaParser();
         for (String file : javaFiles) {
             Path filePath = Paths.get(projectPath, file);
             if (!Files.exists(filePath)) continue;
             try {
                 List<MethodNode> nodes = parseJavaFile(javaParser, filePath.toString(), projectPath);
-                for (MethodNode node : nodes) methodNodeRepository.save(node);
-                total += nodes.size();
+                allNodes.addAll(nodes);
             } catch (Exception e) {
                 log.warn("Failed to rebuild methods from {}: {}", file, e.getMessage());
             }
         }
-        return total;
+        if (!allNodes.isEmpty()) {
+            storageService.saveMethodNodes(allNodes);
+            log.info("Rebuilt {} Java method nodes from {} files using MERGE", allNodes.size(), javaFiles.size());
+        }
+        return allNodes.size();
     }
 
     private int rebuildPythonMethodNodes(String projectPath, List<String> pythonFiles) {
-        int total = 0;
+        List<MethodNode> allNodes = new ArrayList<>();
         for (String file : pythonFiles) {
             Path filePath = Paths.get(projectPath, file);
             if (!Files.exists(filePath)) continue;
             try {
                 List<MethodNode> nodes = pythonKnowledgeGraphBuilder.parseFile(filePath.toString(), projectPath);
-                for (MethodNode node : nodes) methodNodeRepository.save(node);
-                total += nodes.size();
+                allNodes.addAll(nodes);
             } catch (Exception e) {
                 log.warn("Failed to rebuild Python methods from {}: {}", file, e.getMessage());
             }
         }
-        return total;
+        if (!allNodes.isEmpty()) {
+            storageService.saveMethodNodes(allNodes);
+            log.info("Rebuilt {} Python method nodes from {} files using MERGE", allNodes.size(), pythonFiles.size());
+        }
+        return allNodes.size();
     }
 
     // ==================== Call Relation Rebuild ====================
@@ -362,7 +379,7 @@ public class IncrementalRefreshService {
     // ==================== Entry Point Rebuild ====================
 
     private int rebuildJavaEntryPoints(String projectPath, List<String> javaFiles) {
-        int total = 0;
+        List<EntryPointNode> allEntryPoints = new ArrayList<>();
         JavaParser javaParser = new JavaParser();
         for (String file : javaFiles) {
             Path filePath = Paths.get(projectPath, file);
@@ -372,32 +389,36 @@ public class IncrementalRefreshService {
                 if (!result.isSuccessful() || result.getResult().isEmpty()) continue;
                 CompilationUnit cu = result.getResult().get();
                 List<EntryPointNode> entryPoints = createEntryPointsSimple(cu, projectPath, filePath.toString());
-                for (EntryPointNode ep : entryPoints) entryPointRepository.save(ep);
-                total += entryPoints.size();
+                allEntryPoints.addAll(entryPoints);
             } catch (Exception e) {
                 log.warn("Failed to rebuild entry points from {}: {}", file, e.getMessage());
             }
         }
-        log.info("Rebuilt {} Java entry points", total);
-        return total;
+        if (!allEntryPoints.isEmpty()) {
+            storageService.saveEntryPoints(allEntryPoints);
+            log.info("Rebuilt {} Java entry points from {} files using MERGE", allEntryPoints.size(), javaFiles.size());
+        }
+        return allEntryPoints.size();
     }
 
     private int rebuildPythonEntryPoints(String projectPath, List<String> pythonFiles) {
-        int total = 0;
+        List<EntryPointNode> allEntryPoints = new ArrayList<>();
         for (String file : pythonFiles) {
             Path filePath = Paths.get(projectPath, file);
             if (!Files.exists(filePath)) continue;
             try {
                 List<EntryPointNode> entryPoints = pythonKnowledgeGraphBuilder.buildFileEntryPoints(
                         filePath.toString(), projectPath);
-                for (EntryPointNode ep : entryPoints) entryPointRepository.save(ep);
-                total += entryPoints.size();
+                allEntryPoints.addAll(entryPoints);
             } catch (Exception e) {
                 log.warn("Failed to rebuild Python entry points from {}: {}", file, e.getMessage());
             }
         }
-        log.info("Rebuilt {} Python entry points", total);
-        return total;
+        if (!allEntryPoints.isEmpty()) {
+            storageService.saveEntryPoints(allEntryPoints);
+            log.info("Rebuilt {} Python entry points from {} files using MERGE", allEntryPoints.size(), pythonFiles.size());
+        }
+        return allEntryPoints.size();
     }
 
     // ==================== DataModel Rebuild ====================

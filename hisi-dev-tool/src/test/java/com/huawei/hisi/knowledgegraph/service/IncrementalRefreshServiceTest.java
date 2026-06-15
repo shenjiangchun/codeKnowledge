@@ -44,6 +44,7 @@ class IncrementalRefreshServiceTest {
     @Mock private KnowledgeGraphStorageService storageService;
     @Mock private JavaDataModelScanner javaDataModelScanner;
     @Mock private Neo4jDataModelNodeRepository dataModelNodeRepository;
+    @Mock private VectorGenerationService vectorGenerationService;
 
     private IncrementalRefreshService service;
 
@@ -55,7 +56,7 @@ class IncrementalRefreshServiceTest {
                 gitStatusService, checkpointRepository, vectorWriter, crossServiceLinker,
                 methodNodeRepository, entryPointRepository, pythonKnowledgeGraphBuilder,
                 coreService, globalCache, storageService, javaDataModelScanner,
-                dataModelNodeRepository);
+                dataModelNodeRepository, vectorGenerationService);
     }
 
     @Test
@@ -98,7 +99,7 @@ class IncrementalRefreshServiceTest {
     }
 
     @Test
-    @DisplayName("refresh deletes and rebuilds when files are modified")
+    @DisplayName("refresh deletes entry points and rebuilds when files are modified")
     void refresh_modifiedFiles_deletesAndRebuilds() throws Exception {
         GenerationCheckpointNode checkpoint = new GenerationCheckpointNode();
         checkpoint.setLastCommit("abc123");
@@ -108,6 +109,8 @@ class IncrementalRefreshServiceTest {
         when(gitStatusService.getChangedFilesJgit(PROJECT_PATH, "abc123", "def456"))
                 .thenReturn(List.of("src/Main.java"));
         when(gitStatusService.getCurrentBranch(PROJECT_PATH)).thenReturn("main");
+        // Mock empty method nodes so rebuild doesn't trigger vector generation
+        when(methodNodeRepository.findByProjectPath(PROJECT_PATH)).thenReturn(List.of());
 
         var result = service.refresh(PROJECT_PATH);
 
@@ -115,8 +118,9 @@ class IncrementalRefreshServiceTest {
         assertThat(result.changedFiles()).isEqualTo(1);
         assertThat(result.deleted()).isEqualTo(1);
 
+        // Note: We no longer DETACH DELETE method nodes, only delete entry points
         verify(entryPointRepository).deleteByFilePathAndProjectPath("src/Main.java", PROJECT_PATH);
-        verify(vectorWriter).deleteByFilePath("src/Main.java", PROJECT_PATH);
+        // vectorWriter.deleteByFilePath is NOT called anymore (MERGE preserves method nodes)
         verify(checkpointRepository).upsertCheckpoint(PROJECT_PATH, "def456", "main");
     }
 
