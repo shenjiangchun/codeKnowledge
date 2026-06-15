@@ -16,15 +16,21 @@ import java.util.Optional;
 public interface Neo4jGenerationCheckpointRepository extends Neo4jRepository<GenerationCheckpointNode, String> {
 
     /**
-     * 根据项目路径查询检查点
+     * 根据项目路径查询检查点（使用显式 Cypher 查询确保正确匹配）
      */
-    Optional<GenerationCheckpointNode> findByProjectPath(String projectPath);
+    @Query("""
+        MATCH (c:GenerationCheckpoint {projectPath: $projectPath})
+        RETURN c
+        """)
+    Optional<GenerationCheckpointNode> findByProjectPath(@Param("projectPath") String projectPath);
 
     /**
      * MERGE-based upsert：按 projectPath 合并，更新其余字段
+     * 使用 apoc.create.uuid() 或随机 UUID 确保 checkpointId 存在
      */
     @Query("""
         MERGE (c:GenerationCheckpoint {projectPath: $projectPath})
+        ON CREATE SET c.checkpointId = randomUUID()
         SET c.lastCommit = $lastCommit,
             c.lastBranch = $lastBranch,
             c.generatedAt = datetime()

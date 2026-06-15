@@ -81,5 +81,35 @@ public class RefreshController {
         }
     }
 
+    /**
+     * Debug endpoint to check checkpoint status.
+     */
+    @PostMapping("/checkpoint/debug")
+    public ResponseEntity<ApiResponse<String>> debugCheckpoint(@RequestBody RefreshRequest request) {
+        String projectPath = request.projectPath();
+        if (projectPath == null || projectPath.isBlank()) {
+            return ResponseEntity.badRequest()
+                .body(ApiResponse.error(400, "projectPath is required"));
+        }
+
+        String normalizedPath = projectPath.replace('\\', '/');
+        log.info("[Checkpoint Debug] Checking checkpoint for: {}", normalizedPath);
+
+        try {
+            var checkpoint = refreshServiceV2.debugCheckpoint(normalizedPath);
+            if (checkpoint != null) {
+                return ResponseEntity.ok(ApiResponse.success(
+                    "Checkpoint found: lastCommit=" + checkpoint.lastCommit() +
+                    ", lastBranch=" + checkpoint.lastBranch()));
+            } else {
+                return ResponseEntity.ok(ApiResponse.success("No checkpoint found for: " + normalizedPath));
+            }
+        } catch (Exception e) {
+            log.error("[Checkpoint Debug] Error: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiResponse.error(500, "Debug failed: " + e.getMessage()));
+        }
+    }
+
     public record RefreshRequest(String projectPath, Boolean preview) {}
 }

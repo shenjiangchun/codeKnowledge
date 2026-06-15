@@ -67,6 +67,38 @@ public class IncrementalRefreshServiceV2 {
     }
 
     /**
+     * Debug method to check checkpoint status.
+     */
+    public CheckpointDebugResult debugCheckpoint(String projectPath) {
+        log.info("[V2 Debug] Checking checkpoint for: {}", projectPath);
+        var checkpoint = checkpointRepository.findByProjectPath(projectPath);
+        if (checkpoint.isPresent()) {
+            log.info("[V2 Debug] Checkpoint found: lastCommit={}, lastBranch={}",
+                checkpoint.get().getLastCommit(), checkpoint.get().getLastBranch());
+            return new CheckpointDebugResult(checkpoint.get().getLastCommit(), checkpoint.get().getLastBranch());
+        } else {
+            log.warn("[V2 Debug] No checkpoint found for: {}", projectPath);
+            // Try to save a checkpoint manually for testing
+            String currentCommit = gitStatusService.getCurrentCommitHash(projectPath);
+            log.info("[V2 Debug] Current commit from git: {}", currentCommit);
+            checkpointRepository.upsertCheckpoint(projectPath, currentCommit != null ? currentCommit : "DEBUG_COMMIT", "debug");
+            log.info("[V2 Debug] Manually saved checkpoint for: {}", projectPath);
+
+            // Query again
+            var afterSave = checkpointRepository.findByProjectPath(projectPath);
+            if (afterSave.isPresent()) {
+                log.info("[V2 Debug] After manual save, checkpoint found: {}", afterSave.get().getLastCommit());
+                return new CheckpointDebugResult(afterSave.get().getLastCommit(), afterSave.get().getLastBranch());
+            } else {
+                log.error("[V2 Debug] Manual save failed - checkpoint still not found!");
+                return null;
+            }
+        }
+    }
+
+    public record CheckpointDebugResult(String lastCommit, String lastBranch) {}
+
+    /**
      * Initialize GlobalAnalysisCache by scanning all project files.
      * This ensures implementationMap, extendMap, and typeSolver are populated.
      */
@@ -246,7 +278,7 @@ public class IncrementalRefreshServiceV2 {
     }
 
     private String signatureHash(String signature) {
-        return String.valueOf(signature.hashCode());
+        return Integer.toHexString(signature.hashCode());
     }
 
     /**
@@ -254,75 +286,45 @@ public class IncrementalRefreshServiceV2 {
      * Only record edges involving changed nodes (caller OR callee is in rebuiltNodeIds).
      */
     private int rebuildEdges(String projectPath, Set<String> rebuiltNodeIds, JavaParser javaParser) {
-        log.info("[V2] Rebuilding edges, filtering for {} changed nodes", rebuiltNodeIds.size());
+        log.info("[V2] Rebuilding edges using KnowledgeGraphBuilder logic, filtering for {} changed nodes", rebuiltNodeIds.size());
 
-        // Build methodSignatureToNodeId from Neo4j (all project nodes)
+        // Build both maps from Neo4j (all project nodes) - same format as full generation
         Map<String, String> methodSignatureToNodeId = new HashMap<>();
+        Map<String, String> methodFullKeyToNodeId = new HashMap<>();
+
         methodNodeRepository.findByProjectPath(projectPath).forEach(node -> {
             String sigHash = node.getSignature() != null ? signatureHash(node.getSignature()) : "0";
-            String key = node.getClassName() + "." + node.getMethodName() + "." + sigHash;
-            methodSignatureToNodeId.put(key, node.getNodeId());
+            String signatureKey = node.getClassName() + "." + node.getMethodName();
+            String fullKey = signatureKey + "." + sigHash;
+
+            methodSignatureToNodeId.put(signatureKey, node.getNodeId());
+            methodFullKeyToNodeId.put(fullKey, node.getNodeId());
         });
 
+        // Get all Java files
         List<File> allJavaFiles = coreService.findJavaFiles(projectPath, Collections.emptyList());
-        List<Map<String, Object>> newCallRelations = new ArrayList<>();
-        int totalScanned = 0;
+        log.info("[V2] Scanning {} files for call relations", allJavaFiles.size());
 
-        for (File javaFile : allJavaFiles) {
-            CompilationUnit cu = coreService.parseFile(javaFile, javaParser);
-            if (cu == null) continue;
-            totalScanned++;
+        // Reuse KnowledgeGraphBuilder's scanCallRelationsWithCoreService logic
+        List<Map<String, Object>> allRelations = knowledgeGraphBuilder.scanCallRelationsPublic(
+            allJavaFiles, projectPath, methodSignatureToNodeId, methodFullKeyToNodeId, javaParser);
 
-            String filePath = javaFile.getAbsolutePath();
-            cu.findAll(ClassOrInterfaceDeclaration.class).forEach(clazz -> {
-                String className = cu.getPackageDeclaration()
-                    .map(pd -> pd.getNameAsString() + "." + clazz.getNameAsString())
-                    .orElse(clazz.getNameAsString());
+        // Filter: only keep relations where caller or callee was rebuilt
+        List<Map<String, Object>> filteredRelations = allRelations.stream()
+            .filter(rel -> {
+                String callerId = (String) rel.get("callerId");
+                String calleeId = (String) rel.get("calleeId");
+                return rebuiltNodeIds.contains(callerId) || rebuiltNodeIds.contains(calleeId);
+            })
+            .collect(Collectors.toList());
 
-                clazz.findAll(MethodDeclaration.class).forEach(method -> {
-                    String sigHash = signatureHash(method.getSignature().toString());
-                    String callerNodeId = projectPath + ":" + className + "." + method.getNameAsString() + "." + sigHash;
-
-                    method.findAll(com.github.javaparser.ast.expr.MethodCallExpr.class).forEach(methodCall -> {
-                        List<MethodDeclaration> targets = coreService.findMethodCallTargets(
-                            methodCall, clazz, method, javaParser);
-
-                        for (MethodDeclaration target : targets) {
-                            String targetClassName = getMethodClassName(target, clazz);
-                            String targetSigHash = signatureHash(target.getSignature().toString());
-                            String calleeKey = targetClassName + "." + target.getNameAsString() + "." + targetSigHash;
-                            String calleeNodeId = methodSignatureToNodeId.get(calleeKey);
-
-                            if (calleeNodeId != null) {
-                                boolean callerChanged = rebuiltNodeIds.contains(callerNodeId);
-                                boolean calleeChanged = rebuiltNodeIds.contains(calleeNodeId);
-
-                                if (callerChanged || calleeChanged) {
-                                    Map<String, Object> relation = new LinkedHashMap<>();
-                                    relation.put("callerId", callerNodeId);
-                                    relation.put("calleeId", calleeNodeId);
-                                    relation.put("callType", "DIRECT");
-                                    relation.put("filePath", filePath);
-                                    newCallRelations.add(relation);
-                                }
-                            }
-                        }
-                    });
-                });
-            });
+        if (!filteredRelations.isEmpty()) {
+            storageService.saveCallRelations(filteredRelations);
         }
 
-        if (!newCallRelations.isEmpty()) {
-            storageService.saveCallRelations(newCallRelations);
-        }
-
-        log.info("[V2] Edge generation complete: {} files scanned, {} edges recorded",
-            totalScanned, newCallRelations.size());
-        return newCallRelations.size();
-    }
-
-    private String getMethodClassName(MethodDeclaration method, ClassOrInterfaceDeclaration contextClass) {
-        return contextClass.getFullyQualifiedName().orElse(contextClass.getNameAsString());
+        log.info("[V2] Edge generation complete: {} total relations, {} filtered for changed nodes",
+            allRelations.size(), filteredRelations.size());
+        return filteredRelations.size();
     }
 
     /**

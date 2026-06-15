@@ -1009,6 +1009,18 @@ public class KnowledgeGraphBuilder {
                         String calleeNodeId = methodFullKeyToNodeId.getOrDefault(targetFullKey,
                             methodSignatureToNodeId.get(targetMethodKey));
 
+                        // Fallback: 如果 callee 是接口方法但未找到 nodeId，尝试查找实现类
+                        if (calleeNodeId == null) {
+                            Set<String> implementations = globalCache.getImplementationMap().get(targetClassName);
+                            if (implementations != null) {
+                                for (String implClass : implementations) {
+                                    String implFullKey = implClass + "." + target.getNameAsString() + "." + signatureHash(target.getSignature().toString());
+                                    calleeNodeId = methodFullKeyToNodeId.get(implFullKey);
+                                    if (calleeNodeId != null) break;
+                                }
+                            }
+                        }
+
                         if (calleeNodeId != null && !calleeNodeId.equals(finalCallerId)) {
                             // Proxy-aware call type: check @Async/@Transactional on target
                             String callType = coreService.detectProxyCallType(target);
@@ -1988,9 +2000,19 @@ public class KnowledgeGraphBuilder {
             this.log.debug("获取分支失败，checkpoint 将以 null 分支保存: {}", ge.getMessage());
         }
         String effectiveCommit = commitHash != null ? commitHash : "NO_COMMIT";
-        checkpointRepository.upsertCheckpoint(normalizedProjectPath, effectiveCommit, branch);
-        this.log.info("增量刷新 checkpoint 已保存: projectPath={}, commit={}, branch={}",
-                normalizedProjectPath, effectiveCommit, branch);
+        try {
+            checkpointRepository.upsertCheckpoint(normalizedProjectPath, effectiveCommit, branch);
+            // Verify the checkpoint was saved by immediately querying back
+            var saved = checkpointRepository.findByProjectPath(normalizedProjectPath);
+            if (saved.isPresent()) {
+                this.log.info("增量刷新 checkpoint 已保存并验证: projectPath={}, commit={}, branch={}",
+                    normalizedProjectPath, saved.get().getLastCommit(), saved.get().getLastBranch());
+            } else {
+                this.log.error("checkpoint 保存失败 - 查询返回空: projectPath={}", normalizedProjectPath);
+            }
+        } catch (Exception e) {
+            this.log.error("保存 checkpoint 异常: projectPath={}, error={}", normalizedProjectPath, e.getMessage());
+        }
     }
 
     private void cleanOldData(String projectPath) {
@@ -2250,6 +2272,35 @@ public class KnowledgeGraphBuilder {
         }
 
         return relations;
+    }
+
+    /**
+     * Scan call relations for a list of files (public wrapper for V2 incremental refresh).
+     * Reuses the same logic as full generation's second pass.
+     *
+     * @param javaFiles List of Java files to scan
+     * @param projectPath Project path
+     * @param methodSignatureToNodeId Map from className.methodName to nodeId (without sigHash)
+     * @param methodFullKeyToNodeId Map from className.methodName.sigHash to nodeId
+     * @param javaParser JavaParser instance with configured TypeSolver
+     * @return List of call relations as maps (callerId, calleeId, callType, callLine)
+     */
+    public List<Map<String, Object>> scanCallRelationsPublic(
+            List<File> javaFiles,
+            String projectPath,
+            Map<String, String> methodSignatureToNodeId,
+            Map<String, String> methodFullKeyToNodeId,
+            JavaParser javaParser) {
+        List<Map<String, Object>> allRelations = new ArrayList<>();
+        for (File javaFile : javaFiles) {
+            CompilationUnit cu = coreService.parseFile(javaFile, javaParser);
+            if (cu == null) continue;
+
+            List<Map<String, Object>> relations = scanCallRelationsWithCoreService(
+                cu, projectPath, methodSignatureToNodeId, methodFullKeyToNodeId, javaParser);
+            allRelations.addAll(relations);
+        }
+        return allRelations;
     }
 
     /**
