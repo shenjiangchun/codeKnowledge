@@ -2150,7 +2150,8 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
             m.serviceName = n.serviceName,
             m.comment = n.comment,
             m.thrownExceptions = n.thrownExceptions,
-            m.caughtExceptions = n.caughtExceptions
+            m.caughtExceptions = n.caughtExceptions,
+            m.language = n.language
         """)
     void mergeAll(@Param("nodes") List<Map<String, Object>> nodes);
 }

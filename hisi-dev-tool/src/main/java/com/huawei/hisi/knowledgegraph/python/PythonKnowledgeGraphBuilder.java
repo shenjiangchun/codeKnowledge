@@ -91,6 +91,14 @@ public class PythonKnowledgeGraphBuilder {
     }
 
     /**
+     * Parse a single Python file and return both nodes and the parsed module.
+     * Used by incremental refresh for call resolution.
+     */
+    public ParsedFile parseFileWithModule(String filePath, String projectPath) throws IOException {
+        return parseFileInternal(filePath, projectPath);
+    }
+
+    /**
      * Parse a single Python file and return entry points detected by framework scanners.
      * Runs FastAPI/Django/Flask/Celery scanners on the parsed module.
      * Used for incremental refresh of Python entry points.
@@ -1099,7 +1107,7 @@ public class PythonKnowledgeGraphBuilder {
         return lastPart.replaceAll("(\\.py$|_service$|_handler$|_controller$|_api$)", "");
     }
 
-    private record ParsedFile(PyModule module, List<MethodNode> nodes) {
+    public record ParsedFile(PyModule module, List<MethodNode> nodes) {
     }
 
     private record BuildResult(List<MethodNode> methodNodes,

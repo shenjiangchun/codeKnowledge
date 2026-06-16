@@ -399,7 +399,8 @@ public interface Neo4jEntryPointNodeRepository extends Neo4jRepository<EntryPoin
             e.projectPath = n.projectPath,
             e.briefDescription = n.briefDescription,
             e.detailedDescription = n.detailedDescription,
-            e.serviceName = n.serviceName
+            e.serviceName = n.serviceName,
+            e.language = n.language
         """)
     void mergeAll(@Param("nodes") List<Map<String, Object>> nodes);
 }
