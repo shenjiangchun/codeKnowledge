@@ -151,6 +151,14 @@ logcloud:
     timeout: 60000
     cache-expire: 1800
 
+# 日志拉取定时任务配置
+log:
+  pull:
+    # 是否启用定时日志拉取（需要配置 app_log_config 表）
+    enabled: ${LOG_PULL_ENABLED:false}
+    # 默认拉取间隔（分钟），可通过环境变量覆盖
+    default-interval-minutes: ${LOG_PULL_INTERVAL:10}
+
 # 异常继承关系配置
 exception:
   inheritance:

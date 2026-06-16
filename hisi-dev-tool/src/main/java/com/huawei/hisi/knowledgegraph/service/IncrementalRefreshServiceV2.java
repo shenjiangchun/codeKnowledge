@@ -170,18 +170,20 @@ public class IncrementalRefreshServiceV2 {
         for (String file : changedFiles) {
             Path filePath = Paths.get(projectPath, file);
             String absoluteFilePath = filePath.toString();
+            // Normalize to forward slashes for consistent matching with Neo4j
+            String normalizedFilePath = PathUtils.normalize(absoluteFilePath);
 
             if (!filePath.toFile().exists()) {
                 // File was deleted
-                deletedFilePaths.add(absoluteFilePath);
+                deletedFilePaths.add(normalizedFilePath);
                 continue;
             }
 
             // Delete nodes from this file (DETACH DELETE removes node + edges)
             List<MethodNode> nodesInFile = methodNodeRepository.findByProjectPathAndFilePath(
-                projectPath, absoluteFilePath);
+                projectPath, normalizedFilePath);
             deletedNodes += nodesInFile.size();
-            deletedFilePaths.add(absoluteFilePath);
+            deletedFilePaths.add(normalizedFilePath);
         }
 
         // Delete nodes and outgoing edges
@@ -213,8 +215,10 @@ public class IncrementalRefreshServiceV2 {
             CompilationUnit cu = coreService.parseFile(filePath.toFile(), javaParser);
             if (cu == null) continue;
 
+            // Normalize filePath for consistent storage in Neo4j
+            String normalizedFilePath = PathUtils.normalize(filePath.toString());
             // Use KnowledgeGraphBuilder's scanMethodNodes logic
-            List<MethodNode> nodes = scanMethodNodes(cu, filePath.toString(), projectPath);
+            List<MethodNode> nodes = scanMethodNodes(cu, normalizedFilePath, projectPath);
             for (MethodNode node : nodes) {
                 rebuiltNodes.add(node);
                 rebuiltNodeIds.add(node.getNodeId());
@@ -398,8 +402,8 @@ public class IncrementalRefreshServiceV2 {
             // Cleanup entry points for all changed files
             for (String file : allChangedFiles) {
                 Path filePath = Paths.get(normalizedProjectPath, file);
-                String absoluteFilePath = filePath.toString();
-                entryPointRepository.deleteByFilePathAndProjectPath(absoluteFilePath, normalizedProjectPath);
+                String normalizedFilePath = PathUtils.normalize(filePath.toString());
+                entryPointRepository.deleteByFilePathAndProjectPath(normalizedFilePath, normalizedProjectPath);
             }
 
             // 6. Rebuild Java nodes (if any)
@@ -437,12 +441,8 @@ public class IncrementalRefreshServiceV2 {
                 pythonEntryPoints = rebuildPythonEntryPoints(normalizedProjectPath, pythonFiles);
             }
 
-            // 11. Update checkpoint
-            checkpointRepository.save(GenerationCheckpointNode.builder()
-                .projectPath(normalizedProjectPath)
-                .lastCommit(currentCommit)
-                .generatedAt(java.time.Instant.now())
-                .build());
+            // 11. Update checkpoint (use upsert to MERGE by projectPath)
+            checkpointRepository.upsertCheckpoint(normalizedProjectPath, currentCommit, "main");
 
             int totalRebuiltNodes = rebuiltJavaNodeIds.size() + rebuiltPythonNodeIds.size();
             int totalRebuiltEdges = javaEdges;
@@ -486,8 +486,9 @@ public class IncrementalRefreshServiceV2 {
             if (!filePath.toFile().exists()) continue;
 
             try {
+                String normalizedFilePath = PathUtils.normalize(filePath.toString());
                 List<MethodNode> nodes = pythonKnowledgeGraphBuilder.parseFile(
-                    filePath.toString(), projectPath);
+                    normalizedFilePath, projectPath);
                 for (MethodNode node : nodes) {
                     rebuiltNodes.add(node);
                     rebuiltNodeIds.add(node.getNodeId());
@@ -538,8 +539,9 @@ public class IncrementalRefreshServiceV2 {
             if (!filePath.toFile().exists()) continue;
 
             try {
+                String normalizedFilePath = PathUtils.normalize(filePath.toString());
                 List<EntryPointNode> entryPoints = pythonKnowledgeGraphBuilder.buildFileEntryPoints(
-                    filePath.toString(), projectPath);
+                    normalizedFilePath, projectPath);
                 allEntryPoints.addAll(entryPoints);
             } catch (Exception e) {
                 log.warn("[V2] Failed to build Python entry points from {}: {}", file, e.getMessage());
@@ -590,7 +592,8 @@ public class IncrementalRefreshServiceV2 {
             CompilationUnit cu = coreService.parseFile(filePath.toFile(), javaParser);
             if (cu == null) continue;
 
-            List<EntryPointNode> entryPoints = scanJavaEntryPoints(cu, filePath.toString(), projectPath);
+            String normalizedFilePath = PathUtils.normalize(filePath.toString());
+            List<EntryPointNode> entryPoints = scanJavaEntryPoints(cu, normalizedFilePath, projectPath);
             allEntryPoints.addAll(entryPoints);
         }
 

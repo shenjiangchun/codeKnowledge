@@ -29,6 +29,7 @@ public interface Neo4jGenerationCheckpointRepository extends Neo4jRepository<Gen
     /**
      * MERGE-based upsert：按 projectPath 合并，更新其余字段
      * 使用 apoc.create.uuid() 或随机 UUID 确保 checkpointId 存在
+     * LIMIT 1 ensures single result even if duplicates exist
      */
     @Query("""
         MERGE (c:GenerationCheckpoint {projectPath: $projectPath})
@@ -37,6 +38,7 @@ public interface Neo4jGenerationCheckpointRepository extends Neo4jRepository<Gen
             c.lastBranch = $lastBranch,
             c.generatedAt = datetime()
         RETURN c
+        LIMIT 1
         """)
     GenerationCheckpointNode upsertCheckpoint(
             @Param("projectPath") String projectPath,

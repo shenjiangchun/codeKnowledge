@@ -756,10 +756,11 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     /**
      * 根据 filePath 和 projectPath 范围删除方法节点（用于增量刷新）
      * 使用 DETACH DELETE 同时移除节点及其所有关系（含向量等节点属性）
+     * 使用 CONTAINS 匹配以处理路径格式差异（正斜杠/反斜杠）
      */
     @Query("""
         MATCH (n:Method)
-        WHERE n.filePath = $filePath
+        WHERE (n.filePath = $filePath OR n.filePath CONTAINS $filePath OR $filePath CONTAINS n.filePath)
           AND n.projectPath = $projectPath
         DETACH DELETE n
         """)
@@ -2069,8 +2070,14 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
      */
     @Query("""
         MATCH (m:Method)-[c:CALLS]->(target:Method)
-        WHERE target.filePath IN $deletedFilePaths
-        AND NOT m.filePath IN $deletedFilePaths
+        WHERE ANY(path IN $deletedFilePaths WHERE
+            target.filePath = path OR
+            target.filePath CONTAINS path OR
+            path CONTAINS target.filePath)
+        AND NOT ANY(path IN $deletedFilePaths WHERE
+            m.filePath = path OR
+            m.filePath CONTAINS path OR
+            path CONTAINS m.filePath)
         AND m.projectPath = $projectPath
         DELETE c
         """)

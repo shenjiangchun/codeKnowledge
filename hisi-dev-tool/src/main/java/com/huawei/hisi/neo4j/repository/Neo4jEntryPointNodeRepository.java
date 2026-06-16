@@ -107,13 +107,14 @@ public interface Neo4jEntryPointNodeRepository extends Neo4jRepository<EntryPoin
 
     /**
      * 删除指定文件关联的入口点（通过 methodNodeId 关联到 Method 节点的 filePath）
+     * 使用 CONTAINS 匹配以处理路径格式差异（正斜杠/反斜杠）
      */
     @Query("""
         MATCH (entry:EntryPoint {projectPath: $projectPath})
         WHERE entry.methodNodeId IS NOT NULL
           AND EXISTS {
             MATCH (m:Method {nodeId: entry.methodNodeId})
-            WHERE m.filePath = $filePath
+            WHERE m.filePath = $filePath OR m.filePath CONTAINS $filePath OR $filePath CONTAINS m.filePath
           }
         DETACH DELETE entry
         """)

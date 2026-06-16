@@ -157,11 +157,13 @@ class LogAnalysisControllerTest {
         LogAnalysisReportEntity entity = new LogAnalysisReportEntity();
         entity.setReportId(1L);
         entity.setStatus("completed");
+        entity.setAnalysisStatus("completed");
+        entity.setOccurrenceCount(1);
         entity.setCreatedAt(LocalDateTime.now());
         entity.setUpdatedAt(LocalDateTime.now());
 
-
         when(repository.findById(1L)).thenReturn(entity);
+        when(repository.countPendingBefore(any(LocalDateTime.class))).thenReturn(0);
 
         ApiResponse<Map<String, Object>> response = controller.getReportStatus(1L);
 
