@@ -685,7 +685,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { projectApi } from '@/api/project'
 import { gitApi, type GitCommit, type UpdateAllResponse } from '@/api/git'
 import { knowledgeGraphApi, type KnowledgeGraphTask } from '@/api/knowledgeGraph'
-import { getVectorGenerationStatusBatch, startVectorGeneration, type VectorGenerationTask } from '@/api/vectorGeneration'
+import { getVectorGenerationStatusBatch, startVectorGeneration, regenerateAll, type VectorGenerationTask } from '@/api/vectorGeneration'
 import { glossaryApi } from '@/api/glossary'
 import type { GlossaryTerm } from '@/types/glossary'
 import { listRemoteProjects, createRemoteProject, updateRemoteProject, deleteRemoteProject, cloneRemoteProject, pullRemoteProject } from '@/api/remote-project'
@@ -1658,22 +1658,16 @@ const handleGenerateKnowledgeGraph = async (row: GitRepositoryInfo) => {
 }
 
 // Generate vector (description + vector generation)
-const handleGenerateVector = async (row: GitRepositoryInfo) => {
-  if (!appStore.projectDirConfigured) {
-    ElMessage.warning('请先配置项目目录')
-    return
-  }
-
+const doGenerateVector = async (row: GitRepositoryInfo, mode: 'full' | 'incremental') => {
   const normalizedPath = normalizePath(row.path)
   generatingVector.value.add(normalizedPath)
 
   try {
-    // 记录防呆时间
     recordGenerateTime(row.path)
-    // Start async task
-    const result = await startVectorGeneration(row.path)
+    const result = mode === 'full'
+      ? await regenerateAll(row.path)
+      : await startVectorGeneration(row.path)
     if (result) {
-      // Initialize task status in map (use normalized path as key)
       vectorGenerationStatusMap.value = {
         ...vectorGenerationStatusMap.value,
         [normalizedPath]: {
@@ -1688,11 +1682,10 @@ const handleGenerateVector = async (row: GitRepositoryInfo) => {
           errorMessage: null
         }
       }
-      ElMessage.success('已开始生成描述和向量')
+      ElMessage.success(mode === 'full' ? '已开始全量重新生成描述和向量' : '已开始增量生成描述和向量')
       startVectorPolling()
     }
   } catch (error: any) {
-    // Handle different error types
     if (error.response?.status === 409) {
       const errorData = error.response.data
       ElMessage.warning(errorData?.message || '该项目已有向量生成任务在执行中')
@@ -1711,6 +1704,31 @@ const handleGenerateVector = async (row: GitRepositoryInfo) => {
     }
   } finally {
     generatingVector.value.delete(normalizedPath)
+  }
+}
+
+const handleGenerateVector = async (row: GitRepositoryInfo) => {
+  if (!appStore.projectDirConfigured) {
+    ElMessage.warning('请先配置项目目录')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      '请选择描述和向量的生成方式：\n\n• 全量：清除该项目所有已有描述和向量后重新生成\n• 增量：仅补齐缺失的描述和向量',
+      '生成描述和向量',
+      {
+        confirmButtonText: '全量生成',
+        cancelButtonText: '增量生成',
+        distinguishCancelAndClose: true,
+        type: 'info'
+      }
+    )
+    doGenerateVector(row, 'full')
+  } catch (action: any) {
+    if (action === 'cancel') {
+      doGenerateVector(row, 'incremental')
+    }
   }
 }
 // ============================================================

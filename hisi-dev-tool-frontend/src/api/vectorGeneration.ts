@@ -80,10 +80,22 @@ export function refreshMissing(projectPath: string) {
   )
 }
 
+/**
+ * 全量重新生成（先清除所有描述和向量，再重新生成）
+ */
+export function regenerateAll(projectPath: string) {
+  return request.post<string>(
+    `/vector-generation/regenerate`,
+    null,
+    { params: { projectPath } }
+  )
+}
+
 export const vectorGenerationApi = {
   getStatus: getVectorGenerationStatus,
   getStatusBatch: getVectorGenerationStatusBatch,
   start: startVectorGeneration,
   getMissing: getMissingEmbeddings,
   refreshMissing,
+  regenerateAll,
 }

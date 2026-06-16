@@ -1,5 +1,18 @@
 {
-  "tabs": [],
-  "activeTabId": null,
+  "tabs": [
+    {
+      "id": "ide-D__hisi-code-analyser_6.0_backend_src_main_resources_application.yml",
+      "filePath": "D:\\hisi-code-analyser\\6.0\\backend\\src\\main\\resources\\application.yml",
+      "filename": "application.yml",
+      "content": "",
+      "language": "yaml",
+      "isDirty": false,
+      "cursorPosition": {
+        "lineNumber": 122,
+        "column": 44
+      }
+    }
+  ],
+  "activeTabId": "ide-D__hisi-code-analyser_6.0_backend_src_main_resources_application.yml",
   "defaultPreviewMode": "preview"
 }

@@ -537,7 +537,11 @@ public class VectorGenerationService {
         long clearedSqlCount = neo4jSqlNodeRepository.clearSqlEmbeddings(projectPath);
         fileLog("[全量重新生成] 已清除 " + clearedSqlCount + " 个 SQL 的向量");
 
-        fileLog("[全量重新生成] 步骤3: 开始重新生成...");
+        fileLog("[全量重新生成] 步骤3: 清除现有 EntryPoint 描述和向量...");
+        long clearedEpCount = neo4jEntryPointNodeRepository.clearDescriptionsAndEmbeddings(projectPath);
+        fileLog("[全量重新生成] 已清除 " + clearedEpCount + " 个 EntryPoint 的描述和向量");
+
+        fileLog("[全量重新生成] 步骤4: 开始重新生成...");
         self.startVectorGeneration(projectPath);
     }
 

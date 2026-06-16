@@ -87,6 +87,13 @@ public interface Neo4jEntryPointNodeRepository extends Neo4jRepository<EntryPoin
         """)
     void deleteByProjectPath(String projectPath);
 
+    @Query("""
+        MATCH (e:EntryPoint {projectPath: $projectPath})
+        SET e.briefDescription = null, e.detailedDescription = null, e.briefEmbedding = null, e.detailedEmbedding = null
+        RETURN count(e)
+        """)
+    long clearDescriptionsAndEmbeddings(String projectPath);
+
     /**
      * 分批删除项目下的入口点，避免单事务内存溢出
      */
