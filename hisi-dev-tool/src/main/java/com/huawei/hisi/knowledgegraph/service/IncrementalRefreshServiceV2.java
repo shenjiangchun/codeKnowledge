@@ -9,6 +9,8 @@ import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeS
 import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver;
 import com.huawei.hisi.cache.GlobalAnalysisCache;
 import com.huawei.hisi.knowledgegraph.python.PythonKnowledgeGraphBuilder;
+import com.huawei.hisi.knowledgegraph.python.call.PythonCallGraphResolver;
+import com.huawei.hisi.knowledgegraph.python.model.PyModule;
 import com.huawei.hisi.knowledgegraph.service.storage.KnowledgeGraphStorageService;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.GenerationCheckpointNode;
@@ -24,10 +26,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * V2 implementation of incremental graph refresh.
@@ -52,6 +57,7 @@ public class IncrementalRefreshServiceV2 {
     private final KnowledgeGraphBuilder knowledgeGraphBuilder;
     private final PythonKnowledgeGraphBuilder pythonKnowledgeGraphBuilder;
     private final Neo4jEntryPointNodeRepository entryPointRepository;
+    private final PythonCallGraphResolver pythonCallGraphResolver;
 
     /**
      * Refresh result containing statistics.
@@ -429,23 +435,29 @@ public class IncrementalRefreshServiceV2 {
                 javaEdges = rebuildEdges(normalizedProjectPath, rebuiltJavaNodeIds, javaParser);
             }
 
-            // 9. Rebuild Java entry points (if any)
+            // 9. Rebuild Python edges (if any)
+            int pythonEdges = 0;
+            if (!pythonFiles.isEmpty()) {
+                pythonEdges = rebuildPythonEdges(normalizedProjectPath, pythonFiles, rebuiltPythonNodeIds);
+            }
+
+            // 10. Rebuild Java entry points (if any)
             int javaEntryPoints = 0;
             if (!javaFiles.isEmpty() && javaParser != null) {
                 javaEntryPoints = rebuildJavaEntryPointNodes(normalizedProjectPath, javaFiles, javaParser);
             }
 
-            // 10. Rebuild Python entry points (if any)
+            // 11. Rebuild Python entry points (if any)
             int pythonEntryPoints = 0;
             if (!pythonFiles.isEmpty()) {
                 pythonEntryPoints = rebuildPythonEntryPoints(normalizedProjectPath, pythonFiles);
             }
 
-            // 11. Update checkpoint (use upsert to MERGE by projectPath)
+            // 12. Update checkpoint (use upsert to MERGE by projectPath)
             checkpointRepository.upsertCheckpoint(normalizedProjectPath, currentCommit, "main");
 
             int totalRebuiltNodes = rebuiltJavaNodeIds.size() + rebuiltPythonNodeIds.size();
-            int totalRebuiltEdges = javaEdges;
+            int totalRebuiltEdges = javaEdges + pythonEdges;
             int totalEntryPoints = javaEntryPoints + pythonEntryPoints;
 
             log.info("[V2] Incremental refresh complete: {} Java files, {} Python files, {} nodes deleted, {} nodes rebuilt, {} edges rebuilt, {} entry points",
@@ -524,6 +536,52 @@ public class IncrementalRefreshServiceV2 {
         map.put("projectPath", node.getProjectPath());
         map.put("language", "python");
         return map;
+    }
+
+    /**
+     * Rebuild Python CALLS edges using PythonCallGraphResolver.
+     * Similar to Java edge generation: full scan but filter for changed nodes.
+     */
+    private int rebuildPythonEdges(String projectPath, List<String> changedPythonFiles, Set<String> rebuiltNodeIds) {
+        log.info("[V2] Rebuilding Python edges, filtering for {} changed nodes", rebuiltNodeIds.size());
+
+        // Parse all Python files to get modules (needed for cross-module resolution)
+        List<PyModule> allModules = new ArrayList<>();
+        try (Stream<Path> paths = Files.walk(Paths.get(projectPath))) {
+            paths.filter(p -> p.toString().endsWith(".py"))
+                .forEach(p -> {
+                    try {
+                        PythonKnowledgeGraphBuilder.ParsedFile parsed =
+                            pythonKnowledgeGraphBuilder.parseFileWithModule(p.toString(), projectPath);
+                        allModules.add(parsed.module());
+                    } catch (Exception e) {
+                        log.warn("[V2] Failed to parse Python file {}: {}", p, e.getMessage());
+                    }
+                });
+        } catch (IOException e) {
+            log.error("[V2] Failed to walk Python files: {}", e.getMessage());
+            return 0;
+        }
+
+        // Resolve all call relations
+        List<Map<String, Object>> allRelations = pythonCallGraphResolver.resolveProject(allModules, projectPath);
+
+        // Filter: only keep edges where caller or callee was rebuilt
+        List<Map<String, Object>> filteredRelations = allRelations.stream()
+            .filter(rel -> {
+                String callerId = (String) rel.get("callerId");
+                String calleeId = (String) rel.get("calleeId");
+                return rebuiltNodeIds.contains(callerId) || rebuiltNodeIds.contains(calleeId);
+            })
+            .collect(Collectors.toList());
+
+        if (!filteredRelations.isEmpty()) {
+            storageService.saveCallRelations(filteredRelations);
+        }
+
+        log.info("[V2] Python edge generation complete: {} total relations, {} filtered",
+            allRelations.size(), filteredRelations.size());
+        return filteredRelations.size();
     }
 
     /**
