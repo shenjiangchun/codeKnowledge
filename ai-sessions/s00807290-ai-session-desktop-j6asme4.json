@@ -3,13 +3,13 @@
   "hostname": "desktop-j6asme4",
   "model": "GLM-5.1-w4a8",
   "firstSeen": "2026-05-30T01:37:45.023Z",
-  "lastUpdated": "2026-06-16T06:24:09.547Z",
+  "lastUpdated": "2026-06-16T07:48:20.983Z",
   "stats": {
-    "totalOperations": 994,
-    "totalFilesEdited": 365,
-    "totalAiLines": 7858,
-    "totalAiLinesDeleted": 1801,
-    "totalCommits": 31
+    "totalOperations": 996,
+    "totalFilesEdited": 367,
+    "totalAiLines": 7880,
+    "totalAiLinesDeleted": 1812,
+    "totalCommits": 32
   },
   "pendingFiles": [
     {
@@ -213,22 +213,20 @@
       "lastTool": "Edit"
     },
     {
-      "path": "hisi-dev-tool/src/main/java/com/huawei/hisi/service/UnifiedTextService.java",
+      "path": "hisi-dev-tool-frontend/src/views/project/ProjectList.vue",
       "tool": "Edit",
-      "operations": 5,
-      "timestamp": "2026-06-16T05:46:18.463Z",
-      "lastModified": "2026-06-16T05:47:26.730Z",
-      "lastTool": "Edit"
+      "operations": 1,
+      "timestamp": "2026-06-16T07:48:20.443Z",
+      "lastModified": "2026-06-16T07:48:20.443Z"
     },
     {
-      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool/src/main/java/com/huawei/hisi/service/UnifiedTextService.java",
+      "path": "D:/hisi-code-analyser/codeKnowledge1/hisi-dev-tool-frontend/src/views/project/ProjectList.vue",
       "tool": "Edit",
       "aiTool": "claude-code",
       "model": "GLM-5.1-w4a8",
-      "operations": 5,
-      "timestamp": "2026-06-16T05:46:18.893Z",
-      "lastModified": "2026-06-16T05:47:27.001Z",
-      "lastTool": "Edit"
+      "operations": 1,
+      "timestamp": "2026-06-16T07:48:20.983Z",
+      "lastModified": "2026-06-16T07:48:20.983Z"
     }
   ],
   "repoPath": "D:/hisi-code-analyser/codeKnowledge1"

@@ -2009,6 +2009,23 @@ const loadRemoteProjectTaskStatuses = async () => {
       })
       knowledgeGraphStatusMap.value = newStatusMap
     } catch { /* non-critical */ }
+
+    // 加载远端项目的向量生成状态
+    try {
+      const vectorTasks = await getVectorGenerationStatusBatch(clonedPaths)
+      if (vectorTasks && Array.isArray(vectorTasks)) {
+        const newVectorMap = { ...vectorGenerationStatusMap.value }
+        let hasRunning = false
+        vectorTasks.forEach(task => {
+          if (task) {
+            newVectorMap[normalizePath(task.projectPath)] = task
+            if (task.status === 'PENDING' || task.status === 'RUNNING') hasRunning = true
+          }
+        })
+        vectorGenerationStatusMap.value = newVectorMap
+        if (hasRunning) startVectorPolling()
+      }
+    } catch { /* non-critical */ }
   } catch { /* non-critical */ }
 }
 
