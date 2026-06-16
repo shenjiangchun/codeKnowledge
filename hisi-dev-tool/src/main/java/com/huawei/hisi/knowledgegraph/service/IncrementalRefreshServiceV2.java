@@ -180,7 +180,10 @@ public class IncrementalRefreshServiceV2 {
             String normalizedFilePath = PathUtils.normalize(absoluteFilePath);
 
             if (!filePath.toFile().exists()) {
-                // File was deleted
+                // File was deleted - count nodes BEFORE adding to delete list
+                List<MethodNode> nodesInDeletedFile = methodNodeRepository.findByProjectPathAndFilePath(
+                    projectPath, normalizedFilePath);
+                deletedNodes += nodesInDeletedFile.size();
                 deletedFilePaths.add(normalizedFilePath);
                 continue;
             }
