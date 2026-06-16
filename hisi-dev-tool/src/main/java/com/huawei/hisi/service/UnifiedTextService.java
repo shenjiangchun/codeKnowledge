@@ -122,11 +122,9 @@ public class UnifiedTextService {
                 requestBody.put("max_tokens", config.getMaxTokens());
 
                 // 关闭推理模型的思考模式，避免 reasoning_content 消耗 token 预算
-                // 导致 content 为空（GLM-4.5+ 默认强制开启思考模式）
-                // 参见 https://docs.bigmodel.cn 核心参数 → thinking: {"type": "disabled"}
-                ObjectNode thinkingNode = objectMapper.createObjectNode();
-                thinkingNode.put("type", "disabled");
-                requestBody.set("thinking", thinkingNode);
+                // GLM-4.5+: thinking: {"type": "disabled"}
+                // Qwen3+: chat_template_kwargs: {"enable_thinking": false}
+                disableThinking(requestBody, config.getModel());
 
                 ArrayNode messages = requestBody.putArray("messages");
                 ObjectNode userMessage = messages.addObject();
@@ -241,9 +239,7 @@ public class UnifiedTextService {
             requestBody.put("max_tokens", overrideMaxTokens);
 
             // 关闭推理模型的思考模式
-            ObjectNode thinkingNode = objectMapper.createObjectNode();
-            thinkingNode.put("type", "disabled");
-            requestBody.set("thinking", thinkingNode);
+            disableThinking(requestBody, config.getModel());
 
             ArrayNode messages = requestBody.putArray("messages");
             ObjectNode userMessage = messages.addObject();
@@ -305,9 +301,7 @@ public class UnifiedTextService {
                 requestBody.put("max_tokens", maxTokens);
 
                 // 关闭推理模型的思考模式
-                ObjectNode thinkingNode = objectMapper.createObjectNode();
-                thinkingNode.put("type", "disabled");
-                requestBody.set("thinking", thinkingNode);
+                disableThinking(requestBody, config.getModel());
 
                 ArrayNode messages = requestBody.putArray("messages");
                 ObjectNode sysMsg = messages.addObject();
@@ -516,6 +510,23 @@ public class UnifiedTextService {
             Thread.sleep(ms);
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * 根据模型类型关闭思考模式，避免 reasoning 消耗 token 预算导致 content 为空。
+     * GLM-4.5+: thinking: {"type": "disabled"}
+     * Qwen3+: chat_template_kwargs: {"enable_thinking": false}
+     */
+    private void disableThinking(ObjectNode requestBody, String model) {
+        if (model != null && model.toLowerCase().contains("qwen")) {
+            ObjectNode kwargs = objectMapper.createObjectNode();
+            kwargs.put("enable_thinking", false);
+            requestBody.set("chat_template_kwargs", kwargs);
+        } else {
+            ObjectNode thinkingNode = objectMapper.createObjectNode();
+            thinkingNode.put("type", "disabled");
+            requestBody.set("thinking", thinkingNode);
         }
     }
 
