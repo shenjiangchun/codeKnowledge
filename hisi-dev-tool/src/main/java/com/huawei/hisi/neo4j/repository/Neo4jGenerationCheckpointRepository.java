@@ -17,10 +17,12 @@ public interface Neo4jGenerationCheckpointRepository extends Neo4jRepository<Gen
 
     /**
      * 根据项目路径查询检查点（使用显式 Cypher 查询确保正确匹配）
+     * LIMIT 1 ensures single result even if duplicates exist
      */
     @Query("""
         MATCH (c:GenerationCheckpoint {projectPath: $projectPath})
         RETURN c
+        LIMIT 1
         """)
     Optional<GenerationCheckpointNode> findByProjectPath(@Param("projectPath") String projectPath);
 
