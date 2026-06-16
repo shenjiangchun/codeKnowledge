@@ -1085,11 +1085,12 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
 
     /**
      * 根据项目路径和文件路径查询所有方法节点
+     * 使用 CONTAINS 匹配以处理路径格式差异（正斜杠/反斜杠、绝对/相对路径）
      * 用于增量刷新时获取变更文件中的所有旧节点
      */
     @Query("""
         MATCH (m:Method {projectPath: $projectPath})
-        WHERE m.filePath = $filePath OR m.filePath CONTAINS $filePath
+        WHERE m.filePath = $filePath OR m.filePath CONTAINS $filePath OR $filePath CONTAINS m.filePath
         RETURN m.nodeId as nodeId, m.className as className, m.methodName as methodName,
                m.signature as signature, m.filePath as filePath, m.startLine as startLine,
                m.endLine as endLine, m.complexity as complexity, m.thrownExceptions as thrownExceptions,

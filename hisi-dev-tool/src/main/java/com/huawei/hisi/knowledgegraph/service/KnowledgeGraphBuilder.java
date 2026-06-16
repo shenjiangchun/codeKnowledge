@@ -22,6 +22,7 @@ import com.huawei.hisi.scanner.ProxyClassScanner;
 import com.huawei.hisi.knowledgegraph.scanner.MyBatisXmlScanner;
 import com.huawei.hisi.knowledgegraph.scanner.JavaDataModelScanner;
 import com.huawei.hisi.service.CodeAnalysisCoreService;
+import com.huawei.hisi.utils.PathUtils;
 import com.huawei.hisi.neo4j.model.DataModelNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
@@ -309,7 +310,8 @@ public class KnowledgeGraphBuilder {
             CompilationUnit cu = coreService.parseFile(javaFile, javaParser);
             if (cu == null) continue;
 
-            String filePath = javaFile.getAbsolutePath();
+            // Normalize filePath to forward slashes for consistent Neo4j storage
+            String filePath = PathUtils.normalize(javaFile.getAbsolutePath());
 
             // 扫描方法节点
             List<MethodNode> methodNodes = scanMethodNodes(cu, filePath, projectPath);
@@ -473,7 +475,7 @@ public class KnowledgeGraphBuilder {
             for (File javaFile : javaFiles) {
                 CompilationUnit cu = coreService.parseFile(javaFile, javaParser);
                 if (cu == null) continue;
-                dataModelNodes.addAll(javaDataModelScanner.scanDataModels(cu, javaFile.getAbsolutePath(), projectPath));
+                dataModelNodes.addAll(javaDataModelScanner.scanDataModels(cu, PathUtils.normalize(javaFile.getAbsolutePath()), projectPath));
             }
 
             Set<String> dataModelClassNames = dataModelNodes.stream()
