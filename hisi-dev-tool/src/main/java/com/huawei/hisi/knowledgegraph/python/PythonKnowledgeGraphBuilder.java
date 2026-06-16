@@ -38,6 +38,7 @@ import com.huawei.hisi.knowledgegraph.python.scanner.PythonMqCall;
 import com.huawei.hisi.knowledgegraph.python.scanner.PythonMqCallScanner;
 import com.huawei.hisi.knowledgegraph.service.storage.Neo4jStorageService;
 import com.huawei.hisi.knowledgegraph.util.KnowledgeGraphCommonUtils;
+import com.huawei.hisi.utils.PathUtils;
 import com.huawei.hisi.neo4j.model.DataModelNode;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
@@ -104,31 +105,34 @@ public class PythonKnowledgeGraphBuilder {
      * Used for incremental refresh of Python entry points.
      */
     public List<EntryPointNode> buildFileEntryPoints(String filePath, String projectPath) throws IOException {
+        // Normalize paths for consistent storage
+        String normalizedProjectPath = PathUtils.normalize(projectPath);
+
         ParsedFile parsed = parseFileInternal(filePath, projectPath);
         PyModule module = parsed.module();
 
-        Set<Framework> frameworks = PythonFrameworkDetector.detect(projectPath);
+        Set<Framework> frameworks = PythonFrameworkDetector.detect(normalizedProjectPath);
         List<EntryPointNode> entryPoints = new ArrayList<>();
 
         Map<String, PyModule> modulesByPath = new LinkedHashMap<>();
         modulesByPath.putIfAbsent(module.getModulePath(), module);
 
         if (frameworks.contains(Framework.DJANGO)) {
-            entryPoints.addAll(djangoUrlScanner.scanModule(module, projectPath, modulesByPath));
+            entryPoints.addAll(djangoUrlScanner.scanModule(module, normalizedProjectPath, modulesByPath));
         }
         if (frameworks.contains(Framework.FASTAPI)) {
-            entryPoints.addAll(fastApiRouteScanner.scanModule(module, projectPath));
+            entryPoints.addAll(fastApiRouteScanner.scanModule(module, normalizedProjectPath));
         }
         if (frameworks.contains(Framework.FLASK)) {
-            entryPoints.addAll(flaskRouteScanner.scanModule(module, projectPath));
+            entryPoints.addAll(flaskRouteScanner.scanModule(module, normalizedProjectPath));
         }
-        entryPoints.addAll(celeryTaskScanner.scanModule(module, projectPath));
+        entryPoints.addAll(celeryTaskScanner.scanModule(module, normalizedProjectPath));
 
         // Guard: clear dangling methodNodeId references
         clearDanglingMethodNodeIds(entryPoints, parsed.nodes());
 
         // Post-process: set serviceName for all EntryPoints
-        applyServiceNames(entryPoints, projectPath);
+        applyServiceNames(entryPoints, normalizedProjectPath);
 
         log.debug("[Python KG] Built {} entry points from file: {}", entryPoints.size(), filePath);
         return entryPoints;
@@ -515,10 +519,14 @@ public class PythonKnowledgeGraphBuilder {
     }
 
     private ParsedFile parseFileInternal(String filePath, String projectPath) throws IOException {
+        // Normalize paths for consistent storage in Neo4j (forward slashes)
+        String normalizedFilePath = PathUtils.normalize(filePath);
+        String normalizedProjectPath = PathUtils.normalize(projectPath);
+
         String source = Files.readString(Path.of(filePath), StandardCharsets.UTF_8);
         source = normalizeFstringsForParser(source);
         source = joinImplicitLineContinuations(source);
-        String relativePath = KnowledgeGraphCommonUtils.relativeFilePath(projectPath, filePath);
+        String relativePath = KnowledgeGraphCommonUtils.relativeFilePath(normalizedProjectPath, normalizedFilePath);
         String modulePath = toModulePath(relativePath);
 
         Python3Lexer lexer = new Python3Lexer(CharStreams.fromString(source));
@@ -535,11 +543,11 @@ public class PythonKnowledgeGraphBuilder {
                     .className(modulePath)
                     .methodName(func.getName())
                     .signature(signature)
-                    .filePath(filePath)
+                    .filePath(normalizedFilePath)
                     .startLine(func.getLineStart())
                     .endLine(func.getLineEnd())
                     .language(LANGUAGE)
-                    .projectPath(projectPath)
+                    .projectPath(normalizedProjectPath)
                     .complexity(calculateComplexity(filePath, func.getLineStart(), func.getLineEnd()))
                     .methodBody(extractMethodBody(filePath, func.getLineStart(), func.getLineEnd()))
                     .build());
@@ -555,11 +563,11 @@ public class PythonKnowledgeGraphBuilder {
                         .className(pyClass.getName())
                         .methodName(method.getName())
                         .signature(signature)
-                        .filePath(filePath)
+                        .filePath(normalizedFilePath)
                         .startLine(method.getLineStart())
                         .endLine(method.getLineEnd())
                         .language(LANGUAGE)
-                        .projectPath(projectPath)
+                        .projectPath(normalizedProjectPath)
                         .complexity(calculateComplexity(filePath, method.getLineStart(), method.getLineEnd()))
                         .methodBody(extractMethodBody(filePath, method.getLineStart(), method.getLineEnd()))
                         .build());
@@ -577,11 +585,11 @@ public class PythonKnowledgeGraphBuilder {
                     .className(modulePath)
                     .methodName("__main__")
                     .signature(mainSignature)
-                    .filePath(filePath)
+                    .filePath(normalizedFilePath)
                     .startLine(0)
                     .endLine(0)
                     .language(LANGUAGE)
-                    .projectPath(projectPath)
+                    .projectPath(normalizedProjectPath)
                     .build());
         }
 
