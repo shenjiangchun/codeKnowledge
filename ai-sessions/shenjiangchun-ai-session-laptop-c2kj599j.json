@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-26T07:44:32.573Z",
-  "lastUpdated": "2026-06-16T01:18:31.834Z",
+  "lastUpdated": "2026-06-16T03:14:40.206Z",
   "stats": {
-    "totalOperations": 464,
-    "totalFilesEdited": 199,
-    "totalAiLines": 19108,
-    "totalAiLinesDeleted": 833,
-    "totalCommits": 66
+    "totalOperations": 482,
+    "totalFilesEdited": 210,
+    "totalAiLines": 19221,
+    "totalAiLinesDeleted": 868,
+    "totalCommits": 67
   },
   "pendingFiles": [
     {
@@ -168,6 +168,61 @@
       "operations": 1,
       "timestamp": "2026-06-16T00:41:38.424Z",
       "lastModified": "2026-06-16T00:41:38.424Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/test-projects/java-spring-test/src/main/java/com/example/service/NewService.java",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 2,
+      "timestamp": "2026-06-16T02:26:04.371Z",
+      "lastModified": "2026-06-16T02:46:36.116Z",
+      "lastTool": "Write"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/test-projects/python-fastapi-test/main.py",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 1,
+      "timestamp": "2026-06-16T02:26:41.265Z",
+      "lastModified": "2026-06-16T02:26:41.265Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/test-projects/python-fastapi-test/services/user_service.py",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 1,
+      "timestamp": "2026-06-16T02:26:43.351Z",
+      "lastModified": "2026-06-16T02:26:43.351Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/test-projects/python-fastapi-test/models/user.py",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 1,
+      "timestamp": "2026-06-16T02:26:48.186Z",
+      "lastModified": "2026-06-16T02:26:48.186Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/test-projects/python-fastapi-test/services/__init__.py",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 1,
+      "timestamp": "2026-06-16T02:27:00.216Z",
+      "lastModified": "2026-06-16T02:27:00.216Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/test-projects/python-fastapi-test/models/__init__.py",
+      "tool": "Write",
+      "aiTool": "claude-code",
+      "model": "Ali-glm-5-cc",
+      "operations": 1,
+      "timestamp": "2026-06-16T02:27:01.971Z",
+      "lastModified": "2026-06-16T02:27:01.971Z"
     }
   ]
 }
