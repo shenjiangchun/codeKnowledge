@@ -322,8 +322,26 @@
         <el-form-item label="应用ID" required>
           <el-input v-model="configForm.appId" placeholder="如: hiapm" :disabled="editingConfig" />
         </el-form-item>
-        <el-form-item label="项目路径" required>
-          <el-input v-model="configForm.projectPath" placeholder="本地项目路径，用于代码匹配" />
+        <el-form-item label="图谱化项目" required>
+          <el-select
+            v-model="configForm.projectPaths"
+            multiple
+            filterable
+            placeholder="选择已图谱化的项目（可多选）"
+            :loading="graphedProjectsLoading"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="path in graphedProjects"
+              :key="path"
+              :label="path"
+              :value="path"
+            />
+          </el-select>
+          <div class="form-hint" v-if="graphedProjects.length === 0 && !graphedProjectsLoading">
+            <el-icon><Warning /></el-icon>
+            无已图谱化项目，请先在「知识图谱管理」页面生成图谱
+          </div>
         </el-form-item>
         <el-form-item label="DSL查询">
           <el-input
@@ -569,13 +587,28 @@ const configs = ref<AppLogConfig[]>([])
 const configDialogVisible = ref(false)
 const editingConfig = ref<AppLogConfig | null>(null)
 const configSaving = ref(false)
-const configForm = reactive<AppLogConfig>({
+const graphedProjects = ref<string[]>([])
+const graphedProjectsLoading = ref(false)
+const configForm = reactive({
   appId: '',
-  projectPath: '',
+  projectPaths: [] as string[],  // 多选数组
   dslQuery: '',
   pullIntervalMinutes: 10,
   enabled: true
 })
+
+const loadGraphedProjects = async () => {
+  graphedProjectsLoading.value = true
+  try {
+    const res = await logAnalysisApi.getGraphedProjects()
+    graphedProjects.value = res || []
+  } catch (e: any) {
+    // Neo4j 未配置时静默失败
+    graphedProjects.value = []
+  } finally {
+    graphedProjectsLoading.value = false
+  }
+}
 
 const loadConfigs = async () => {
   configLoading.value = true
@@ -593,28 +626,50 @@ const showAddConfigDialog = () => {
   editingConfig.value = null
   Object.assign(configForm, {
     appId: '',
-    projectPath: '',
+    projectPaths: [],
     dslQuery: '',
     pullIntervalMinutes: 10,
     enabled: true
   })
+  loadGraphedProjects()  // 加载已图谱化项目列表
   configDialogVisible.value = true
 }
 
 const editConfig = (config: AppLogConfig) => {
   editingConfig.value = config
-  Object.assign(configForm, config)
+  // 将存储的逗号分隔字符串转为数组
+  const projectPaths = config.projectPath ? config.projectPath.split(',').filter(p => p.trim()) : []
+  Object.assign(configForm, {
+    appId: config.appId,
+    projectPaths,
+    dslQuery: config.dslQuery,
+    pullIntervalMinutes: config.pullIntervalMinutes,
+    enabled: config.enabled
+  })
+  loadGraphedProjects()
   configDialogVisible.value = true
 }
 
 const saveConfig = async () => {
-  if (!configForm.appId || !configForm.projectPath) {
-    ElMessage.warning('请填写应用ID和项目路径')
+  if (!configForm.appId) {
+    ElMessage.warning('请填写应用ID')
+    return
+  }
+  if (configForm.projectPaths.length === 0) {
+    ElMessage.warning('请选择至少一个图谱化项目')
     return
   }
   configSaving.value = true
   try {
-    await logAnalysisApi.saveConfig(configForm)
+    // 将多选数组转为逗号分隔字符串存储
+    const saveData: AppLogConfig = {
+      appId: configForm.appId,
+      projectPath: configForm.projectPaths.join(','),
+      dslQuery: configForm.dslQuery,
+      pullIntervalMinutes: configForm.pullIntervalMinutes,
+      enabled: configForm.enabled
+    }
+    await logAnalysisApi.saveConfig(saveData)
     ElMessage.success('配置保存成功')
     configDialogVisible.value = false
     loadConfigs()

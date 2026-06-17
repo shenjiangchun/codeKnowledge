@@ -2,6 +2,7 @@ package com.huawei.hisi.controller;
 
 import com.huawei.hisi.model.ApiResponse;
 import com.huawei.hisi.model.AppLogConfig;
+import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.repository.AppLogConfigRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +21,24 @@ import java.util.List;
 public class AppLogConfigController {
 
     private final AppLogConfigRepository repository;
+    private final Neo4jMethodNodeRepository methodNodeRepository;
+
+    /**
+     * 获取所有已图谱化的项目路径
+     * 用于配置表单下拉选择
+     */
+    @GetMapping("/graphed-projects")
+    public ApiResponse<List<String>> getGraphedProjects() {
+        try {
+            List<String> projectPaths = methodNodeRepository.findAllGraphedProjectPaths();
+            log.debug("[AppLogConfig] 查询已图谱化项目: {} 个", projectPaths.size());
+            return ApiResponse.success(projectPaths);
+        } catch (Exception e) {
+            log.error("[AppLogConfig] 查询已图谱化项目失败: {}", e.getMessage());
+            // Neo4j 未配置时返回空列表
+            return ApiResponse.success(List.of());
+        }
+    }
 
     /**
      * 获取所有配置

@@ -39,6 +39,11 @@ export const logAnalysisApi = {
 
   // ========== 日志拉取配置 ==========
 
+  // 获取已图谱化项目列表（用于下拉选择）
+  getGraphedProjects(): Promise<string[]> {
+    return request.get('/log/config/graphed-projects') as Promise<string[]>
+  },
+
   // 获取所有配置
   getConfigs(): Promise<AppLogConfig[]> {
     return request.get('/log/config') as Promise<AppLogConfig[]>

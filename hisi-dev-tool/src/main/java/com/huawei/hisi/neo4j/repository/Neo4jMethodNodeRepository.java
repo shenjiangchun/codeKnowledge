@@ -1022,6 +1022,18 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     List<String> findProjectPathsByPathPrefix(@Param("path") String path);
 
     /**
+     * 获取所有已图谱化的项目路径列表
+     * 用于日志分析配置下拉选择
+     */
+    @Query("""
+        MATCH (m:Method)
+        WHERE m.projectPath IS NOT NULL
+        RETURN DISTINCT m.projectPath as projectPath
+        ORDER BY projectPath
+        """)
+    List<String> findAllGraphedProjectPaths();
+
+    /**
      * 获取项目路径下所有不同的类名
      * 用于替代旧的 callchain/classes 接口
      */
