@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Document, Folder, Monitor, Search, Shop, DataAnalysis, Setting, Cpu, MagicStick, Connection, User } from '@element-plus/icons-vue'
+import { Document, Folder, Monitor, Search, Shop, DataAnalysis, Setting, Cpu, MagicStick, Connection, User, Tools } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import { computed } from 'vue'
 import type { Component } from 'vue'
@@ -7,7 +7,7 @@ import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 
 // Define menu key type that matches availableMenus keys
-type MenuKey = 'log-analysis' | 'project-management' | 'claude-terminal' | 'prompt-config' | 'search' | 'skill-market' | 'knowledge-graph' | 'settings' | 'apm-debug' | 'ram' | 'merge-analysis'
+type MenuKey = 'log-analysis' | 'project-management' | 'claude-terminal' | 'prompt-config' | 'search' | 'skill-market' | 'kg-skills-kit' | 'knowledge-graph' | 'settings' | 'apm-debug' | 'ram' | 'merge-analysis'
 
 interface MenuItem {
   index: string
@@ -27,6 +27,12 @@ const baseMenuItems: MenuItem[] = [
     title: '技能市场',
     icon: Shop,
     menuKey: 'skill-market'
+  },
+  {
+    index: '/kg-skills-kit',
+    title: 'KG Skills 套件',
+    icon: Tools,
+    menuKey: 'kg-skills-kit' as MenuKey
   },
   // 自然语言诊断已移除
   {

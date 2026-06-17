@@ -108,6 +108,14 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/kg-skills-kit',
+    name: 'KgSkillsKit',
+    component: () => import('@/views/kg-skills-kit/KgSkillsKit.vue'),
+    meta: {
+      title: 'KG Skills 套件'
+    }
+  },
+  {
     path: '/ram',
     name: 'RamSessions',
     component: () => import('@/views/ram/SessionListPage.vue'),
