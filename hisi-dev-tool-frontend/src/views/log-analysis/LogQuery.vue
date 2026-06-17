@@ -314,6 +314,83 @@
           </el-table>
         </el-card>
       </el-tab-pane>
+
+      <!-- 分析报告页签 -->
+      <el-tab-pane label="分析报告" name="reports">
+        <el-card header="AI 分析报告">
+          <el-alert type="info" :closable="false" style="margin-bottom: 16px">
+            查看已提交的日志分析任务及其 AI 生成的根因分析报告。
+          </el-alert>
+
+          <el-form :inline="true" style="margin-bottom: 16px">
+            <el-form-item label="状态">
+              <el-select v-model="reportFilter.status" clearable placeholder="全部" style="width: 120px">
+                <el-option label="待处理" value="pending" />
+                <el-option label="处理中" value="processing" />
+                <el-option label="已完成" value="completed" />
+                <el-option label="失败" value="failed" />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="loadReports" :loading="reportsLoading">
+                <el-icon><Search /></el-icon> 查询
+              </el-button>
+            </el-form-item>
+          </el-form>
+
+          <el-table :data="reports" v-loading="reportsLoading" stripe>
+            <el-table-column prop="reportId" label="报告ID" width="150" />
+            <el-table-column prop="status" label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag :type="getReportStatusType(row.status)">{{ getReportStatusText(row.status) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="errorType" label="错误类型" width="180">
+              <template #default="{ row }">
+                <span v-if="row.errorType">{{ row.errorType }}</span>
+                <span v-else style="color: #909399">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="serviceName" label="服务" width="150">
+              <template #default="{ row }">
+                <span v-if="row.serviceName">{{ row.serviceName }}</span>
+                <span v-else style="color: #909399">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="createdAt" label="创建时间" width="180">
+              <template #default="{ row }">
+                {{ formatReportTime(row.createdAt) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="updatedAt" label="更新时间" width="180">
+              <template #default="{ row }">
+                {{ formatReportTime(row.updatedAt) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="180">
+              <template #default="{ row }">
+                <el-button type="primary" link size="small" @click="viewReportDetail(row)" :disabled="row.status !== 'completed'">
+                  查看报告
+                </el-button>
+                <el-button type="info" link size="small" @click="checkReportStatus(row)">
+                  状态
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <el-pagination
+            class="mt-4"
+            v-model:current-page="reportsPagination.page"
+            v-model:page-size="reportsPagination.pageSize"
+            :total="reportsPagination.total"
+            :page-sizes="[10, 20, 50]"
+            layout="total, sizes, prev, pager, next"
+            @size-change="loadReports"
+            @current-change="loadReports"
+          />
+        </el-card>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 新增/编辑配置弹窗 -->
@@ -555,6 +632,59 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 报告详情弹窗 -->
+    <el-dialog v-model="reportDetailVisible" title="分析报告详情" width="800px">
+      <div class="report-detail" v-if="selectedReport">
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="报告ID">{{ selectedReport.reportId }}</el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <el-tag :type="getReportStatusType(selectedReport.status)">{{ getReportStatusText(selectedReport.status) }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="创建时间">{{ formatReportTime(selectedReport.createdAt) }}</el-descriptions-item>
+          <el-descriptions-item label="更新时间">{{ formatReportTime(selectedReport.updatedAt) }}</el-descriptions-item>
+        </el-descriptions>
+
+        <!-- 错误摘要 -->
+        <div class="detail-section" v-if="selectedReport.errorSummary">
+          <div class="section-title">
+            <el-icon><Warning /></el-icon>
+            错误摘要
+          </div>
+          <div class="message-content">{{ selectedReport.errorSummary }}</div>
+        </div>
+
+        <!-- 根因分析 -->
+        <div class="detail-section" v-if="selectedReport.rootCause">
+          <div class="section-title">
+            <el-icon><Cpu /></el-icon>
+            根因分析
+          </div>
+          <div class="message-content">{{ selectedReport.rootCause }}</div>
+        </div>
+
+        <!-- 修复建议 -->
+        <div class="detail-section" v-if="selectedReport.fixSuggestions">
+          <div class="section-title">
+            <el-icon><Check /></el-icon>
+            修复建议
+          </div>
+          <div class="message-content">{{ selectedReport.fixSuggestions }}</div>
+        </div>
+
+        <!-- 代码片段 -->
+        <div class="detail-section" v-if="selectedReport.codeSnippets">
+          <div class="section-title">
+            <el-icon><Document /></el-icon>
+            相关代码
+          </div>
+          <div class="stack-content">{{ selectedReport.codeSnippets }}</div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="reportDetailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -707,15 +837,103 @@ const formatConfigTime = (timestamp: number) => {
   return new Date(timestamp * 1000).toLocaleString('zh-CN')
 }
 
+// ========== 分析报告管理 ==========
+const reportsLoading = ref(false)
+const reports = ref<any[]>([])
+const reportFilter = reactive({
+  status: ''
+})
+const reportsPagination = reactive({
+  page: 1,
+  pageSize: 10,
+  total: 0
+})
+const reportDetailVisible = ref(false)
+const selectedReport = ref<any | null>(null)
+
+const loadReports = async () => {
+  reportsLoading.value = true
+  try {
+    const params: any = {
+      page: reportsPagination.page,
+      pageSize: reportsPagination.pageSize
+    }
+    if (reportFilter.status) {
+      params.status = reportFilter.status
+    }
+    const res = await logAnalysisApi.getReports(params)
+    reports.value = res?.list || []
+    reportsPagination.total = res?.total || 0
+  } catch (e: any) {
+    ElMessage.error('加载报告失败: ' + e.message)
+  } finally {
+    reportsLoading.value = false
+  }
+}
+
+const viewReportDetail = async (report: any) => {
+  try {
+    const res = await logAnalysisApi.getReport(report.reportId)
+    selectedReport.value = res
+    reportDetailVisible.value = true
+  } catch (e: any) {
+    ElMessage.error('获取报告详情失败: ' + e.message)
+  }
+}
+
+const checkReportStatus = async (report: any) => {
+  try {
+    const res = await logAnalysisApi.getStatus(report.reportId)
+    const status = res?.status || 'unknown'
+    const progress = res?.progress || 0
+    const stage = res?.stage || ''
+    ElMessage.info(`状态: ${getReportStatusText(status)}, 进度: ${progress}%, 阶段: ${stage}`)
+  } catch (e: any) {
+    ElMessage.error('获取状态失败: ' + e.message)
+  }
+}
+
+const getReportStatusType = (status: string): string => {
+  switch (status) {
+    case 'completed': return 'success'
+    case 'failed': return 'danger'
+    case 'processing': return 'warning'
+    case 'pending': return 'info'
+    default: return 'info'
+  }
+}
+
+const getReportStatusText = (status: string): string => {
+  switch (status) {
+    case 'completed': return '已完成'
+    case 'failed': return '失败'
+    case 'processing': return '处理中'
+    case 'pending': return '待处理'
+    default: return status
+  }
+}
+
+const formatReportTime = (time: any): string => {
+  if (!time) return '-'
+  if (typeof time === 'string') return time.replace('T', ' ').substring(0, 19)
+  return new Date(time).toLocaleString('zh-CN')
+}
+
 onMounted(() => {
   if (activeTab.value === 'config') {
     loadConfigs()
+  }
+  if (activeTab.value === 'reports') {
+    loadReports()
   }
 })
 
 watch(activeTab, (tab) => {
   if (tab === 'config') {
     loadConfigs()
+  }
+  if (tab === 'reports') {
+    loadReports()
   }
 })
 

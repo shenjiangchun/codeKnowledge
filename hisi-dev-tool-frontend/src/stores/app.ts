@@ -55,7 +55,7 @@ export const useAppStore = defineStore('app', () => {
     'claude-terminal': true,
     'search': projectSelected.value,
     'knowledge-graph': projectSelected.value,
-    'log-analysis': projectSelected.value,
+    'log-analysis': true, // 日志分析始终可用，不依赖项目选择
     'ram': projectSelected.value,
     'merge-analysis': true, // Has its own project selector inside
     'prompt-config': true,
