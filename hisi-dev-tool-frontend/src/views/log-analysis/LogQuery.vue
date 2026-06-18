@@ -357,6 +357,14 @@
                 <span v-else style="color: #909399">-</span>
               </template>
             </el-table-column>
+            <el-table-column prop="occurrenceCount" label="出现次数" width="100">
+              <template #default="{ row }">
+                <el-tag v-if="row.occurrenceCount && row.occurrenceCount > 1" type="warning" size="small">
+                  {{ row.occurrenceCount }}
+                </el-tag>
+                <span v-else>1</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="createdAt" label="创建时间" width="180">
               <template #default="{ row }">
                 {{ formatReportTime(row.createdAt) }}
@@ -367,7 +375,7 @@
                 {{ formatReportTime(row.updatedAt) }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="220">
+            <el-table-column label="操作" width="280">
               <template #default="{ row }">
                 <el-button type="primary" link size="small" @click="viewReportDetail(row)" :disabled="row.status !== 'completed'">
                   查看报告
@@ -375,8 +383,8 @@
                 <el-button type="warning" link size="small" @click="handleReanalyzeReport(row)" :disabled="row.status === 'pending' || row.status === 'processing'" :loading="row.reanalyzing">
                   重新分析
                 </el-button>
-                <el-button type="info" link size="small" @click="checkReportStatus(row)">
-                  状态
+                <el-button type="danger" link size="small" @click="handleDeleteReport(row)">
+                  删除
                 </el-button>
               </template>
             </el-table-column>
@@ -644,8 +652,19 @@
           <el-descriptions-item label="状态">
             <el-tag :type="getReportStatusType(selectedReport.status)">{{ getReportStatusText(selectedReport.status) }}</el-tag>
           </el-descriptions-item>
+          <el-descriptions-item label="错误类型">
+            <el-tag v-if="selectedReport.errorType" type="danger">{{ selectedReport.errorType }}</el-tag>
+            <span v-else style="color: #909399">-</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="服务">
+            <span v-if="selectedReport.serviceName">{{ selectedReport.serviceName }}</span>
+            <span v-else style="color: #909399">-</span>
+          </el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatReportTime(selectedReport.createdAt) }}</el-descriptions-item>
           <el-descriptions-item label="更新时间">{{ formatReportTime(selectedReport.updatedAt) }}</el-descriptions-item>
+          <el-descriptions-item label="出现次数" v-if="selectedReport.occurrenceCount && selectedReport.occurrenceCount > 1">
+            <el-tag type="warning">{{ selectedReport.occurrenceCount }} 次合并</el-tag>
+          </el-descriptions-item>
         </el-descriptions>
 
         <!-- 错误摘要 -->
@@ -654,7 +673,7 @@
             <el-icon><Warning /></el-icon>
             错误摘要
           </div>
-          <div class="message-content">{{ selectedReport.errorSummary }}</div>
+          <div class="markdown-content error-summary-md" v-html="renderMarkdown(selectedReport.errorSummary)"></div>
         </div>
 
         <!-- 根因分析 -->
@@ -663,7 +682,7 @@
             <el-icon><Cpu /></el-icon>
             根因分析
           </div>
-          <div class="message-content">{{ selectedReport.rootCause }}</div>
+          <div class="markdown-content root-cause-md" v-html="renderMarkdown(selectedReport.rootCause)"></div>
         </div>
 
         <!-- 修复建议 -->
@@ -672,7 +691,7 @@
             <el-icon><Check /></el-icon>
             修复建议
           </div>
-          <div class="message-content">{{ selectedReport.fixSuggestions }}</div>
+          <div class="markdown-content fix-suggestions-md" v-html="renderMarkdown(selectedReport.fixSuggestions)"></div>
         </div>
 
         <!-- 代码片段 -->
@@ -681,7 +700,7 @@
             <el-icon><Document /></el-icon>
             相关代码
           </div>
-          <div class="stack-content">{{ selectedReport.codeSnippets }}</div>
+          <div class="markdown-content code-snippets-md" v-html="renderMarkdown(selectedReport.codeSnippets)"></div>
         </div>
       </div>
       <template #footer>
@@ -702,6 +721,7 @@ import { claudeApi } from '@/api/claude'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import type { LogEntry } from '@/types/log'
 import { parseJavaErrorLog, formatForAnalysis, type ParsedErrorLog } from '@/utils/logParser'
+import { marked } from 'marked'
 
 const router = useRouter()
 const workspaceStore = useWorkspaceStore()
@@ -920,6 +940,24 @@ const handleReanalyzeReport = async (report: any) => {
   }
 }
 
+const handleDeleteReport = async (report: any) => {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除报告 "${report.reportId}"？此操作不可恢复。`,
+      '删除报告',
+      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' }
+    )
+
+    await logAnalysisApi.deleteReport(report.reportId)
+    ElMessage.success('报告已删除')
+    loadReports()
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      ElMessage.error('删除失败: ' + e.message)
+    }
+  }
+}
+
 const getReportStatusType = (status: string): string => {
   switch (status) {
     case 'completed': return 'success'
@@ -938,6 +976,32 @@ const getReportStatusText = (status: string): string => {
     case 'pending': return '待处理'
     default: return status
   }
+}
+
+const renderMarkdown = (content: any): string => {
+  if (!content) return ''
+  // If content is an object/array, convert to formatted text first
+  if (typeof content === 'object') {
+    if (Array.isArray(content)) {
+      // Format array items as bullet points
+      const items = content.map(item => {
+        if (typeof item === 'object' && item !== null) {
+          return Object.entries(item)
+            .map(([k, v]) => `**${k}:** ${v}`)
+            .join('  \n')
+        }
+        return String(item)
+      }).map(item => `- ${item}`)
+      return marked.parse(items.join('\n\n')) as string
+    }
+    // Object: format as key-value pairs
+    const pairs = Object.entries(content)
+      .map(([k, v]) => `**${k}:** ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+      .join('\n\n')
+    return marked.parse(pairs) as string
+  }
+  // String: parse as markdown directly
+  return marked.parse(String(content)) as string
 }
 
 const formatReportTime = (time: any): string => {
@@ -2142,5 +2206,102 @@ const closeAnalysisDialog = () => {
 .raw-log {
   font-size: 11px;
   max-height: 250px;
+}
+
+/* Markdown 渲染样式 */
+.markdown-content {
+  background: #f5f7fa;
+  padding: 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.markdown-content h1, .markdown-content h2, .markdown-content h3,
+.markdown-content h4, .markdown-content h5, .markdown-content h6 {
+  margin: 0 0 12px 0;
+  color: #303133;
+}
+
+.markdown-content h1 { font-size: 18px; }
+.markdown-content h2 { font-size: 16px; }
+.markdown-content h3 { font-size: 15px; }
+
+.markdown-content p {
+  margin: 0 0 12px 0;
+}
+
+.markdown-content ul, .markdown-content ol {
+  margin: 0 0 12px 0;
+  padding-left: 20px;
+}
+
+.markdown-content li {
+  margin-bottom: 6px;
+}
+
+.markdown-content code {
+  background: #e4e7ed;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+}
+
+.markdown-content pre {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+
+.markdown-content pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.markdown-content strong {
+  color: #303133;
+  font-weight: 600;
+}
+
+.markdown-content a {
+  color: #409eff;
+  text-decoration: none;
+}
+
+.error-summary-md {
+  background: #fef0f0;
+  border: 1px solid #fbc4c4;
+}
+
+.root-cause-md {
+  background: #fdf6ec;
+  border: 1px solid #faecd8;
+}
+
+.fix-suggestions-md {
+  background: #f0f9eb;
+  border: 1px solid #e1f3d8;
+}
+
+.code-snippets-md {
+  background: #1e1e1e;
+  color: #d4d4d4;
+}
+
+.code-snippets-md h1, .code-snippets-md h2, .code-snippets-md h3,
+.code-snippets-md h4, .code-snippets-md h5, .code-snippets-md h6,
+.code-snippets-md strong {
+  color: #e5c07b;
+}
+
+.code-snippets-md p {
+  color: #d4d4d4;
 }
 </style>

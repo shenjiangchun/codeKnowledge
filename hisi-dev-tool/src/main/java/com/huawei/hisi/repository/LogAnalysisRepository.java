@@ -325,6 +325,20 @@ public class LogAnalysisRepository {
     }
 
     /**
+     * 删除报告
+     */
+    public void deleteById(Long reportId) {
+        String sql = "DELETE FROM log_analysis_report WHERE report_id = ?";
+        try {
+            jdbcTemplate.update(sql, reportId);
+            log.info("报告已删除 (reportId={})", reportId);
+        } catch (Exception e) {
+            log.error("删除报告失败 (reportId={}): {}", reportId, e.getMessage());
+            throw new RuntimeException("删除报告失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * 报告实体类
      */
     @SuppressWarnings("unused")

@@ -26,29 +26,25 @@
         <!-- 错误摘要 -->
         <div v-if="report.errorSummary" class="report-section">
           <h4 class="section-title">错误摘要</h4>
-          <div class="section-content error-summary">{{ report.errorSummary }}</div>
+          <div class="markdown-content error-summary" v-html="renderMarkdown(report.errorSummary)"></div>
         </div>
 
         <!-- 根本原因 -->
         <div v-if="report.rootCause" class="report-section">
           <h4 class="section-title">根本原因</h4>
-          <div class="section-content root-cause">{{ report.rootCause }}</div>
+          <div class="markdown-content root-cause" v-html="renderMarkdown(report.rootCause)"></div>
         </div>
 
         <!-- 修复建议 -->
         <div v-if="report.fixSuggestions" class="report-section">
           <h4 class="section-title">修复建议</h4>
-          <div class="section-content fix-suggestions">
-            <pre>{{ report.fixSuggestions }}</pre>
-          </div>
+          <div class="markdown-content fix-suggestions" v-html="renderMarkdown(report.fixSuggestions)"></div>
         </div>
 
         <!-- 代码片段 -->
         <div v-if="report.codeSnippets" class="report-section">
           <h4 class="section-title">相关代码</h4>
-          <div class="section-content code-snippets">
-            <pre>{{ report.codeSnippets }}</pre>
-          </div>
+          <div class="markdown-content code-snippets" v-html="renderMarkdown(report.codeSnippets)"></div>
         </div>
 
         <el-empty v-if="!report.errorSummary && !report.rootCause && !report.fixSuggestions" description="暂无分析结果" />
@@ -65,6 +61,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { logAnalysisApi } from '@/api/logAnalysis'
 import type { DetailedAnalysisReport } from '@/types/log'
+import { marked } from 'marked'
 
 const route = useRoute()
 const router = useRouter()
@@ -94,6 +91,29 @@ const formatTime = (time: string | undefined) => {
 
 const goBack = () => {
   router.push('/log-analysis')
+}
+
+const renderMarkdown = (content: any): string => {
+  if (!content) return ''
+  // If content is an object/array, convert to formatted text first
+  if (typeof content === 'object') {
+    if (Array.isArray(content)) {
+      const items = content.map(item => {
+        if (typeof item === 'object' && item !== null) {
+          return Object.entries(item)
+            .map(([k, v]) => `**${k}:** ${v}`)
+            .join('  \n')
+        }
+        return String(item)
+      }).map(item => `- ${item}`)
+      return marked.parse(items.join('\n\n')) as string
+    }
+    const pairs = Object.entries(content)
+      .map(([k, v]) => `**${k}:** ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+      .join('\n\n')
+    return marked.parse(pairs) as string
+  }
+  return marked.parse(String(content)) as string
 }
 
 const loadReport = async () => {
@@ -167,22 +187,16 @@ onMounted(loadReport)
 .error-summary {
   background: #fef0f0;
   border: 1px solid #fde2e2;
-  color: #f56c6c;
 }
 
 .root-cause {
   background: #fdf6ec;
   border: 1px solid #faecd8;
-  color: #e6a23c;
 }
 
 .fix-suggestions {
   background: #f0f9eb;
   border: 1px solid #e1f3d8;
-}
-
-.fix-suggestions pre {
-  color: #67c23a;
 }
 
 .code-snippets {
@@ -192,7 +206,91 @@ onMounted(loadReport)
   font-size: 13px;
 }
 
-.code-snippets pre {
+/* Markdown 渲染样式 */
+.markdown-content {
+  padding: 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.6;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.markdown-content h1, .markdown-content h2, .markdown-content h3,
+.markdown-content h4, .markdown-content h5, .markdown-content h6 {
+  margin: 0 0 12px 0;
+  color: #303133;
+}
+
+.markdown-content h1 { font-size: 18px; }
+.markdown-content h2 { font-size: 16px; }
+.markdown-content h3 { font-size: 15px; }
+
+.markdown-content p { margin: 0 0 12px 0; }
+
+.markdown-content ul, .markdown-content ol {
+  margin: 0 0 12px 0;
+  padding-left: 20px;
+}
+
+.markdown-content li { margin-bottom: 6px; }
+
+.markdown-content code {
+  background: #e4e7ed;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+}
+
+.markdown-content pre {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+
+.markdown-content pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.markdown-content strong {
+  color: #303133;
+  font-weight: 600;
+}
+
+.error-summary.markdown-content {
+  background: #fef0f0;
+  border: 1px solid #fbc4c4;
+}
+
+.root-cause.markdown-content {
+  background: #fdf6ec;
+  border: 1px solid #faecd8;
+}
+
+.fix-suggestions.markdown-content {
+  background: #f0f9eb;
+  border: 1px solid #e1f3d8;
+}
+
+.code-snippets.markdown-content {
+  background: #1e1e1e;
+  color: #d4d4d4;
+}
+
+.code-snippets.markdown-content h1, .code-snippets.markdown-content h2,
+.code-snippets.markdown-content h3, .code-snippets.markdown-content h4,
+.code-snippets.markdown-content h5, .code-snippets.markdown-content h6,
+.code-snippets.markdown-content strong {
+  color: #e5c07b;
+}
+
+.code-snippets.markdown-content p {
   color: #d4d4d4;
 }
 </style>

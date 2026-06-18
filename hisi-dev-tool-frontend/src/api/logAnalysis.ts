@@ -42,6 +42,11 @@ export const logAnalysisApi = {
     return request.post(`/log/report/${id}/reanalyze`)
   },
 
+  // 删除报告
+  deleteReport(id: string): Promise<void> {
+    return request.delete(`/log/report/${id}`)
+  },
+
   // ========== 日志拉取配置 ==========
 
   // 获取已图谱化项目列表（用于下拉选择）

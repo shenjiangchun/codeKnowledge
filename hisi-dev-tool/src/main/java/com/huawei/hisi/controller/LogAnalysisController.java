@@ -322,4 +322,31 @@ public class LogAnalysisController {
         // Count pending reports created before this one
         return repository.countPendingBefore(report.getCreatedAt());
     }
+
+    /**
+     * 删除分析报告
+     * DELETE /api/log/report/{id}
+     *
+     * @param reportId 报告 ID
+     * @return 操作结果
+     */
+    @DeleteMapping("/report/{id}")
+    public ApiResponse<String> deleteReport(@PathVariable("id") Long reportId) {
+        try {
+            LogAnalysisReportEntity report = repository.findById(reportId);
+
+            if (report == null) {
+                return ApiResponse.error(404, "报告不存在");
+            }
+
+            repository.deleteById(reportId);
+            log.info("报告已删除 (reportId={})", reportId);
+
+            return ApiResponse.success("报告已删除");
+
+        } catch (Exception e) {
+            log.error("删除报告失败 (reportId={})", reportId, e);
+            return ApiResponse.error("删除报告失败：" + e.getMessage());
+        }
+    }
 }

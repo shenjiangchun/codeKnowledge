@@ -65,6 +65,16 @@ public class ReportListResponse {
         private String errorType;
 
         /**
+         * 服务名
+         */
+        private String serviceName;
+
+        /**
+         * 出现次数（合并后）
+         */
+        private Integer occurrenceCount;
+
+        /**
          * 创建时间
          */
         private LocalDateTime createdAt;
@@ -88,6 +98,8 @@ public class ReportListResponse {
                     .reportId(report.getReportId())
                     .status(report.getStatus())
                     .errorType(report.getErrorType())
+                    .serviceName(report.getServiceName())
+                    .occurrenceCount(report.getOccurrenceCount())
                     .createdAt(report.getCreatedAt())
                     .updatedAt(report.getUpdatedAt())
                     .build());

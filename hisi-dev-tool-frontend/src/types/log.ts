@@ -53,6 +53,9 @@ export interface AnalyzeTaskResponse {
 export interface Report {
   reportId: string
   status: string
+  errorType?: string
+  serviceName?: string
+  occurrenceCount?: number
   createdAt: string
   updatedAt: string
   errorSummary?: string
