@@ -89,4 +89,45 @@ class DiffExtractServiceTest {
 
         assertThat(branches).contains("main", "feature");
     }
+
+    @Test
+    @DisplayName("Different branches produce different diffs")
+    void differentBranches_produceDifferentDiffs() throws Exception {
+        // Setup: Create multiple feature branches with different changes
+        try (Git git = Git.open(new File(repoPath))) {
+            // Create feature-a from main
+            git.checkout().setName("main").call();
+            git.checkout().setCreateBranch(true).setName("feature-a").call();
+            Files.writeString(Path.of(repoPath, "a.txt"), "content A");
+            git.add().addFilepattern("a.txt").call();
+            git.commit().setMessage("feature A").call();
+
+            // Create feature-b from main
+            git.checkout().setName("main").call();
+            git.checkout().setCreateBranch(true).setName("feature-b").call();
+            Files.writeString(Path.of(repoPath, "b.txt"), "content B");
+            git.add().addFilepattern("b.txt").call();
+            git.commit().setMessage("feature B").call();
+        }
+
+        // Test: Compare feature-a vs main and feature-b vs main
+        DiffResult resultA = service.extractDiff(repoPath, "feature-a", "main");
+        DiffResult resultB = service.extractDiff(repoPath, "feature-b", "main");
+
+        // Verify: Different branches should produce different diffs
+        assertThat(resultA.getTotalFiles()).isEqualTo(1);
+        assertThat(resultB.getTotalFiles()).isEqualTo(1);
+
+        List<String> filesA = resultA.getFiles().stream()
+                .map(DiffResult.FileDiff::getFilePath).toList();
+        List<String> filesB = resultB.getFiles().stream()
+                .map(DiffResult.FileDiff::getFilePath).toList();
+
+        assertThat(filesA).containsExactly("a.txt");
+        assertThat(filesB).containsExactly("b.txt");
+
+        // The diffs should NOT be identical
+        assertThat(resultA.getFiles().get(0).getPatch())
+                .isNotEqualTo(resultB.getFiles().get(0).getPatch());
+    }
 }

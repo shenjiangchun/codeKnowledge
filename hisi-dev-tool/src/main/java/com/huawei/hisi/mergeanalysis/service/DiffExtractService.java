@@ -48,11 +48,16 @@ public class DiffExtractService {
     }
 
     public DiffResult extractDiff(String projectPath, String sourceBranch, String targetBranch) {
+        log.info("[DiffExtract] extractDiff called: projectPath={}, sourceBranch={}, targetBranch={}",
+                projectPath, sourceBranch, targetBranch);
+
         try (Git git = Git.open(new File(projectPath))) {
             Repository repository = git.getRepository();
 
             ObjectId sourceId = resolveRef(repository, sourceBranch);
             ObjectId targetId = resolveRef(repository, targetBranch);
+            log.info("[DiffExtract] Resolved: sourceBranch={} -> ObjectId={}, targetBranch={} -> ObjectId={}",
+                    sourceBranch, sourceId, targetBranch, targetId);
 
             RevTree sourceTree;
             RevTree targetTree;
@@ -123,24 +128,38 @@ public class DiffExtractService {
     }
 
     private ObjectId resolveRef(Repository repository, String branchName) throws Exception {
+        log.debug("[DiffExtract] resolveRef called for branchName: {}", branchName);
         // Strip common prefixes that shortenRefName may leave
         String name = branchName;
         if (name.startsWith("origin/")) {
             String stripped = name.substring("origin/".length());
             ObjectId id = repository.resolve("refs/remotes/origin/" + stripped);
-            if (id != null) return id;
+            if (id != null) {
+                log.debug("[DiffExtract] Resolved '{}' via refs/remotes/origin/{} -> {}", branchName, stripped, id);
+                return id;
+            }
         }
 
         ObjectId id = repository.resolve("refs/heads/" + name);
-        if (id != null) return id;
+        if (id != null) {
+            log.debug("[DiffExtract] Resolved '{}' via refs/heads/{} -> {}", branchName, name, id);
+            return id;
+        }
 
         id = repository.resolve("refs/remotes/origin/" + name);
-        if (id != null) return id;
+        if (id != null) {
+            log.debug("[DiffExtract] Resolved '{}' via refs/remotes/origin/{} -> {}", branchName, name, id);
+            return id;
+        }
 
         // Last resort: let JGit resolve it as-is (handles full refs/ paths, HEAD, etc.)
         id = repository.resolve(name);
-        if (id != null) return id;
+        if (id != null) {
+            log.debug("[DiffExtract] Resolved '{}' directly -> {}", branchName, id);
+            return id;
+        }
 
+        log.error("[DiffExtract] Failed to resolve branch: {}", branchName);
         throw new IllegalArgumentException("Cannot resolve branch: " + branchName);
     }
 }
