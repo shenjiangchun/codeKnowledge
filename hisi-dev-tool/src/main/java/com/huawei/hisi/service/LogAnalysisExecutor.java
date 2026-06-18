@@ -5,7 +5,6 @@ import com.huawei.hisi.repository.LogAnalysisRepository.LogAnalysisReportEntity;
 import com.huawei.hisi.utils.SnowflakeIdGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -13,6 +12,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 日志分析异步执行器
@@ -31,9 +32,7 @@ public class LogAnalysisExecutor {
     private final RootCauseAnalysisService rootCauseAnalysisService;
     private final LogAnalysisRepository repository;
     private final SnowflakeIdGenerator snowflakeIdGenerator;
-
-    @Autowired(required = false)
-    private FingerprintService fingerprintService;
+    private final FingerprintService fingerprintService;
 
     /**
      * 提交日志分析请求（带指纹去重）
@@ -45,11 +44,6 @@ public class LogAnalysisExecutor {
      * @return 报告ID（新日志返回新ID，重复日志返回已有ID）
      */
     public Long submitForAnalysis(String message, String stackTrace, String userId, Map<String, Object> queryParams) {
-        if (fingerprintService == null) {
-            log.warn("FingerprintService未注入，跳过去重检查");
-            return createNewReport(message, stackTrace, userId, queryParams, "00000000000000000000000000000000");
-        }
-
         // Generate fingerprint
         String fingerprint = fingerprintService.generateFingerprint(message + "\n" + stackTrace);
         log.debug("生成指纹: {}", fingerprint);
@@ -147,32 +141,145 @@ public class LogAnalysisExecutor {
     }
 
     /**
-     * 执行基础规则分析
-     * Claude SDK 分析已移除，前端通过 pty4j 直接连接 Claude CLI。
-     * 此方法保留基础的错误信息提取，供任务状态追踪使用。
+     * 重新分析指定报告（重置状态并重新执行分析）
+     */
+    @Async("analysisTaskExecutor")
+    public void reanalyze(Long reportId) {
+        log.info("重新执行日志分析任务 (reportId={})", reportId);
+        LogAnalysisReportEntity report = repository.findById(reportId);
+        if (report == null) {
+            log.error("报告不存在，无法重新分析 (reportId={})", reportId);
+            return;
+        }
+        // 重置分析状态
+        repository.updateStatus(reportId, "pending");
+        repository.updateAnalysisResult(reportId, null, null, null, null);
+        executeAnalysis(reportId);
+    }
+
+    private static final Pattern EXCEPTION_PATTERN =
+        Pattern.compile("([\\w.]+(?:Exception|Error|Throwable))[:\\s]");
+    private static final Pattern CAUSED_BY_PATTERN =
+        Pattern.compile("Caused by:\\s*([\\w.]+(?:Exception|Error|Throwable))[:\\s]");
+    private static final Pattern AT_PATTERN =
+        Pattern.compile("^\\s+at\\s+([\\w.$]+)\\.([\\w<>]+)\\([\\w.]+:(\\d+)\\)", Pattern.MULTILINE);
+    private static final Pattern API_PATH_PATTERN =
+        Pattern.compile("handle\\s+(\\S+)\\s+error");
+
+    /**
+     * 执行基础规则分析：从日志中提取错误类型、根因、业务接口、关键栈帧
      */
     private AnalysisResult performAnalysis(Map<String, Object> request) {
-        String errorType = (String) request.get("errorType");
         String errorMessage = (String) request.get("message");
         String stackTrace = (String) request.get("stackTrace");
+        String fullContent = errorMessage != null ? errorMessage : "";
+        if (stackTrace != null && !stackTrace.isEmpty()) {
+            fullContent += "\n" + stackTrace;
+        }
+
+        // 提取异常类型
+        String detectedErrorType = extractErrorType(fullContent);
+        // 提取 Caused by（更接近根因）
+        String rootException = extractRootCause(fullContent);
+        // 提取业务接口路径
+        String apiPath = extractApiPath(fullContent);
+        // 提取关键非框架栈帧
+        List<Map<String, Object>> keyFrames = extractKeyStackFrames(fullContent);
 
         Map<String, Object> errorSummary = new HashMap<>();
-        errorSummary.put("errorType", errorType != null ? errorType : "Unknown");
-        errorSummary.put("errorMessage", errorMessage);
-        errorSummary.put("description", "基础规则分析结果，详细 LLM 分析请使用前端 Claude CLI 终端");
+        errorSummary.put("errorType", detectedErrorType);
+        errorSummary.put("rootException", rootException);
+        errorSummary.put("apiPath", apiPath != null ? apiPath : "");
+        errorSummary.put("errorMessage", truncate(errorMessage, 500));
 
         Map<String, Object> rootCause = new HashMap<>();
-        rootCause.put("rootCauseType", errorType != null ? errorType : "Unknown");
-        rootCause.put("description", "请通过前端 Claude CLI 终端进行深度根因分析");
+        rootCause.put("rootCauseType", rootException != null ? rootException : detectedErrorType);
+        if (rootException != null && rootException.contains("Broken pipe")) {
+            rootCause.put("description", "客户端在服务端响应完成前断开连接（Broken pipe），通常因前端超时或用户主动取消请求导致，非服务端 Bug");
+        } else if (rootException != null) {
+            rootCause.put("description", rootException + "，详细分析请使用 Claude CLI 终端");
+        } else {
+            rootCause.put("description", "未识别到明确异常类型，请使用 Claude CLI 终端深度分析");
+        }
 
         List<Map<String, Object>> fixSuggestions = new ArrayList<>();
-        Map<String, Object> suggestion = new HashMap<>();
-        suggestion.put("id", 1);
-        suggestion.put("suggestion", "请使用前端 Claude CLI 终端进行详细分析和修复建议");
-        suggestion.put("priority", "High");
-        fixSuggestions.add(suggestion);
+        if (rootException != null && rootException.contains("Broken pipe")) {
+            fixSuggestions.add(suggestion(1, "检查前端请求超时设置，适当增大 timeout 或改为异步轮询", "Medium"));
+            fixSuggestions.add(suggestion(2, "确认 GlobalExceptionHandler 中是否需要对此异常做静默处理，避免刷日志", "Low"));
+        } else {
+            fixSuggestions.add(suggestion(1, "请使用 Claude CLI 终端进行详细根因分析和修复建议", "High"));
+        }
 
-        return new AnalysisResult(errorSummary, rootCause, fixSuggestions, List.of());
+        return new AnalysisResult(errorSummary, rootCause, fixSuggestions, keyFrames);
+    }
+
+    private String extractErrorType(String content) {
+        Matcher m = EXCEPTION_PATTERN.matcher(content);
+        String last = null;
+        while (m.find()) {
+            last = m.group(1);
+        }
+        return last != null ? last.substring(last.lastIndexOf('.') + 1) : "Unknown";
+    }
+
+    private String extractRootCause(String content) {
+        Matcher m = CAUSED_BY_PATTERN.matcher(content);
+        String last = null;
+        while (m.find()) {
+            last = m.group(1);
+        }
+        if (last != null) {
+            return last.substring(last.lastIndexOf('.') + 1);
+        }
+        // 无 Caused by 时取第一个异常
+        m = EXCEPTION_PATTERN.matcher(content);
+        if (m.find()) {
+            return m.group(1).substring(m.group(1).lastIndexOf('.') + 1);
+        }
+        return null;
+    }
+
+    private String extractApiPath(String content) {
+        Matcher m = API_PATH_PATTERN.matcher(content);
+        if (m.find()) return m.group(1);
+        return null;
+    }
+
+    private List<Map<String, Object>> extractKeyStackFrames(String content) {
+        List<Map<String, Object>> frames = new ArrayList<>();
+        Matcher m = AT_PATTERN.matcher(content);
+        int count = 0;
+        while (m.find() && count < 5) {
+            String className = m.group(1);
+            if (isFrameworkClass(className)) continue;
+            Map<String, Object> frame = new HashMap<>();
+            frame.put("class", className.substring(className.lastIndexOf('.') + 1));
+            frame.put("method", m.group(2));
+            frame.put("line", Integer.parseInt(m.group(3)));
+            frames.add(frame);
+            count++;
+        }
+        return frames;
+    }
+
+    private boolean isFrameworkClass(String className) {
+        return className.startsWith("java.") || className.startsWith("javax.") ||
+               className.startsWith("sun.") || className.startsWith("org.springframework.") ||
+               className.startsWith("org.apache.") || className.startsWith("com.fasterxml.jackson.") ||
+               className.startsWith("io.netty.") || className.startsWith("reactor.");
+    }
+
+    private Map<String, Object> suggestion(int id, String text, String priority) {
+        Map<String, Object> s = new HashMap<>();
+        s.put("id", id);
+        s.put("suggestion", text);
+        s.put("priority", priority);
+        return s;
+    }
+
+    private String truncate(String s, int maxLen) {
+        if (s == null) return "";
+        return s.length() > maxLen ? s.substring(0, maxLen) + "..." : s;
     }
 
     /**

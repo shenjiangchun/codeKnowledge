@@ -4,7 +4,10 @@
       <template #header>
         <div class="card-header">
           <span>分析报告 #{{ reportId }}</span>
-          <el-button @click="goBack">返回</el-button>
+          <div>
+            <el-button type="primary" :loading="reanalyzing" @click="handleReanalyze">重新分析</el-button>
+            <el-button @click="goBack">返回</el-button>
+          </div>
         </div>
       </template>
 
@@ -67,6 +70,7 @@ const route = useRoute()
 const router = useRouter()
 const reportId = route.params.id as string
 const loading = ref(false)
+const reanalyzing = ref(false)
 const report = ref<DetailedAnalysisReport | null>(null)
 
 const getStatusType = (status: string) => {
@@ -92,10 +96,10 @@ const goBack = () => {
   router.push('/log-analysis')
 }
 
-onMounted(async () => {
+const loadReport = async () => {
   loading.value = true
   try {
-    const res = await logAnalysisApi.getReport(Number(reportId))
+    const res = await logAnalysisApi.getReport(reportId)
     report.value = res.data
   } catch (error: any) {
     if (error.response?.status === 400 || error.message?.includes('尚未完成')) {
@@ -107,7 +111,22 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}
+
+const handleReanalyze = async () => {
+  reanalyzing.value = true
+  try {
+    await logAnalysisApi.reanalyze(reportId)
+    ElMessage.success('已触发重新分析，请稍后刷新查看结果')
+    setTimeout(loadReport, 3000)
+  } catch {
+    ElMessage.error('触发重新分析失败')
+  } finally {
+    reanalyzing.value = false
+  }
+}
+
+onMounted(loadReport)
 </script>
 
 <style scoped>

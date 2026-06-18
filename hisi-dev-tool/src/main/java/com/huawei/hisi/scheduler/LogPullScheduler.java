@@ -8,7 +8,6 @@ import com.huawei.hisi.service.LogAnalysisExecutor;
 import com.huawei.hisi.service.LogCloudService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -21,14 +20,11 @@ import java.util.Map;
  * 日志拉取定时任务调度器
  * 每10分钟检查启用的应用配置并拉取错误日志
  *
- * Task 6: Scheduled task for periodic log pulling
- *
- * 启用条件：配置 log.pull.enabled=true
+ * 只要 AppLogConfig 表中存在 enabled=true 的记录就会拉取，无需额外配置开关
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "log.pull.enabled", havingValue = "true", matchIfMissing = false)
 public class LogPullScheduler {
 
     private final AppLogConfigRepository configRepository;
@@ -99,11 +95,11 @@ public class LogPullScheduler {
             queryParams.put("dslQuery", config.getDslQuery());
             queryParams.put("pullTime", LocalDateTime.now().toString());
 
-            // 调用 submitForAnalysis（带指纹去重）
+            // 调用 submitForAnalysis（带指纹去重），使用 sys_admin 作为 userId 以便前端查询
             Long reportId = logAnalysisExecutor.submitForAnalysis(
                 entry.getMessage(),
                 entry.getStackTrace() != null ? entry.getStackTrace() : "",
-                config.getAppId(),
+                "sys_admin",
                 queryParams
             );
 

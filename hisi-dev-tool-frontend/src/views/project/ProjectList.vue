@@ -2162,7 +2162,24 @@ const handleRemoteGenerateKg = (row: RemoteProject) => {
 }
 
 const handleRemoteGenerateVector = (row: RemoteProject) => {
-  handleGenerateVector({ name: row.name, path: row.localPath } as GitRepositoryInfo)
+  // 远端项目不需要本地项目目录，直接走选择流程
+  const fakeRow = { name: row.name, path: row.localPath } as GitRepositoryInfo
+  ElMessageBox.confirm(
+    '请选择描述和向量的生成方式：\n\n• 全量：清除该项目所有已有描述和向量后重新生成\n• 增量：仅补齐缺失的描述和向量',
+    '生成描述和向量',
+    {
+      confirmButtonText: '全量生成',
+      cancelButtonText: '增量生成',
+      distinguishCancelAndClose: true,
+      type: 'info'
+    }
+  ).then(() => {
+    doGenerateVector(fakeRow, 'full')
+  }).catch((action: any) => {
+    if (action === 'cancel') {
+      doGenerateVector(fakeRow, 'incremental')
+    }
+  })
 }
 
 // ============================================================

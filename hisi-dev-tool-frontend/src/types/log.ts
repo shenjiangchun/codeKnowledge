@@ -45,13 +45,13 @@ export interface LogAnalyzeRequest {
 }
 
 export interface AnalyzeTaskResponse {
-  reportId: number
+  reportId: string
   status: string
   createdAt: string
 }
 
 export interface Report {
-  reportId: number
+  reportId: string
   status: string
   createdAt: string
   updatedAt: string
@@ -70,7 +70,7 @@ export interface ReportListResponse {
 }
 
 export interface DetailedAnalysisReport {
-  reportId: number
+  reportId: string
   status: string
   errorSummary?: string
   rootCause?: string

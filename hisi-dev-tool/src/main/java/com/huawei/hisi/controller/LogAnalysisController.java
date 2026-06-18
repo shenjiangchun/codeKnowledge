@@ -216,6 +216,25 @@ public class LogAnalysisController {
     }
 
     /**
+     * 重新分析报告
+     * POST /api/log/report/{id}/reanalyze
+     */
+    @PostMapping("/report/{id}/reanalyze")
+    public ApiResponse<String> reanalyze(@PathVariable("id") Long reportId) {
+        try {
+            LogAnalysisReportEntity report = repository.findById(reportId);
+            if (report == null) {
+                return ApiResponse.error(404, "报告不存在");
+            }
+            logAnalysisExecutor.reanalyze(reportId);
+            return ApiResponse.success("已触发重新分析");
+        } catch (Exception e) {
+            log.error("触发重新分析失败 (reportId={})", reportId, e);
+            return ApiResponse.error("触发重新分析失败：" + e.getMessage());
+        }
+    }
+
+    /**
      * 查询单个任务状态（扩展版）
      * GET /api/log/report/{id}/status
      *

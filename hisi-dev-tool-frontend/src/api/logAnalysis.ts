@@ -28,13 +28,18 @@ export const logAnalysisApi = {
   },
 
   // 获取报告详情
-  getReport(id: number): Promise<DetailedAnalysisReport> {
+  getReport(id: string): Promise<DetailedAnalysisReport> {
     return request.get(`/log/report/${id}`) as Promise<DetailedAnalysisReport>
   },
 
   // 获取任务状态
-  getStatus(id: number): Promise<any> {
+  getStatus(id: string): Promise<any> {
     return request.get(`/log/report/${id}/status`)
+  },
+
+  // 重新分析报告
+  reanalyze(id: string): Promise<string> {
+    return request.post(`/log/report/${id}/reanalyze`)
   },
 
   // ========== 日志拉取配置 ==========
