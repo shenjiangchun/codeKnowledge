@@ -367,10 +367,13 @@
                 {{ formatReportTime(row.updatedAt) }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="180">
+            <el-table-column label="操作" width="220">
               <template #default="{ row }">
                 <el-button type="primary" link size="small" @click="viewReportDetail(row)" :disabled="row.status !== 'completed'">
                   查看报告
+                </el-button>
+                <el-button type="warning" link size="small" @click="handleReanalyzeReport(row)" :disabled="row.status === 'pending' || row.status === 'processing'" :loading="row.reanalyzing">
+                  重新分析
                 </el-button>
                 <el-button type="info" link size="small" @click="checkReportStatus(row)">
                   状态
@@ -890,6 +893,30 @@ const checkReportStatus = async (report: any) => {
     ElMessage.info(`状态: ${getReportStatusText(status)}, 进度: ${progress}%, 阶段: ${stage}`)
   } catch (e: any) {
     ElMessage.error('获取状态失败: ' + e.message)
+  }
+}
+
+const handleReanalyzeReport = async (report: any) => {
+  try {
+    await ElMessageBox.confirm(
+      `确认重新分析报告 "${report.reportId}"？这将重新执行完整的 DAG 分析流程。`,
+      '重新分析',
+      { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }
+    )
+
+    // Set reanalyzing state
+    report.reanalyzing = true
+    await logAnalysisApi.reanalyze(report.reportId)
+    ElMessage.success('已触发重新分析，请稍后刷新查看结果')
+
+    // Refresh reports list after 3 seconds
+    setTimeout(loadReports, 3000)
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      ElMessage.error('触发重新分析失败: ' + e.message)
+    }
+  } finally {
+    report.reanalyzing = false
   }
 }
 

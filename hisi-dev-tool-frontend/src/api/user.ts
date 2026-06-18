@@ -8,5 +8,5 @@ export const userApi = {
 
   changeRole(id: number, role: string): Promise<void> {
     return request.put(`/users/${id}/role`, { role })
-  },
+  }
 }

@@ -1,15 +1,18 @@
 package com.huawei.hisi.service;
 
+import com.huawei.hisi.loganalysis.orchestrator.LogAnalysisDagOrchestrator;
 import com.huawei.hisi.repository.LogAnalysisRepository;
 import com.huawei.hisi.repository.LogAnalysisRepository.LogAnalysisReportEntity;
 import com.huawei.hisi.utils.SnowflakeIdGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -19,10 +22,8 @@ import java.util.regex.Pattern;
  * 日志分析异步执行器
  * 负责异步执行日志分析任务
  *
- * Note: Claude SDK backend analysis has been removed.
- * The frontend now uses pty4j to connect directly to Claude CLI.
- * This executor retains the async task lifecycle (status tracking)
- * but no longer performs LLM-based analysis on the backend.
+ * Now uses LogAnalysisDagOrchestrator for Claude SDK + KG integration:
+ * [ParseNode] → [KgSearchNode] → [CodeContextNode] → [ClaudeAnalyzeNode] → [ReportNode]
  */
 @Slf4j
 @Service
@@ -33,6 +34,13 @@ public class LogAnalysisExecutor {
     private final LogAnalysisRepository repository;
     private final SnowflakeIdGenerator snowflakeIdGenerator;
     private final FingerprintService fingerprintService;
+
+    /**
+     * DAG orchestrator - injected conditionally when Neo4j is available.
+     * May be null if Neo4j is not configured.
+     */
+    @Autowired(required = false)
+    private LogAnalysisDagOrchestrator dagOrchestrator;
 
     /**
      * 提交日志分析请求（带指纹去重）
@@ -101,14 +109,20 @@ public class LogAnalysisExecutor {
                 throw new RuntimeException("报告不存在 (reportId=" + reportId + ")");
             }
 
-            // 3. 构建分析请求
-            Map<String, Object> analysisRequest = buildAnalysisRequest(report);
+            // 3. Try DAG-based analysis if orchestrator is available and projectPath provided
+            AnalysisResult result;
+            String projectPath = extractProjectPath(report);
+            if (dagOrchestrator != null && projectPath != null) {
+                log.info("执行 DAG 分析流程 (reportId={}, projectPath={})", reportId, projectPath);
+                result = executeDagAnalysis(report);
+            } else {
+                // Fallback to basic rule-based analysis
+                log.info("执行基础规则分析 (reportId={})", reportId);
+                Map<String, Object> analysisRequest = buildAnalysisRequest(report);
+                result = performAnalysis(analysisRequest);
+            }
 
-            // 4. 执行分析（基础规则分析，LLM 分析已迁移至前端 pty4j）
-            log.info("执行基础规则分析 (reportId={})", reportId);
-            AnalysisResult result = performAnalysis(analysisRequest);
-
-            // 5. 保存分析结果
+            // 4. 保存分析结果
             repository.updateAnalysisResult(
                 reportId,
                 result.getErrorSummary(),
@@ -121,9 +135,69 @@ public class LogAnalysisExecutor {
         } catch (Exception e) {
             log.error("日志分析失败 (reportId={})", reportId, e);
 
-            // 6. 记录错误信息
+            // 5. 记录错误信息
             repository.updateError(reportId, e.getClass().getName() + ": " + e.getMessage());
         }
+    }
+
+    /**
+     * Execute DAG-based analysis using LogAnalysisDagOrchestrator.
+     */
+    private AnalysisResult executeDagAnalysis(LogAnalysisReportEntity report) {
+        // Extract projectPath from queryParams
+        String projectPath = null;
+        if (report.getQueryParams() != null) {
+            Object pp = report.getQueryParams().get("projectPath");
+            if (pp instanceof String s && !s.isBlank()) {
+                projectPath = s;
+            }
+        }
+
+        Map<String, Object> dagResult = dagOrchestrator.analyzeLog(
+                report.getLogMessage(),
+                report.getLogStackTrace(),
+                projectPath,
+                report.getServiceName(),
+                report.getTraceId()
+        );
+
+        // Extract results from DAG output
+        Map<String, Object> finalReport = (Map<String, Object>) dagResult.get("finalReport");
+
+        if (finalReport == null) {
+            // Fallback if DAG failed
+            log.warn("DAG 分析未生成报告，使用基础分析");
+            return performAnalysis(buildAnalysisRequest(report));
+        }
+
+        // Build error summary from parsed error
+        Map<String, Object> errorSummary = (Map<String, Object>) finalReport.get("errorSummary");
+        if (errorSummary == null) {
+            errorSummary = new LinkedHashMap<>();
+        }
+
+        // Build root cause from analysis
+        Map<String, Object> rootCauseSection = (Map<String, Object>) finalReport.get("rootCauseAnalysis");
+        Map<String, Object> rootCause = new LinkedHashMap<>();
+        if (rootCauseSection != null) {
+            rootCause.put("rootCauseType", errorSummary.get("rootCauseException"));
+            rootCause.put("description", rootCauseSection.get("summary"));
+            rootCause.put("confidence", rootCauseSection.get("confidence"));
+        }
+
+        // Build fix suggestions
+        List<Map<String, Object>> fixSuggestions = (List<Map<String, Object>>) finalReport.get("fixSuggestions");
+        if (fixSuggestions == null) {
+            fixSuggestions = new ArrayList<>();
+        }
+
+        // Build code snippets from key stack frames
+        List<Map<String, Object>> codeSnippets = (List<Map<String, Object>>) finalReport.get("keyStackFrames");
+        if (codeSnippets == null) {
+            codeSnippets = new ArrayList<>();
+        }
+
+        return new AnalysisResult(errorSummary, rootCause, fixSuggestions, codeSnippets);
     }
 
     /**
@@ -280,6 +354,19 @@ public class LogAnalysisExecutor {
     private String truncate(String s, int maxLen) {
         if (s == null) return "";
         return s.length() > maxLen ? s.substring(0, maxLen) + "..." : s;
+    }
+
+    /**
+     * Extract projectPath from queryParams if available.
+     */
+    private String extractProjectPath(LogAnalysisReportEntity report) {
+        if (report.getQueryParams() != null) {
+            Object pp = report.getQueryParams().get("projectPath");
+            if (pp instanceof String s && !s.isBlank()) {
+                return s;
+            }
+        }
+        return null;
     }
 
     /**
