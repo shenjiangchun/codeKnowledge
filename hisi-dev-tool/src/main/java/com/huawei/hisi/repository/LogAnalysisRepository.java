@@ -59,14 +59,17 @@ public class LogAnalysisRepository {
                 log_stack_trace, filtered_stack_trace, error_type, trace_id, service_name,
                 log_summary, status, error_fingerprint, embedding_id, similarity_threshold,
                 analysis_status, occurrence_count, root_cause_text, fix_suggestion_text,
+                config_id, app_id,
                 created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'), strftime('%s','now'))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'), strftime('%s','now'))
             ON CONFLICT(report_id) DO UPDATE SET
                 log_summary = excluded.log_summary,
                 status = excluded.status,
                 error_fingerprint = excluded.error_fingerprint,
                 analysis_status = excluded.analysis_status,
                 occurrence_count = excluded.occurrence_count,
+                config_id = excluded.config_id,
+                app_id = excluded.app_id,
                 updated_at = strftime('%s','now')
             """;
 
@@ -93,7 +96,9 @@ public class LogAnalysisRepository {
                 report.getAnalysisStatus(),
                 report.getOccurrenceCount(),
                 report.getRootCauseText(),
-                report.getFixSuggestionText()
+                report.getFixSuggestionText(),
+                report.getConfigId(),
+                report.getAppId()
             );
             log.debug("报告保存成功 (reportId={})", report.getReportId());
         } catch (Exception e) {
@@ -370,6 +375,9 @@ public class LogAnalysisRepository {
         private Integer occurrenceCount;
         private String rootCauseText;
         private String fixSuggestionText;
+        // Task 71: Grouping by scheduled task
+        private Long configId;
+        private String appId;
 
         public Long getId() { return id; }
         public void setId(Long id) { this.id = id; }
@@ -443,6 +451,12 @@ public class LogAnalysisRepository {
         public void setRootCauseText(String rootCauseText) { this.rootCauseText = rootCauseText; }
         public String getFixSuggestionText() { return fixSuggestionText; }
         public void setFixSuggestionText(String fixSuggestionText) { this.fixSuggestionText = fixSuggestionText; }
+
+        // Task 71: configId and appId getters/setters
+        public Long getConfigId() { return configId; }
+        public void setConfigId(Long configId) { this.configId = configId; }
+        public String getAppId() { return appId; }
+        public void setAppId(String appId) { this.appId = appId; }
     }
 
     /**
@@ -543,7 +557,37 @@ public class LogAnalysisRepository {
             report.setRootCauseText(rs.getString("root_cause_text"));
             report.setFixSuggestionText(rs.getString("fix_suggestion_text"));
 
+            // Task 71: Map configId and appId
+            report.setConfigId(rs.getObject("config_id") != null ? rs.getLong("config_id") : null);
+            report.setAppId(rs.getString("app_id"));
+
             return report;
+        }
+    }
+
+    /**
+     * Task 71: 根据 appId 查询报告列表
+     */
+    public List<LogAnalysisReportEntity> findByAppId(String appId) {
+        String sql = "SELECT * FROM log_analysis_report WHERE app_id = ? ORDER BY created_at DESC";
+        try {
+            return jdbcTemplate.query(sql, new LogAnalysisReportRowMapper(), appId);
+        } catch (Exception e) {
+            log.error("查询报告列表失败 (appId={}): {}", appId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * Task 71: 根据 configId 查询报告列表
+     */
+    public List<LogAnalysisReportEntity> findByConfigId(Long configId) {
+        String sql = "SELECT * FROM log_analysis_report WHERE config_id = ? ORDER BY created_at DESC";
+        try {
+            return jdbcTemplate.query(sql, new LogAnalysisReportRowMapper(), configId);
+        } catch (Exception e) {
+            log.error("查询报告列表失败 (configId={}): {}", configId, e.getMessage());
+            return List.of();
         }
     }
 }

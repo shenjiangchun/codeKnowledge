@@ -56,7 +56,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { logAnalysisApi } from '@/api/logAnalysis'
@@ -65,7 +65,7 @@ import { marked } from 'marked'
 
 const route = useRoute()
 const router = useRouter()
-const reportId = route.params.id as string
+const reportId = computed(() => route.params.id as string)
 const loading = ref(false)
 const reanalyzing = ref(false)
 const report = ref<DetailedAnalysisReport | null>(null)
@@ -119,7 +119,7 @@ const renderMarkdown = (content: any): string => {
 const loadReport = async () => {
   loading.value = true
   try {
-    const res = await logAnalysisApi.getReport(reportId)
+    const res = await logAnalysisApi.getReport(reportId.value)
     report.value = res.data
   } catch (error: any) {
     if (error.response?.status === 400 || error.message?.includes('尚未完成')) {
@@ -136,7 +136,7 @@ const loadReport = async () => {
 const handleReanalyze = async () => {
   reanalyzing.value = true
   try {
-    await logAnalysisApi.reanalyze(reportId)
+    await logAnalysisApi.reanalyze(reportId.value)
     ElMessage.success('已触发重新分析，请稍后刷新查看结果')
     setTimeout(loadReport, 3000)
   } catch {

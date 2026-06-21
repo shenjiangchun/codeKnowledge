@@ -44,3 +44,5 @@ models/
 remote-repos/
 ai-sessions/
 **/application-local.yml
+/.codeai/
+/ai-sessions/

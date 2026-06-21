@@ -27,6 +27,16 @@ export const logAnalysisApi = {
     return request.get('/log/reports', { params }) as Promise<ReportListResponse>
   },
 
+  // Task 71: 按应用ID获取报告列表
+  getReportsByAppId(appId: string): Promise<ReportListResponse> {
+    return request.get(`/log/reports/by-app/${appId}`) as Promise<ReportListResponse>
+  },
+
+  // Task 71: 按配置ID获取报告列表
+  getReportsByConfigId(configId: number): Promise<ReportListResponse> {
+    return request.get(`/log/reports/by-config/${configId}`) as Promise<ReportListResponse>
+  },
+
   // 获取报告详情
   getReport(id: string): Promise<DetailedAnalysisReport> {
     return request.get(`/log/report/${id}`) as Promise<DetailedAnalysisReport>

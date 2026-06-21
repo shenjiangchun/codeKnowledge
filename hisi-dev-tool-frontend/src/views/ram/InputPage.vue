@@ -11,26 +11,63 @@
  * - Also load cloned remote projects via /remote-projects
  * - el-select with filterable search + status tag (branch / clean / source)
  * - Manual-path fallback toggle for paths outside the scanned roots
+ *
+ * Supports two modes:
+ * - 需求分析大师 (demand): traditional requirement analysis
+ * - 项目现状分析 (status): project overview for new employees
  */
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAppStore } from '@/stores/app'
-import { startRamSession } from '@/api/ram'
+import { startRamSession, startStatusAnalysis } from '@/api/ram'
 import { projectApi } from '@/api/project'
 import { listRemoteProjects } from '@/api/remote-project'
+import { projectGroupApi, type ProjectGroup } from '@/api/projectGroup'
 import type { GitRepositoryInfo } from '@/types/callchain'
 
 const router = useRouter()
+const route = useRoute()
 const appStore = useAppStore()
 
+// Analysis mode: 'demand' or 'status'
+const analysisMode = ref<'demand' | 'status'>('demand')
+
 const rawInput = ref<string>('')
+const statusQuestion = ref<string>('')  // Question for status analysis mode
 const projectPaths = ref<string[]>([])
 const manualInput = ref<string>('')
 const projects = ref<GitRepositoryInfo[]>([])
 const loadingProjects = ref<boolean>(false)
 const manualMode = ref<boolean>(false)
 const submitting = ref<boolean>(false)
+
+// Task 72: appId selector
+const groups = ref<ProjectGroup[]>([])
+const selectedAppId = ref<string>('')
+const loadingGroups = ref<boolean>(false)
+
+async function loadGroups(): Promise<void> {
+  loadingGroups.value = true
+  try {
+    groups.value = await projectGroupApi.getGroups()
+  } catch {
+    // Silently fail if no groups available
+    groups.value = []
+  } finally {
+    loadingGroups.value = false
+  }
+}
+
+// When appId is selected, auto-fill projectPaths from the group
+function onAppIdChange(): void {
+  if (!selectedAppId.value) return
+  const group = groups.value.find(g => g.appId === selectedAppId.value)
+  if (group && group.projectPaths.length > 0) {
+    projectPaths.value = [...group.projectPaths]
+    ElMessage.success(`已加载分组 "${group.appName}" 下的 ${group.projectPaths.length} 个项目`)
+  }
+}
 
 function addManualPath(): void {
   const path = manualInput.value.trim()
@@ -53,13 +90,6 @@ const projectOptions = computed(() =>
   }))
 )
 
-const selectedProjectLabels = computed(() => {
-  return projectPaths.value.map(path => {
-    const match = projects.value.find((p) => p.path === path)
-    return match ? match.name : path
-  })
-})
-
 async function loadProjects(): Promise<void> {
   loadingProjects.value = true
   try {
@@ -80,7 +110,7 @@ async function loadProjects(): Promise<void> {
             path: r.localPath,
             branch: r.branch || 'main',
             clean: true,
-            source: 'remote'
+            source: 'cloned'
           }))
       : []
 
@@ -102,13 +132,17 @@ async function loadProjects(): Promise<void> {
   }
 }
 
-onMounted(loadProjects)
+onMounted(() => {
+  // Check URL query parameter for mode
+  const modeParam = route.query.mode as string
+  if (modeParam === 'status' || modeParam === 'demand') {
+    analysisMode.value = modeParam
+  }
+  loadProjects()
+  loadGroups()  // Task 72: Load project groups for appId selector
+})
 
 async function onSubmit(): Promise<void> {
-  if (!rawInput.value.trim()) {
-    ElMessage.warning('请输入需求描述')
-    return
-  }
   const paths = manualMode.value
     ? projectPaths.value // manual mode: paths are typed directly
     : projectPaths.value
@@ -116,13 +150,29 @@ async function onSubmit(): Promise<void> {
     ElMessage.warning('请选择至少一个项目')
     return
   }
+
   submitting.value = true
   try {
-    const resp = await startRamSession({
-      rawInput: rawInput.value,
-      projectPaths: paths
-    })
-    await router.push({ name: 'RamDraft', params: { sid: resp.sessionId } })
+    if (analysisMode.value === 'status') {
+      // 项目现状分析
+      const resp = await startStatusAnalysis({
+        projectPath: paths[0],
+        mode: 'quick',
+        question: statusQuestion.value.trim() || undefined
+      })
+      await router.push({ name: 'RamStatus', params: { sid: resp.sessionId } })
+    } else {
+      // 需求分析大师
+      if (!rawInput.value.trim()) {
+        ElMessage.warning('请输入需求描述')
+        return
+      }
+      const resp = await startRamSession({
+        rawInput: rawInput.value,
+        projectPaths: paths
+      })
+      await router.push({ name: 'RamDraft', params: { sid: resp.sessionId } })
+    }
   } catch (error) {
     const msg = error instanceof Error ? error.message : '启动失败'
     ElMessage.error(msg)
@@ -137,11 +187,50 @@ async function onSubmit(): Promise<void> {
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>需求分析大师</span>
-          <span class="hint">选择目标项目、贴入需求原文，启动多 Agent 协同分析</span>
+          <span>{{ analysisMode === 'demand' ? '需求分析大师' : '项目现状分析' }}</span>
+          <span class="hint">
+            {{ analysisMode === 'demand'
+              ? '选择目标项目、贴入需求原文，启动多 Agent 协同分析'
+              : '输入问题，分析项目代码，生成定制化技术报告' }}
+          </span>
         </div>
       </template>
+
+      <!-- Mode switch -->
+      <el-radio-group v-model="analysisMode" class="mode-switch">
+        <el-radio-button value="demand">需求分析大师</el-radio-button>
+        <el-radio-button value="status">项目现状分析</el-radio-button>
+      </el-radio-group>
+
       <el-form label-position="top">
+        <!-- Task 72: appId selector - quick selection of project group -->
+        <el-form-item label="按 appId 选择分组" v-if="groups.length > 0">
+          <el-select
+            v-model="selectedAppId"
+            clearable
+            filterable
+            placeholder="选择 appId 自动加载分组下的所有项目"
+            style="width: 100%"
+            @change="onAppIdChange"
+          >
+            <el-option
+              v-for="group in groups"
+              :key="group.appId"
+              :label="`${group.appName} (${group.appId})`"
+              :value="group.appId"
+            >
+              <div style="display: flex; justify-content: space-between; align-items: center">
+                <span>{{ group.appName }}</span>
+                <el-tag size="small" type="info">{{ group.projectPaths.length }}个项目</el-tag>
+              </div>
+            </el-option>
+          </el-select>
+          <div class="appId-hint" v-if="selectedAppId">
+            <el-icon :size="12"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="12" height="12"><path fill="currentColor" d="M512 64a448 448 0 1 1 0 896 448 448 0 0 1 0-896m-55.808 536.384-99.52-99.584a38.4 38.4 0 1 0-54.336 54.336l126.72 126.72a38.272 38.272 0 0 0 54.336 0l262.4-262.464a38.4 38.4 0 1 0-54.336-54.336z"/></svg></el-icon>
+            <span>选择 appId 后将自动填充下方项目路径</span>
+          </div>
+        </el-form-item>
+
         <el-form-item label="目标项目" required>
           <div class="project-row">
             <el-select
@@ -168,14 +257,14 @@ async function onSubmit(): Promise<void> {
                   <span class="proj-meta">
                     <el-tag size="small" type="info">{{ opt.branch || '-' }}</el-tag>
                     <el-tag
-                      v-if="opt.source !== 'remote'"
+                      v-if="opt.source !== 'cloned'"
                       size="small"
                       :type="opt.clean ? 'success' : 'warning'"
                     >
                       {{ opt.clean ? 'clean' : 'dirty' }}
                     </el-tag>
-                    <el-tag size="small" :type="opt.source === 'remote' ? 'warning' : 'primary'">
-                      {{ opt.source === 'remote' ? '远端' : opt.source === 'scanned' ? '扫描' : opt.source }}
+                    <el-tag size="small" :type="opt.source === 'cloned' ? 'warning' : 'primary'">
+                      {{ opt.source === 'cloned' ? '远端' : opt.source === 'scanned' ? '扫描' : opt.source }}
                     </el-tag>
                   </span>
                 </div>
@@ -223,7 +312,9 @@ async function onSubmit(): Promise<void> {
             未扫描到 Git 仓库，可点击「手动输入路径」直接填写绝对路径，或在「项目管理」中克隆/添加项目。
           </div>
         </el-form-item>
-        <el-form-item label="需求原文" required>
+
+        <!-- 需求原文 - only for demand mode -->
+        <el-form-item v-if="analysisMode === 'demand'" label="需求原文" required>
           <el-input
             v-model="rawInput"
             type="textarea"
@@ -232,6 +323,21 @@ async function onSubmit(): Promise<void> {
             data-test="ram-raw-input"
           />
         </el-form-item>
+
+        <!-- 问题输入 - only for status mode -->
+        <el-form-item v-if="analysisMode === 'status'" label="分析问题">
+          <el-input
+            v-model="statusQuestion"
+            type="textarea"
+            :rows="5"
+            placeholder="输入你想了解的问题，如：'需求状态会受哪些接口影响？这些接口的逻辑是什么？'"
+            data-test="status-question-input"
+          />
+          <div class="question-hint">
+            <span>可选。如不输入，将生成项目概览报告（入口点、核心调用链、模块划分、技术栈）。</span>
+          </div>
+        </el-form-item>
+
         <el-form-item>
           <el-button
             type="primary"
@@ -239,7 +345,7 @@ async function onSubmit(): Promise<void> {
             data-test="ram-submit"
             @click="onSubmit"
           >
-            开始分析
+            {{ analysisMode === 'demand' ? '开始分析' : '生成分析报告' }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -259,6 +365,9 @@ async function onSubmit(): Promise<void> {
 .card-header .hint {
   color: #909399;
   font-size: 12px;
+}
+.mode-switch {
+  margin-bottom: 20px;
 }
 .project-row {
   display: flex;
@@ -313,5 +422,18 @@ async function onSubmit(): Promise<void> {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+}
+.appId-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  color: #909399;
+  font-size: 12px;
+}
+.question-hint {
+  margin-top: 6px;
+  color: #909399;
+  font-size: 12px;
 }
 </style>

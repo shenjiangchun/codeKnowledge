@@ -36,11 +36,7 @@ class LogAnalysisExecutorDedupTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        executor = new LogAnalysisExecutor(rootCauseAnalysisService, repository, snowflakeIdGenerator);
-        // Inject fingerprintService via reflection
-        java.lang.reflect.Field field = LogAnalysisExecutor.class.getDeclaredField("fingerprintService");
-        field.setAccessible(true);
-        field.set(executor, fingerprintService);
+        executor = new LogAnalysisExecutor(rootCauseAnalysisService, repository, snowflakeIdGenerator, fingerprintService);
     }
 
     @Test

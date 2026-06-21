@@ -122,6 +122,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '需求分析大师' }
   },
   {
+    path: '/ram/status',
+    name: 'StatusSessions',
+    component: () => import('@/views/ram/StatusSessionListPage.vue'),
+    meta: { title: '项目现状分析' }
+  },
+  {
     path: '/ram/new',
     name: 'RamInput',
     component: () => import('@/views/ram/InputPage.vue'),
@@ -132,6 +138,18 @@ const routes: RouteRecordRaw[] = [
     name: 'RamDraft',
     component: () => import('@/views/ram/DraftPage.vue'),
     meta: { title: 'RAM 草稿' }
+  },
+  {
+    path: '/ram/status/:sid',
+    name: 'RamStatus',
+    component: () => import('@/views/ram/StatusPage.vue'),
+    meta: { title: '项目现状分析' }
+  },
+  {
+    path: '/ram/phase2/:sid',
+    name: 'RamPhase2',
+    component: () => import('@/views/ram/Phase2Page.vue'),
+    meta: { title: '精确位置分析' }
   },
   {
     path: '/ram/graph/:sid',

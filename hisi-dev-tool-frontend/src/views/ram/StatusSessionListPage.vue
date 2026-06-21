@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * RAM SessionListPage — 需求分析大师历史会话列表.
- * Route: /ram
+ * StatusSessionListPage — 项目现状分析历史会话列表.
+ * Route: /ram/status
  */
 import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -13,11 +13,11 @@ const router = useRouter()
 const sessions = ref<SessionSummary[]>([])
 const loading = ref(false)
 
-// 只显示需求分析类型的会话（不包含现状分析）
-const demandSessions = computed(() => {
+// 只显示项目现状分析类型的会话
+const statusSessions = computed(() => {
   return sessions.value.filter(s => {
     const intent = s.intent || ''
-    return !intent.includes('现状分析') && !intent.includes('project_overview') && !intent.includes('项目概览') && !intent.includes('Phase2')
+    return intent.includes('现状分析') || intent.includes('project_overview') || intent.includes('项目概览') || intent.includes('Phase2')
   })
 })
 
@@ -36,21 +36,18 @@ async function loadSessions(): Promise<void> {
 onMounted(loadSessions)
 
 function gotoNew(): void {
-  router.push({ name: 'RamInput' })
+  router.push({ name: 'RamInput', query: { mode: 'status' } })
 }
 
-function gotoDraft(sid: string | null): void {
+function gotoDetail(sid: string | null): void {
   if (!sid) return
-  router.push({ name: 'RamDraft', params: { sid } })
+  router.push({ name: 'RamStatus', params: { sid } })
 }
 
 function statusTagType(status: string | null): '' | 'success' | 'warning' | 'danger' | 'info' {
   switch (status) {
     case 'DONE': return 'success'
     case 'RUNNING': return 'warning'
-    case 'WAITING_CLARIFY': return 'warning'
-    case 'WAITING_HITL': return 'warning'
-    case 'ABORTED': return 'info'
     case 'FAILED': return 'danger'
     default: return 'info'
   }
@@ -60,9 +57,6 @@ function statusLabel(status: string | null): string {
   switch (status) {
     case 'DONE': return '已完成'
     case 'RUNNING': return '运行中'
-    case 'WAITING_CLARIFY': return '待澄清'
-    case 'WAITING_HITL': return '待确认'
-    case 'ABORTED': return '已中止'
     case 'FAILED': return '失败'
     default: return status ?? '—'
   }
@@ -80,11 +74,11 @@ function truncate(s: string | null, max = 80): string {
 </script>
 
 <template>
-  <div class="ram-session-list">
+  <div class="status-session-list">
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>需求分析大师 · 历史会话</span>
+          <span>项目现状分析 · 历史会话</span>
           <el-button type="primary" size="small" @click="gotoNew">
             创建新分析
           </el-button>
@@ -93,17 +87,17 @@ function truncate(s: string | null, max = 80): string {
 
       <div v-if="loading" class="loading-hint">加载中...</div>
 
-      <div v-else-if="demandSessions.length === 0" class="empty-hint">
+      <div v-else-if="statusSessions.length === 0" class="empty-hint">
         暂无历史会话，点击「创建新分析」开始
       </div>
 
       <div v-else class="session-cards">
-        <div class="session-count">共 {{ demandSessions.length }} 条记录</div>
+        <div class="session-count">共 {{ statusSessions.length }} 条记录</div>
         <div
-          v-for="s in demandSessions"
+          v-for="s in statusSessions"
           :key="s.sessionId ?? s.createdAt"
           class="session-card"
-          @click="gotoDraft(s.sessionId)"
+          @click="gotoDetail(s.sessionId)"
         >
           <div class="card-main">
             <span class="card-intent">{{ truncate(s.intent) }}</span>
@@ -112,7 +106,6 @@ function truncate(s: string | null, max = 80): string {
           <div class="card-meta">
             <el-tag size="small" :type="statusTagType(s.status)">{{ statusLabel(s.status) }}</el-tag>
             <span class="card-time">{{ formatTime(s.updatedAt || s.createdAt) }}</span>
-            <span v-if="s.sessionId" class="card-sid">#{{ s.sessionId.slice(0, 8) }}</span>
           </div>
         </div>
       </div>
@@ -121,7 +114,7 @@ function truncate(s: string | null, max = 80): string {
 </template>
 
 <style scoped>
-.ram-session-list {
+.status-session-list {
   padding: 16px;
 }
 .card-header {
@@ -191,10 +184,5 @@ function truncate(s: string | null, max = 80): string {
   font-size: 12px;
   color: #909399;
   white-space: nowrap;
-}
-.card-sid {
-  font-size: 12px;
-  color: #c0c4cc;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 </style>

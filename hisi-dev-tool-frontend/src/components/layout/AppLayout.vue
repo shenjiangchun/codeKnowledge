@@ -14,9 +14,9 @@ onMounted(() => authStore.init())
     <el-container class="main-container">
       <AppHeader />
       <el-main class="app-main">
-        <router-view v-slot="{ Component }">
+        <router-view v-slot="{ Component, route }">
           <keep-alive>
-            <component :is="Component" />
+            <component :is="Component" :key="route.fullPath" />
           </keep-alive>
         </router-view>
       </el-main>

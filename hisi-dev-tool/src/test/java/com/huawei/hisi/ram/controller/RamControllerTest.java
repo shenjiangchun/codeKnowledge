@@ -7,9 +7,13 @@ import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.AgentSession;
 import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.model.SessionStatus;
+import com.huawei.hisi.ram.nodes.Phase2AnalysisNode;
+import com.huawei.hisi.ram.nodes.Phase2LlmClient;
+import com.huawei.hisi.ram.nodes.ProjectOverviewNode;
 import com.huawei.hisi.ram.nodes.TechPlanNode;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
+import com.huawei.hisi.ram.model.Phase2Context;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,6 +25,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -56,6 +61,12 @@ class RamControllerTest {
     private AgentSessionRepository sessionRepository;
     @Mock
     private TechPlanNode techPlanNode;
+    @Mock
+    private ProjectOverviewNode projectOverviewNode;
+    @Mock
+    private Phase2AnalysisNode phase2AnalysisNode;
+    @Mock
+    private Phase2LlmClient phase2LlmClient;
 
     private ObjectMapper objectMapper;
     private RamController controller;
@@ -69,7 +80,8 @@ class RamControllerTest {
         Executor sameThread = Runnable::run;
         scheduler = Executors.newSingleThreadScheduledExecutor();
         controller = new RamController(ramMcpServer, eventRepository, sessionRepository,
-                objectMapper, techPlanNode, sameThread, scheduler);
+                objectMapper, techPlanNode, projectOverviewNode,
+                phase2AnalysisNode, phase2LlmClient, sameThread, scheduler);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -221,5 +233,120 @@ class RamControllerTest {
         // which proves the live-poll path runs (not a one-shot post-completion drain).
         verify(eventRepository, timeout(3000).atLeast(1)).findBySessionId(sid);
         verify(sessionRepository, timeout(3000).atLeast(1)).findById(sid);
+    }
+
+    // ---------------------------------------------------------------------
+    // Phase2 Precise Location Analysis Tests
+    // ---------------------------------------------------------------------
+
+    @Test
+    @DisplayName("POST /status/phase2/start returns 400 when sessionId is missing")
+    void phase2Start_missingSessionId_returns400() throws Exception {
+        String body = "{\"sessionId\":\"\",\"question\":\"test question\"}";
+        mockMvc.perform(post("/api/ram/status/phase2/start")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("sessionId")));
+    }
+
+    @Test
+    @DisplayName("POST /status/phase2/start returns 400 when question is missing")
+    void phase2Start_missingQuestion_returns400() throws Exception {
+        String parentHandle = UUID.randomUUID().toString();
+        // No need to register mapping or mock sessionRepository.findById
+        // because controller returns 400 before looking up parent session
+
+        String body = "{\"sessionId\":\"" + parentHandle + "\",\"question\":\"\"}";
+        mockMvc.perform(post("/api/ram/status/phase2/start")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("question")));
+    }
+
+    @Test
+    @DisplayName("POST /status/phase2/start returns 404 when parent session not found")
+    void phase2Start_parentNotFound_returns404() throws Exception {
+        String body = "{\"sessionId\":\"nonexistent\",\"question\":\"test question\"}";
+        mockMvc.perform(post("/api/ram/status/phase2/start")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(404))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("parent session")));
+    }
+
+    @Test
+    @DisplayName("POST /status/phase2/start creates session and triggers async analysis")
+    void phase2Start_happyPath_createsSession() throws Exception {
+        // Setup parent session
+        String parentHandle = UUID.randomUUID().toString();
+        controller.registerSessionMapping(parentHandle, 100L);
+        AgentSession parentSession = AgentSession.builder().id(100L)
+                .projectPaths("[\"/tmp/proj\"]").status(SessionStatus.DONE).build();
+        when(sessionRepository.findById(100L)).thenReturn(Optional.of(parentSession));
+
+        // Setup phase2 session creation
+        AgentSession phase2Session = AgentSession.builder().id(200L)
+                .status(SessionStatus.RUNNING).build();
+        when(sessionRepository.save(any(AgentSession.class))).thenReturn(phase2Session);
+
+        // Mock KG node to return success
+        Map<String, Object> kgOutput = new LinkedHashMap<>();
+        kgOutput.put("success", true);
+        kgOutput.put("phase2_context", Phase2Context.builder("/tmp/proj", "test question")
+                .build());
+        when(phase2AnalysisNode.execute(anyMap())).thenReturn(kgOutput);
+
+        // Mock LLM client
+        when(phase2LlmClient.generate(any(Phase2Context.class), anyString()))
+                .thenReturn(Map.of("analysis_summary", "test result"));
+
+        String body = "{\"sessionId\":\"" + parentHandle + "\",\"question\":\"test question\"}";
+        mockMvc.perform(post("/api/ram/status/phase2/start")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.phase2SessionId").exists())
+                .andExpect(jsonPath("$.data.status").value("RUNNING"));
+
+        // Verify KG node was called
+        verify(phase2AnalysisNode, timeout(2000).times(1)).execute(anyMap());
+    }
+
+    @Test
+    @DisplayName("GET /status/phase2/{sid}/report returns 404 when session not found")
+    void phase2Report_notFound_returns404() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/ram/status/phase2/nonexistent/report"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(404));
+    }
+
+    @Test
+    @DisplayName("GET /status/phase2/{sid}/report returns report when session exists")
+    void phase2Report_happyPath_returnsReport() throws Exception {
+        String handle = UUID.randomUUID().toString();
+        controller.registerSessionMapping(handle, 300L);
+        AgentSession session = AgentSession.builder().id(300L)
+                .status(SessionStatus.DONE).build();
+        when(sessionRepository.findById(300L)).thenReturn(Optional.of(session));
+
+        // Mock checkpoint event
+        AgentEvent checkpoint = AgentEvent.builder().id(1L).sessionId(300L).seq(1L)
+                .type(EventType.CHECKPOINT)
+                .payload("{\"nodeName\":\"phase2_analysis\",\"output\":{\"success\":true}}")
+                .build();
+        when(eventRepository.findBySessionId(300L)).thenReturn(List.of(checkpoint));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/ram/status/phase2/" + handle + "/report"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.status").value("DONE"));
     }
 }

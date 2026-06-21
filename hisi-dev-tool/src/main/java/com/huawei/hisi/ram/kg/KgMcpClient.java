@@ -1,5 +1,6 @@
 package com.huawei.hisi.ram.kg;
 
+import com.huawei.hisi.knowledgegraph.model.BridgeStats;
 import com.huawei.hisi.ram.kg.dto.Bridge;
 import com.huawei.hisi.ram.kg.dto.CallTreeNode;
 import com.huawei.hisi.ram.kg.dto.Entry;
@@ -18,6 +19,15 @@ import java.util.List;
  * and parse the response into the matching DTO list / tree.</p>
  */
 public interface KgMcpClient {
+
+    /** Get bridge statistics for a project (Feign/MQ/Mapper/JPA/etc). */
+    BridgeStats bridgeStats(String projectPath);
+
+    /** Multi-project overload for bridge stats. */
+    default BridgeStats bridgeStats(List<String> projectPaths) {
+        if (projectPaths == null || projectPaths.isEmpty()) return BridgeStats.builder().build();
+        return bridgeStats(projectPaths.get(0));
+    }
 
     List<Seed> hybridSearch(String query, String projectPath, int limit);
 

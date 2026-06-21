@@ -278,7 +278,37 @@ public class SQLiteSchemaInitializer {
         // Seed root admin account (idempotent)
         seedRootAccount();
 
-        log.info("[SQLite] Schema initialization complete - 14 tables ensured");
+        // Task 75: Project grouping by appId
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS project_group (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                app_id TEXT NOT NULL,
+                app_name TEXT NOT NULL,
+                project_paths TEXT NOT NULL,
+                description TEXT,
+                created_at INTEGER DEFAULT (strftime('%s','now')),
+                updated_at INTEGER DEFAULT (strftime('%s','now'))
+            )
+            """);
+        jdbcTemplate.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_project_group_app_id ON project_group(app_id)");
+        log.info("[SQLite] Created project_group table");
+
+        // Task 74: Project name grouping by pattern
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS project_name_group (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_name TEXT NOT NULL,
+                group_pattern TEXT NOT NULL,
+                project_names TEXT NOT NULL,
+                description TEXT,
+                created_at INTEGER DEFAULT (strftime('%s','now')),
+                updated_at INTEGER DEFAULT (strftime('%s','now'))
+            )
+            """);
+        jdbcTemplate.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_project_name_group_name ON project_name_group(group_name)");
+        log.info("[SQLite] Created project_name_group table");
+
+        log.info("[SQLite] Schema initialization complete - 17 tables ensured");
     }
 
     private void migrateGlossaryColumns(JdbcTemplate jdbcTemplate) {
@@ -299,6 +329,7 @@ public class SQLiteSchemaInitializer {
 
     /**
      * Task 1: Add fingerprint and analysis columns to log_analysis_report
+     * Task 71: Add configId and appId for grouping reports by scheduled task
      */
     private void addLogAnalysisReportColumns(JdbcTemplate jdbcTemplate) {
         String[] columns = {
@@ -308,7 +339,9 @@ public class SQLiteSchemaInitializer {
             "ALTER TABLE log_analysis_report ADD COLUMN analysis_status VARCHAR(20) DEFAULT 'pending'",
             "ALTER TABLE log_analysis_report ADD COLUMN occurrence_count INTEGER DEFAULT 1",
             "ALTER TABLE log_analysis_report ADD COLUMN root_cause_text TEXT",
-            "ALTER TABLE log_analysis_report ADD COLUMN fix_suggestion_text TEXT"
+            "ALTER TABLE log_analysis_report ADD COLUMN fix_suggestion_text TEXT",
+            "ALTER TABLE log_analysis_report ADD COLUMN config_id INTEGER",
+            "ALTER TABLE log_analysis_report ADD COLUMN app_id TEXT"
         };
         for (String columnSql : columns) {
             try {

@@ -68,4 +68,9 @@ public class LogAnalyzeRequest {
      * 用户 ID（可选，默认 sys_admin）
      */
     private String userId;
+
+    /**
+     * 项目路径（可选，用于 KG 检索增强分析）
+     */
+    private String projectPath;
 }

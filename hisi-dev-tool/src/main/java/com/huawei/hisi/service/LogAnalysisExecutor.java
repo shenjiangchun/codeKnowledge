@@ -52,6 +52,22 @@ public class LogAnalysisExecutor {
      * @return 报告ID（新日志返回新ID，重复日志返回已有ID）
      */
     public Long submitForAnalysis(String message, String stackTrace, String userId, Map<String, Object> queryParams) {
+        return submitForAnalysis(message, stackTrace, userId, queryParams, null, null);
+    }
+
+    /**
+     * 提交日志分析请求（带指纹去重 + 定时任务关联）
+     *
+     * @param message 日志消息
+     * @param stackTrace 堆栈跟踪
+     * @param userId 用户ID
+     * @param queryParams 查询参数
+     * @param configId 定时任务配置ID（AppLogConfig.id）
+     * @param appId 应用ID（AppLogConfig.appId）
+     * @return 报告ID（新日志返回新ID，重复日志返回已有ID）
+     */
+    public Long submitForAnalysis(String message, String stackTrace, String userId,
+                                  Map<String, Object> queryParams, Long configId, String appId) {
         // Generate fingerprint
         String fingerprint = fingerprintService.generateFingerprint(message + "\n" + stackTrace);
         log.debug("生成指纹: {}", fingerprint);
@@ -66,10 +82,12 @@ public class LogAnalysisExecutor {
         }
 
         // New log - create report
-        return createNewReport(message, stackTrace, userId, queryParams, fingerprint);
+        return createNewReport(message, stackTrace, userId, queryParams, fingerprint, configId, appId);
     }
 
-    private Long createNewReport(String message, String stackTrace, String userId, Map<String, Object> queryParams, String fingerprint) {
+    private Long createNewReport(String message, String stackTrace, String userId,
+                                 Map<String, Object> queryParams, String fingerprint,
+                                 Long configId, String appId) {
         Long reportId = snowflakeIdGenerator.nextId();
         LogAnalysisReportEntity report = new LogAnalysisReportEntity();
         report.setReportId(reportId);
@@ -83,9 +101,12 @@ public class LogAnalysisExecutor {
         report.setOccurrenceCount(1);
         report.setSimilarityThreshold(0.85);
         report.setStatus("pending");
+        // Task 71: Set configId and appId for grouping by scheduled task
+        report.setConfigId(configId);
+        report.setAppId(appId);
 
         repository.save(report);
-        log.info("新报告已创建 (reportId={}, fingerprint={})", reportId, fingerprint);
+        log.info("新报告已创建 (reportId={}, fingerprint={}, appId={})", reportId, fingerprint, appId);
         return reportId;
     }
 

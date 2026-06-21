@@ -297,8 +297,9 @@
                 {{ row.lastPullAt ? formatConfigTime(row.lastPullAt) : '-' }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150">
+            <el-table-column label="操作" width="200">
               <template #default="{ row }">
+                <el-button type="success" link size="small" @click="viewConfigReports(row)">查看报告</el-button>
                 <el-button type="primary" link size="small" @click="editConfig(row)">编辑</el-button>
                 <el-button
                   :type="row.enabled ? 'warning' : 'success'"
@@ -340,6 +341,12 @@
 
           <el-table :data="reports" v-loading="reportsLoading" stripe>
             <el-table-column prop="reportId" label="报告ID" width="150" />
+            <el-table-column prop="appId" label="应用" width="120">
+              <template #default="{ row }">
+                <el-tag v-if="row.appId" type="info" size="small">{{ row.appId }}</el-tag>
+                <span v-else style="color: #909399">-</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="status" label="状态" width="100">
               <template #default="{ row }">
                 <el-tag :type="getReportStatusType(row.status)">{{ getReportStatusText(row.status) }}</el-tag>
@@ -407,6 +414,33 @@
     <!-- 新增/编辑配置弹窗 -->
     <el-dialog v-model="configDialogVisible" :title="editingConfig ? '编辑配置' : '新增配置'" width="600px">
       <el-form :model="configForm" label-width="120px">
+        <!-- Task 72: 按分组快速选择 appId -->
+        <el-form-item label="按分组选择" v-if="groups.length > 0">
+          <el-select
+            v-model="selectedGroupId"
+            clearable
+            filterable
+            placeholder="选择分组自动加载 appId 和项目路径"
+            style="width: 100%"
+            @change="onGroupChange"
+          >
+            <el-option
+              v-for="group in groups"
+              :key="group.appId"
+              :label="`${group.appName} (${group.appId})`"
+              :value="group.appId"
+            >
+              <div style="display: flex; justify-content: space-between; align-items: center">
+                <span>{{ group.appName }}</span>
+                <el-tag size="small" type="info">{{ group.projectPaths.length }}个项目</el-tag>
+              </div>
+            </el-option>
+          </el-select>
+          <div class="group-hint" v-if="selectedGroupId">
+            <el-icon :size="12"><Check /></el-icon>
+            <span>选择分组后将自动填充 appId 和项目路径</span>
+          </div>
+        </el-form-item>
         <el-form-item label="应用ID" required>
           <el-input v-model="configForm.appId" placeholder="如: hiapm" :disabled="editingConfig" />
         </el-form-item>
@@ -719,6 +753,7 @@ import { logAnalysisApi, type AppLogConfig } from '@/api/logAnalysis'
 import { aiAnalysisApi } from '@/api/aiAnalysis'
 import { claudeApi } from '@/api/claude'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { projectGroupApi, type ProjectGroup } from '@/api/projectGroup'
 import type { LogEntry } from '@/types/log'
 import { parseJavaErrorLog, formatForAnalysis, type ParsedErrorLog } from '@/utils/logParser'
 import { marked } from 'marked'
@@ -750,6 +785,35 @@ const configForm = reactive({
   enabled: true
 })
 
+// Task 72: 项目分组快速选择
+const groups = ref<ProjectGroup[]>([])
+const selectedGroupId = ref<string>('')
+const loadingGroups = ref<boolean>(false)
+
+const loadGroups = async () => {
+  loadingGroups.value = true
+  try {
+    groups.value = await projectGroupApi.getGroups()
+  } catch {
+    groups.value = []
+  } finally {
+    loadingGroups.value = false
+  }
+}
+
+const onGroupChange = (appId: string) => {
+  if (!appId) {
+    selectedGroupId.value = ''
+    return
+  }
+  const group = groups.value.find(g => g.appId === appId)
+  if (group && group.projectPaths.length > 0) {
+    configForm.appId = appId
+    configForm.projectPaths = [...group.projectPaths]
+    ElMessage.success(`已加载分组 "${group.appName}" 下的 ${group.projectPaths.length} 个项目`)
+  }
+}
+
 const loadGraphedProjects = async () => {
   graphedProjectsLoading.value = true
   try {
@@ -777,6 +841,7 @@ const loadConfigs = async () => {
 
 const showAddConfigDialog = () => {
   editingConfig.value = null
+  selectedGroupId.value = ''
   Object.assign(configForm, {
     appId: '',
     projectPaths: [],
@@ -785,6 +850,7 @@ const showAddConfigDialog = () => {
     enabled: true
   })
   loadGraphedProjects()  // 加载已图谱化项目列表
+  loadGroups()  // Task 72: 加载项目分组列表
   configDialogVisible.value = true
 }
 
@@ -792,6 +858,7 @@ const editConfig = (config: AppLogConfig) => {
   editingConfig.value = config
   // 将存储的逗号分隔字符串转为数组
   const projectPaths = config.projectPath ? config.projectPath.split(',').filter(p => p.trim()) : []
+  selectedGroupId.value = config.appId  // 如果有对应分组，选中它
   Object.assign(configForm, {
     appId: config.appId,
     projectPaths,
@@ -800,6 +867,7 @@ const editConfig = (config: AppLogConfig) => {
     enabled: config.enabled
   })
   loadGraphedProjects()
+  loadGroups()  // Task 72: 加载项目分组列表
   configDialogVisible.value = true
 }
 
@@ -853,6 +921,26 @@ const deleteConfig = async (config: AppLogConfig) => {
     if (e !== 'cancel') {
       ElMessage.error('删除失败: ' + e.message)
     }
+  }
+}
+
+// Task 71: 查看指定配置的报告列表
+const viewConfigReports = async (config: AppLogConfig) => {
+  activeTab.value = 'reports'
+  reportsLoading.value = true
+  try {
+    const res = await logAnalysisApi.getReportsByAppId(config.appId)
+    reports.value = res?.list || []
+    reportsPagination.total = res?.total || 0
+    if (reports.value.length === 0) {
+      ElMessage.info(`应用 "${config.appId}" 暂无分析报告`)
+    } else {
+      ElMessage.success(`已加载 ${reportsPagination.total} 条报告`)
+    }
+  } catch (e: any) {
+    ElMessage.error('加载报告失败: ' + e.message)
+  } finally {
+    reportsLoading.value = false
   }
 }
 
@@ -2303,5 +2391,15 @@ const closeAnalysisDialog = () => {
 
 .code-snippets-md p {
   color: #d4d4d4;
+}
+
+/* Task 72: 分组选择提示样式 */
+.group-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  color: #909399;
+  font-size: 12px;
 }
 </style>

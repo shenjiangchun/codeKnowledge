@@ -1,5 +1,6 @@
 package com.huawei.hisi.ram.kg.impl;
 
+import com.huawei.hisi.knowledgegraph.model.BridgeStats;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
 import com.huawei.hisi.neo4j.model.SearchResult;
@@ -24,9 +25,11 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -118,6 +121,85 @@ public class DirectKgClient implements KgMcpClient {
         } catch (Exception e) {
             log.warn("entryPoints failed for projectPath='{}': {}", normPath, e.getMessage());
             return Collections.emptyList();
+        }
+    }
+
+    @Override
+    public BridgeStats bridgeStats(String projectPath) {
+        return bridgeStats(List.of(projectPath));
+    }
+
+    @Override
+    public BridgeStats bridgeStats(List<String> projectPaths) {
+        List<String> normPaths = projectPaths.stream()
+                .map(PathUtils::normalize)
+                .filter(p -> p != null && !p.isBlank())
+                .collect(Collectors.toList());
+        if (normPaths.isEmpty()) {
+            return BridgeStats.builder().build();
+        }
+        try {
+            int totalCallRelations = (int) methodNodeRepository.countCallRelationsByProjectPaths(normPaths);
+            int mapperCallCount = (int) methodNodeRepository.countByBridgeTypeAndProjectPaths(normPaths, "MAPPER");
+            int feignCallCount = (int) methodNodeRepository.countByBridgeTypeAndProjectPaths(normPaths, "FEIGN");
+            int httpCallCount = (int) methodNodeRepository.countByBridgeTypeAndProjectPaths(normPaths, "HTTP");
+            int mqCallCount = (int) methodNodeRepository.countByBridgeTypeAndProjectPaths(normPaths, "MQ");
+            int jpaCallCount = (int) methodNodeRepository.countByBridgeTypeAndProjectPaths(normPaths, "JPA");
+            int aspectCallCount = (int) methodNodeRepository.countByBridgeTypeAndProjectPaths(normPaths, "ASPECT");
+
+            long myBatisSqlCount = sqlNodeRepository.countByProjectPaths(normPaths);
+            int myBatisMapperCount = (int) sqlNodeRepository.countDistinctMapperInterfacesByProjectPaths(normPaths);
+
+            int totalBridges = mapperCallCount + feignCallCount + httpCallCount + mqCallCount + jpaCallCount + aspectCallCount;
+            int jumpableCount = feignCallCount + mqCallCount + httpCallCount;
+            double jumpableRate = totalBridges > 0 ? (double) jumpableCount / totalBridges : 0.0;
+
+            Map<String, Integer> bridgeTypeCounts = new HashMap<>();
+            bridgeTypeCounts.put("MAPPER", mapperCallCount);
+            bridgeTypeCounts.put("FEIGN", feignCallCount);
+            bridgeTypeCounts.put("HTTP", httpCallCount);
+            bridgeTypeCounts.put("MQ", mqCallCount);
+            bridgeTypeCounts.put("JPA", jpaCallCount);
+            bridgeTypeCounts.put("ASPECT", aspectCallCount);
+
+            Map<String, Integer> externalServiceCalls = new HashMap<>();
+            List<Neo4jMethodNodeRepository.CallRelationWithNodes> feignCalls =
+                    methodNodeRepository.findByBridgeTypeAndProjectPaths(normPaths, "FEIGN");
+            for (var call : feignCalls) {
+                if (call.targetService() != null) {
+                    externalServiceCalls.merge(call.targetService(), 1, Integer::sum);
+                }
+            }
+
+            Map<String, Integer> mqTopicCalls = new HashMap<>();
+            List<Neo4jMethodNodeRepository.CallRelationWithNodes> mqCalls =
+                    methodNodeRepository.findByBridgeTypeAndProjectPaths(normPaths, "MQ");
+            for (var call : mqCalls) {
+                if (call.targetEndpoint() != null) {
+                    mqTopicCalls.merge(call.targetEndpoint(), 1, Integer::sum);
+                }
+            }
+
+            return BridgeStats.builder()
+                    .projectPath(String.join(",", normPaths))
+                    .totalCallRelations(totalCallRelations)
+                    .totalBridges(totalBridges)
+                    .bridgeTypeCounts(bridgeTypeCounts)
+                    .mapperCallCount(mapperCallCount)
+                    .feignCallCount(feignCallCount)
+                    .httpCallCount(httpCallCount)
+                    .mqCallCount(mqCallCount)
+                    .jpaCallCount(jpaCallCount)
+                    .aspectCallCount(aspectCallCount)
+                    .myBatisSqlCount((int) myBatisSqlCount)
+                    .myBatisMapperCount(myBatisMapperCount)
+                    .jumpableRate(jumpableRate)
+                    .externalServiceCalls(externalServiceCalls)
+                    .mqTopicCalls(mqTopicCalls)
+                    .build();
+        } catch (Exception e) {
+            log.warn("bridgeStats failed for projectPaths={}: {}", normPaths, e.getMessage());
+            return BridgeStats.builder().build();
         }
     }
 

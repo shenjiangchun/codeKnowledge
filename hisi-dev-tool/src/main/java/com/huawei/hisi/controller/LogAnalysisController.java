@@ -97,7 +97,14 @@ public class LogAnalysisController {
             report.setCreatedAt(LocalDateTime.now());
             report.setUpdatedAt(LocalDateTime.now());
 
-            // 6. 保存报告（状态为 pending）
+            // 6.5 设置 queryParams（包含 projectPath 用于 KG 检索）
+            if (request.getProjectPath() != null && !request.getProjectPath().isEmpty()) {
+                Map<String, Object> queryParams = new HashMap<>();
+                queryParams.put("projectPath", request.getProjectPath());
+                report.setQueryParams(queryParams);
+            }
+
+            // 7. 保存报告（状态为 pending）
             repository.save(report);
             log.info("分析报告已保存 (reportId={}, status=pending)", reportId);
 
@@ -171,6 +178,58 @@ public class LogAnalysisController {
         } catch (Exception e) {
             log.error("查询任务列表失败", e);
             return ApiResponse.error("查询任务列表失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * Task 71: 查询指定应用的报告列表
+     * GET /api/log/reports/by-app/{appId}
+     *
+     * @param appId 应用 ID（来自 AppLogConfig）
+     * @return 该应用的所有报告列表
+     */
+    @GetMapping("/reports/by-app/{appId}")
+    public ApiResponse<ReportListResponse> getReportsByAppId(@PathVariable("appId") String appId) {
+        try {
+            List<LogAnalysisReportEntity> reports = repository.findByAppId(appId);
+
+            ReportListResponse response = new ReportListResponse();
+            response.setTotal(reports.size());
+            response.setPage(1);
+            response.setPageSize(reports.size());
+            response.setList(ReportListResponse.fromEntities(reports));
+
+            return ApiResponse.success(response);
+
+        } catch (Exception e) {
+            log.error("查询应用报告列表失败 (appId={})", appId, e);
+            return ApiResponse.error("查询应用报告列表失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * Task 71: 查询指定配置的报告列表
+     * GET /api/log/reports/by-config/{configId}
+     *
+     * @param configId 配置 ID（来自 AppLogConfig.id）
+     * @return 该配置的所有报告列表
+     */
+    @GetMapping("/reports/by-config/{configId}")
+    public ApiResponse<ReportListResponse> getReportsByConfigId(@PathVariable("configId") Long configId) {
+        try {
+            List<LogAnalysisReportEntity> reports = repository.findByConfigId(configId);
+
+            ReportListResponse response = new ReportListResponse();
+            response.setTotal(reports.size());
+            response.setPage(1);
+            response.setPageSize(reports.size());
+            response.setList(ReportListResponse.fromEntities(reports));
+
+            return ApiResponse.success(response);
+
+        } catch (Exception e) {
+            log.error("查询配置报告列表失败 (configId={})", configId, e);
+            return ApiResponse.error("查询配置报告列表失败：" + e.getMessage());
         }
     }
 

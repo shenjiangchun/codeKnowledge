@@ -10,6 +10,9 @@ import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.AgentSession;
 import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.model.SessionStatus;
+import com.huawei.hisi.ram.nodes.Phase2AnalysisNode;
+import com.huawei.hisi.ram.nodes.Phase2LlmClient;
+import com.huawei.hisi.ram.nodes.ProjectOverviewNode;
 import com.huawei.hisi.ram.nodes.TechPlanNode;
 import com.huawei.hisi.ram.orchestrator.InputsHasher;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
@@ -84,6 +87,9 @@ public class RamController {
     private final AgentSessionRepository sessionRepository;
     private final ObjectMapper objectMapper;
     private final TechPlanNode techPlanNode;
+    private final ProjectOverviewNode projectOverviewNode;
+    private final Phase2AnalysisNode phase2AnalysisNode;
+    private final Phase2LlmClient phase2LlmClient;
 
     private final long startedAt = System.currentTimeMillis();
 
@@ -144,8 +150,12 @@ public class RamController {
                          AgentEventRepository eventRepository,
                          AgentSessionRepository sessionRepository,
                          ObjectMapper objectMapper,
-                         TechPlanNode techPlanNode) {
-        ExecutorService async = Executors.newCachedThreadPool(r -> {
+                         TechPlanNode techPlanNode,
+                         ProjectOverviewNode projectOverviewNode,
+                         Phase2AnalysisNode phase2AnalysisNode,
+                         Phase2LlmClient phase2LlmClient) {
+        // Bounded thread pool to prevent resource exhaustion under concurrent load
+        ExecutorService async = Executors.newFixedThreadPool(10, r -> {
             Thread t = new Thread(r, "ram-controller-async");
             t.setDaemon(true);
             return t;
@@ -160,6 +170,9 @@ public class RamController {
         this.sessionRepository = sessionRepository;
         this.objectMapper = objectMapper;
         this.techPlanNode = techPlanNode;
+        this.projectOverviewNode = projectOverviewNode;
+        this.phase2AnalysisNode = phase2AnalysisNode;
+        this.phase2LlmClient = phase2LlmClient;
         this.asyncExecutor = async;
         this.streamScheduler = sched;
         this.ownedAsyncExecutor = async;
@@ -172,6 +185,9 @@ public class RamController {
                   AgentSessionRepository sessionRepository,
                   ObjectMapper objectMapper,
                   TechPlanNode techPlanNode,
+                  ProjectOverviewNode projectOverviewNode,
+                  Phase2AnalysisNode phase2AnalysisNode,
+                  Phase2LlmClient phase2LlmClient,
                   java.util.concurrent.Executor asyncExecutor,
                   ScheduledExecutorService streamScheduler) {
         this.ramMcpServer = ramMcpServer;
@@ -179,6 +195,9 @@ public class RamController {
         this.sessionRepository = sessionRepository;
         this.objectMapper = objectMapper;
         this.techPlanNode = techPlanNode;
+        this.projectOverviewNode = projectOverviewNode;
+        this.phase2AnalysisNode = phase2AnalysisNode;
+        this.phase2LlmClient = phase2LlmClient;
         this.asyncExecutor = asyncExecutor;
         this.streamScheduler = streamScheduler;
         this.ownedAsyncExecutor = null;
@@ -751,6 +770,41 @@ public class RamController {
     }
 
     /**
+     * Find the latest phase2_analysis checkpoint and merge KG output with LLM output.
+     * This is needed because frontend expects KG fields (core_methods, upstream_chains, etc.)
+     * which are stored in kgOutput, not in the LLM output.
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> findLatestPhase2Checkpoint(long backendId) {
+        List<AgentEvent> events = eventRepository.findBySessionId(backendId);
+        for (int i = events.size() - 1; i >= 0; i--) {
+            AgentEvent ev = events.get(i);
+            if (ev.getType() != EventType.CHECKPOINT) continue;
+            Map<String, Object> payload = parseJsonPayload(ev.getPayload());
+            if (payload == null) continue;
+            if (!"phase2_analysis".equals(payload.get("nodeName"))) continue;
+
+            // Merge output (LLM) and kgOutput (KG data)
+            Map<String, Object> result = new LinkedHashMap<>();
+
+            // Add KG output fields first (these are what frontend expects for detailed data)
+            Object kgOut = payload.get("kgOutput");
+            if (kgOut instanceof Map<?, ?> kg) {
+                kg.forEach((k, v) -> result.put(String.valueOf(k), v));
+            }
+
+            // Add/override with LLM output (for markdown_report, analysis_summary, etc.)
+            Object out = payload.get("output");
+            if (out instanceof Map<?, ?> llm) {
+                llm.forEach((k, v) -> result.put(String.valueOf(k), v));
+            }
+
+            return result;
+        }
+        return null;
+    }
+
+    /**
      * Reconstructs the original user intent (requirement description) from
      * the session's initial input event.
      */
@@ -1110,5 +1164,411 @@ public class RamController {
                 "rerunFromNode", "impact",
                 "dispatched", true,
                 "nextSeq", nextSeq));
+    }
+
+    // ---------------------------------------------------------------------
+    // Project Status Analysis (项目现状分析)
+    // ---------------------------------------------------------------------
+
+    public record StatusStartRequest(String projectPath, String mode, String question) {}
+    public record StatusStartResponse(String sessionId) {}
+    public record StatusReportResponse(String status, Map<String, Object> report) {}
+
+    /**
+     * Start a project status analysis session.
+     * POST /api/ram/status/start
+     *
+     * <p>Creates a new session and executes ProjectOverviewNode asynchronously.</p>
+     */
+    @PostMapping("/status/start")
+    public ApiResponse<StatusStartResponse> startStatusAnalysis(@RequestBody StatusStartRequest request) {
+        log.info("[RAM][POST /status/start] request={}", request);
+        if (request == null || request.projectPath() == null || request.projectPath().isBlank()) {
+            return ApiResponse.error(400, "projectPath is required");
+        }
+
+        String handle = UUID.randomUUID().toString();
+        String mode = request.mode() != null ? request.mode() : "quick";
+        String question = request.question() != null ? request.question() : "";
+
+        // Pre-create session
+        AgentSession seeded = sessionRepository.save(AgentSession.newRunning("status-analysis"));
+        long backendId = seeded.getId();
+        seeded.setUuid(handle);
+        seeded.setIntent("项目现状分析: " + (question.isBlank() ? request.projectPath() : question));
+        try {
+            seeded.setProjectPaths(objectMapper.writeValueAsString(List.of(request.projectPath())));
+        } catch (Exception ignored) {}
+        sessionRepository.update(seeded);
+        sessionIdMap.put(handle, backendId);
+
+        log.info("[RAM][POST /status/start] seeded session handle={} backendId={} projectPath={} mode={}",
+                handle, backendId, request.projectPath(), mode);
+
+        // Async execution with 5-minute timeout
+        CompletableFuture.runAsync(() -> {
+            try {
+                Map<String, Object> input = new LinkedHashMap<>();
+                input.put("projectPath", request.projectPath());
+                input.put("mode", mode);
+                input.put("question", question);
+
+                log.info("[RAM][status] executing ProjectOverviewNode for handle={} backendId={} question={}", handle, backendId, question);
+                Map<String, Object> output = projectOverviewNode.execute(input);
+                Map<String, Object> safeOutput = output == null ? Map.of() : output;
+
+                // Append CHECKPOINT event
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("nodeName", "project_overview");
+                payload.put("output", safeOutput);
+                String key = "ckpt-" + backendId + "-project_overview-" + System.nanoTime();
+                AgentEvent ev = AgentEvent.builder()
+                        .sessionId(backendId)
+                        .type(EventType.CHECKPOINT)
+                        .payload(toJson(payload, "project_overview"))
+                        .idempotencyKey(key)
+                        .circuitState("OK")
+                        .validatorStatus("OK")
+                        .createdAt(System.currentTimeMillis() / 1000L)
+                        .build();
+                eventRepository.append(ev);
+
+                sessionRepository.updateStatus(backendId, SessionStatus.DONE);
+                log.info("[RAM][status] done handle={} output.keys={}", handle, safeOutput.keySet());
+            } catch (Exception e) {
+                log.error("[RAM][status] async dispatch failed handle={} error={}", handle, e.getMessage(), e);
+                appendStatusError(backendId, e);
+                sessionRepository.updateStatus(backendId, SessionStatus.FAILED);
+            }
+        }, asyncExecutor)
+        .orTimeout(5, TimeUnit.MINUTES)
+        .exceptionally(ex -> {
+            log.error("[RAM][status] timeout for handle={} backendId={}: {}", handle, backendId, ex.getMessage());
+            appendStatusError(backendId, "Analysis timed out after 5 minutes: " + ex.getMessage());
+            sessionRepository.updateStatus(backendId, SessionStatus.FAILED);
+            return null;
+        });
+
+        return ApiResponse.success(new StatusStartResponse(handle));
+    }
+
+    /**
+     * Get the status analysis report.
+     * GET /api/ram/status/{sessionId}/report
+     *
+     * <p>Returns the latest project_overview CHECKPOINT output.</p>
+     */
+    @GetMapping("/status/{sid}/report")
+    public ApiResponse<StatusReportResponse> getStatusReport(@PathVariable("sid") String handle) {
+        Long backendId = resolveBackendId(handle);
+        if (backendId == null) {
+            return ApiResponse.error(404, "session not found: " + handle);
+        }
+
+        Optional<AgentSession> sessionOpt = sessionRepository.findById(backendId);
+        if (sessionOpt.isEmpty()) {
+            return ApiResponse.error(404, "session not found: " + backendId);
+        }
+
+        String statusStr = sessionOpt.get().getStatus() != null
+                ? sessionOpt.get().getStatus().name() : "UNKNOWN";
+
+        Map<String, Object> report = findLatestCheckpointOutput(backendId, "project_overview");
+        if (report == null) {
+            // Return default structure with all expected fields when checkpoint not found
+            report = createDefaultStatusReport(statusStr);
+        }
+
+        return ApiResponse.success(new StatusReportResponse(statusStr, report));
+    }
+
+    /**
+     * Create default status report with all expected frontend fields.
+     */
+    private Map<String, Object> createDefaultStatusReport(String status) {
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("success", false);
+        report.put("message", status.equals("RUNNING")
+                ? "分析正在执行中，请稍候..."
+                : "分析尚未完成或未生成结果");
+        report.put("markdown_report", "");
+        report.put("question", "");
+        report.put("entry_points_summary", "");
+        report.put("core_call_chains", List.of());
+        report.put("tech_stack", Map.of());
+        report.put("recommendations", List.of());
+        return report;
+    }
+
+    private void appendStatusError(long backendId, Throwable t) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("nodeName", "project_overview");
+        payload.put("error", String.valueOf(t.getMessage()));
+        payload.put("type", t.getClass().getName());
+        String key = "error-" + backendId + "-project_overview-" + System.nanoTime();
+        AgentEvent ev = AgentEvent.builder()
+                .sessionId(backendId)
+                .type(EventType.ERROR)
+                .payload(toJson(payload, "project_overview"))
+                .idempotencyKey(key)
+                .circuitState("OK")
+                .validatorStatus("FAIL")
+                .createdAt(System.currentTimeMillis() / 1000L)
+                .build();
+        try {
+            eventRepository.append(ev);
+        } catch (RuntimeException e) {
+            log.warn("appendStatusError failed for backendId={}", backendId, e);
+        }
+    }
+
+    private void appendStatusError(long backendId, String message) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("nodeName", "project_overview");
+        payload.put("error", message);
+        payload.put("type", "TimeoutError");
+        String key = "error-" + backendId + "-project_overview-" + System.nanoTime();
+        AgentEvent ev = AgentEvent.builder()
+                .sessionId(backendId)
+                .type(EventType.ERROR)
+                .payload(toJson(payload, "project_overview"))
+                .idempotencyKey(key)
+                .circuitState("OK")
+                .validatorStatus("FAIL")
+                .createdAt(System.currentTimeMillis() / 1000L)
+                .build();
+        try {
+            eventRepository.append(ev);
+        } catch (RuntimeException e) {
+            log.warn("appendStatusError failed for backendId={}", backendId, e);
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Phase2 Precise Location Analysis (精确位置分析)
+    // ---------------------------------------------------------------------
+
+    public record Phase2StartRequest(String sessionId, String question, java.util.List<String> focusAreas) {}
+    public record Phase2StartResponse(String phase2SessionId, String status) {}
+    public record Phase2ReportResponse(String status, Map<String, Object> report) {}
+
+    /**
+     * Start a phase 2 precise location analysis.
+     * POST /api/ram/status/phase2/start
+     *
+     * <p>Creates a new session and executes Phase2AnalysisNode asynchronously,
+     * then generates a precise location report via Phase2LlmClient.</p>
+     */
+    @PostMapping("/status/phase2/start")
+    public ApiResponse<Phase2StartResponse> startPhase2Analysis(@RequestBody Phase2StartRequest request) {
+        log.info("[RAM][POST /status/phase2/start] request={}", request);
+        if (request == null || request.sessionId() == null || request.sessionId().isBlank()) {
+            return ApiResponse.error(400, "sessionId is required");
+        }
+        if (request.question() == null || request.question().isBlank()) {
+            return ApiResponse.error(400, "question is required");
+        }
+
+        // Resolve the parent session to get projectPath
+        Long parentBackendId = resolveBackendId(request.sessionId());
+        if (parentBackendId == null) {
+            return ApiResponse.error(404, "parent session not found: " + request.sessionId());
+        }
+        Optional<AgentSession> parentSession = sessionRepository.findById(parentBackendId);
+        if (parentSession.isEmpty()) {
+            return ApiResponse.error(404, "parent session row missing: " + parentBackendId);
+        }
+
+        // Extract projectPath from parent session
+        String projectPath = extractProjectPath(parentSession.get());
+        if (projectPath == null || projectPath.isBlank()) {
+            return ApiResponse.error(400, "parent session has no projectPath");
+        }
+
+        // Create a new phase2 session with a new UUID
+        String handle = UUID.randomUUID().toString();
+        AgentSession seeded = sessionRepository.save(AgentSession.newRunning("phase2-analysis"));
+        long backendId = seeded.getId();
+        seeded.setUuid(handle);
+        seeded.setIntent("Phase2精确位置分析: " + request.question());
+        try {
+            seeded.setProjectPaths(objectMapper.writeValueAsString(List.of(projectPath)));
+        } catch (Exception ignored) {}
+        sessionRepository.update(seeded);
+        sessionIdMap.put(handle, backendId);
+
+        log.info("[RAM][POST /status/phase2/start] seeded session handle={} backendId={} parentSession={} projectPath={} question={}",
+                handle, backendId, request.sessionId(), projectPath, request.question());
+
+        // Async execution with 5-minute timeout
+        CompletableFuture.runAsync(() -> {
+            try {
+                Map<String, Object> input = new LinkedHashMap<>();
+                input.put("projectPath", projectPath);
+                input.put("question", request.question());
+                if (request.focusAreas() != null && !request.focusAreas().isEmpty()) {
+                    input.put("focusAreas", request.focusAreas());
+                }
+
+                log.info("[RAM][phase2] executing Phase2AnalysisNode for handle={} backendId={} question={}",
+                        handle, backendId, request.question());
+
+                // Step 1: KG data collection
+                Map<String, Object> kgOutput = phase2AnalysisNode.execute(input);
+                if (kgOutput == null || !Boolean.TRUE.equals(kgOutput.get("success"))) {
+                    log.error("[RAM][phase2] Phase2AnalysisNode failed for handle={}", handle);
+                    appendPhase2Error(backendId, "Phase2AnalysisNode execution failed");
+                    sessionRepository.updateStatus(backendId, SessionStatus.FAILED);
+                    return;
+                }
+
+                // Extract Phase2Context from output
+                Object contextObj = kgOutput.get("phase2_context");
+                if (!(contextObj instanceof com.huawei.hisi.ram.model.Phase2Context context)) {
+                    log.error("[RAM][phase2] Phase2Context missing for handle={}", handle);
+                    appendPhase2Error(backendId, "Phase2Context missing from KG output");
+                    sessionRepository.updateStatus(backendId, SessionStatus.FAILED);
+                    return;
+                }
+
+                // Remove Phase2Context from kgOutput before serialization —
+                // it uses record-style getters that Jackson can't serialize.
+                kgOutput.remove("phase2_context");
+
+                // Step 2: LLM report generation
+                log.info("[RAM][phase2] generating LLM report for handle={} backendId={}", handle, backendId);
+                Map<String, Object> llmOutput = phase2LlmClient.generate(context, projectPath);
+                Map<String, Object> safeOutput = llmOutput == null ? Map.of() : llmOutput;
+
+                // Append CHECKPOINT event
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("nodeName", "phase2_analysis");
+                payload.put("output", safeOutput);
+                payload.put("kgOutput", kgOutput);
+                String key = "ckpt-" + backendId + "-phase2_analysis-" + System.nanoTime();
+                AgentEvent ev = AgentEvent.builder()
+                        .sessionId(backendId)
+                        .type(EventType.CHECKPOINT)
+                        .payload(toJson(payload, "phase2_analysis"))
+                        .idempotencyKey(key)
+                        .circuitState("OK")
+                        .validatorStatus("OK")
+                        .createdAt(System.currentTimeMillis() / 1000L)
+                        .build();
+                eventRepository.append(ev);
+
+                sessionRepository.updateStatus(backendId, SessionStatus.DONE);
+                log.info("[RAM][phase2] done handle={} output.keys={}", handle, safeOutput.keySet());
+            } catch (Exception e) {
+                log.error("[RAM][phase2] async dispatch failed handle={} error={}", handle, e.getMessage(), e);
+                appendPhase2Error(backendId, e);
+                sessionRepository.updateStatus(backendId, SessionStatus.FAILED);
+            }
+        }, asyncExecutor)
+        .orTimeout(5, TimeUnit.MINUTES)
+        .exceptionally(ex -> {
+            log.error("[RAM][phase2] timeout or failure for handle={} backendId={}: {}",
+                    handle, backendId, ex.getMessage());
+            appendPhase2Error(backendId, "Analysis timed out after 5 minutes: " + ex.getMessage());
+            sessionRepository.updateStatus(backendId, SessionStatus.FAILED);
+            return null;
+        });
+
+        return ApiResponse.success(new Phase2StartResponse(handle, "RUNNING"));
+    }
+
+    /**
+     * Get the phase2 analysis report.
+     * GET /api/ram/status/phase2/{sessionId}/report
+     *
+     * <p>Returns the latest phase2_analysis CHECKPOINT output.</p>
+     */
+    @GetMapping("/status/phase2/{sid}/report")
+    public ApiResponse<Phase2ReportResponse> getPhase2Report(@PathVariable("sid") String handle) {
+        Long backendId = resolveBackendId(handle);
+        if (backendId == null) {
+            return ApiResponse.error(404, "session not found: " + handle);
+        }
+
+        Optional<AgentSession> sessionOpt = sessionRepository.findById(backendId);
+        if (sessionOpt.isEmpty()) {
+            return ApiResponse.error(404, "session not found: " + backendId);
+        }
+
+        String status = sessionOpt.get().getStatus() != null
+                ? sessionOpt.get().getStatus().name() : "UNKNOWN";
+
+        // Get full payload including both LLM output and KG data
+        Map<String, Object> report = findLatestPhase2Checkpoint(backendId);
+        if (report == null) {
+            report = Map.of("success", false, "message", "分析尚未完成或未生成结果");
+        }
+
+        return ApiResponse.success(new Phase2ReportResponse(status, report));
+    }
+
+    /**
+     * Extract projectPath from parent session's projectPaths field.
+     */
+    @SuppressWarnings("unchecked")
+    private String extractProjectPath(AgentSession session) {
+        String projectPathsJson = session.getProjectPaths();
+        if (projectPathsJson == null || projectPathsJson.isBlank()) {
+            return null;
+        }
+        try {
+            Object parsed = objectMapper.readValue(projectPathsJson, Object.class);
+            if (parsed instanceof java.util.List<?> list && !list.isEmpty()) {
+                return String.valueOf(list.get(0));
+            }
+            return String.valueOf(parsed);
+        } catch (Exception e) {
+            log.warn("[RAM] Failed to parse projectPaths from session {}: {}", session.getId(), e.getMessage());
+            return null;
+        }
+    }
+
+    private void appendPhase2Error(long backendId, Throwable t) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("nodeName", "phase2_analysis");
+        payload.put("error", String.valueOf(t.getMessage()));
+        payload.put("type", t.getClass().getName());
+        String key = "error-" + backendId + "-phase2_analysis-" + System.nanoTime();
+        AgentEvent ev = AgentEvent.builder()
+                .sessionId(backendId)
+                .type(EventType.ERROR)
+                .payload(toJson(payload, "phase2_analysis"))
+                .idempotencyKey(key)
+                .circuitState("OK")
+                .validatorStatus("FAIL")
+                .createdAt(System.currentTimeMillis() / 1000L)
+                .build();
+        try {
+            eventRepository.append(ev);
+        } catch (RuntimeException e) {
+            log.warn("appendPhase2Error failed for backendId={}", backendId, e);
+        }
+    }
+
+    private void appendPhase2Error(long backendId, String message) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("nodeName", "phase2_analysis");
+        payload.put("error", message);
+        payload.put("type", "ExecutionError");
+        String key = "error-" + backendId + "-phase2_analysis-" + System.nanoTime();
+        AgentEvent ev = AgentEvent.builder()
+                .sessionId(backendId)
+                .type(EventType.ERROR)
+                .payload(toJson(payload, "phase2_analysis"))
+                .idempotencyKey(key)
+                .circuitState("OK")
+                .validatorStatus("FAIL")
+                .createdAt(System.currentTimeMillis() / 1000L)
+                .build();
+        try {
+            eventRepository.append(ev);
+        } catch (RuntimeException e) {
+            log.warn("appendPhase2Error failed for backendId={}", backendId, e);
+        }
     }
 }

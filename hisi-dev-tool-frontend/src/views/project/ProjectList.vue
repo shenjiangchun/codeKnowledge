@@ -37,6 +37,13 @@
             <span>项目管理</span>
             <div class="header-buttons">
               <el-button
+                type="info"
+                @click="showGroupDialog = true"
+              >
+                <el-icon><FolderAdd /></el-icon>
+                项目分组
+              </el-button>
+              <el-button
                 type="warning"
                 @click="handleUpdateAll"
                 :loading="updatingAll"
@@ -674,13 +681,96 @@
       </template>
     </el-dialog>
 
+    <!-- Task 75: Project Group Dialog -->
+    <el-dialog v-model="showGroupDialog" title="项目分组管理" width="700px" destroy-on-close>
+      <el-alert type="info" :closable="false" style="margin-bottom: 16px">
+        创建 appId 分组，将多个项目归到一个应用下。日志分析和需求分析时可选择 appId 自动获取分组下的所有项目路径。
+      </el-alert>
+
+      <!-- Group list -->
+      <el-table :data="groups" v-loading="loadingGroups" empty-text="暂无分组，点击「新增」创建" stripe>
+        <el-table-column prop="appId" label="appId" width="120">
+          <template #default="{ row }">
+            <el-tag type="primary" effect="plain">{{ row.appId }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="appName" label="分组名称" width="150" />
+        <el-table-column prop="projectPaths" label="项目路径" min-width="200">
+          <template #default="{ row }">
+            <el-tag v-for="path in row.projectPaths.slice(0, 3)" :key="path" size="small" style="margin: 2px">
+              {{ path.split('/').pop() }}
+            </el-tag>
+            <el-tag v-if="row.projectPaths.length > 3" size="small" type="info">
+              +{{ row.projectPaths.length - 3 }}更多
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="description" label="描述" width="150" show-overflow-tooltip />
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openGroupEdit(row)">编辑</el-button>
+            <el-button link type="danger" @click="handleGroupDelete(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <!-- Add/Edit Group Sub-Dialog -->
+      <el-dialog
+        v-model="showGroupFormDialog"
+        :title="editingGroup ? '编辑分组' : '新增分组'"
+        width="500px"
+        append-to-body
+        destroy-on-close
+      >
+        <el-form :model="groupForm" label-width="100px">
+          <el-form-item label="appId" required>
+            <el-input v-model="groupForm.appId" placeholder="如: hiapm" :disabled="!!editingGroup" />
+          </el-form-item>
+          <el-form-item label="分组名称" required>
+            <el-input v-model="groupForm.appName" placeholder="如: HiAPM 平台" />
+          </el-form-item>
+          <el-form-item label="项目路径" required>
+            <el-select
+              v-model="groupForm.projectPaths"
+              multiple
+              filterable
+              placeholder="选择项目"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="p in projects"
+                :key="normalizePath(p.path)"
+                :label="p.name"
+                :value="normalizePath(p.path)"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="描述">
+            <el-input v-model="groupForm.description" type="textarea" :rows="2" placeholder="可选" />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="showGroupFormDialog = false">取消</el-button>
+          <el-button type="primary" @click="handleGroupSave">{{ editingGroup ? '保存' : '创建' }}</el-button>
+        </template>
+      </el-dialog>
+
+      <template #footer>
+        <el-button type="primary" size="small" @click="openGroupAdd">
+          <el-icon><Plus /></el-icon>
+          新增分组
+        </el-button>
+        <el-button @click="showGroupDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, Select, FolderOpened, Document, Refresh, Loading, DataAnalysis, Collection, Setting, EditPen, View } from '@element-plus/icons-vue'
+import { Plus, Select, FolderOpened, FolderAdd, Document, Refresh, Loading, DataAnalysis, Collection, Setting, EditPen, View } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { projectApi } from '@/api/project'
 import { gitApi, type GitCommit, type UpdateAllResponse } from '@/api/git'
@@ -690,6 +780,7 @@ import { glossaryApi } from '@/api/glossary'
 import type { GlossaryTerm } from '@/types/glossary'
 import { listRemoteProjects, createRemoteProject, updateRemoteProject, deleteRemoteProject, cloneRemoteProject, pullRemoteProject } from '@/api/remote-project'
 import { listKgSchedules, createKgSchedule, updateKgSchedule } from '@/api/kg-schedule'
+import { projectGroupApi, type ProjectGroup } from '@/api/projectGroup'
 import type { RemoteProject, CreateRemoteProjectRequest, UpdateRemoteProjectRequest } from '@/types/remote-project'
 import { useAppStore } from '@/stores/app'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -730,6 +821,18 @@ const cloning = ref(false)
 const scanning = ref(false)
 const updatingAll = ref(false)
 const showCloneDialog = ref(false)
+// Task 75: 项目分组状态
+const showGroupDialog = ref(false)
+const showGroupFormDialog = ref(false)
+const groups = ref<ProjectGroup[]>([])
+const loadingGroups = ref(false)
+const editingGroup = ref<ProjectGroup | null>(null)
+const groupForm = reactive({
+  appId: '',
+  appName: '',
+  projectPaths: [] as string[],
+  description: ''
+})
 const projects = ref<GitRepositoryInfo[]>([])
 
 // Commit analysis state
@@ -924,6 +1027,94 @@ const handleGlossaryDelete = async (term: GlossaryTerm) => {
     // user cancelled
   }
 }
+
+// ============================================================
+// Task 75: Project Group Management
+// ============================================================
+
+const loadGroups = async () => {
+  loadingGroups.value = true
+  try {
+    groups.value = await projectGroupApi.getGroups()
+  } catch (e) {
+    ElMessage.error('加载分组列表失败')
+  } finally {
+    loadingGroups.value = false
+  }
+}
+
+const openGroupAdd = () => {
+  editingGroup.value = null
+  Object.assign(groupForm, {
+    appId: '',
+    appName: '',
+    projectPaths: [],
+    description: ''
+  })
+  showGroupFormDialog.value = true
+}
+
+const openGroupEdit = (group: ProjectGroup) => {
+  editingGroup.value = group
+  Object.assign(groupForm, {
+    appId: group.appId,
+    appName: group.appName,
+    projectPaths: [...group.projectPaths],
+    description: group.description || ''
+  })
+  showGroupFormDialog.value = true
+}
+
+const handleGroupSave = async () => {
+  if (!groupForm.appId) {
+    ElMessage.warning('请填写 appId')
+    return
+  }
+  if (!groupForm.appName) {
+    ElMessage.warning('请填写分组名称')
+    return
+  }
+  if (groupForm.projectPaths.length === 0) {
+    ElMessage.warning('请选择至少一个项目')
+    return
+  }
+
+  try {
+    await projectGroupApi.saveGroup({
+      appId: groupForm.appId,
+      appName: groupForm.appName,
+      projectPaths: groupForm.projectPaths,
+      description: groupForm.description
+    })
+    ElMessage.success(editingGroup.value ? '分组已更新' : '分组已创建')
+    await loadGroups()
+    showGroupFormDialog.value = false
+  } catch (e) {
+    ElMessage.error('保存分组失败')
+  }
+}
+
+const handleGroupDelete = async (group: ProjectGroup) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除分组「${group.appName} (${group.appId})」？`,
+      '删除确认',
+      { type: 'warning' }
+    )
+    await projectGroupApi.deleteGroup(group.appId)
+    ElMessage.success('已删除')
+    await loadGroups()
+  } catch {
+    // user cancelled
+  }
+}
+
+// Watch dialog open to load groups
+watch(showGroupDialog, (val) => {
+  if (val) {
+    loadGroups()
+  }
+})
 
 // Knowledge graph task status map
 const knowledgeGraphTaskStatusMap = ref<Record<string, KnowledgeGraphTask>>({})

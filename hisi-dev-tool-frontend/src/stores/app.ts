@@ -57,6 +57,8 @@ export const useAppStore = defineStore('app', () => {
     'knowledge-graph': projectSelected.value,
     'log-analysis': true, // 日志分析始终可用，不依赖项目选择
     'ram': projectSelected.value,
+    'ram-demand': projectSelected.value, // 需求分析大师
+    'ram-status': projectSelected.value, // 项目现状分析
     'merge-analysis': true, // Has its own project selector inside
     'prompt-config': true,
     'settings': true,

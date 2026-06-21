@@ -96,11 +96,14 @@ public class LogPullScheduler {
             queryParams.put("pullTime", LocalDateTime.now().toString());
 
             // 调用 submitForAnalysis（带指纹去重），使用 sys_admin 作为 userId 以便前端查询
+            // Task 71: Pass configId and appId for grouping reports by scheduled task
             Long reportId = logAnalysisExecutor.submitForAnalysis(
                 entry.getMessage(),
                 entry.getStackTrace() != null ? entry.getStackTrace() : "",
                 "sys_admin",
-                queryParams
+                queryParams,
+                config.getId(),
+                config.getAppId()
             );
 
             if (reportId != null) {

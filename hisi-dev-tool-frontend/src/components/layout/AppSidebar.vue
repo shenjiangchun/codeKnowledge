@@ -7,7 +7,7 @@ import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 
 // Define menu key type that matches availableMenus keys
-type MenuKey = 'log-analysis' | 'project-management' | 'claude-terminal' | 'prompt-config' | 'search' | 'skill-market' | 'kg-skills-kit' | 'knowledge-graph' | 'settings' | 'apm-debug' | 'ram' | 'merge-analysis'
+type MenuKey = 'log-analysis' | 'project-management' | 'claude-terminal' | 'prompt-config' | 'search' | 'skill-market' | 'kg-skills-kit' | 'knowledge-graph' | 'settings' | 'apm-debug' | 'ram' | 'ram-demand' | 'ram-status' | 'merge-analysis'
 
 interface MenuItem {
   index: string
@@ -74,7 +74,13 @@ const baseMenuItems: MenuItem[] = [
     index: '/ram',
     title: '需求分析大师',
     icon: MagicStick,
-    menuKey: 'ram'
+    menuKey: 'ram-demand'
+  },
+  {
+    index: '/ram/status',
+    title: '项目现状分析',
+    icon: DataAnalysis,
+    menuKey: 'ram-status'
   },
   {
     index: '/merge-analysis',

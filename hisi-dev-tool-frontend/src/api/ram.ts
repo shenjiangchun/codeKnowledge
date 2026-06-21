@@ -129,3 +129,52 @@ export interface RamHealthResponse {
 export function getRamHealth(): Promise<RamHealthResponse> {
   return request.get('/ram/health')
 }
+
+// ──────────────── Project Status Analysis ────────────────
+
+export interface StartStatusAnalysisPayload {
+  projectPath: string
+  mode?: 'quick' | 'guided'
+  question?: string  // User's question for customized analysis
+}
+
+export interface StatusReportResponse {
+  status: string
+  report: Record<string, unknown>
+}
+
+export function startStatusAnalysis(payload: StartStatusAnalysisPayload): Promise<StartSessionResponse> {
+  return request.post('/ram/status/start', payload)
+}
+
+export function getStatusReport(sessionId: string): Promise<StatusReportResponse> {
+  return request.get(`/ram/status/${sessionId}/report`)
+}
+
+// ──────────────── Phase2 Precise Location Analysis ────────────────
+
+export interface StartPhase2Payload {
+  sessionId: string  // Parent session ID (Phase1)
+  question: string   // Question for precise analysis
+  focusAreas?: string[]  // Optional focus areas
+}
+
+export interface Phase2StartResponse {
+  phase2SessionId: string
+  status: string
+}
+
+export interface Phase2ReportResponse {
+  status: string
+  report: Record<string, unknown>
+}
+
+/** Start Phase2 precise location analysis based on Phase1 session. */
+export function startPhase2Analysis(payload: StartPhase2Payload): Promise<Phase2StartResponse> {
+  return request.post('/ram/status/phase2/start', payload)
+}
+
+/** Get Phase2 analysis report. */
+export function getPhase2Report(sessionId: string): Promise<Phase2ReportResponse> {
+  return request.get(`/ram/status/phase2/${sessionId}/report`)
+}

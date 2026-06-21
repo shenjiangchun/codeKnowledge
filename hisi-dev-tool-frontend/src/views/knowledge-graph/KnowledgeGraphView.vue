@@ -5,7 +5,57 @@
         <div class="card-header">
           <span>知识图谱分析</span>
           <div class="header-actions">
+            <!-- Task 74: 分组/扁平视图切换 -->
+            <el-button
+              v-if="projectNameGroups.length > 0"
+              :type="showGroupedView ? 'primary' : 'default'"
+              size="small"
+              @click="showGroupedView = !showGroupedView"
+            >
+              {{ showGroupedView ? '分组视图' : '扁平视图' }}
+            </el-button>
+            <!-- Task 74: 管理分组按钮 -->
+            <el-button size="small" @click="showProjectNameGroupDialog = true">
+              管理分组
+            </el-button>
+            <!-- 分组视图 -->
+            <div v-if="showGroupedView && projectNameGroups.length > 0" class="grouped-project-selector">
+              <div v-for="item in groupedProjectTree" :key="item.name" class="group-item">
+                <template v-if="item.type === 'group'">
+                  <div class="group-header" @click="toggleGroupExpand(item.name)">
+                    <el-icon :class="{ 'is-expanded': expandedGroups.has(item.name) }">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="14" height="14">
+                        <path fill="currentColor" d="M384 192v640l384-320.064z"/>
+                      </svg>
+                    </el-icon>
+                    <span class="group-name">{{ item.name }}</span>
+                    <el-tag size="small" type="info">{{ item.children?.length || 0 }}</el-tag>
+                    <el-button text size="small" @click.stop="selectGroupProjects({ groupName: item.name, projectNames: item.children?.map(c => c.name) || [] })">
+                      全选
+                    </el-button>
+                  </div>
+                  <div v-show="expandedGroups.has(item.name)" class="group-children">
+                    <el-checkbox
+                      v-for="child in item.children"
+                      :key="child.name"
+                      :model-value="selectedProjectNames.includes(child.name)"
+                      :label="child.name"
+                      @change="(val: boolean) => toggleProjectSelection(child.name, val)"
+                    />
+                  </div>
+                </template>
+                <template v-else>
+                  <el-checkbox
+                    :model-value="selectedProjectNames.includes(item.name)"
+                    :label="item.name"
+                    @change="(val: boolean) => toggleProjectSelection(item.name, val)"
+                  />
+                </template>
+              </div>
+            </div>
+            <!-- 扁平视图 - 原有的 el-select -->
             <el-select
+              v-else
               v-model="selectedProjectNames"
               placeholder="选择项目"
               filterable
@@ -278,6 +328,77 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- Task 74: 项目名称分组管理对话框 -->
+    <el-dialog
+      v-model="showProjectNameGroupDialog"
+      :title="editingGroupName ? '编辑分组' : '项目名称分组管理'"
+      width="600px"
+      destroy-on-close
+    >
+      <div v-if="!editingGroupName">
+        <el-button type="primary" size="small" @click="resetGroupNameForm(); editingGroupName = 'new'">
+          <el-icon><Plus /></el-icon>
+          新增分组
+        </el-button>
+        <el-table :data="projectNameGroups" v-loading="loadingProjectNameGroups" size="small" stripe style="margin-top: 12px">
+          <el-table-column prop="groupName" label="分组名称" width="140" />
+          <el-table-column prop="groupPattern" label="匹配模式" width="120">
+            <template #default="{ row }">
+              <code style="font-size: 11px">{{ row.groupPattern }}</code>
+            </template>
+          </el-table-column>
+          <el-table-column prop="projectNames" label="项目数" width="80">
+            <template #default="{ row }">
+              <el-tag size="small" type="info">{{ row.projectNames.length }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="description" label="描述" min-width="120" show-overflow-tooltip />
+          <el-table-column label="操作" width="120" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" size="small" @click="openEditGroupName(row)">编辑</el-button>
+              <el-button link type="danger" size="small" @click="deleteGroupNameGroup(row.groupName)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div v-if="projectNameGroups.length === 0 && !loadingProjectNameGroups" style="text-align: center; color: #909399; padding: 24px">
+          暂无分组，点击上方按钮新增
+        </div>
+      </div>
+
+      <el-form v-else :model="groupNameForm" label-width="100px">
+        <el-form-item label="分组名称" required>
+          <el-input v-model="groupNameForm.groupName" placeholder="如: HiSi DevTool 系列" />
+        </el-form-item>
+        <el-form-item label="匹配模式" required>
+          <el-input v-model="groupNameForm.groupPattern" placeholder="如: hisi-*（支持 * 通配符）" />
+        </el-form-item>
+        <el-form-item label="项目列表">
+          <el-select
+            v-model="groupNameForm.projectNames"
+            multiple
+            filterable
+            placeholder="选择要加入分组的项目"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="proj in projects"
+              :key="proj.name"
+              :label="proj.name"
+              :value="proj.name"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input v-model="groupNameForm.description" placeholder="可选" />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="resetGroupNameForm(); editingGroupName = ''">取消</el-button>
+        <el-button v-if="editingGroupName" type="primary" @click="saveGroupNameGroup">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -291,6 +412,7 @@ import { knowledgeGraphApi, type KnowledgeGraphStatus, type GitStatus } from '@/
 import { getVectorGenerationStatus, startVectorGeneration, getMissingEmbeddings, refreshMissing, type VectorGenerationTask, type MissingEmbeddingInfo } from '@/api/vectorGeneration'
 import { glossaryApi } from '@/api/glossary'
 import { listRemoteProjects } from '@/api/remote-project'
+import { projectNameGroupApi, type ProjectNameGroup } from '@/api/projectNameGroup'
 import type { GlossaryTerm } from '@/types/glossary'
 import type { RemoteProject } from '@/types/remote-project'
 import { useAppStore } from '@/stores/app'
@@ -316,6 +438,173 @@ const selectedProjectNames = ref<string[]>(
     : (route.query.project ? [route.query.project as string] : (appStore.selectedProject ? [appStore.selectedProject] : []))
 )
 const activeTab = ref(route.query.tab as string || 'understand')
+
+// Task 74: 项目名称分组
+const projectNameGroups = ref<ProjectNameGroup[]>([])
+const loadingProjectNameGroups = ref<boolean>(false)
+const showGroupedView = ref<boolean>(false)
+const expandedGroups = ref<Set<string>>(new Set())
+
+// Task 74: 分组管理对话框
+const showProjectNameGroupDialog = ref<boolean>(false)
+const editingGroupName = ref<string>('')
+const groupNameForm = reactive({
+  groupName: '',
+  groupPattern: '',
+  projectNames: [] as string[],
+  description: ''
+})
+
+const resetGroupNameForm = () => {
+  editingGroupName.value = ''
+  Object.assign(groupNameForm, {
+    groupName: '',
+    groupPattern: '',
+    projectNames: [],
+    description: ''
+  })
+}
+
+const openEditGroupName = (group: ProjectNameGroup) => {
+  editingGroupName.value = group.groupName
+  Object.assign(groupNameForm, {
+    groupName: group.groupName,
+    groupPattern: group.groupPattern,
+    projectNames: [...group.projectNames],
+    description: group.description || ''
+  })
+  showProjectNameGroupDialog.value = true
+}
+
+const saveGroupNameGroup = async () => {
+  if (!groupNameForm.groupName.trim()) {
+    ElMessage.warning('分组名称不能为空')
+    return
+  }
+  if (!groupNameForm.groupPattern.trim()) {
+    ElMessage.warning('分组模式不能为空')
+    return
+  }
+  try {
+    await projectNameGroupApi.saveGroup({
+      groupName: groupNameForm.groupName.trim(),
+      groupPattern: groupNameForm.groupPattern.trim(),
+      projectNames: groupNameForm.projectNames,
+      description: groupNameForm.description.trim()
+    })
+    ElMessage.success('分组已保存')
+    showProjectNameGroupDialog.value = false
+    resetGroupNameForm()
+    await loadProjectNameGroups()
+  } catch (e: any) {
+    ElMessage.error('保存失败: ' + e.message)
+  }
+}
+
+const deleteGroupNameGroup = async (groupName: string) => {
+  try {
+    await ElMessageBox.confirm(`确认删除分组 "${groupName}"？`, '删除确认', { type: 'warning' })
+    await projectNameGroupApi.deleteGroup(groupName)
+    ElMessage.success('分组已删除')
+    await loadProjectNameGroups()
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      ElMessage.error('删除失败: ' + e.message)
+    }
+  }
+}
+
+// 计算分组后的项目树
+const groupedProjectTree = computed(() => {
+  if (!showGroupedView.value || projectNameGroups.value.length === 0) {
+    // 无分组时返回扁平列表
+    return projects.value.map(p => ({
+      type: 'project',
+      name: p.name,
+      path: p.path
+    }))
+  }
+
+  const tree: Array<{ type: 'group' | 'project', name: string, path?: string, children?: any[] }> = []
+  const groupedProjects = new Set<string>()
+
+  // 先处理已分组的
+  for (const group of projectNameGroups.value) {
+    const groupChildren: Array<{ type: 'project', name: string, path: string }> = []
+    for (const projName of group.projectNames) {
+      const proj = projects.value.find(p => p.name === projName)
+      if (proj) {
+        groupedProjects.add(projName)
+        groupChildren.push({ type: 'project', name: proj.name, path: proj.path })
+      }
+    }
+    if (groupChildren.length > 0) {
+      tree.push({
+        type: 'group',
+        name: group.groupName,
+        children: groupChildren
+      })
+    }
+  }
+
+  // 未分组的项目放入"其他"组
+  const ungrouped = projects.value.filter(p => !groupedProjects.has(p.name))
+  if (ungrouped.length > 0) {
+    tree.push({
+      type: 'group',
+      name: '其他',
+      children: ungrouped.map(p => ({ type: 'project', name: p.name, path: p.path }))
+    })
+  }
+
+  return tree
+})
+
+// 加载项目名称分组
+const loadProjectNameGroups = async () => {
+  loadingProjectNameGroups.value = true
+  try {
+    projectNameGroups.value = await projectNameGroupApi.getGroups()
+  } catch {
+    projectNameGroups.value = []
+  } finally {
+    loadingProjectNameGroups.value = false
+  }
+}
+
+// 切换分组展开状态
+const toggleGroupExpand = (groupName: string) => {
+  if (expandedGroups.value.has(groupName)) {
+    expandedGroups.value.delete(groupName)
+  } else {
+    expandedGroups.value.add(groupName)
+  }
+}
+
+// 选择分组下的所有项目
+const selectGroupProjects = (group: ProjectNameGroup) => {
+  const existing = new Set(selectedProjectNames.value)
+  for (const name of group.projectNames) {
+    if (projects.value.find(p => p.name === name)) {
+      existing.add(name)
+    }
+  }
+  selectedProjectNames.value = Array.from(existing)
+  handleProjectChange()
+}
+
+// 切换单个项目选择状态
+const toggleProjectSelection = (name: string, selected: boolean) => {
+  if (selected) {
+    if (!selectedProjectNames.value.includes(name)) {
+      selectedProjectNames.value.push(name)
+    }
+  } else {
+    selectedProjectNames.value = selectedProjectNames.value.filter(n => n !== name)
+  }
+  handleProjectChange()
+}
+
 const graphStatus = ref<KnowledgeGraphStatus | null>(null)
 const vectorStatus = ref<VectorGenerationTask | null>(null)
 const gitStatus = ref<GitStatus | null>(null)
@@ -866,6 +1155,8 @@ onMounted(async () => {
   startVectorPolling()
   // 先加载项目列表（确定 projectPath）
   await loadProjects()
+  // Task 74: 加载项目名称分组
+  await loadProjectNameGroups()
   // 项目列表加载完成后，再加载图谱数据
   if (projectPath.value) {
     loadGraphStatus()
@@ -1004,5 +1295,54 @@ watch(() => appStore.selectedProjectNames, (newNames) => {
   color: #909399;
   text-align: center;
   margin-top: 8px;
+}
+
+/* Task 74: 分组项目选择器样式 */
+.grouped-project-selector {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  padding: 8px;
+  background: #fafafa;
+  min-width: 300px;
+}
+
+.group-item {
+  margin-bottom: 4px;
+}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #f5f7fa;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.group-header:hover {
+  background: #e4e7ed;
+}
+
+.group-header .el-icon {
+  transition: transform 0.2s;
+}
+
+.group-header .el-icon.is-expanded {
+  transform: rotate(90deg);
+}
+
+.group-name {
+  flex: 1;
+}
+
+.group-children {
+  padding: 8px 16px 8px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 </style>
