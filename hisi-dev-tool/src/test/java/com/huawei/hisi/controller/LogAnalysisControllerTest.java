@@ -6,9 +6,11 @@ import com.huawei.hisi.repository.LogAnalysisRepository.LogAnalysisReportEntity;
 import com.huawei.hisi.repository.LogAnalysisRepository.PaginatedReports;
 import com.huawei.hisi.service.LogAnalysisExecutor;
 import com.huawei.hisi.service.LogCloudService;
+import com.huawei.hisi.service.ReportExportService;
 import com.huawei.hisi.utils.SnowflakeIdGenerator;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
+import org.springframework.http.ResponseEntity;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -28,6 +30,8 @@ class LogAnalysisControllerTest {
     private LogAnalysisRepository repository;
     @Mock
     private LogAnalysisExecutor logAnalysisExecutor;
+    @Mock
+    private ReportExportService reportExportService;
 
     @InjectMocks
     private LogAnalysisController controller;
@@ -212,5 +216,24 @@ class LogAnalysisControllerTest {
         assertEquals(200, response.getCode());
         assertEquals(1, response.getData().getTotal());
         verify(repository).findByUserIdAndStatus("sys_admin", "completed");
+    }
+
+    @Test
+    @DisplayName("导出报告 Markdown - 正常返回")
+    void exportReportMd_returnsMarkdownContent() {
+        Long reportId = 1L;
+        String expectedMarkdown = "# 日志分析报告\n\n## 基本信息\n...";
+
+        when(reportExportService.exportLogReportAsMd(reportId)).thenReturn(expectedMarkdown);
+
+        ResponseEntity<String> response = controller.exportReportMd(reportId);
+
+        assertEquals(200, response.getStatusCodeValue());
+        // Spring MediaType normalizes without space
+        assertTrue(response.getHeaders().getContentType().toString().startsWith("text/markdown"));
+        assertTrue(response.getHeaders().getContentType().toString().contains("charset=utf-8"));
+        assertTrue(response.getHeaders().getFirst("Content-Disposition").contains("attachment"));
+        assertTrue(response.getHeaders().getFirst("Content-Disposition").contains("report-1.md"));
+        assertTrue(response.getBody().contains("# 日志分析报告"));
     }
 }

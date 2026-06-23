@@ -5,10 +5,12 @@ import com.huawei.hisi.repository.LogAnalysisRepository;
 import com.huawei.hisi.repository.LogAnalysisRepository.LogAnalysisReportEntity;
 import com.huawei.hisi.service.LogAnalysisExecutor;
 import com.huawei.hisi.service.LogCloudService;
+import com.huawei.hisi.service.ReportExportService;
 import com.huawei.hisi.utils.SnowflakeIdGenerator;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -32,6 +34,7 @@ public class LogAnalysisController {
     private final SnowflakeIdGenerator snowflakeIdGenerator;
     private final LogAnalysisRepository repository;
     private final LogAnalysisExecutor logAnalysisExecutor;
+    private final ReportExportService reportExportService;
 
     // 默认用户 ID
     private static final String DEFAULT_USER_ID = "sys_admin";
@@ -407,5 +410,21 @@ public class LogAnalysisController {
             log.error("删除报告失败 (reportId={})", reportId, e);
             return ApiResponse.error("删除报告失败：" + e.getMessage());
         }
+    }
+
+    /**
+     * 导出报告为 Markdown 格式
+     * GET /api/log/report/{id}/export/md
+     *
+     * @param id 报告 ID
+     * @return Markdown 文件
+     */
+    @GetMapping("/report/{id}/export/md")
+    public ResponseEntity<String> exportReportMd(@PathVariable("id") Long id) {
+        String markdown = reportExportService.exportLogReportAsMd(id);
+        return ResponseEntity.ok()
+            .header("Content-Type", "text/markdown; charset=utf-8")
+            .header("Content-Disposition", "attachment; filename=\"report-" + id + ".md\"")
+            .body(markdown);
     }
 }

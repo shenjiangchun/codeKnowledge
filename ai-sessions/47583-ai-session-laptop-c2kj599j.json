@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-06-23T06:55:28.690Z",
+  "lastUpdated": "2026-06-23T09:41:31.334Z",
   "stats": {
-    "totalOperations": 1222,
-    "totalFilesEdited": 514,
-    "totalAiLines": 32490,
+    "totalOperations": 1233,
+    "totalFilesEdited": 519,
+    "totalAiLines": 32492,
     "totalAiLinesDeleted": 2863,
-    "totalCommits": 72
+    "totalCommits": 73
   },
   "pendingFiles": [
     {
@@ -1138,11 +1138,42 @@
       "lastModified": "2026-06-23T01:13:14.357Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/controller/MergeAnalysisController.java",
-      "tool": "Edit",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/docs/plans/2025-06-23-export-reports-md.md",
+      "tool": "Write",
       "operations": 1,
-      "timestamp": "2026-06-23T06:55:28.690Z",
-      "lastModified": "2026-06-23T06:55:28.690Z"
+      "timestamp": "2026-06-23T09:27:56.480Z",
+      "lastModified": "2026-06-23T09:27:56.480Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/test/java/com/huawei/hisi/controller/LogAnalysisControllerTest.java",
+      "tool": "Edit",
+      "operations": 4,
+      "timestamp": "2026-06-23T09:33:37.449Z",
+      "lastModified": "2026-06-23T09:41:31.334Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/service/ReportExportService.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-23T09:36:54.546Z",
+      "lastModified": "2026-06-23T09:36:54.546Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/controller/LogAnalysisController.java",
+      "tool": "Edit",
+      "operations": 3,
+      "timestamp": "2026-06-23T09:37:16.161Z",
+      "lastModified": "2026-06-23T09:37:46.250Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/test/java/com/huawei/hisi/controller/LogAnalysisControllerStatusTest.java",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-06-23T09:39:29.932Z",
+      "lastModified": "2026-06-23T09:39:40.201Z",
+      "lastTool": "Edit"
     }
   ]
 }

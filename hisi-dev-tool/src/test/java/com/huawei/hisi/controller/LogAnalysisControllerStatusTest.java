@@ -5,6 +5,7 @@ import com.huawei.hisi.repository.LogAnalysisRepository;
 import com.huawei.hisi.repository.LogAnalysisRepository.LogAnalysisReportEntity;
 import com.huawei.hisi.service.LogAnalysisExecutor;
 import com.huawei.hisi.service.LogCloudService;
+import com.huawei.hisi.service.ReportExportService;
 import com.huawei.hisi.utils.SnowflakeIdGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -43,13 +44,16 @@ class LogAnalysisControllerStatusTest {
     @Mock
     private LogAnalysisExecutor logAnalysisExecutor;
 
+    @Mock
+    private ReportExportService reportExportService;
+
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
         LogAnalysisController controller = new LogAnalysisController(
-            logCloudService, snowflakeIdGenerator, repository, logAnalysisExecutor
+            logCloudService, snowflakeIdGenerator, repository, logAnalysisExecutor, reportExportService
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
         objectMapper = new ObjectMapper();
