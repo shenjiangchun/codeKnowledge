@@ -14,6 +14,7 @@ import com.huawei.hisi.ram.repository.AgentSessionRepository;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -28,6 +29,7 @@ import java.util.concurrent.atomic.AtomicLong;
 @RestController
 @RequestMapping("/api/merge-analysis")
 @Slf4j
+@DependsOn("ramSchemaInitializer")
 public class MergeAnalysisController {
 
     private static final long SSE_TIMEOUT_MS = 30 * 60 * 1000L;

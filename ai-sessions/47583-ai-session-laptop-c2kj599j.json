@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-06-23T02:28:35.245Z",
+  "lastUpdated": "2026-06-23T06:55:28.690Z",
   "stats": {
-    "totalOperations": 1221,
-    "totalFilesEdited": 513,
-    "totalAiLines": 28901,
-    "totalAiLinesDeleted": 2130,
-    "totalCommits": 71
+    "totalOperations": 1222,
+    "totalFilesEdited": 514,
+    "totalAiLines": 32490,
+    "totalAiLinesDeleted": 2863,
+    "totalCommits": 72
   },
   "pendingFiles": [
     {
@@ -1124,38 +1124,11 @@
       "lastModified": "2026-06-16T02:31:10.862Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/api/ram.ts",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-21T08:28:29.702Z",
-      "lastModified": "2026-06-21T08:28:29.702Z"
-    },
-    {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/components/layout/AppSidebar.vue",
       "tool": "Edit",
       "operations": 1,
       "timestamp": "2026-06-21T08:31:56.324Z",
       "lastModified": "2026-06-21T08:31:56.324Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/controller/RamController.java",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "haiku",
-      "operations": 2,
-      "timestamp": "2026-06-21T14:17:45.902Z",
-      "lastModified": "2026-06-22T00:36:12.848Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/ram/InputPage.vue",
-      "tool": "Edit",
-      "aiTool": "claude-code",
-      "model": "mimo-v2.5-pro-cc",
-      "operations": 3,
-      "timestamp": "2026-06-22T00:30:52.261Z",
-      "lastModified": "2026-06-22T00:36:15.900Z",
-      "lastTool": "Edit"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/.codeai/data/roundtable/20260623T091053--E2E测试全覆盖回归测试计划.md",
@@ -1165,65 +1138,11 @@
       "lastModified": "2026-06-23T01:13:14.357Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/e2e/smoke-pages.spec.ts",
-      "tool": "Write",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/controller/MergeAnalysisController.java",
+      "tool": "Edit",
       "operations": 1,
-      "timestamp": "2026-06-23T01:17:45.902Z",
-      "lastModified": "2026-06-23T01:17:45.902Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/e2e/auth-security.spec.ts",
-      "tool": "Write",
-      "operations": 14,
-      "timestamp": "2026-06-23T01:18:38.680Z",
-      "lastModified": "2026-06-23T01:28:50.016Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/e2e/ram-clarity-hitl.spec.ts",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-06-23T01:19:00.567Z",
-      "lastModified": "2026-06-23T01:19:00.567Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/composables/__tests__/sse-seq.spec.ts",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-06-23T01:21:39.447Z",
-      "lastModified": "2026-06-23T01:21:39.447Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/e2e/merge-analysis-api.spec.ts",
-      "tool": "Write",
-      "operations": 3,
-      "timestamp": "2026-06-23T01:22:42.692Z",
-      "lastModified": "2026-06-23T02:26:31.421Z",
-      "lastTool": "Write"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/e2e/project-api.spec.ts",
-      "tool": "Write",
-      "operations": 2,
-      "timestamp": "2026-06-23T01:23:11.080Z",
-      "lastModified": "2026-06-23T02:27:36.351Z",
-      "lastTool": "Write"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/e2e/call-chain-api.spec.ts",
-      "tool": "Write",
-      "operations": 6,
-      "timestamp": "2026-06-23T01:23:49.323Z",
-      "lastModified": "2026-06-23T02:28:35.245Z",
-      "lastTool": "Write"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/e2e/workflow-api.spec.ts",
-      "tool": "Write",
-      "operations": 4,
-      "timestamp": "2026-06-23T01:25:20.232Z",
-      "lastModified": "2026-06-23T02:25:19.165Z",
-      "lastTool": "Write"
+      "timestamp": "2026-06-23T06:55:28.690Z",
+      "lastModified": "2026-06-23T06:55:28.690Z"
     }
   ]
 }
