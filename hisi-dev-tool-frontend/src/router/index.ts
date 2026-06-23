@@ -134,6 +134,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '新建需求分析' }
   },
   {
+    path: '/ram/status/new',
+    name: 'RamStatusInput',
+    component: () => import('@/views/ram/StatusInputPage.vue'),
+    meta: { title: '新建项目现状分析' }
+  },
+  {
     path: '/ram/draft/:sid',
     name: 'RamDraft',
     component: () => import('@/views/ram/DraftPage.vue'),
@@ -249,7 +255,7 @@ router.beforeEach(async (to, _from, next) => {
     return next('/project')
   }
 
-  if (to.path.startsWith('/log-analysis') && !menuAvailability['log-analysis']) {
+  if (to.path.startsWith('/ram') && !menuAvailability['ram']) {
     ElMessage.warning('请先在项目管理页面选择项目')
     return next('/project')
   }

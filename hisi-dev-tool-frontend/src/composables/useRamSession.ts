@@ -16,6 +16,7 @@ import { computed, getCurrentInstance, onUnmounted, ref, type ComputedRef, type 
 import {
   abortRamSession,
   confirmRamNode,
+  getRamSession,
   getRamSessionEvents,
   ramStreamUrl,
   resumeRamSession,
@@ -85,9 +86,12 @@ export function useRamSession(): UseRamSessionReturn {
     let parsed: RamEvent | null = null
     try {
       const data = JSON.parse(raw.data as string) as Partial<RamEvent>
-      if (data && typeof data.type === 'string' && typeof data.seq === 'number') {
+      // Backend serializes Long to String (JacksonConfig), so seq may be string or number
+      const seqVal = typeof data.seq === 'number' ? data.seq :
+                     typeof data.seq === 'string' ? parseInt(data.seq, 10) : NaN
+      if (data && typeof data.type === 'string' && !isNaN(seqVal) && seqVal >= 0) {
         parsed = {
-          seq: data.seq,
+          seq: seqVal,
           type: data.type,
           payload: (data.payload ?? {}) as Record<string, unknown>
         }
@@ -312,7 +316,23 @@ export function useRamSession(): UseRamSessionReturn {
 
     // Load historical events from REST so page refresh doesn't lose content
     try {
-      const allEvents = await getRamSessionEvents(sid)
+      const [allEvents, sessionInfo] = await Promise.all([
+        getRamSessionEvents(sid),
+        getRamSession(sid).catch(() => null)
+      ])
+
+      // Derive status from session info (authoritative source)
+      if (sessionInfo) {
+        const s = sessionInfo.status
+        if (s === 'DONE') {
+          status.value = 'completed'
+        } else if (s === 'FAILED') {
+          status.value = 'error'
+        } else if (s === 'ABORTED') {
+          status.value = 'aborted'
+        }
+      }
+
       if (allEvents && allEvents.length > 0) {
         events.value = allEvents
         const maxSeq = allEvents.reduce((max, e) => Math.max(max, e.seq ?? 0), 0)
@@ -347,22 +367,24 @@ export function useRamSession(): UseRamSessionReturn {
           if (ev.type === 'RUN_ABORTED') { break }
         }
 
-        // Determine status from the last event
-        const lastEvent = allEvents[allEvents.length - 1]
-        if (lastEvent) {
-          const t = lastEvent.type
-          if (t === 'RUN_COMPLETED') {
-            status.value = 'completed'
-          } else if (t === 'RUN_FAILED' || t === 'ERROR') {
-            status.value = 'error'
-          } else if (t === 'RUN_ABORTED') {
-            status.value = 'aborted'
-          } else if (t === 'CLARIFY_REQUIRED' || t === 'CLARIFY_REQ') {
-            status.value = 'clarify'
-          } else if (t === 'HITL_REQUIRED' || t === 'HITL_REQ') {
-            status.value = 'confirm'
-          } else {
-            status.value = 'running'
+        // Derive status from events only if session info didn't provide a terminal status
+        if (status.value === 'idle' || status.value === 'running') {
+          const lastEvent = allEvents[allEvents.length - 1]
+          if (lastEvent) {
+            const t = lastEvent.type
+            if (t === 'RUN_COMPLETED') {
+              status.value = 'completed'
+            } else if (t === 'RUN_FAILED' || t === 'ERROR') {
+              status.value = 'error'
+            } else if (t === 'RUN_ABORTED') {
+              status.value = 'aborted'
+            } else if (t === 'CLARIFY_REQUIRED' || t === 'CLARIFY_REQ') {
+              status.value = 'clarify'
+            } else if (t === 'HITL_REQUIRED' || t === 'HITL_REQ') {
+              status.value = 'confirm'
+            } else {
+              status.value = 'running'
+            }
           }
         }
       }

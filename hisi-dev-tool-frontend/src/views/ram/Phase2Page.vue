@@ -2,34 +2,43 @@
 /**
  * Phase2Page — precise location analysis report display.
  *
- * Polls for Phase2 report and renders it as Markdown.
- * Shows detailed analysis with specific nodeId references.
+ * Uses REST-first + SSE incremental pattern:
+ * 1. Load report from REST API (authoritative source)
+ * 2. If session still running, open SSE for live CHECKPOINT updates
+ * 3. Monitor 'phase2_analysis' CHECKPOINT events for report payload
  */
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
-import { marked } from 'marked'
+import { renderMarkdown } from '@/utils/markdown'
 import { getPhase2Report } from '@/api/ram'
+import { useRamSession } from '@/composables/useRamSession'
 
 const route = useRoute()
 const router = useRouter()
+const session = useRamSession()
 
 const sid = computed<string>(() => String(route.params.sid ?? ''))
 
-const status = ref<string>('RUNNING')
 const report = ref<Record<string, unknown> | null>(null)
 const loading = ref<boolean>(true)
-const pollTimer = ref<number | null>(null)
 const error = ref<string | null>(null)
+const fallbackPollTimer = ref<number | null>(null)
 
-// 判断是否正在运行
+// Derive status from session status and report
+const status = computed(() => {
+  const s = session.status.value
+  if (s === 'completed') return 'DONE'
+  if (s === 'error') return 'FAILED'
+  if (s === 'aborted') return 'FAILED'
+  if (report.value && report.value['success'] !== false) return 'DONE'
+  if (report.value?.['success'] === false) return 'FAILED'
+  return 'RUNNING'
+})
+
 const isRunning = computed(() => loading.value || status.value === 'RUNNING')
-
-// 判断是否成功完成
 const isSuccess = computed(() => status.value === 'DONE' && report.value?.['success'] !== false)
-
-// 判断是否失败
 const isFailed = computed(() => status.value === 'FAILED' || report.value?.['success'] === false)
 
 const markdownReport = computed(() => {
@@ -67,16 +76,50 @@ const bridgePoints = computed(() => {
   return Array.isArray(bridges) ? bridges : []
 })
 
-function renderMarkdown(text: string | null): string {
-  if (!text) return ''
-  try {
-    return marked.parse(text, { breaks: true, gfm: true }) as string
-  } catch {
-    return text
-  }
-}
+// Track processed seq for SSE event dedup
+let processedSeq = 0
 
-async function fetchReport(): Promise<void> {
+/** Watch SSE events for phase2_analysis CHECKPOINT */
+watch(
+  () => session.events.value,
+  (events) => {
+    for (const evt of events) {
+      if (evt.seq <= processedSeq) continue
+      processedSeq = evt.seq
+
+      if (evt.type === 'CHECKPOINT') {
+        const nodeName = evt.payload['nodeName']
+        if (nodeName === 'phase2_analysis') {
+          const output = evt.payload['output']
+          if (output && typeof output === 'object' && !Array.isArray(output)) {
+            report.value = output as Record<string, unknown>
+            loading.value = false
+            stopFallbackPolling()
+          }
+        }
+      }
+    }
+  },
+  { deep: true }
+)
+
+/** Watch session status for completion */
+watch(
+  () => session.status.value,
+  (s) => {
+    if (s === 'completed' || s === 'error' || s === 'aborted') {
+      loading.value = false
+      stopFallbackPolling()
+    }
+    if (s === 'error') {
+      error.value = '精确分析执行失败'
+      ElMessage.error('精确分析失败，请查看错误信息')
+    }
+  }
+)
+
+/** Fallback polling when SSE fails */
+async function fetchReportFallback(): Promise<void> {
   if (!sid.value) {
     loading.value = false
     error.value = '缺少会话ID参数'
@@ -84,11 +127,12 @@ async function fetchReport(): Promise<void> {
   }
   try {
     const resp = await getPhase2Report(sid.value)
-    status.value = resp.status
-    report.value = resp.report
+    if (resp.report && Object.keys(resp.report).length > 0) {
+      report.value = resp.report
+    }
 
     if (resp.status === 'DONE' || resp.status === 'FAILED') {
-      stopPolling()
+      stopFallbackPolling()
       loading.value = false
     }
 
@@ -97,7 +141,6 @@ async function fetchReport(): Promise<void> {
       ElMessage.error('精确分析失败，请查看错误信息')
     }
 
-    // 检查 success=false
     if (resp.report?.['success'] === false) {
       error.value = String(resp.report?.['message'] || '数据生成失败')
     }
@@ -105,25 +148,91 @@ async function fetchReport(): Promise<void> {
     const msg = e instanceof Error ? e.message : '获取报告失败'
     error.value = msg
     ElMessage.error(msg)
-    stopPolling()
+    stopFallbackPolling()
     loading.value = false
   }
 }
 
-function startPolling(): void {
-  fetchReport()
-  pollTimer.value = window.setInterval(fetchReport, 3000)
+function startFallbackPolling(): void {
+  fetchReportFallback()
+  fallbackPollTimer.value = window.setInterval(fetchReportFallback, 3000)
 }
 
-function stopPolling(): void {
-  if (pollTimer.value != null) {
-    window.clearInterval(pollTimer.value)
-    pollTimer.value = null
+function stopFallbackPolling(): void {
+  if (fallbackPollTimer.value != null) {
+    window.clearInterval(fallbackPollTimer.value)
+    fallbackPollTimer.value = null
   }
 }
 
-onMounted(startPolling)
-onBeforeUnmount(stopPolling)
+async function initSession(id: string): Promise<void> {
+  if (!id) {
+    ElMessage.error('缺少 session id')
+    router.replace({ name: 'RamInput' })
+    return
+  }
+
+  loading.value = true
+  error.value = null
+  report.value = null
+  processedSeq = 0
+
+  // Step 1: REST authoritative — load report from REST API
+  try {
+    const resp = await getPhase2Report(id)
+    if (resp.report && Object.keys(resp.report).length > 0) {
+      report.value = resp.report
+    }
+    if (resp.status === 'DONE' || resp.status === 'FAILED') {
+      loading.value = false
+      return  // Session finished, no SSE needed
+    }
+  } catch (e) {
+    console.warn('[Phase2Page] Failed to load report via REST:', e)
+  }
+
+  // Step 2: Session still running, open SSE for live updates
+  try {
+    await session.rejoin(id, 0)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'SSE连接失败'
+    console.warn('[Phase2Page] SSE rejoin failed, using fallback polling:', msg)
+    startFallbackPolling()
+  }
+
+  // Step 3: After rejoin, if report is still empty, try REST again
+  if (!report.value || Object.keys(report.value).length === 0) {
+    try {
+      const resp = await getPhase2Report(id)
+      if (resp.report && Object.keys(resp.report).length > 0) {
+        report.value = resp.report
+        loading.value = false
+      }
+    } catch { /* non-critical */ }
+  }
+
+  // Step 4: If session reached terminal state, ensure loading is off
+  const finalStatus = session.status.value
+  if (finalStatus === 'completed' || finalStatus === 'error' || finalStatus === 'aborted') {
+    loading.value = false
+  }
+}
+
+// Watch sid for route param changes
+watch(sid, async (newSid, oldSid) => {
+  if (newSid && newSid !== oldSid) {
+    await initSession(newSid)
+  }
+})
+
+onMounted(async () => {
+  await initSession(sid.value)
+})
+
+onBeforeUnmount(() => {
+  session.disconnect()
+  stopFallbackPolling()
+})
 
 function goBack(): void {
   router.push({ name: 'RamInput' })
@@ -145,7 +254,7 @@ function goBack(): void {
         </div>
       </template>
 
-      <!-- 正在运行：显示加载动画 -->
+      <!-- Running: loading animation -->
       <div v-if="isRunning" class="loading-container">
         <el-icon class="is-loading" :size="32">
           <Loading />
@@ -154,7 +263,7 @@ function goBack(): void {
         <span class="loading-hint">正在收集KG深度数据并生成分析报告</span>
       </div>
 
-      <!-- 失败：显示错误信息 -->
+      <!-- Failed: error message -->
       <div v-else-if="isFailed" class="error-container">
         <el-result icon="error" title="分析失败" :sub-title="error || '请检查日志查看详情'">
           <template #extra>
@@ -163,14 +272,13 @@ function goBack(): void {
         </el-result>
       </div>
 
-      <!-- 成功完成：显示报告 -->
+      <!-- Success: show report -->
       <div v-else-if="report && isSuccess" class="report-container">
-        <!-- 完整 Markdown 报告 -->
         <div v-if="markdownReport" class="markdown-section">
           <div class="markdown-content" v-html="renderMarkdown(markdownReport)"></div>
         </div>
 
-        <!-- 分段展示（备用） -->
+        <!-- Fallback: segmented display -->
         <div v-else>
           <el-collapse>
             <el-collapse-item title="分析摘要" name="summary">
@@ -249,7 +357,7 @@ function goBack(): void {
         </div>
       </div>
 
-      <!-- 其他情况：空数据 -->
+      <!-- Empty -->
       <div v-else class="empty-container">
         <el-empty description="暂无报告数据">
           <el-button type="primary" @click="goBack">返回</el-button>

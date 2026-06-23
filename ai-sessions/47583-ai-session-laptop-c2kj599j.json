@@ -3,10 +3,10 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-06-16T02:31:10.862Z",
+  "lastUpdated": "2026-06-22T10:41:25.361Z",
   "stats": {
-    "totalOperations": 1128,
-    "totalFilesEdited": 488,
+    "totalOperations": 1188,
+    "totalFilesEdited": 504,
     "totalAiLines": 27381,
     "totalAiLinesDeleted": 2022,
     "totalCommits": 70
@@ -1122,6 +1122,133 @@
       "operations": 1,
       "timestamp": "2026-06-16T02:31:10.862Z",
       "lastModified": "2026-06-16T02:31:10.862Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/api/ram.ts",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-21T08:28:29.702Z",
+      "lastModified": "2026-06-21T08:28:29.702Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/ram/StatusPage.vue",
+      "tool": "Edit",
+      "operations": 3,
+      "timestamp": "2026-06-21T08:29:11.608Z",
+      "lastModified": "2026-06-21T08:29:56.140Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/ram/Phase2Page.vue",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-21T08:31:08.535Z",
+      "lastModified": "2026-06-21T08:31:08.535Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/router/index.ts",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-06-21T08:31:34.275Z",
+      "lastModified": "2026-06-22T02:16:09.524Z",
+      "lastTool": "Edit",
+      "aiTool": "claude-code",
+      "model": "haiku"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/components/layout/AppSidebar.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-21T08:31:56.324Z",
+      "lastModified": "2026-06-21T08:31:56.324Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/controller/RamController.java",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "haiku",
+      "operations": 2,
+      "timestamp": "2026-06-21T14:17:45.902Z",
+      "lastModified": "2026-06-22T00:36:12.848Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/ram/InputPage.vue",
+      "tool": "Edit",
+      "aiTool": "claude-code",
+      "model": "mimo-v2.5-pro-cc",
+      "operations": 3,
+      "timestamp": "2026-06-22T00:30:52.261Z",
+      "lastModified": "2026-06-22T00:36:15.900Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/stores/app.ts",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-22T09:46:30.232Z",
+      "lastModified": "2026-06-22T09:46:30.232Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/composables/useRamSession.ts",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-22T09:58:14.942Z",
+      "lastModified": "2026-06-22T09:58:14.942Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/composables/useWorkflow.ts",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-22T09:58:45.983Z",
+      "lastModified": "2026-06-22T09:58:45.983Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/e2e/ram-menu.spec.ts",
+      "tool": "Write",
+      "operations": 11,
+      "timestamp": "2026-06-22T10:05:04.012Z",
+      "lastModified": "2026-06-22T10:41:25.361Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/e2e/ram-status-session.spec.ts",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-22T10:05:11.197Z",
+      "lastModified": "2026-06-22T10:05:11.197Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/e2e/knowledge-graph-load.spec.ts",
+      "tool": "Write",
+      "operations": 3,
+      "timestamp": "2026-06-22T10:05:15.328Z",
+      "lastModified": "2026-06-22T10:18:36.367Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/e2e/ram-status.spec.ts",
+      "tool": "Write",
+      "operations": 15,
+      "timestamp": "2026-06-22T10:05:24.292Z",
+      "lastModified": "2026-06-22T10:40:19.987Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/e2e/login.spec.ts",
+      "tool": "Write",
+      "operations": 6,
+      "timestamp": "2026-06-22T10:06:55.392Z",
+      "lastModified": "2026-06-22T10:34:04.617Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/e2e/ram-history-session.spec.ts",
+      "tool": "Write",
+      "operations": 8,
+      "timestamp": "2026-06-22T10:17:49.964Z",
+      "lastModified": "2026-06-22T10:27:49.843Z",
+      "lastTool": "Edit"
     }
   ]
 }
