@@ -1,7 +1,7 @@
 package com.huawei.hisi.ram.nodes;
 
 import com.huawei.hisi.ram.contract.SchemaValidator;
-import com.huawei.hisi.ram.orchestrator.ClarifyRequiredException;
+import com.huawei.hisi.workflow.ClarifyRequiredException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

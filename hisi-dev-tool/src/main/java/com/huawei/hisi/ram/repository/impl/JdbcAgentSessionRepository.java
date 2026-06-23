@@ -2,6 +2,7 @@ package com.huawei.hisi.ram.repository.impl;
 
 import com.huawei.hisi.ram.model.AgentSession;
 import com.huawei.hisi.ram.model.SessionStatus;
+import com.huawei.hisi.ram.model.SessionType;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -26,15 +27,15 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
             INSERT INTO agent_session
                 (user_id, plan_id, status, current_node, step_count,
                  last_checkpoint_event_id, cache_key, uuid, intent, project_paths, rerun_from_node,
-                 source_branch, target_branch,
+                 source_branch, target_branch, session_type,
                  version, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
     private static final String SELECT_SQL = """
             SELECT id, user_id, plan_id, status, current_node, step_count,
                    last_checkpoint_event_id, cache_key, uuid, intent, project_paths, rerun_from_node,
-                   source_branch, target_branch,
+                   source_branch, target_branch, session_type,
                    version, created_at, updated_at
             FROM agent_session WHERE id = ?
             """;
@@ -42,7 +43,7 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
     private static final String SELECT_BY_UUID_SQL = """
             SELECT id, user_id, plan_id, status, current_node, step_count,
                    last_checkpoint_event_id, cache_key, uuid, intent, project_paths, rerun_from_node,
-                   source_branch, target_branch,
+                   source_branch, target_branch, session_type,
                    version, created_at, updated_at
             FROM agent_session WHERE uuid = ?
             """;
@@ -50,7 +51,7 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
     private static final String LIST_RECENT_SQL = """
             SELECT id, user_id, plan_id, status, current_node, step_count,
                    last_checkpoint_event_id, cache_key, uuid, intent, project_paths, rerun_from_node,
-                   source_branch, target_branch,
+                   source_branch, target_branch, session_type,
                    version, created_at, updated_at
             FROM agent_session ORDER BY updated_at DESC LIMIT ?
             """;
@@ -58,7 +59,7 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
     private static final String LIST_RECENT_BY_USER_SQL = """
             SELECT id, user_id, plan_id, status, current_node, step_count,
                    last_checkpoint_event_id, cache_key, uuid, intent, project_paths, rerun_from_node,
-                   source_branch, target_branch,
+                   source_branch, target_branch, session_type,
                    version, created_at, updated_at
             FROM agent_session WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?
             """;
@@ -66,9 +67,17 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
     private static final String LIST_RECENT_EXCLUDING_USER_SQL = """
             SELECT id, user_id, plan_id, status, current_node, step_count,
                    last_checkpoint_event_id, cache_key, uuid, intent, project_paths, rerun_from_node,
-                   source_branch, target_branch,
+                   source_branch, target_branch, session_type,
                    version, created_at, updated_at
             FROM agent_session WHERE user_id != ? ORDER BY updated_at DESC LIMIT ?
+            """;
+
+    private static final String LIST_RECENT_BY_SESSION_TYPE_SQL = """
+            SELECT id, user_id, plan_id, status, current_node, step_count,
+                   last_checkpoint_event_id, cache_key, uuid, intent, project_paths, rerun_from_node,
+                   source_branch, target_branch, session_type,
+                   version, created_at, updated_at
+            FROM agent_session WHERE session_type = ? ORDER BY updated_at DESC LIMIT ?
             """;
 
     private final JdbcTemplate jdbc;
@@ -92,6 +101,7 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
             .rerunFromNode(rs.getString("rerun_from_node"))
             .sourceBranch(rs.getString("source_branch"))
             .targetBranch(rs.getString("target_branch"))
+            .sessionType(parseSessionType(rs.getString("session_type")))
             .version(rs.getInt("version"))
             .createdAt(rs.getLong("created_at"))
             .updatedAt(rs.getLong("updated_at"))
@@ -119,9 +129,10 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
             ps.setString(11, s.getRerunFromNode());
             ps.setString(12, s.getSourceBranch());
             ps.setString(13, s.getTargetBranch());
-            ps.setInt(14, s.getVersion());
-            ps.setLong(15, s.getCreatedAt());
-            ps.setLong(16, s.getUpdatedAt());
+            ps.setString(14, s.getSessionType() == null ? SessionType.DEMAND.name() : s.getSessionType().name());
+            ps.setInt(15, s.getVersion());
+            ps.setLong(16, s.getCreatedAt());
+            ps.setLong(17, s.getUpdatedAt());
             return ps;
         }, kh);
         Number key = kh.getKey();
@@ -160,7 +171,7 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
                 SET plan_id = ?, status = ?, current_node = ?, step_count = ?,
                     last_checkpoint_event_id = ?, cache_key = ?,
                     uuid = ?, intent = ?, project_paths = ?, rerun_from_node = ?,
-                    source_branch = ?, target_branch = ?,
+                    source_branch = ?, target_branch = ?, session_type = ?,
                     version = version + 1,
                     updated_at = strftime('%s','now')
                 WHERE id = ? AND version = ?
@@ -170,6 +181,7 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
                 s.getLastCheckpointEventId(), s.getCacheKey(),
                 s.getUuid(), s.getIntent(), s.getProjectPaths(), s.getRerunFromNode(),
                 s.getSourceBranch(), s.getTargetBranch(),
+                s.getSessionType() == null ? SessionType.DEMAND.name() : s.getSessionType().name(),
                 s.getId(), s.getVersion());
         if (rows == 0) {
             return Optional.empty();
@@ -214,6 +226,22 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
         return jdbc.update(
                 "UPDATE agent_session SET rerun_from_node = NULL, updated_at = strftime('%s','now') WHERE id = ?",
                 id);
+    }
+
+    @Override
+    public List<AgentSession> listRecentBySessionType(String sessionType, int limit) {
+        return jdbc.query(LIST_RECENT_BY_SESSION_TYPE_SQL, mapper, sessionType, limit);
+    }
+
+    private static SessionType parseSessionType(String value) {
+        if (value == null || value.isBlank()) {
+            return SessionType.DEMAND; // backward compatibility
+        }
+        try {
+            return SessionType.valueOf(value);
+        } catch (IllegalArgumentException e) {
+            return SessionType.DEMAND;
+        }
     }
 
     private static Long nullableLong(Object o) {

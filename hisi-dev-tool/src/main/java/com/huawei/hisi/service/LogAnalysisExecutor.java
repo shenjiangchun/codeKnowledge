@@ -30,7 +30,6 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class LogAnalysisExecutor {
 
-    private final RootCauseAnalysisService rootCauseAnalysisService;
     private final LogAnalysisRepository repository;
     private final SnowflakeIdGenerator snowflakeIdGenerator;
     private final FingerprintService fingerprintService;

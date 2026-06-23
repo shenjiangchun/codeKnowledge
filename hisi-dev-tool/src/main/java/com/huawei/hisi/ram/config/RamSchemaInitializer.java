@@ -60,6 +60,7 @@ public class RamSchemaInitializer {
         addColumnIfNotExists("agent_session", "rerun_from_node", "TEXT");
         addColumnIfNotExists("agent_session", "source_branch", "TEXT");
         addColumnIfNotExists("agent_session", "target_branch", "TEXT");
+        addColumnIfNotExists("agent_session", "session_type", "TEXT DEFAULT 'DEMAND'");
 
         // Create indexes on new columns AFTER migration ensures they exist
         addIndexIfNotExists("idx_agent_session_uuid", "agent_session(uuid)");

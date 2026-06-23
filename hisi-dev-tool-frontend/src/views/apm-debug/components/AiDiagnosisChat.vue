@@ -3,6 +3,7 @@ import { ref, computed, nextTick, onUnmounted } from 'vue'
 import { useApmStore } from '@/stores/apmStore'
 import { claudeApi } from '@/api/claude'
 import type { StreamCallbacks } from '@/types/session'
+import { renderMarkdown } from '@/utils/markdown'
 
 const store = useApmStore()
 
@@ -381,22 +382,6 @@ onUnmounted(() => {
   window.removeEventListener('mousemove', onDragMove)
   window.removeEventListener('mouseup', onDragEnd)
 })
-
-// Simple markdown rendering for chat messages
-function renderMarkdown(text: string): string {
-  if (!text) return ''
-  return text
-    // Code blocks
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="code-block"><code>$2</code></pre>')
-    // Inline code
-    .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
-    // Bold
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    // Italic
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Line breaks
-    .replace(/\n/g, '<br>')
-}
 </script>
 
 <template>

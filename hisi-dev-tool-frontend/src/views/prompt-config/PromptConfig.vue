@@ -77,6 +77,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { usePromptStore } from '@/stores/promptStore'
+import { renderMarkdown } from '@/utils/markdown'
 
 const promptStore = usePromptStore()
 
@@ -115,11 +116,7 @@ const previewContent = computed(() => {
   for (const [key, value] of Object.entries(previewVariables.value)) {
     content = content.replace(new RegExp(`#\\{${key}\\}`, 'g'), value)
   }
-  return content
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br>')
+  return renderMarkdown(content)
 })
 
 // 方法

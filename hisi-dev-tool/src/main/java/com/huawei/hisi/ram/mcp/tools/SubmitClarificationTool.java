@@ -3,7 +3,7 @@ package com.huawei.hisi.ram.mcp.tools;
 import com.huawei.hisi.ram.hitl.HitlQueue;
 import com.huawei.hisi.ram.mcp.McpTool;
 import com.huawei.hisi.ram.mcp.RamDagNodes;
-import com.huawei.hisi.ram.orchestrator.ExecutionResult;
+import com.huawei.hisi.workflow.ExecutionResult;
 import com.huawei.hisi.ram.orchestrator.RequirementAnalysisOrchestrator;
 import org.springframework.stereotype.Component;
 

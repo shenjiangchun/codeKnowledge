@@ -2,7 +2,7 @@ package com.huawei.hisi.ram.nodes;
 
 import com.huawei.hisi.ram.contract.SchemaValidator;
 import com.huawei.hisi.ram.contract.ValidationResult;
-import com.huawei.hisi.ram.orchestrator.DagNode;
+import com.huawei.hisi.workflow.DagNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 

@@ -10,16 +10,16 @@ import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.AgentSession;
 import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.model.SessionStatus;
-import com.huawei.hisi.ram.nodes.Phase2AnalysisNode;
-import com.huawei.hisi.ram.nodes.Phase2LlmClient;
-import com.huawei.hisi.ram.nodes.ProjectOverviewNode;
+import com.huawei.hisi.ram.model.SessionType;
 import com.huawei.hisi.ram.nodes.TechPlanNode;
-import com.huawei.hisi.ram.orchestrator.InputsHasher;
+import com.huawei.hisi.workflow.InputsHasher;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
+import com.huawei.hisi.ram.service.SessionMappingService;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import jakarta.servlet.http.HttpServletResponse;
@@ -52,11 +52,13 @@ import java.util.concurrent.atomic.AtomicReference;
  *   <li>{@code POST /sessions} – pre-creates a session row, returns the UUID
  *       handle, then runs {@code analyze_requirement} asynchronously against
  *       the pre-allocated id.</li>
+ *   <li>{@code GET /sessions} – list recent sessions for history/switching.</li>
  *   <li>{@code GET /sessions/{sid}} – rejoin info: status / current seq /
  *       clarifyPending flag.</li>
  *   <li>{@code GET /sessions/{sid}/stream} – Server-Sent-Events tail of
  *       {@code agent_event} rows for that session. Accepts an optional
  *       {@code ?afterSeq=N} query param to start polling beyond a seq.</li>
+ *   <li>{@code GET /sessions/{sid}/events} – replay all events for session recovery.</li>
  *   <li>{@code POST /sessions/{sid}/clarify} – submits clarification answers.</li>
  *   <li>{@code POST /sessions/{sid}/resume} – resumes a parked session.</li>
  *   <li>{@code POST /sessions/{sid}/abort} – signals abort, appends an
@@ -65,11 +67,15 @@ import java.util.concurrent.atomic.AtomicReference;
  *       TechPlanNode execution (not part of the auto DAG pipeline); returns
  *       202 Accepted, runs asynchronously, and emits a CHECKPOINT SSE event
  *       on completion.</li>
+ *   <li>{@code POST /sessions/{sid}/rerun-from/{nodeName}} – force re-execute from node.</li>
+ *   <li>{@code GET /sessions/{sid}/clarify-rounds} – list all clarify Q&A rounds.</li>
+ *   <li>{@code POST /sessions/{sid}/rerun-from-round/{roundNo}} – rerun from clarify round.</li>
+ *   <li>{@code GET /health} – backend liveness + startedAt for restart detection.</li>
  * </ul>
  *
  * <p>The frontend-facing {@code sessionId} is a UUID. The backend long
  * {@link AgentSession#getId()} is allocated synchronously in
- * {@link #startSession} so the UUID->id mapping in {@link #sessionIdMap} is
+ * {@link #startSession} so the UUID->id mapping in {@link SessionMappingService} is
  * always populated <em>before</em> the async DAG dispatch starts.
  */
 @RestController
@@ -79,17 +85,19 @@ public class RamController {
     private static final Logger log = LoggerFactory.getLogger(RamController.class);
 
     private static final long SSE_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(30);
-    private static final long POLL_INTERVAL_MS = 500L;
-    private static final int MAX_SESSION_MAPPINGS = 10_000;
+
+    @Value("${ram.sse.pool-size:2}")
+    private int ssePoolSize;
+
+    @Value("${ram.sse.poll-interval-ms:500}")
+    private long ssePollIntervalMs;
 
     private final RamMcpServer ramMcpServer;
     private final AgentEventRepository eventRepository;
     private final AgentSessionRepository sessionRepository;
     private final ObjectMapper objectMapper;
     private final TechPlanNode techPlanNode;
-    private final ProjectOverviewNode projectOverviewNode;
-    private final Phase2AnalysisNode phase2AnalysisNode;
-    private final Phase2LlmClient phase2LlmClient;
+    private final SessionMappingService sessionMappingService;
 
     private final long startedAt = System.currentTimeMillis();
 
@@ -98,52 +106,14 @@ public class RamController {
     private final ExecutorService ownedAsyncExecutor;
     private final ScheduledExecutorService ownedScheduler;
 
-    /** Maps the frontend UUID handle to the backend long session id (LRU, capped). */
-    private final Map<String, Long> sessionIdMap = Collections.synchronizedMap(
-            new LinkedHashMap<String, Long>(256, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<String, Long> eldest) {
-                    return size() > MAX_SESSION_MAPPINGS;
-                }
-            });
     /** Aborted UUID handles (bounded LRU set). */
     private final Set<String> abortedSessions = Collections.synchronizedSet(
             Collections.newSetFromMap(new LinkedHashMap<String, Boolean>(256, 0.75f, true) {
                 @Override
                 protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
-                    return size() > MAX_SESSION_MAPPINGS;
+                    return size() > 10_000;
                 }
             }));
-
-    /** Recover UUID→id mappings from DB on startup so existing frontend connections still work. */
-    @jakarta.annotation.PostConstruct
-    void recoverSessionMappings() {
-        try {
-            List<AgentSession> recent = sessionRepository.listRecentExcludingUserId("merge-analysis", MAX_SESSION_MAPPINGS);
-            for (AgentSession s : recent) {
-                if (s.getUuid() != null && !s.getUuid().isBlank()) {
-                    sessionIdMap.put(s.getUuid(), s.getId());
-                }
-            }
-            log.info("[RAM] Recovered {} session UUID mappings from DB", sessionIdMap.size());
-        } catch (Exception e) {
-            log.warn("[RAM] Failed to recover session mappings: {}", e.getMessage());
-        }
-    }
-
-    /** Resolve frontend UUID handle to backend long ID, with DB fallback for post-restart lookups. */
-    private Long resolveBackendId(String handle) {
-        if (handle == null || handle.isBlank()) return null;
-        Long id = sessionIdMap.get(handle);
-        if (id != null) return id;
-        Optional<AgentSession> found = sessionRepository.findByUuid(handle);
-        if (found.isPresent()) {
-            id = found.get().getId();
-            sessionIdMap.put(handle, id);
-            return id;
-        }
-        return null;
-    }
 
     @org.springframework.beans.factory.annotation.Autowired
     public RamController(RamMcpServer ramMcpServer,
@@ -151,16 +121,14 @@ public class RamController {
                          AgentSessionRepository sessionRepository,
                          ObjectMapper objectMapper,
                          TechPlanNode techPlanNode,
-                         ProjectOverviewNode projectOverviewNode,
-                         Phase2AnalysisNode phase2AnalysisNode,
-                         Phase2LlmClient phase2LlmClient) {
+                         SessionMappingService sessionMappingService) {
         // Bounded thread pool to prevent resource exhaustion under concurrent load
         ExecutorService async = Executors.newFixedThreadPool(10, r -> {
             Thread t = new Thread(r, "ram-controller-async");
             t.setDaemon(true);
             return t;
         });
-        ScheduledExecutorService sched = Executors.newScheduledThreadPool(2, r -> {
+        ScheduledExecutorService sched = Executors.newScheduledThreadPool(ssePoolSize, r -> {
             Thread t = new Thread(r, "ram-sse-poll");
             t.setDaemon(true);
             return t;
@@ -170,9 +138,7 @@ public class RamController {
         this.sessionRepository = sessionRepository;
         this.objectMapper = objectMapper;
         this.techPlanNode = techPlanNode;
-        this.projectOverviewNode = projectOverviewNode;
-        this.phase2AnalysisNode = phase2AnalysisNode;
-        this.phase2LlmClient = phase2LlmClient;
+        this.sessionMappingService = sessionMappingService;
         this.asyncExecutor = async;
         this.streamScheduler = sched;
         this.ownedAsyncExecutor = async;
@@ -185,9 +151,7 @@ public class RamController {
                   AgentSessionRepository sessionRepository,
                   ObjectMapper objectMapper,
                   TechPlanNode techPlanNode,
-                  ProjectOverviewNode projectOverviewNode,
-                  Phase2AnalysisNode phase2AnalysisNode,
-                  Phase2LlmClient phase2LlmClient,
+                  SessionMappingService sessionMappingService,
                   java.util.concurrent.Executor asyncExecutor,
                   ScheduledExecutorService streamScheduler) {
         this.ramMcpServer = ramMcpServer;
@@ -195,13 +159,13 @@ public class RamController {
         this.sessionRepository = sessionRepository;
         this.objectMapper = objectMapper;
         this.techPlanNode = techPlanNode;
-        this.projectOverviewNode = projectOverviewNode;
-        this.phase2AnalysisNode = phase2AnalysisNode;
-        this.phase2LlmClient = phase2LlmClient;
+        this.sessionMappingService = sessionMappingService;
         this.asyncExecutor = asyncExecutor;
         this.streamScheduler = streamScheduler;
         this.ownedAsyncExecutor = null;
         this.ownedScheduler = null;
+        // Set default SSE poll interval for tests (since @Value won't inject)
+        this.ssePollIntervalMs = 500L;
     }
 
     @PreDestroy
@@ -262,7 +226,7 @@ public class RamController {
         // Pre-create the agent_session row so the UUID->id mapping is in place
         // BEFORE the async analyze_requirement runs. This lets the SSE stream
         // attach immediately and emit events live instead of all at the end.
-        AgentSession seeded = sessionRepository.save(AgentSession.newRunning(userId));
+        AgentSession seeded = sessionRepository.save(AgentSession.newRunning(userId, SessionType.DEMAND));
         long backendId = seeded.getId();
         // Persist UUID, intent, project_paths to DB so they survive restart
         seeded.setUuid(handle);
@@ -271,7 +235,7 @@ public class RamController {
             try { seeded.setProjectPaths(objectMapper.writeValueAsString(allPaths)); } catch (Exception ignored) {}
         }
         sessionRepository.update(seeded);
-        sessionIdMap.put(handle, backendId);
+        sessionMappingService.register(handle, backendId);
         log.info("[RAM][POST /sessions] seeded session handle={} backendId={} userId={} projectPath={}",
                 handle, backendId, userId, request.projectPath());
 
@@ -320,7 +284,7 @@ public class RamController {
 
     @GetMapping("/sessions/{sid}")
     public ApiResponse<SessionInfoResponse> sessionInfo(@PathVariable("sid") String handle) {
-        Long backendId = resolveBackendId(handle);
+        Long backendId = sessionMappingService.resolveBackendId(handle);
         if (backendId == null) {
             return ApiResponse.error(404, "session not found: " + handle);
         }
@@ -380,11 +344,11 @@ public class RamController {
                 if (abortedSessions.contains(handle)) {
                     sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
                             "RUN_ABORTED", Map.of("reason", "user_requested")));
-                    log.info("[SSE] handle={} aborted → closing stream", handle);
+                    log.info("[SSE] handle={} aborted -> closing stream", handle);
                     emitter.complete();
                     return;
                 }
-                Long backendId = resolveBackendId(handle);
+                Long backendId = sessionMappingService.resolveBackendId(handle);
                 if (backendId == null) {
                     if (waitTicks.incrementAndGet() > 120L) {
                         emitter.completeWithError(
@@ -408,14 +372,14 @@ public class RamController {
                     if (ev.getType() == EventType.CLARIFY_REQ) {
                         sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
                                 "CLARIFY_REQUIRED", parseJsonPayload(ev.getPayload())));
-                        log.info("[SSE] handle={} CLARIFY_REQ → closing stream", handle);
+                        log.info("[SSE] handle={} CLARIFY_REQ -> closing stream", handle);
                         emitter.complete();
                         return;
                     }
                     if (ev.getType() == EventType.HITL_REQ) {
                         sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
                                 "HITL_REQUIRED", parseJsonPayload(ev.getPayload())));
-                        log.info("[SSE] handle={} HITL_REQ → closing stream", handle);
+                        log.info("[SSE] handle={} HITL_REQ -> closing stream", handle);
                         emitter.complete();
                         return;
                     }
@@ -431,18 +395,18 @@ public class RamController {
                     if (status == SessionStatus.DONE) {
                         sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
                                 "RUN_COMPLETED", Map.of()));
-                        log.info("[SSE] handle={} session DONE → closing stream", handle);
+                        log.info("[SSE] handle={} session DONE -> closing stream", handle);
                         emitter.complete();
                     } else if (status == SessionStatus.FAILED) {
                         Map<String, Object> errPayload = lastErrorPayload(backendId);
                         sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
                                 "RUN_FAILED", errPayload));
-                        log.info("[SSE] handle={} session FAILED → closing stream", handle);
+                        log.info("[SSE] handle={} session FAILED -> closing stream", handle);
                         emitter.complete();
                     } else if (status == SessionStatus.ABORTED) {
                         sendEvent(emitter, syntheticEvent(lastSeq.incrementAndGet(),
                                 "RUN_ABORTED", Map.of()));
-                        log.info("[SSE] handle={} session ABORTED → closing stream", handle);
+                        log.info("[SSE] handle={} session ABORTED -> closing stream", handle);
                         emitter.complete();
                     }
                 }
@@ -465,7 +429,7 @@ public class RamController {
             }
         };
 
-        ScheduledFuture<?> future = streamScheduler.scheduleAtFixedRate(tick, 0L, POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
+        ScheduledFuture<?> future = streamScheduler.scheduleAtFixedRate(tick, 0L, ssePollIntervalMs, TimeUnit.MILLISECONDS);
         futureRef.set(future);
         log.info("[SSE] stream opened handle={} afterSeq={}", handle, afterSeq);
         emitter.onCompletion(() -> {
@@ -563,7 +527,7 @@ public class RamController {
     @PostMapping("/sessions/{sid}/clarify")
     public ApiResponse<ClarifyResponse> clarify(@PathVariable("sid") String handle,
                                                 @RequestBody ClarifyRequest request) {
-        Long backendId = resolveBackendId(handle);
+        Long backendId = sessionMappingService.resolveBackendId(handle);
         if (backendId == null) {
             return ApiResponse.error(404, "session not found: " + handle);
         }
@@ -574,7 +538,7 @@ public class RamController {
         // this as its SSE afterSeq so it receives all events from the new run.
         long nextSeq = eventRepository.findMaxSeq(backendId);
 
-        // ★ Async dispatch: like startSession and confirm, the orchestrator runs
+        // Async dispatch: like startSession and confirm, the orchestrator runs
         // in the background.  The frontend picks up CLARIFY_REQ / HITL_REQ /
         // CHECKPOINT / RUN_COMPLETED via SSE — no need to block the HTTP thread.
         Map<String, Object> args = Map.of("session_id", backendId, "answers", answers);
@@ -602,7 +566,7 @@ public class RamController {
 
     @PostMapping("/sessions/{sid}/resume")
     public ApiResponse<ResumeResponse> resume(@PathVariable("sid") String handle) {
-        Long backendId = resolveBackendId(handle);
+        Long backendId = sessionMappingService.resolveBackendId(handle);
         if (backendId == null) {
             return ApiResponse.error(404, "session not found: " + handle);
         }
@@ -625,7 +589,7 @@ public class RamController {
     @PostMapping("/sessions/{sid}/confirm")
     public ApiResponse<ConfirmResponse> confirm(@PathVariable("sid") String handle,
                                                  @RequestBody ConfirmRequest request) {
-        Long backendId = resolveBackendId(handle);
+        Long backendId = sessionMappingService.resolveBackendId(handle);
         if (backendId == null) {
             return ApiResponse.error(404, "session not found: " + handle);
         }
@@ -667,7 +631,7 @@ public class RamController {
             org.springframework.http.HttpStatus.ACCEPTED)
     public ApiResponse<TechPlanExecuteResponse> executeTechPlan(
             @PathVariable("sid") String handle) {
-        Long backendId = resolveBackendId(handle);
+        Long backendId = sessionMappingService.resolveBackendId(handle);
         if (backendId == null) {
             return ApiResponse.error(404, "session not found: " + handle);
         }
@@ -719,7 +683,7 @@ public class RamController {
         sessionOpt.get().setStatus(SessionStatus.RUNNING);
         sessionRepository.update(sessionOpt.get());
 
-        // ★ Async dispatch — same pattern as clarify/confirm endpoints.
+        // Async dispatch — same pattern as clarify/confirm endpoints.
         // TechPlanNode calls Claude with KG+FS tools (up to 10 rounds),
         // then the DagExecutor appends a CHECKPOINT event.
         CompletableFuture.runAsync(() -> {
@@ -770,41 +734,6 @@ public class RamController {
     }
 
     /**
-     * Find the latest phase2_analysis checkpoint and merge KG output with LLM output.
-     * This is needed because frontend expects KG fields (core_methods, upstream_chains, etc.)
-     * which are stored in kgOutput, not in the LLM output.
-     */
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> findLatestPhase2Checkpoint(long backendId) {
-        List<AgentEvent> events = eventRepository.findBySessionId(backendId);
-        for (int i = events.size() - 1; i >= 0; i--) {
-            AgentEvent ev = events.get(i);
-            if (ev.getType() != EventType.CHECKPOINT) continue;
-            Map<String, Object> payload = parseJsonPayload(ev.getPayload());
-            if (payload == null) continue;
-            if (!"phase2_analysis".equals(payload.get("nodeName"))) continue;
-
-            // Merge output (LLM) and kgOutput (KG data)
-            Map<String, Object> result = new LinkedHashMap<>();
-
-            // Add KG output fields first (these are what frontend expects for detailed data)
-            Object kgOut = payload.get("kgOutput");
-            if (kgOut instanceof Map<?, ?> kg) {
-                kg.forEach((k, v) -> result.put(String.valueOf(k), v));
-            }
-
-            // Add/override with LLM output (for markdown_report, analysis_summary, etc.)
-            Object out = payload.get("output");
-            if (out instanceof Map<?, ?> llm) {
-                llm.forEach((k, v) -> result.put(String.valueOf(k), v));
-            }
-
-            return result;
-        }
-        return null;
-    }
-
-    /**
      * Reconstructs the original user intent (requirement description) from
      * the session's initial input event.
      */
@@ -844,7 +773,7 @@ public class RamController {
         AgentEvent ev = AgentEvent.builder()
                 .sessionId(backendId)
                 .type(EventType.CHECKPOINT)
-                .payload(toJson(payload, "tech_plan"))
+                .payload(toJson(payload))
                 .idempotencyKey(key)
                 .inputsHash(inputsHash)
                 .circuitState("OK")
@@ -863,7 +792,7 @@ public class RamController {
         AgentEvent ev = AgentEvent.builder()
                 .sessionId(backendId)
                 .type(EventType.ERROR)
-                .payload(toJson(payload, "tech_plan"))
+                .payload(toJson(payload))
                 .idempotencyKey(key)
                 .circuitState("OK")
                 .validatorStatus("FAIL")
@@ -884,7 +813,7 @@ public class RamController {
 
     @PostMapping("/sessions/{sid}/abort")
     public ApiResponse<AbortResponse> abort(@PathVariable("sid") String handle) {
-        Long backendId = resolveBackendId(handle);
+        Long backendId = sessionMappingService.resolveBackendId(handle);
         if (backendId == null) {
             // mark abort flag anyway so a streaming client gets the signal
             abortedSessions.add(handle);
@@ -898,7 +827,7 @@ public class RamController {
         AgentEvent ev = AgentEvent.builder()
                 .sessionId(backendId)
                 .type(EventType.ERROR)
-                .payload(toJson(payload, handle))
+                .payload(toJson(payload))
                 .idempotencyKey(key)
                 .circuitState("OK")
                 .validatorStatus("OK")
@@ -913,19 +842,19 @@ public class RamController {
         return ApiResponse.success(new AbortResponse(true));
     }
 
-    private String toJson(Map<String, Object> payload, String handle) {
+    private String toJson(Map<String, Object> payload) {
         try {
             return objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException e) {
-            log.warn("Failed to serialize abort payload to JSON for handle={} detail={}",
-                    handle, e.getOriginalMessage());
+            log.warn("Failed to serialize payload to JSON detail={}",
+                    e.getOriginalMessage());
             return "{}";
         }
     }
 
     /** Test-only seam to pre-populate the UUID-to-backend mapping. */
     void registerSessionMapping(String handle, long backendId) {
-        sessionIdMap.put(handle, backendId);
+        sessionMappingService.registerForTest(handle, backendId);
     }
 
     /** Test-only seam: visible to unit tests for invoking the SSE polling Runnable. */
@@ -948,12 +877,19 @@ public class RamController {
 
     public record SessionSummary(String sessionId, String status, String currentNode,
                                   String intent, String projectPaths,
+                                  String sessionType,
                                   long createdAt, long updatedAt) {}
 
     @GetMapping("/sessions")
     public ApiResponse<List<SessionSummary>> listSessions(
-            @RequestParam(value = "limit", defaultValue = "50") int limit) {
-        List<AgentSession> sessions = sessionRepository.listRecentExcludingUserId("merge-analysis", Math.min(limit, 200));
+            @RequestParam(value = "limit", defaultValue = "50") int limit,
+            @RequestParam(value = "sessionType", required = false) String sessionType) {
+        List<AgentSession> sessions;
+        if (sessionType != null && !sessionType.isBlank()) {
+            sessions = sessionRepository.listRecentBySessionType(sessionType, Math.min(limit, 200));
+        } else {
+            sessions = sessionRepository.listRecentExcludingUserId("merge-analysis", Math.min(limit, 200));
+        }
         List<SessionSummary> summaries = sessions.stream()
                 .map(s -> new SessionSummary(
                         s.getUuid(),
@@ -961,6 +897,7 @@ public class RamController {
                         s.getCurrentNode(),
                         s.getIntent(),
                         s.getProjectPaths(),
+                        s.getSessionType() == null ? SessionType.DEMAND.name() : s.getSessionType().name(),
                         s.getCreatedAt() * 1000L,
                         s.getUpdatedAt() * 1000L))
                 .toList();
@@ -974,7 +911,7 @@ public class RamController {
     @GetMapping("/sessions/{sid}/events")
     public ApiResponse<List<Map<String, Object>>> sessionEvents(
             @PathVariable("sid") String handle) {
-        Long backendId = resolveBackendId(handle);
+        Long backendId = sessionMappingService.resolveBackendId(handle);
         if (backendId == null) return ApiResponse.error(404, "session not found");
         List<AgentEvent> events = eventRepository.findBySessionId(backendId);
         List<Map<String, Object>> result = events.stream()
@@ -1008,7 +945,7 @@ public class RamController {
     public ApiResponse<Map<String, Object>> rerunFromNode(
             @PathVariable("sid") String handle,
             @PathVariable("nodeName") String nodeName) {
-        Long backendId = resolveBackendId(handle);
+        Long backendId = sessionMappingService.resolveBackendId(handle);
         if (backendId == null) return ApiResponse.error(404, "session not found");
 
         AgentSession session = sessionRepository.findById(backendId).orElse(null);
@@ -1022,7 +959,7 @@ public class RamController {
         // Append NODES_CLEARED event so frontend + page-refresh correctly reset downstream statuses
         List<String> clearedNodes = computeRamClearedNodes(nodeName);
         try {
-            Map<String, Object> payload = new java.util.LinkedHashMap<>();
+            Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("clearedNodes", clearedNodes);
             AgentEvent ev = AgentEvent.builder()
                     .sessionId(backendId)
@@ -1070,7 +1007,7 @@ public class RamController {
 
     @GetMapping("/sessions/{sid}/clarify-rounds")
     public ApiResponse<List<ClarifyRoundSummary>> listClarifyRounds(@PathVariable("sid") String handle) {
-        Long backendId = resolveBackendId(handle);
+        Long backendId = sessionMappingService.resolveBackendId(handle);
         if (backendId == null) return ApiResponse.error(404, "session not found");
 
         List<AgentEvent> events = eventRepository.findBySessionId(backendId);
@@ -1115,7 +1052,7 @@ public class RamController {
     public ApiResponse<Map<String, Object>> rerunFromRound(
             @PathVariable("sid") String handle,
             @PathVariable("roundNo") int roundNo) {
-        Long backendId = resolveBackendId(handle);
+        Long backendId = sessionMappingService.resolveBackendId(handle);
         if (backendId == null) return ApiResponse.error(404, "session not found");
 
         AgentSession session = sessionRepository.findById(backendId).orElse(null);
@@ -1164,411 +1101,5 @@ public class RamController {
                 "rerunFromNode", "impact",
                 "dispatched", true,
                 "nextSeq", nextSeq));
-    }
-
-    // ---------------------------------------------------------------------
-    // Project Status Analysis (项目现状分析)
-    // ---------------------------------------------------------------------
-
-    public record StatusStartRequest(String projectPath, String mode, String question) {}
-    public record StatusStartResponse(String sessionId) {}
-    public record StatusReportResponse(String status, Map<String, Object> report) {}
-
-    /**
-     * Start a project status analysis session.
-     * POST /api/ram/status/start
-     *
-     * <p>Creates a new session and executes ProjectOverviewNode asynchronously.</p>
-     */
-    @PostMapping("/status/start")
-    public ApiResponse<StatusStartResponse> startStatusAnalysis(@RequestBody StatusStartRequest request) {
-        log.info("[RAM][POST /status/start] request={}", request);
-        if (request == null || request.projectPath() == null || request.projectPath().isBlank()) {
-            return ApiResponse.error(400, "projectPath is required");
-        }
-
-        String handle = UUID.randomUUID().toString();
-        String mode = request.mode() != null ? request.mode() : "quick";
-        String question = request.question() != null ? request.question() : "";
-
-        // Pre-create session
-        AgentSession seeded = sessionRepository.save(AgentSession.newRunning("status-analysis"));
-        long backendId = seeded.getId();
-        seeded.setUuid(handle);
-        seeded.setIntent("项目现状分析: " + (question.isBlank() ? request.projectPath() : question));
-        try {
-            seeded.setProjectPaths(objectMapper.writeValueAsString(List.of(request.projectPath())));
-        } catch (Exception ignored) {}
-        sessionRepository.update(seeded);
-        sessionIdMap.put(handle, backendId);
-
-        log.info("[RAM][POST /status/start] seeded session handle={} backendId={} projectPath={} mode={}",
-                handle, backendId, request.projectPath(), mode);
-
-        // Async execution with 5-minute timeout
-        CompletableFuture.runAsync(() -> {
-            try {
-                Map<String, Object> input = new LinkedHashMap<>();
-                input.put("projectPath", request.projectPath());
-                input.put("mode", mode);
-                input.put("question", question);
-
-                log.info("[RAM][status] executing ProjectOverviewNode for handle={} backendId={} question={}", handle, backendId, question);
-                Map<String, Object> output = projectOverviewNode.execute(input);
-                Map<String, Object> safeOutput = output == null ? Map.of() : output;
-
-                // Append CHECKPOINT event
-                Map<String, Object> payload = new LinkedHashMap<>();
-                payload.put("nodeName", "project_overview");
-                payload.put("output", safeOutput);
-                String key = "ckpt-" + backendId + "-project_overview-" + System.nanoTime();
-                AgentEvent ev = AgentEvent.builder()
-                        .sessionId(backendId)
-                        .type(EventType.CHECKPOINT)
-                        .payload(toJson(payload, "project_overview"))
-                        .idempotencyKey(key)
-                        .circuitState("OK")
-                        .validatorStatus("OK")
-                        .createdAt(System.currentTimeMillis() / 1000L)
-                        .build();
-                eventRepository.append(ev);
-
-                sessionRepository.updateStatus(backendId, SessionStatus.DONE);
-                log.info("[RAM][status] done handle={} output.keys={}", handle, safeOutput.keySet());
-            } catch (Exception e) {
-                log.error("[RAM][status] async dispatch failed handle={} error={}", handle, e.getMessage(), e);
-                appendStatusError(backendId, e);
-                sessionRepository.updateStatus(backendId, SessionStatus.FAILED);
-            }
-        }, asyncExecutor)
-        .orTimeout(5, TimeUnit.MINUTES)
-        .exceptionally(ex -> {
-            log.error("[RAM][status] timeout for handle={} backendId={}: {}", handle, backendId, ex.getMessage());
-            appendStatusError(backendId, "Analysis timed out after 5 minutes: " + ex.getMessage());
-            sessionRepository.updateStatus(backendId, SessionStatus.FAILED);
-            return null;
-        });
-
-        return ApiResponse.success(new StatusStartResponse(handle));
-    }
-
-    /**
-     * Get the status analysis report.
-     * GET /api/ram/status/{sessionId}/report
-     *
-     * <p>Returns the latest project_overview CHECKPOINT output.</p>
-     */
-    @GetMapping("/status/{sid}/report")
-    public ApiResponse<StatusReportResponse> getStatusReport(@PathVariable("sid") String handle) {
-        Long backendId = resolveBackendId(handle);
-        if (backendId == null) {
-            return ApiResponse.error(404, "session not found: " + handle);
-        }
-
-        Optional<AgentSession> sessionOpt = sessionRepository.findById(backendId);
-        if (sessionOpt.isEmpty()) {
-            return ApiResponse.error(404, "session not found: " + backendId);
-        }
-
-        String statusStr = sessionOpt.get().getStatus() != null
-                ? sessionOpt.get().getStatus().name() : "UNKNOWN";
-
-        Map<String, Object> report = findLatestCheckpointOutput(backendId, "project_overview");
-        if (report == null) {
-            // Return default structure with all expected fields when checkpoint not found
-            report = createDefaultStatusReport(statusStr);
-        }
-
-        return ApiResponse.success(new StatusReportResponse(statusStr, report));
-    }
-
-    /**
-     * Create default status report with all expected frontend fields.
-     */
-    private Map<String, Object> createDefaultStatusReport(String status) {
-        Map<String, Object> report = new LinkedHashMap<>();
-        report.put("success", false);
-        report.put("message", status.equals("RUNNING")
-                ? "分析正在执行中，请稍候..."
-                : "分析尚未完成或未生成结果");
-        report.put("markdown_report", "");
-        report.put("question", "");
-        report.put("entry_points_summary", "");
-        report.put("core_call_chains", List.of());
-        report.put("tech_stack", Map.of());
-        report.put("recommendations", List.of());
-        return report;
-    }
-
-    private void appendStatusError(long backendId, Throwable t) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("nodeName", "project_overview");
-        payload.put("error", String.valueOf(t.getMessage()));
-        payload.put("type", t.getClass().getName());
-        String key = "error-" + backendId + "-project_overview-" + System.nanoTime();
-        AgentEvent ev = AgentEvent.builder()
-                .sessionId(backendId)
-                .type(EventType.ERROR)
-                .payload(toJson(payload, "project_overview"))
-                .idempotencyKey(key)
-                .circuitState("OK")
-                .validatorStatus("FAIL")
-                .createdAt(System.currentTimeMillis() / 1000L)
-                .build();
-        try {
-            eventRepository.append(ev);
-        } catch (RuntimeException e) {
-            log.warn("appendStatusError failed for backendId={}", backendId, e);
-        }
-    }
-
-    private void appendStatusError(long backendId, String message) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("nodeName", "project_overview");
-        payload.put("error", message);
-        payload.put("type", "TimeoutError");
-        String key = "error-" + backendId + "-project_overview-" + System.nanoTime();
-        AgentEvent ev = AgentEvent.builder()
-                .sessionId(backendId)
-                .type(EventType.ERROR)
-                .payload(toJson(payload, "project_overview"))
-                .idempotencyKey(key)
-                .circuitState("OK")
-                .validatorStatus("FAIL")
-                .createdAt(System.currentTimeMillis() / 1000L)
-                .build();
-        try {
-            eventRepository.append(ev);
-        } catch (RuntimeException e) {
-            log.warn("appendStatusError failed for backendId={}", backendId, e);
-        }
-    }
-
-    // ---------------------------------------------------------------------
-    // Phase2 Precise Location Analysis (精确位置分析)
-    // ---------------------------------------------------------------------
-
-    public record Phase2StartRequest(String sessionId, String question, java.util.List<String> focusAreas) {}
-    public record Phase2StartResponse(String phase2SessionId, String status) {}
-    public record Phase2ReportResponse(String status, Map<String, Object> report) {}
-
-    /**
-     * Start a phase 2 precise location analysis.
-     * POST /api/ram/status/phase2/start
-     *
-     * <p>Creates a new session and executes Phase2AnalysisNode asynchronously,
-     * then generates a precise location report via Phase2LlmClient.</p>
-     */
-    @PostMapping("/status/phase2/start")
-    public ApiResponse<Phase2StartResponse> startPhase2Analysis(@RequestBody Phase2StartRequest request) {
-        log.info("[RAM][POST /status/phase2/start] request={}", request);
-        if (request == null || request.sessionId() == null || request.sessionId().isBlank()) {
-            return ApiResponse.error(400, "sessionId is required");
-        }
-        if (request.question() == null || request.question().isBlank()) {
-            return ApiResponse.error(400, "question is required");
-        }
-
-        // Resolve the parent session to get projectPath
-        Long parentBackendId = resolveBackendId(request.sessionId());
-        if (parentBackendId == null) {
-            return ApiResponse.error(404, "parent session not found: " + request.sessionId());
-        }
-        Optional<AgentSession> parentSession = sessionRepository.findById(parentBackendId);
-        if (parentSession.isEmpty()) {
-            return ApiResponse.error(404, "parent session row missing: " + parentBackendId);
-        }
-
-        // Extract projectPath from parent session
-        String projectPath = extractProjectPath(parentSession.get());
-        if (projectPath == null || projectPath.isBlank()) {
-            return ApiResponse.error(400, "parent session has no projectPath");
-        }
-
-        // Create a new phase2 session with a new UUID
-        String handle = UUID.randomUUID().toString();
-        AgentSession seeded = sessionRepository.save(AgentSession.newRunning("phase2-analysis"));
-        long backendId = seeded.getId();
-        seeded.setUuid(handle);
-        seeded.setIntent("Phase2精确位置分析: " + request.question());
-        try {
-            seeded.setProjectPaths(objectMapper.writeValueAsString(List.of(projectPath)));
-        } catch (Exception ignored) {}
-        sessionRepository.update(seeded);
-        sessionIdMap.put(handle, backendId);
-
-        log.info("[RAM][POST /status/phase2/start] seeded session handle={} backendId={} parentSession={} projectPath={} question={}",
-                handle, backendId, request.sessionId(), projectPath, request.question());
-
-        // Async execution with 5-minute timeout
-        CompletableFuture.runAsync(() -> {
-            try {
-                Map<String, Object> input = new LinkedHashMap<>();
-                input.put("projectPath", projectPath);
-                input.put("question", request.question());
-                if (request.focusAreas() != null && !request.focusAreas().isEmpty()) {
-                    input.put("focusAreas", request.focusAreas());
-                }
-
-                log.info("[RAM][phase2] executing Phase2AnalysisNode for handle={} backendId={} question={}",
-                        handle, backendId, request.question());
-
-                // Step 1: KG data collection
-                Map<String, Object> kgOutput = phase2AnalysisNode.execute(input);
-                if (kgOutput == null || !Boolean.TRUE.equals(kgOutput.get("success"))) {
-                    log.error("[RAM][phase2] Phase2AnalysisNode failed for handle={}", handle);
-                    appendPhase2Error(backendId, "Phase2AnalysisNode execution failed");
-                    sessionRepository.updateStatus(backendId, SessionStatus.FAILED);
-                    return;
-                }
-
-                // Extract Phase2Context from output
-                Object contextObj = kgOutput.get("phase2_context");
-                if (!(contextObj instanceof com.huawei.hisi.ram.model.Phase2Context context)) {
-                    log.error("[RAM][phase2] Phase2Context missing for handle={}", handle);
-                    appendPhase2Error(backendId, "Phase2Context missing from KG output");
-                    sessionRepository.updateStatus(backendId, SessionStatus.FAILED);
-                    return;
-                }
-
-                // Remove Phase2Context from kgOutput before serialization —
-                // it uses record-style getters that Jackson can't serialize.
-                kgOutput.remove("phase2_context");
-
-                // Step 2: LLM report generation
-                log.info("[RAM][phase2] generating LLM report for handle={} backendId={}", handle, backendId);
-                Map<String, Object> llmOutput = phase2LlmClient.generate(context, projectPath);
-                Map<String, Object> safeOutput = llmOutput == null ? Map.of() : llmOutput;
-
-                // Append CHECKPOINT event
-                Map<String, Object> payload = new LinkedHashMap<>();
-                payload.put("nodeName", "phase2_analysis");
-                payload.put("output", safeOutput);
-                payload.put("kgOutput", kgOutput);
-                String key = "ckpt-" + backendId + "-phase2_analysis-" + System.nanoTime();
-                AgentEvent ev = AgentEvent.builder()
-                        .sessionId(backendId)
-                        .type(EventType.CHECKPOINT)
-                        .payload(toJson(payload, "phase2_analysis"))
-                        .idempotencyKey(key)
-                        .circuitState("OK")
-                        .validatorStatus("OK")
-                        .createdAt(System.currentTimeMillis() / 1000L)
-                        .build();
-                eventRepository.append(ev);
-
-                sessionRepository.updateStatus(backendId, SessionStatus.DONE);
-                log.info("[RAM][phase2] done handle={} output.keys={}", handle, safeOutput.keySet());
-            } catch (Exception e) {
-                log.error("[RAM][phase2] async dispatch failed handle={} error={}", handle, e.getMessage(), e);
-                appendPhase2Error(backendId, e);
-                sessionRepository.updateStatus(backendId, SessionStatus.FAILED);
-            }
-        }, asyncExecutor)
-        .orTimeout(5, TimeUnit.MINUTES)
-        .exceptionally(ex -> {
-            log.error("[RAM][phase2] timeout or failure for handle={} backendId={}: {}",
-                    handle, backendId, ex.getMessage());
-            appendPhase2Error(backendId, "Analysis timed out after 5 minutes: " + ex.getMessage());
-            sessionRepository.updateStatus(backendId, SessionStatus.FAILED);
-            return null;
-        });
-
-        return ApiResponse.success(new Phase2StartResponse(handle, "RUNNING"));
-    }
-
-    /**
-     * Get the phase2 analysis report.
-     * GET /api/ram/status/phase2/{sessionId}/report
-     *
-     * <p>Returns the latest phase2_analysis CHECKPOINT output.</p>
-     */
-    @GetMapping("/status/phase2/{sid}/report")
-    public ApiResponse<Phase2ReportResponse> getPhase2Report(@PathVariable("sid") String handle) {
-        Long backendId = resolveBackendId(handle);
-        if (backendId == null) {
-            return ApiResponse.error(404, "session not found: " + handle);
-        }
-
-        Optional<AgentSession> sessionOpt = sessionRepository.findById(backendId);
-        if (sessionOpt.isEmpty()) {
-            return ApiResponse.error(404, "session not found: " + backendId);
-        }
-
-        String status = sessionOpt.get().getStatus() != null
-                ? sessionOpt.get().getStatus().name() : "UNKNOWN";
-
-        // Get full payload including both LLM output and KG data
-        Map<String, Object> report = findLatestPhase2Checkpoint(backendId);
-        if (report == null) {
-            report = Map.of("success", false, "message", "分析尚未完成或未生成结果");
-        }
-
-        return ApiResponse.success(new Phase2ReportResponse(status, report));
-    }
-
-    /**
-     * Extract projectPath from parent session's projectPaths field.
-     */
-    @SuppressWarnings("unchecked")
-    private String extractProjectPath(AgentSession session) {
-        String projectPathsJson = session.getProjectPaths();
-        if (projectPathsJson == null || projectPathsJson.isBlank()) {
-            return null;
-        }
-        try {
-            Object parsed = objectMapper.readValue(projectPathsJson, Object.class);
-            if (parsed instanceof java.util.List<?> list && !list.isEmpty()) {
-                return String.valueOf(list.get(0));
-            }
-            return String.valueOf(parsed);
-        } catch (Exception e) {
-            log.warn("[RAM] Failed to parse projectPaths from session {}: {}", session.getId(), e.getMessage());
-            return null;
-        }
-    }
-
-    private void appendPhase2Error(long backendId, Throwable t) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("nodeName", "phase2_analysis");
-        payload.put("error", String.valueOf(t.getMessage()));
-        payload.put("type", t.getClass().getName());
-        String key = "error-" + backendId + "-phase2_analysis-" + System.nanoTime();
-        AgentEvent ev = AgentEvent.builder()
-                .sessionId(backendId)
-                .type(EventType.ERROR)
-                .payload(toJson(payload, "phase2_analysis"))
-                .idempotencyKey(key)
-                .circuitState("OK")
-                .validatorStatus("FAIL")
-                .createdAt(System.currentTimeMillis() / 1000L)
-                .build();
-        try {
-            eventRepository.append(ev);
-        } catch (RuntimeException e) {
-            log.warn("appendPhase2Error failed for backendId={}", backendId, e);
-        }
-    }
-
-    private void appendPhase2Error(long backendId, String message) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("nodeName", "phase2_analysis");
-        payload.put("error", message);
-        payload.put("type", "ExecutionError");
-        String key = "error-" + backendId + "-phase2_analysis-" + System.nanoTime();
-        AgentEvent ev = AgentEvent.builder()
-                .sessionId(backendId)
-                .type(EventType.ERROR)
-                .payload(toJson(payload, "phase2_analysis"))
-                .idempotencyKey(key)
-                .circuitState("OK")
-                .validatorStatus("FAIL")
-                .createdAt(System.currentTimeMillis() / 1000L)
-                .build();
-        try {
-            eventRepository.append(ev);
-        } catch (RuntimeException e) {
-            log.warn("appendPhase2Error failed for backendId={}", backendId, e);
-        }
     }
 }

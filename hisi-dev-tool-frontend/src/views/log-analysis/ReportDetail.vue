@@ -61,7 +61,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { logAnalysisApi } from '@/api/logAnalysis'
 import type { DetailedAnalysisReport } from '@/types/log'
-import { marked } from 'marked'
+import { renderMarkdown } from '@/utils/markdown'
 
 const route = useRoute()
 const router = useRouter()
@@ -93,34 +93,12 @@ const goBack = () => {
   router.push('/log-analysis')
 }
 
-const renderMarkdown = (content: any): string => {
-  if (!content) return ''
-  // If content is an object/array, convert to formatted text first
-  if (typeof content === 'object') {
-    if (Array.isArray(content)) {
-      const items = content.map(item => {
-        if (typeof item === 'object' && item !== null) {
-          return Object.entries(item)
-            .map(([k, v]) => `**${k}:** ${v}`)
-            .join('  \n')
-        }
-        return String(item)
-      }).map(item => `- ${item}`)
-      return marked.parse(items.join('\n\n')) as string
-    }
-    const pairs = Object.entries(content)
-      .map(([k, v]) => `**${k}:** ${typeof v === 'object' ? JSON.stringify(v) : v}`)
-      .join('\n\n')
-    return marked.parse(pairs) as string
-  }
-  return marked.parse(String(content)) as string
-}
 
 const loadReport = async () => {
   loading.value = true
   try {
     const res = await logAnalysisApi.getReport(reportId.value)
-    report.value = res.data
+    report.value = res
   } catch (error: any) {
     if (error.response?.status === 400 || error.message?.includes('尚未完成')) {
       ElMessage.warning('报告正在处理中，请稍后再试')

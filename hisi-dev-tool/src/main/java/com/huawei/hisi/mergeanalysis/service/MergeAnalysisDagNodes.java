@@ -1,6 +1,6 @@
 package com.huawei.hisi.mergeanalysis.service;
 
-import com.huawei.hisi.ram.orchestrator.DagNode;
+import com.huawei.hisi.workflow.DagNode;
 import org.springframework.stereotype.Component;
 
 import java.util.List;

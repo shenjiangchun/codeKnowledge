@@ -6,9 +6,14 @@ import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.AgentSession;
 import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.model.SessionStatus;
+import com.huawei.hisi.ram.model.SessionType;
 import com.huawei.hisi.ram.registry.AgentRegistry;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
+import com.huawei.hisi.workflow.DagExecutor;
+import com.huawei.hisi.workflow.DagNode;
+import com.huawei.hisi.workflow.ExecutionResult;
+import com.huawei.hisi.workflow.InputsHasher;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -51,7 +56,7 @@ public class RequirementAnalysisOrchestrator {
     public ExecutionResult start(String userId,
                                  Map<String, Object> userInput,
                                  List<DagNode> nodes) {
-        AgentSession session = sessionRepo.save(AgentSession.newRunning(userId));
+        AgentSession session = sessionRepo.save(AgentSession.newRunning(userId, SessionType.DEMAND));
         storeInitialInput(session.getId(), userInput);
         return executor.run(nodes, session.getId(), userInput);
     }

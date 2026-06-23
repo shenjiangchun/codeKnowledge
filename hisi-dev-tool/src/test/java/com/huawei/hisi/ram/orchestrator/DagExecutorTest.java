@@ -6,10 +6,15 @@ import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.AgentSession;
 import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.model.SessionStatus;
+import com.huawei.hisi.ram.model.SessionType;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
 import com.huawei.hisi.ram.repository.impl.JdbcAgentEventRepository;
 import com.huawei.hisi.ram.repository.impl.JdbcAgentSessionRepository;
+import com.huawei.hisi.workflow.ClarifyRequiredException;
+import com.huawei.hisi.workflow.DagExecutor;
+import com.huawei.hisi.workflow.DagNode;
+import com.huawei.hisi.workflow.ExecutionResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -54,7 +59,7 @@ class DagExecutorTest {
     @Test
     @DisplayName("runs all nodes and persists CHECKPOINT events")
     void executor_runsAllNodesAndPersistsCheckpoints() {
-        AgentSession s = sessionRepo.save(AgentSession.newRunning("user-exec-1"));
+        AgentSession s = sessionRepo.save(AgentSession.newRunning("user-exec-1", SessionType.DEMAND));
         long sid = s.getId();
 
         DagNode clarify = new FakeNode("clarify", "clarify-v1",
@@ -76,7 +81,7 @@ class DagExecutorTest {
     @Test
     @DisplayName("skips nodes whose inputs hash matches a prior checkpoint")
     void executor_skipsNodesWhoseInputsHashUnchanged() {
-        AgentSession s = sessionRepo.save(AgentSession.newRunning("user-exec-2"));
+        AgentSession s = sessionRepo.save(AgentSession.newRunning("user-exec-2", SessionType.DEMAND));
         long sid = s.getId();
 
         DagNode clarify = new FakeNode("clarify", "clarify-v1",
@@ -97,7 +102,7 @@ class DagExecutorTest {
     @Test
     @DisplayName("emits CLARIFY_REQ event when node throws ClarifyRequiredException")
     void executor_emitsClarifyEvent_whenNodeThrowsClarifyRequired() {
-        AgentSession s = sessionRepo.save(AgentSession.newRunning("user-exec-3"));
+        AgentSession s = sessionRepo.save(AgentSession.newRunning("user-exec-3", SessionType.DEMAND));
         long sid = s.getId();
 
         DagNode clarify = new FakeNode("clarify", "clarify-v1",

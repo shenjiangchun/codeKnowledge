@@ -4,7 +4,7 @@ import com.huawei.hisi.ram.nodes.ClarifyNode;
 import com.huawei.hisi.ram.nodes.ImplementNode;
 import com.huawei.hisi.ram.nodes.VerifyNode;
 import com.huawei.hisi.ram.nodes.impact.ImpactNode;
-import com.huawei.hisi.ram.orchestrator.DagNode;
+import com.huawei.hisi.workflow.DagNode;
 import org.springframework.stereotype.Component;
 
 import java.util.List;

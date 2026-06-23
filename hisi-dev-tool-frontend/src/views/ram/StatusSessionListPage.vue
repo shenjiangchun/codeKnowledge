@@ -3,7 +3,7 @@
  * StatusSessionListPage — 项目现状分析历史会话列表.
  * Route: /ram/status
  */
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { listRamSessions, type SessionSummary } from '@/api/ram'
@@ -13,18 +13,10 @@ const router = useRouter()
 const sessions = ref<SessionSummary[]>([])
 const loading = ref(false)
 
-// 只显示项目现状分析类型的会话
-const statusSessions = computed(() => {
-  return sessions.value.filter(s => {
-    const intent = s.intent || ''
-    return intent.includes('现状分析') || intent.includes('project_overview') || intent.includes('项目概览') || intent.includes('Phase2')
-  })
-})
-
 async function loadSessions(): Promise<void> {
   loading.value = true
   try {
-    sessions.value = await listRamSessions(50)
+    sessions.value = await listRamSessions(50, 'STATUS')
   } catch (e) {
     const msg = e instanceof Error ? e.message : '加载历史会话失败'
     ElMessage.warning(msg)
@@ -36,7 +28,7 @@ async function loadSessions(): Promise<void> {
 onMounted(loadSessions)
 
 function gotoNew(): void {
-  router.push({ name: 'RamInput', query: { mode: 'status' } })
+  router.push({ name: 'RamStatusInput' })
 }
 
 function gotoDetail(sid: string | null): void {
@@ -87,14 +79,14 @@ function truncate(s: string | null, max = 80): string {
 
       <div v-if="loading" class="loading-hint">加载中...</div>
 
-      <div v-else-if="statusSessions.length === 0" class="empty-hint">
+      <div v-else-if="sessions.length === 0" class="empty-hint">
         暂无历史会话，点击「创建新分析」开始
       </div>
 
       <div v-else class="session-cards">
-        <div class="session-count">共 {{ statusSessions.length }} 条记录</div>
+        <div class="session-count">共 {{ sessions.length }} 条记录</div>
         <div
-          v-for="s in statusSessions"
+          v-for="s in sessions"
           :key="s.sessionId ?? s.createdAt"
           class="session-card"
           @click="gotoDetail(s.sessionId)"

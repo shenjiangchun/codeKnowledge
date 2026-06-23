@@ -2,6 +2,18 @@
  * Type definitions for the Requirement Analysis Master (RAM) Phase-1 frontend.
  */
 
+/**
+ * RAM 会话状态。
+ *
+ * 前后端状态映射:
+ * - idle (前端独有，会话未启动)
+ * - running -> RUNNING
+ * - clarify -> WAITING_CLARIFY
+ * - confirm -> WAITING_HITL
+ * - completed -> DONE
+ * - error -> FAILED
+ * - aborted -> ABORTED
+ */
 export type RamStatus = 'idle' | 'running' | 'clarify' | 'confirm' | 'completed' | 'error' | 'aborted'
 
 /**

@@ -10,7 +10,7 @@
  * - reasoning & markdown_report: collapsible sections
  */
 import { computed, ref } from 'vue'
-import { marked } from 'marked'
+import { renderMarkdown } from '@/utils/markdown'
 import MermaidDiagram from './MermaidDiagram.vue'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -61,7 +61,7 @@ const showMarkdownReport = ref(true)
 const renderedMarkdown = computed(() => {
   const md = props.output.markdown_report
   if (!md) return ''
-  return marked(md, { breaks: true }) as string
+  return renderMarkdown(md)
 })
 
 // ─── Computed ────────────────────────────────────────────────────────────────

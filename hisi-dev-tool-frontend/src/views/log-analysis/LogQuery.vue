@@ -17,145 +17,153 @@
                       查询
                     </el-button>
                     <el-button @click="handleReset">重置</el-button>
+                    <el-button
+                      :type="showAdvanced ? 'warning' : 'default'"
+                      @click="showAdvanced = !showAdvanced"
+                    >
+                      {{ showAdvanced ? '收起高级' : '高级查询' }}
+                    </el-button>
                   </div>
                 </div>
               </template>
 
-              <!-- 基础配置 -->
-              <el-row :gutter="16">
-                <el-col :span="6">
-                  <el-form-item label="返回条数" label-width="80px">
-                    <el-input-number
-                      v-model="dslConfig.size"
-                      :min="1"
-                      :max="1000"
-                      :step="10"
-                      controls-position="right"
-                      style="width: 100%"
-                    />
-                  </el-form-item>
-                </el-col>
-                <el-col :span="9">
-                  <el-form-item label="时间范围" label-width="80px">
-                    <el-select v-model="dslConfig.timeRange" style="width: 100%">
-                      <el-option label="最近 5 分钟" value="now-5m" />
-                      <el-option label="最近 15 分钟" value="now-15m" />
-                      <el-option label="最近 30 分钟" value="now-30m" />
-                      <el-option label="最近 1 小时" value="now-1h" />
-                      <el-option label="最近 3 小时" value="now-3h" />
-                      <el-option label="最近 6 小时" value="now-6h" />
-                      <el-option label="最近 12 小时" value="now-12h" />
-                      <el-option label="最近 24 小时" value="now-24h" />
-                      <el-option label="最近 7 天" value="now-7d" />
-                      <el-option label="自定义时间" value="custom" />
-                    </el-select>
-                  </el-form-item>
-                </el-col>
-                <el-col :span="9" v-if="dslConfig.timeRange === 'custom'">
-                  <el-form-item label="自定义" label-width="60px">
-                    <el-date-picker
-                      v-model="dslConfig.customStartTime"
-                      type="datetime"
-                      placeholder="开始时间"
-                      style="width: 48%"
-                    />
-                    <span style="margin: 0 2px">-</span>
-                    <el-date-picker
-                      v-model="dslConfig.customEndTime"
-                      type="datetime"
-                      placeholder="结束时间"
-                      style="width: 48%"
-                    />
-                  </el-form-item>
-                </el-col>
-              </el-row>
-
-              <!-- Must 条件 -->
-              <el-divider content-position="left">Must 条件 (必须满足)</el-divider>
-              <div class="condition-list">
-                <div v-for="(condition, index) in dslConfig.mustConditions" :key="'must-' + index" class="condition-item">
-                  <el-select v-model="condition.field" placeholder="字段" style="width: 140px">
-                    <el-option label="@timestamp" value="@timestamp" />
-                    <el-option label="level" value="level" />
-                    <el-option label="message" value="message" />
-                    <el-option label="service" value="service" />
-                    <el-option label="traceId" value="traceId" />
-                    <el-option label="hostname" value="hostname" />
-                    <el-option label="自定义字段" value="custom" />
-                  </el-select>
-                  <el-input v-if="condition.field === 'custom'" v-model="condition.customField" placeholder="字段名" style="width: 120px" />
-                  <el-select v-model="condition.operator" placeholder="操作符" style="width: 110px">
-                    <el-option label="range" value="range" />
-                    <el-option label="match" value="match" />
-                    <el-option label="match_phrase" value="match_phrase" />
-                    <el-option label="term" value="term" />
-                    <el-option label="wildcard" value="wildcard" />
-                  </el-select>
-                  <el-input v-model="condition.value" placeholder="值" style="flex: 1; min-width: 150px" />
-                  <el-button type="danger" :icon="Delete" circle size="small" @click="removeCondition('must', index)" />
-                </div>
-                <el-button type="primary" size="small" @click="addCondition('must')">
-                  <el-icon><Plus /></el-icon> 添加 Must 条件
-                </el-button>
-              </div>
-
-              <!-- Should 条件 -->
-              <el-divider content-position="left">Should 条件 (满足任一)</el-divider>
-              <div class="condition-list">
-                <div v-for="(condition, index) in dslConfig.shouldConditions" :key="'should-' + index" class="condition-item">
-                  <el-select v-model="condition.field" placeholder="字段" style="width: 140px">
-                    <el-option label="level" value="level" />
-                    <el-option label="message" value="message" />
-                    <el-option label="service" value="service" />
-                    <el-option label="自定义字段" value="custom" />
-                  </el-select>
-                  <el-input v-if="condition.field === 'custom'" v-model="condition.customField" placeholder="字段名" style="width: 120px" />
-                  <el-select v-model="condition.operator" placeholder="操作符" style="width: 130px">
-                    <el-option label="match" value="match" />
-                    <el-option label="match_phrase" value="match_phrase" />
-                    <el-option label="term" value="term" />
-                    <el-option label="wildcard" value="wildcard" />
-                    <el-option label="regexp" value="regexp" />
-                  </el-select>
-                  <el-input v-model="condition.value" placeholder="值" style="flex: 1; min-width: 150px" />
-                  <el-button type="danger" :icon="Delete" circle size="small" @click="removeCondition('should', index)" />
-                </div>
-                <el-row :gutter="10" style="margin-top: 8px">
-                  <el-col :span="12">
-                    <el-button type="primary" size="small" @click="addCondition('should')">
-                      <el-icon><Plus /></el-icon> 添加 Should 条件
-                    </el-button>
+              <!-- 高级 DSL 构建区域（默认折叠） -->
+              <div v-if="showAdvanced">
+                <!-- 基础配置 -->
+                <el-row :gutter="16">
+                  <el-col :span="6">
+                    <el-form-item label="返回条数" label-width="80px">
+                      <el-input-number
+                        v-model="dslConfig.size"
+                        :min="1"
+                        :max="1000"
+                        :step="10"
+                        controls-position="right"
+                        style="width: 100%"
+                      />
+                    </el-form-item>
                   </el-col>
-                  <el-col :span="12">
-                    <el-button size="small" @click="addPresetCondition">
-                      <el-icon><Plus /></el-icon> 快速添加错误模式
-                    </el-button>
+                  <el-col :span="9">
+                    <el-form-item label="时间范围" label-width="80px">
+                      <el-select v-model="dslConfig.timeRange" style="width: 100%">
+                        <el-option label="最近 5 分钟" value="now-5m" />
+                        <el-option label="最近 15 分钟" value="now-15m" />
+                        <el-option label="最近 30 分钟" value="now-30m" />
+                        <el-option label="最近 1 小时" value="now-1h" />
+                        <el-option label="最近 3 小时" value="now-3h" />
+                        <el-option label="最近 6 小时" value="now-6h" />
+                        <el-option label="最近 12 小时" value="now-12h" />
+                        <el-option label="最近 24 小时" value="now-24h" />
+                        <el-option label="最近 7 天" value="now-7d" />
+                        <el-option label="自定义时间" value="custom" />
+                      </el-select>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="9" v-if="dslConfig.timeRange === 'custom'">
+                    <el-form-item label="自定义" label-width="60px">
+                      <el-date-picker
+                        v-model="dslConfig.customStartTime"
+                        type="datetime"
+                        placeholder="开始时间"
+                        style="width: 48%"
+                      />
+                      <span style="margin: 0 2px">-</span>
+                      <el-date-picker
+                        v-model="dslConfig.customEndTime"
+                        type="datetime"
+                        placeholder="结束时间"
+                        style="width: 48%"
+                      />
+                    </el-form-item>
                   </el-col>
                 </el-row>
-              </div>
 
-              <!-- minimum_should_match -->
-              <el-form-item label="至少匹配" style="margin-top: 16px">
-                <el-input-number v-model="dslConfig.minimumShouldMatch" :min="0" :max="dslConfig.shouldConditions.length || 10" />
-                <span class="form-hint">个 Should 条件</span>
-              </el-form-item>
+                <!-- Must 条件 -->
+                <el-divider content-position="left">Must 条件 (必须满足)</el-divider>
+                <div class="condition-list">
+                  <div v-for="(condition, index) in dslConfig.mustConditions" :key="'must-' + index" class="condition-item">
+                    <el-select v-model="condition.field" placeholder="字段" style="width: 140px">
+                      <el-option label="@timestamp" value="@timestamp" />
+                      <el-option label="level" value="level" />
+                      <el-option label="message" value="message" />
+                      <el-option label="service" value="service" />
+                      <el-option label="traceId" value="traceId" />
+                      <el-option label="hostname" value="hostname" />
+                      <el-option label="自定义字段" value="custom" />
+                    </el-select>
+                    <el-input v-if="condition.field === 'custom'" v-model="condition.customField" placeholder="字段名" style="width: 120px" />
+                    <el-select v-model="condition.operator" placeholder="操作符" style="width: 110px">
+                      <el-option label="range" value="range" />
+                      <el-option label="match" value="match" />
+                      <el-option label="match_phrase" value="match_phrase" />
+                      <el-option label="term" value="term" />
+                      <el-option label="wildcard" value="wildcard" />
+                    </el-select>
+                    <el-input v-model="condition.value" placeholder="值" style="flex: 1; min-width: 150px" />
+                    <el-button type="danger" :icon="Delete" circle size="small" @click="removeCondition('must', index)" />
+                  </div>
+                  <el-button type="primary" size="small" @click="addCondition('must')">
+                    <el-icon><Plus /></el-icon> 添加 Must 条件
+                  </el-button>
+                </div>
 
-              <!-- 生成的 DSL 预览 -->
-              <el-collapse v-if="generatedDsl" v-model="dslCollapseActive" style="margin-top: 16px">
-                <el-collapse-item title="生成的 DSL 查询" name="dsl">
-                  <pre class="dsl-preview">{{ generatedDsl }}</pre>
-                  <el-button size="small" @click="copyDsl">复制 DSL</el-button>
-                </el-collapse-item>
-              </el-collapse>
+                <!-- Should 条件 -->
+                <el-divider content-position="left">Should 条件 (满足任一)</el-divider>
+                <div class="condition-list">
+                  <div v-for="(condition, index) in dslConfig.shouldConditions" :key="'should-' + index" class="condition-item">
+                    <el-select v-model="condition.field" placeholder="字段" style="width: 140px">
+                      <el-option label="level" value="level" />
+                      <el-option label="message" value="message" />
+                      <el-option label="service" value="service" />
+                      <el-option label="自定义字段" value="custom" />
+                    </el-select>
+                    <el-input v-if="condition.field === 'custom'" v-model="condition.customField" placeholder="字段名" style="width: 120px" />
+                    <el-select v-model="condition.operator" placeholder="操作符" style="width: 130px">
+                      <el-option label="match" value="match" />
+                      <el-option label="match_phrase" value="match_phrase" />
+                      <el-option label="term" value="term" />
+                      <el-option label="wildcard" value="wildcard" />
+                      <el-option label="regexp" value="regexp" />
+                    </el-select>
+                    <el-input v-model="condition.value" placeholder="值" style="flex: 1; min-width: 150px" />
+                    <el-button type="danger" :icon="Delete" circle size="small" @click="removeCondition('should', index)" />
+                  </div>
+                  <el-row :gutter="10" style="margin-top: 8px">
+                    <el-col :span="12">
+                      <el-button type="primary" size="small" @click="addCondition('should')">
+                        <el-icon><Plus /></el-icon> 添加 Should 条件
+                      </el-button>
+                    </el-col>
+                    <el-col :span="12">
+                      <el-button size="small" @click="addPresetCondition">
+                        <el-icon><Plus /></el-icon> 快速添加错误模式
+                      </el-button>
+                    </el-col>
+                  </el-row>
+                </div>
 
-              <!-- 手动输入 DSL -->
-              <el-divider content-position="left">手动输入 DSL</el-divider>
-              <div class="manual-dsl-section">
-                <el-input
-                  v-model="manualDsl"
-                  type="textarea"
-                  :rows="6"
-                  placeholder="在此输入自定义 DSL 查询 JSON，例如：
+                <!-- minimum_should_match -->
+                <el-form-item label="至少匹配" style="margin-top: 16px">
+                  <el-input-number v-model="dslConfig.minimumShouldMatch" :min="0" :max="dslConfig.shouldConditions.length || 10" />
+                  <span class="form-hint">个 Should 条件</span>
+                </el-form-item>
+
+                <!-- 生成的 DSL 预览 -->
+                <el-collapse v-if="generatedDsl" v-model="dslCollapseActive" style="margin-top: 16px">
+                  <el-collapse-item title="生成的 DSL 查询" name="dsl">
+                    <pre class="dsl-preview">{{ generatedDsl }}</pre>
+                    <el-button size="small" @click="copyDsl">复制 DSL</el-button>
+                  </el-collapse-item>
+                </el-collapse>
+
+                <!-- 手动输入 DSL -->
+                <el-divider content-position="left">手动输入 DSL</el-divider>
+                <div class="manual-dsl-section">
+                  <el-input
+                    v-model="manualDsl"
+                    type="textarea"
+                    :rows="6"
+                    placeholder="在此输入自定义 DSL 查询 JSON，例如：
 {
   &quot;size&quot;: 20,
   &quot;query&quot;: {
@@ -165,16 +173,17 @@
     }
   }
 }"
-                  style="font-family: monospace"
-                />
-                <div class="manual-dsl-actions">
-                  <el-button size="small" @click="formatManualDsl">格式化</el-button>
-                  <el-button size="small" @click="loadManualDslToBuilder">加载到配置</el-button>
-                  <el-button size="small" type="warning" @click="clearManualDsl">清空</el-button>
+                    style="font-family: monospace"
+                  />
+                  <div class="manual-dsl-actions">
+                    <el-button size="small" @click="formatManualDsl">格式化</el-button>
+                    <el-button size="small" @click="loadManualDslToBuilder">加载到配置</el-button>
+                    <el-button size="small" type="warning" @click="clearManualDsl">清空</el-button>
+                  </div>
                 </div>
               </div>
 
-              <!-- 推荐查询 -->
+              <!-- 推荐查询（始终展示） -->
               <el-divider content-position="left">推荐查询</el-divider>
               <div class="recommended-queries">
                 <el-card
@@ -347,9 +356,25 @@
                 <span v-else style="color: #909399">-</span>
               </template>
             </el-table-column>
-            <el-table-column prop="status" label="状态" width="100">
+            <el-table-column prop="status" label="状态" width="160">
               <template #default="{ row }">
-                <el-tag :type="getReportStatusType(row.status)">{{ getReportStatusText(row.status) }}</el-tag>
+                <!-- L-11: pending/processing 状态显示进度条 -->
+                <div v-if="row.status === 'pending' || row.status === 'processing'" class="progress-cell">
+                  <el-progress
+                    :percentage="reportProgressMap.get(row.reportId)?.progress || 0"
+                    :stroke-width="6"
+                    :show-text="false"
+                    :status="row.status === 'processing' ? '' : 'warning'"
+                  />
+                  <div class="progress-info">
+                    <span class="progress-percent">{{ reportProgressMap.get(row.reportId)?.progress || 0 }}%</span>
+                    <span class="progress-stage" v-if="reportProgressMap.get(row.reportId)?.stage">
+                      {{ reportProgressMap.get(row.reportId)?.stage }}
+                    </span>
+                  </div>
+                </div>
+                <!-- 已完成/失败状态显示静态 tag -->
+                <el-tag v-else :type="getReportStatusType(row.status)">{{ getReportStatusText(row.status) }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column prop="errorType" label="错误类型" width="180">
@@ -594,90 +619,6 @@
       </div>
     </el-dialog>
 
-    <!-- LLM 分析结果弹窗 -->
-    <el-dialog v-model="analysisVisible" title="Claude 智能分析" width="1000px" @close="closeAnalysisDialog">
-      <!-- 分析中状态 - 流式输出 -->
-      <div v-if="analysisLoading" class="analysis-streaming">
-        <div class="stream-header">
-          <el-icon class="streaming-icon is-loading"><Loading /></el-icon>
-          <span>Claude 正在分析...</span>
-          <el-tag v-if="currentSessionId" size="small" type="info">Session: {{ currentSessionId.slice(0, 8) }}</el-tag>
-        </div>
-
-        <!-- 流式输出区域 -->
-        <div class="stream-output" ref="streamOutputRef">
-          <pre>{{ streamOutput }}</pre>
-        </div>
-
-        <!-- 聊天输入框 -->
-        <div class="chat-input" v-if="currentSessionId">
-          <el-input
-            v-model="chatInput"
-            placeholder="继续向 Claude 提问..."
-            @keyup.enter="sendChat"
-            :disabled="chatLoading"
-          >
-            <template #append>
-              <el-button @click="sendChat" :loading="chatLoading" type="primary">发送</el-button>
-            </template>
-          </el-input>
-        </div>
-      </div>
-
-      <!-- 分析错误状态 -->
-      <div v-else-if="analysisError" class="analysis-error">
-        <el-result icon="warning" title="分析失败" :sub-title="analysisError">
-          <template #extra>
-            <el-button type="primary" @click="analyzingLog && handleAnalyze(analyzingLog)">
-              重试
-            </el-button>
-            <el-button @click="closeAnalysisDialog">关闭</el-button>
-          </template>
-        </el-result>
-      </div>
-
-      <!-- 分析完成后的交互界面 -->
-      <div v-else class="analysis-complete">
-        <div class="stream-header">
-          <el-icon color="#67c23a"><Check /></el-icon>
-          <span>分析完成</span>
-          <el-tag v-if="currentSessionId" size="small" type="success">Session: {{ currentSessionId.slice(0, 8) }}</el-tag>
-        </div>
-
-        <!-- 完整输出 -->
-        <div class="stream-output complete">
-          <pre>{{ streamOutput }}</pre>
-        </div>
-
-        <!-- 继续对话 -->
-        <div class="chat-input">
-          <el-input
-            v-model="chatInput"
-            placeholder="继续向 Claude 提问..."
-            @keyup.enter="sendChat"
-            :disabled="chatLoading"
-          >
-            <template #append>
-              <el-button @click="sendChat" :loading="chatLoading" type="primary">发送</el-button>
-            </template>
-          </el-input>
-        </div>
-      </div>
-
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button @click="closeAnalysisDialog">关闭</el-button>
-          <el-button
-            v-if="!analysisLoading && streamOutput"
-            type="primary"
-            @click="copyOutput"
-          >
-            复制输出
-          </el-button>
-        </div>
-      </template>
-    </el-dialog>
-
     <!-- 报告详情弹窗 -->
     <el-dialog v-model="reportDetailVisible" title="分析报告详情" width="800px">
       <div class="report-detail" v-if="selectedReport">
@@ -745,18 +686,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, nextTick, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Search, Loading, Document, Warning, Cpu, Check, Delete, Plus } from '@element-plus/icons-vue'
+import { Search, Document, Warning, Cpu, Check, Delete, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { logAnalysisApi, type AppLogConfig } from '@/api/logAnalysis'
 import { aiAnalysisApi } from '@/api/aiAnalysis'
-import { claudeApi } from '@/api/claude'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { projectGroupApi, type ProjectGroup } from '@/api/projectGroup'
 import type { LogEntry } from '@/types/log'
 import { parseJavaErrorLog, formatForAnalysis, type ParsedErrorLog } from '@/utils/logParser'
-import { marked } from 'marked'
+import { renderMarkdown } from '@/utils/markdown'
 
 const router = useRouter()
 const workspaceStore = useWorkspaceStore()
@@ -962,6 +902,15 @@ const reportsPagination = reactive({
 const reportDetailVisible = ref(false)
 const selectedReport = ref<any | null>(null)
 
+// L-11: 分析进度反馈
+interface ReportProgress {
+  progress: number
+  stage: string
+  etaSeconds?: number
+}
+const reportProgressMap = ref<Map<string, ReportProgress>>(new Map())
+const pollingTimers = new Map<string, number>()
+
 const loadReports = async () => {
   reportsLoading.value = true
   try {
@@ -975,11 +924,82 @@ const loadReports = async () => {
     const res = await logAnalysisApi.getReports(params)
     reports.value = res?.list || []
     reportsPagination.total = res?.total || 0
+
+    // L-11: 对 pending/processing 状态的报告启动状态轮询
+    startProgressPolling()
   } catch (e: any) {
     ElMessage.error('加载报告失败: ' + e.message)
   } finally {
     reportsLoading.value = false
   }
+}
+
+// L-11: 启动进度轮询
+const startProgressPolling = () => {
+  // 清理已完成的报告轮询
+  for (const report of reports.value) {
+    if (report.status === 'completed' || report.status === 'failed') {
+      stopPolling(report.reportId)
+      reportProgressMap.value.delete(report.reportId)
+    }
+  }
+
+  // 只对 pending/processing 状态的报告启动轮询，最多同时轮询 3 个
+  const toPoll = reports.value
+    .filter(r => r.status === 'pending' || r.status === 'processing')
+    .slice(0, 3)
+
+  for (const report of toPoll) {
+    const reportId = report.reportId
+    if (!pollingTimers.has(reportId)) {
+      // 立即获取一次状态
+      pollReportStatus(reportId)
+      // 启动轮询
+      const timer = window.setInterval(() => pollReportStatus(reportId), 3000)
+      pollingTimers.set(reportId, timer)
+    }
+  }
+}
+
+// L-11: 轮询单个报告状态
+const pollReportStatus = async (reportId: string) => {
+  try {
+    const res = await logAnalysisApi.getStatus(reportId)
+    const status = res?.status
+    const progress = res?.progress || 0
+    const stage = res?.stage || ''
+    const etaSeconds = res?.etaSeconds
+
+    // 更新进度状态
+    reportProgressMap.value.set(reportId, { progress, stage, etaSeconds })
+
+    // 状态变为 completed 或 failed 时停止轮询并刷新列表
+    if (status === 'completed' || status === 'failed') {
+      stopPolling(reportId)
+      // 延迟刷新列表，避免频繁刷新
+      setTimeout(() => loadReports(), 1000)
+    }
+  } catch (e: any) {
+    // 轮询失败时静默处理，不中断其他轮询
+    console.warn(`Poll status failed for ${reportId}:`, e.message)
+  }
+}
+
+// L-11: 停止轮询
+const stopPolling = (reportId: string) => {
+  const timer = pollingTimers.get(reportId)
+  if (timer) {
+    clearInterval(timer)
+    pollingTimers.delete(reportId)
+  }
+}
+
+// L-11: 清理所有轮询定时器
+const clearAllPollingTimers = () => {
+  for (const timer of pollingTimers.values()) {
+    clearInterval(timer)
+  }
+  pollingTimers.clear()
 }
 
 const viewReportDetail = async (report: any) => {
@@ -1066,31 +1086,6 @@ const getReportStatusText = (status: string): string => {
   }
 }
 
-const renderMarkdown = (content: any): string => {
-  if (!content) return ''
-  // If content is an object/array, convert to formatted text first
-  if (typeof content === 'object') {
-    if (Array.isArray(content)) {
-      // Format array items as bullet points
-      const items = content.map(item => {
-        if (typeof item === 'object' && item !== null) {
-          return Object.entries(item)
-            .map(([k, v]) => `**${k}:** ${v}`)
-            .join('  \n')
-        }
-        return String(item)
-      }).map(item => `- ${item}`)
-      return marked.parse(items.join('\n\n')) as string
-    }
-    // Object: format as key-value pairs
-    const pairs = Object.entries(content)
-      .map(([k, v]) => `**${k}:** ${typeof v === 'object' ? JSON.stringify(v) : v}`)
-      .join('\n\n')
-    return marked.parse(pairs) as string
-  }
-  // String: parse as markdown directly
-  return marked.parse(String(content)) as string
-}
 
 const formatReportTime = (time: any): string => {
   if (!time) return '-'
@@ -1099,12 +1094,12 @@ const formatReportTime = (time: any): string => {
 }
 
 onMounted(() => {
-  if (activeTab.value === 'config') {
-    loadConfigs()
-  }
-  if (activeTab.value === 'reports') {
-    loadReports()
-  }
+  // activeTab defaults to 'query', config/reports loaded on tab switch via watch
+})
+
+// L-11: 组件卸载时清理所有定时器
+onUnmounted(() => {
+  clearAllPollingTimers()
 })
 
 watch(activeTab, (tab) => {
@@ -1171,6 +1166,9 @@ const dslConfig = reactive({
 const generatedDsl = ref('')
 const dslCollapseActive = ref(['dsl'])
 const manualDsl = ref('')
+
+// 高级查询区域显隐控制
+const showAdvanced = ref(false)
 
 // 推荐查询
 const recommendedQueries = [
@@ -1463,18 +1461,6 @@ const clearManualDsl = () => {
   manualDsl.value = ''
 }
 
-// Analysis state - 流式输出
-const analysisLoading = ref(false)
-const analysisVisible = ref(false)
-const analysisError = ref<string | null>(null)
-const analyzingLog = ref<LogEntry | null>(null)
-const streamOutput = ref('')
-const currentSessionId = ref('')
-const chatInput = ref('')
-const chatLoading = ref(false)
-const abortController = ref<(() => void) | null>(null)
-const streamOutputRef = ref<HTMLElement | null>(null)
-
 const queryForm = reactive({
   logLevel: 'ERROR',
   keyword: '',
@@ -1634,69 +1620,6 @@ const handleAnalyze = async (row: LogEntry) => {
   } catch (error: any) {
     ElMessage.error(`创建分析会话失败: ${error.message || error}`)
   }
-}
-
-// 发送聊天消息
-const sendChat = async () => {
-  if (!chatInput.value.trim() || !currentSessionId.value || chatLoading.value) return
-
-  const message = chatInput.value.trim()
-  chatInput.value = ''
-  chatLoading.value = true
-
-  // 添加用户消息到输出
-  streamOutput.value += `\n\n---\n**You:** ${message}\n\n**Claude:** `
-
-  try {
-    await claudeApi.streamChat(
-      {
-        sessionId: currentSessionId.value,
-        message: message
-      },
-      {
-        onOutput: (line) => {
-          streamOutput.value += line + '\n'
-          nextTick(() => {
-            if (streamOutputRef.value) {
-              streamOutputRef.value.scrollTop = streamOutputRef.value.scrollHeight
-            }
-          })
-        },
-        onDone: () => {
-          chatLoading.value = false
-        },
-        onError: (error) => {
-          chatLoading.value = false
-          ElMessage.error(`发送失败: ${error}`)
-        }
-      }
-    )
-  } catch (error: any) {
-    chatLoading.value = false
-    ElMessage.error(`发送失败: ${error.message}`)
-  }
-}
-
-// 复制输出
-const copyOutput = () => {
-  navigator.clipboard.writeText(streamOutput.value)
-  ElMessage.success('已复制到剪贴板')
-}
-
-const closeAnalysisDialog = () => {
-  // 取消正在进行的流式请求
-  if (abortController.value) {
-    abortController.value()
-    abortController.value = null
-  }
-  // 结束会话
-  if (currentSessionId.value) {
-    claudeApi.endSession(currentSessionId.value).catch(() => {})
-  }
-  analysisVisible.value = false
-  analyzingLog.value = null
-  streamOutput.value = ''
-  currentSessionId.value = ''
 }
 </script>
 
@@ -1891,245 +1814,6 @@ const closeAnalysisDialog = () => {
   word-break: break-all;
   max-height: 400px;
   overflow-y: auto;
-}
-
-/* Analysis Dialog Styles */
-/* 流式分析样式 */
-.analysis-streaming,
-.analysis-complete {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.stream-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #f5f7fa 0%, #e4e7ed 100%);
-  border-radius: 8px;
-}
-
-.streaming-icon {
-  font-size: 20px;
-  color: #409eff;
-}
-
-.stream-output {
-  background: #1e1e1e;
-  color: #d4d4d4;
-  padding: 16px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-family: 'Consolas', 'Monaco', monospace;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-  min-height: 300px;
-  max-height: 500px;
-  overflow-y: auto;
-}
-
-.stream-output.complete {
-  background: #282c34;
-}
-
-.stream-output pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.chat-input {
-  margin-top: 8px;
-}
-
-.analysis-loading {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 300px;
-  padding: 40px;
-}
-
-.loading-content {
-  text-align: center;
-  max-width: 500px;
-}
-
-.loading-icon {
-  font-size: 48px;
-  color: #409eff;
-  margin-bottom: 20px;
-}
-
-.loading-content h3 {
-  font-size: 18px;
-  color: #303133;
-  margin: 0 0 16px 0;
-}
-
-.loading-message {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-bottom: 24px;
-  color: #606266;
-}
-
-.analyzing-text {
-  font-family: monospace;
-  font-size: 13px;
-  max-width: 400px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.analysis-progress {
-  width: 100%;
-  max-width: 400px;
-  margin: 0 auto 16px;
-}
-
-.progress-hint {
-  font-size: 13px;
-  color: #909399;
-  margin: 0;
-}
-
-.analysis-error {
-  padding: 20px;
-}
-
-.analysis-result {
-  padding: 8px 0;
-}
-
-.result-header-section {
-  background: linear-gradient(135deg, #f5f7fa 0%, #e4e7ed 100%);
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 20px;
-}
-
-.header-row {
-  display: flex;
-  align-items: center;
-  gap: 32px;
-  flex-wrap: wrap;
-}
-
-.header-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.header-label {
-  font-size: 12px;
-  color: #909399;
-}
-
-.header-value {
-  font-size: 14px;
-  color: #303133;
-}
-
-.confidence-display {
-  display: flex;
-  align-items: center;
-}
-
-.result-section {
-  margin-bottom: 20px;
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 500;
-  color: #303133;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #ebeef5;
-}
-
-.section-header .el-icon {
-  color: #409eff;
-}
-
-.section-content {
-  padding: 0 4px;
-}
-
-.root-cause {
-  background: #fef0f0;
-  border-left: 3px solid #f56c6c;
-  padding: 12px 16px;
-  border-radius: 4px;
-}
-
-.root-cause p {
-  margin: 0;
-  color: #606266;
-  line-height: 1.6;
-}
-
-.code-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.code-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: #f5f7fa;
-  padding: 10px 14px;
-  border-radius: 6px;
-  border: 1px solid #ebeef5;
-}
-
-.code-item code {
-  font-family: monospace;
-  font-size: 13px;
-  color: #303133;
-  background: none;
-}
-
-.suggestion-item {
-  padding: 4px 0;
-}
-
-.suggestion-number {
-  font-weight: 500;
-  color: #409eff;
-  margin-bottom: 4px;
-  font-size: 13px;
-}
-
-.suggestion-item p {
-  margin: 0;
-  color: #606266;
-  line-height: 1.6;
-}
-
-.result-meta {
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid #ebeef5;
-}
-
-.dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
 }
 
 /* 解析后的错误信息样式 */
@@ -2401,5 +2085,29 @@ const closeAnalysisDialog = () => {
   margin-top: 6px;
   color: #909399;
   font-size: 12px;
+}
+
+/* L-11: 进度反馈样式 */
+.progress-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.progress-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.progress-percent {
+  color: #409eff;
+  font-weight: 500;
+}
+
+.progress-stage {
+  color: #909399;
+  font-size: 11px;
 }
 </style>

@@ -181,6 +181,7 @@ import { useAppStore } from '@/stores/app'
 import { usePromptStore } from '@/stores/promptStore'
 import type { Session } from '@/types/session'
 import { SCENE_NAMES } from '@/types/session'
+import { renderMarkdown } from '@/utils/markdown'
 
 const route = useRoute()
 const sessionStore = useSessionStore()
@@ -353,16 +354,6 @@ function scrollToBottom() {
       messageListRef.value.scrollTop = messageListRef.value.scrollHeight
     }
   })
-}
-
-function renderMarkdown(content: string): string {
-  // 简单的 Markdown 渲染，实际项目中应使用 marked 或 markdown-it
-  return content
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    .replace(/\n/g, '<br>')
 }
 
 async function handleExport(format: 'markdown' | 'json') {

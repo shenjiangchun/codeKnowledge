@@ -7,8 +7,8 @@ import com.huawei.hisi.ram.kg.dto.Seed;
 import com.huawei.hisi.ram.nodes.impact.AffectedEntriesAnnotator.AnnotatedEntries;
 import com.huawei.hisi.ram.nodes.impact.AffectedEntriesAnnotator.AnnotatedEntry;
 import com.huawei.hisi.ram.nodes.impact.MethodTargetResolver.MethodTarget;
-import com.huawei.hisi.ram.orchestrator.ClarifyRequiredException;
-import com.huawei.hisi.ram.orchestrator.DagNode;
+import com.huawei.hisi.workflow.ClarifyRequiredException;
+import com.huawei.hisi.workflow.DagNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 

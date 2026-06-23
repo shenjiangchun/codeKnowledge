@@ -32,6 +32,7 @@ public class AgentSession {
     private String rerunFromNode;
     private String sourceBranch;
     private String targetBranch;
+    private SessionType sessionType;
     private int version;
     private long createdAt;
     private long updatedAt;
@@ -40,13 +41,14 @@ public class AgentSession {
      * Build a fresh session in RUNNING state for the given user. Timestamps and
      * id are populated by the repository on save.
      */
-    public static AgentSession newRunning(String userId) {
+    public static AgentSession newRunning(String userId, SessionType sessionType) {
         long now = System.currentTimeMillis() / 1000L;
         return AgentSession.builder()
                 .userId(userId)
                 .status(SessionStatus.RUNNING)
                 .currentNode("clarify")
                 .stepCount(0)
+                .sessionType(sessionType)
                 .version(0)
                 .createdAt(now)
                 .updatedAt(now)

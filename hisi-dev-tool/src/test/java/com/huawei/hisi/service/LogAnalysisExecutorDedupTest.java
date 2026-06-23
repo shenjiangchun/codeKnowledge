@@ -27,16 +27,13 @@ class LogAnalysisExecutorDedupTest {
     private FingerprintService fingerprintService;
 
     @Mock
-    private RootCauseAnalysisService rootCauseAnalysisService;
-
-    @Mock
     private SnowflakeIdGenerator snowflakeIdGenerator;
 
     private LogAnalysisExecutor executor;
 
     @BeforeEach
     void setUp() throws Exception {
-        executor = new LogAnalysisExecutor(rootCauseAnalysisService, repository, snowflakeIdGenerator, fingerprintService);
+        executor = new LogAnalysisExecutor(repository, snowflakeIdGenerator, fingerprintService);
     }
 
     @Test

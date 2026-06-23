@@ -24,6 +24,8 @@ public interface AgentSessionRepository {
 
     List<AgentSession> listRecentExcludingUserId(String excludeUserId, int limit);
 
+    List<AgentSession> listRecentBySessionType(String sessionType, int limit);
+
     /**
      * Optimistic-locking update. Returns the new version on success or empty when
      * the in-memory version no longer matches the stored row.

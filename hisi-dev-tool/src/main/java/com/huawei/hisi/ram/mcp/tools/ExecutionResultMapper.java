@@ -1,6 +1,6 @@
 package com.huawei.hisi.ram.mcp.tools;
 
-import com.huawei.hisi.ram.orchestrator.ExecutionResult;
+import com.huawei.hisi.workflow.ExecutionResult;
 
 import java.util.LinkedHashMap;
 import java.util.Map;

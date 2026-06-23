@@ -86,10 +86,11 @@ export interface SessionSummary {
   projectPaths: string | null
   createdAt: number
   updatedAt: number
+  sessionType?: string
 }
 
-export function listRamSessions(limit = 50): Promise<SessionSummary[]> {
-  return request.get('/ram/sessions', { params: { limit } })
+export function listRamSessions(limit = 50, sessionType?: string): Promise<SessionSummary[]> {
+  return request.get('/ram/sessions', { params: { limit, sessionType } })
 }
 
 export interface RamEvent {

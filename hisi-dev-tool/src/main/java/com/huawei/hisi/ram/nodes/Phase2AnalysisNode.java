@@ -8,7 +8,7 @@ import com.huawei.hisi.ram.kg.dto.MethodBodyInfo;
 import com.huawei.hisi.ram.kg.dto.Seed;
 import com.huawei.hisi.ram.model.DomainHint;
 import com.huawei.hisi.ram.model.Phase2Context;
-import com.huawei.hisi.ram.orchestrator.DagNode;
+import com.huawei.hisi.workflow.DagNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 

@@ -379,6 +379,7 @@ import { ElMessage } from 'element-plus'
 import { knowledgeGraphApi, type CallerInfo, type RootEntryInfo, type CallChainGraphData } from '@/api/knowledgeGraph'
 import FlowDag from './FlowDag.vue'
 import type { FlowNode } from './flowDagLayout'
+import { escapeHtml, escapeRegExp } from '@/utils/markdown'
 
 // 桥接类型定义
 type BridgeType = 'MAPPER' | 'JPA' | 'MQ' | 'FEIGN' | 'HTTP' | 'ASPECT' | 'DIRECT'
@@ -650,8 +651,10 @@ const isMatch = (node: ChainNode) => {
 }
 
 const highlightText = (text: string) => {
-  if (!searchText.value) return text
-  return text.replace(new RegExp(`(${searchText.value})`, 'gi'), '<mark>$1</mark>')
+  if (!searchText.value) return escapeHtml(text)
+  const escapedSearch = escapeRegExp(searchText.value)
+  const escapedText = escapeHtml(text)
+  return escapedText.replace(new RegExp(`(${escapedSearch})`, 'gi'), '<mark>$1</mark>')
 }
 
 const shortClass = (className: string) => {

@@ -174,6 +174,7 @@ import {
 import type { DialogServerMessage } from '@/types/dialog'
 import { DialogEventType, IntentType } from '@/types/dialog'
 import { useDialogWebSocket } from '@/composables/useDialogWebSocket'
+import { renderMarkdown } from '@/utils/markdown'
 
 // 使用 composable
 const {
@@ -198,17 +199,7 @@ const {
 const recentEvents = computed(() => eventLog.value.slice(-20))
 
 const renderedStreamingContent = computed(() => {
-  // 简单的 markdown 渲染（实际应用中应使用 markdown-it 等库）
-  let content = streamingContent.value
-  // 处理代码块
-  content = content.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-  // 处理行内代码
-  content = content.replace(/`([^`]+)`/g, '<code>$1</code>')
-  // 处理粗体
-  content = content.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-  // 处理换行
-  content = content.replace(/\n/g, '<br>')
-  return content
+  return renderMarkdown(streamingContent.value)
 })
 
 // 方法

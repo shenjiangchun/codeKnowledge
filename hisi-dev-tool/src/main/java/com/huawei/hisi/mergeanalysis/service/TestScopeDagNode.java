@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hisi.mergeanalysis.model.DiffResult;
 import com.huawei.hisi.mergeanalysis.model.ImpactResult;
 import com.huawei.hisi.mergeanalysis.model.TestScopeResult;
-import com.huawei.hisi.ram.orchestrator.ClarifyRequiredException;
-import com.huawei.hisi.ram.orchestrator.DagNode;
+import com.huawei.hisi.workflow.ClarifyRequiredException;
+import com.huawei.hisi.workflow.DagNode;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.LinkedHashMap;

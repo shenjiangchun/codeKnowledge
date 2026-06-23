@@ -11,41 +11,83 @@
  * - Also load cloned remote projects via /remote-projects
  * - el-select with filterable search + status tag (branch / clean / source)
  * - Manual-path fallback toggle for paths outside the scanned roots
- *
- * Supports two modes:
- * - 需求分析大师 (demand): traditional requirement analysis
- * - 项目现状分析 (status): project overview for new employees
+ * - appId options merged with project options in a single dropdown
  */
-import { computed, onMounted, ref } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAppStore } from '@/stores/app'
-import { startRamSession, startStatusAnalysis } from '@/api/ram'
+import { startRamSession } from '@/api/ram'
 import { projectApi } from '@/api/project'
 import { listRemoteProjects } from '@/api/remote-project'
 import { projectGroupApi, type ProjectGroup } from '@/api/projectGroup'
 import type { GitRepositoryInfo } from '@/types/callchain'
 
 const router = useRouter()
-const route = useRoute()
 const appStore = useAppStore()
 
-// Analysis mode: 'demand' or 'status'
-const analysisMode = ref<'demand' | 'status'>('demand')
-
 const rawInput = ref<string>('')
-const statusQuestion = ref<string>('')  // Question for status analysis mode
 const projectPaths = ref<string[]>([])
 const manualInput = ref<string>('')
 const projects = ref<GitRepositoryInfo[]>([])
 const loadingProjects = ref<boolean>(false)
-const manualMode = ref<boolean>(false)
 const submitting = ref<boolean>(false)
+const showAdvanced = ref<boolean>(false)  // R-14: Toggle for advanced project selection options
 
-// Task 72: appId selector
+// Task 72: appId selector (merged with project selector)
 const groups = ref<ProjectGroup[]>([])
-const selectedAppId = ref<string>('')
 const loadingGroups = ref<boolean>(false)
+
+// 合并的选项列表：appId 和项目
+interface ProjectOption {
+  value: string        // 实际值：appId 或 project path
+  label: string        // 显示名
+  type: 'appId' | 'project'
+  paths: string[]      // appId 对应的所有 project paths，project 则是 [path]
+  disabled?: boolean
+}
+
+// 构建合并的选项列表
+const allOptions = computed<ProjectOption[]>(() => {
+  const opts: ProjectOption[] = []
+
+  // appId 选项
+  for (const g of groups.value) {
+    opts.push({
+      value: `appId:${g.appId}`,
+      label: g.appName || g.appId,
+      type: 'appId',
+      paths: g.projectPaths
+    })
+  }
+
+  // 独立项目选项
+  for (const p of projects.value) {
+    opts.push({
+      value: `path:${p.path}`,
+      label: p.name,
+      type: 'project',
+      paths: [p.path]
+    })
+  }
+
+  return opts
+})
+
+// 选择值（appId:xxx 或 path:xxx 格式）
+const selectedValues = ref<string[]>([])
+
+// 从 selectedValues 解析出实际的 projectPaths
+watch(selectedValues, (vals) => {
+  const paths = new Set<string>()
+  for (const v of vals) {
+    const opt = allOptions.value.find(o => o.value === v)
+    if (opt) {
+      opt.paths.forEach(p => paths.add(p))
+    }
+  }
+  projectPaths.value = [...paths]
+}, { immediate: true })
 
 async function loadGroups(): Promise<void> {
   loadingGroups.value = true
@@ -59,16 +101,6 @@ async function loadGroups(): Promise<void> {
   }
 }
 
-// When appId is selected, auto-fill projectPaths from the group
-function onAppIdChange(): void {
-  if (!selectedAppId.value) return
-  const group = groups.value.find(g => g.appId === selectedAppId.value)
-  if (group && group.projectPaths.length > 0) {
-    projectPaths.value = [...group.projectPaths]
-    ElMessage.success(`已加载分组 "${group.appName}" 下的 ${group.projectPaths.length} 个项目`)
-  }
-}
-
 function addManualPath(): void {
   const path = manualInput.value.trim()
   if (!path) return
@@ -77,18 +109,10 @@ function addManualPath(): void {
     return
   }
   projectPaths.value = [...projectPaths.value, path]
+  // 同步添加到 selectedValues
+  selectedValues.value = [...selectedValues.value, `path:${path}`]
   manualInput.value = ''
 }
-
-const projectOptions = computed(() =>
-  projects.value.map((p) => ({
-    label: p.name,
-    value: p.path,
-    branch: p.branch,
-    clean: p.clean,
-    source: p.source
-  }))
-)
 
 async function loadProjects(): Promise<void> {
   loadingProjects.value = true
@@ -110,7 +134,7 @@ async function loadProjects(): Promise<void> {
             path: r.localPath,
             branch: r.branch || 'main',
             clean: true,
-            source: 'cloned'
+            source: 'cloned' as const
           }))
       : []
 
@@ -129,50 +153,35 @@ async function loadProjects(): Promise<void> {
   const fromStore = appStore.selectedProjects?.map((p: any) => p.path).filter(Boolean) as string[]
   if (fromStore && fromStore.length > 0 && projectPaths.value.length === 0) {
     projectPaths.value = fromStore
+    // 同步到 selectedValues
+    selectedValues.value = fromStore.map(p => `path:${p}`)
   }
 }
 
 onMounted(() => {
-  // Check URL query parameter for mode
-  const modeParam = route.query.mode as string
-  if (modeParam === 'status' || modeParam === 'demand') {
-    analysisMode.value = modeParam
-  }
   loadProjects()
   loadGroups()  // Task 72: Load project groups for appId selector
 })
 
 async function onSubmit(): Promise<void> {
-  const paths = manualMode.value
-    ? projectPaths.value // manual mode: paths are typed directly
-    : projectPaths.value
-  if (paths.length === 0) {
+  // R-14: projectPaths now combines both dropdown selection and manual input
+  if (projectPaths.value.length === 0) {
     ElMessage.warning('请选择至少一个项目')
+    return
+  }
+
+  if (!rawInput.value.trim()) {
+    ElMessage.warning('请输入需求描述')
     return
   }
 
   submitting.value = true
   try {
-    if (analysisMode.value === 'status') {
-      // 项目现状分析
-      const resp = await startStatusAnalysis({
-        projectPath: paths[0],
-        mode: 'quick',
-        question: statusQuestion.value.trim() || undefined
-      })
-      await router.push({ name: 'RamStatus', params: { sid: resp.sessionId } })
-    } else {
-      // 需求分析大师
-      if (!rawInput.value.trim()) {
-        ElMessage.warning('请输入需求描述')
-        return
-      }
-      const resp = await startRamSession({
-        rawInput: rawInput.value,
-        projectPaths: paths
-      })
-      await router.push({ name: 'RamDraft', params: { sid: resp.sessionId } })
-    }
+    const resp = await startRamSession({
+      rawInput: rawInput.value,
+      projectPaths: projectPaths.value
+    })
+    await router.push({ name: 'RamDraft', params: { sid: resp.sessionId } })
   } catch (error) {
     const msg = error instanceof Error ? error.message : '启动失败'
     ElMessage.error(msg)
@@ -187,134 +196,90 @@ async function onSubmit(): Promise<void> {
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>{{ analysisMode === 'demand' ? '需求分析大师' : '项目现状分析' }}</span>
+          <span>需求分析大师</span>
           <span class="hint">
-            {{ analysisMode === 'demand'
-              ? '选择目标项目、贴入需求原文，启动多 Agent 协同分析'
-              : '输入问题，分析项目代码，生成定制化技术报告' }}
+            选择目标项目、贴入需求原文，启动多 Agent 协同分析
           </span>
         </div>
       </template>
 
-      <!-- Mode switch -->
-      <el-radio-group v-model="analysisMode" class="mode-switch">
-        <el-radio-button value="demand">需求分析大师</el-radio-button>
-        <el-radio-button value="status">项目现状分析</el-radio-button>
-      </el-radio-group>
-
       <el-form label-position="top">
-        <!-- Task 72: appId selector - quick selection of project group -->
-        <el-form-item label="按 appId 选择分组" v-if="groups.length > 0">
-          <el-select
-            v-model="selectedAppId"
-            clearable
-            filterable
-            placeholder="选择 appId 自动加载分组下的所有项目"
-            style="width: 100%"
-            @change="onAppIdChange"
-          >
-            <el-option
-              v-for="group in groups"
-              :key="group.appId"
-              :label="`${group.appName} (${group.appId})`"
-              :value="group.appId"
-            >
-              <div style="display: flex; justify-content: space-between; align-items: center">
-                <span>{{ group.appName }}</span>
-                <el-tag size="small" type="info">{{ group.projectPaths.length }}个项目</el-tag>
-              </div>
-            </el-option>
-          </el-select>
-          <div class="appId-hint" v-if="selectedAppId">
-            <el-icon :size="12"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="12" height="12"><path fill="currentColor" d="M512 64a448 448 0 1 1 0 896 448 448 0 0 1 0-896m-55.808 536.384-99.52-99.584a38.4 38.4 0 1 0-54.336 54.336l126.72 126.72a38.272 38.272 0 0 0 54.336 0l262.4-262.464a38.4 38.4 0 1 0-54.336-54.336z"/></svg></el-icon>
-            <span>选择 appId 后将自动填充下方项目路径</span>
-          </div>
-        </el-form-item>
-
         <el-form-item label="目标项目" required>
           <div class="project-row">
             <el-select
-              v-if="!manualMode"
-              v-model="projectPaths"
+              v-model="selectedValues"
               multiple
               filterable
               clearable
               collapse-tags
               collapse-tags-tooltip
-              :loading="loadingProjects"
-              placeholder="选择一个或多个 Git 仓库"
-              style="flex: 1"
+              class="project-select"
+              :loading="loadingProjects || loadingGroups"
+              placeholder="选择 appId 或项目"
               data-test="ram-project-select"
             >
               <el-option
-                v-for="opt in projectOptions"
+                v-for="opt in allOptions"
                 :key="opt.value"
                 :label="opt.label"
                 :value="opt.value"
+                :disabled="opt.disabled"
               >
-                <div class="proj-option">
-                  <span class="proj-name">{{ opt.label }}</span>
-                  <span class="proj-meta">
-                    <el-tag size="small" type="info">{{ opt.branch || '-' }}</el-tag>
-                    <el-tag
-                      v-if="opt.source !== 'cloned'"
-                      size="small"
-                      :type="opt.clean ? 'success' : 'warning'"
-                    >
-                      {{ opt.clean ? 'clean' : 'dirty' }}
-                    </el-tag>
-                    <el-tag size="small" :type="opt.source === 'cloned' ? 'warning' : 'primary'">
-                      {{ opt.source === 'cloned' ? '远端' : opt.source === 'scanned' ? '扫描' : opt.source }}
-                    </el-tag>
-                  </span>
+                <div class="option-row">
+                  <el-tag :type="opt.type === 'appId' ? 'warning' : 'primary'" size="small">
+                    {{ opt.type === 'appId' ? '分组' : '项目' }}
+                  </el-tag>
+                  <span>{{ opt.label }}</span>
+                  <span v-if="opt.type === 'appId'" class="option-count">({{ opt.paths.length }} 个项目)</span>
                 </div>
               </el-option>
             </el-select>
-            <el-input
-              v-else
-              v-model="manualInput"
-              placeholder="输入项目绝对路径，回车添加（可添加多个）"
-              clearable
-              style="flex: 1"
-              data-test="ram-project-manual"
-              @keyup.enter="addManualPath"
-            >
-              <template #append>
-                <el-button @click="addManualPath">添加</el-button>
-              </template>
-            </el-input>
             <el-button
-              :icon="loadingProjects ? undefined : undefined"
               :loading="loadingProjects"
-              :disabled="manualMode"
               @click="loadProjects"
             >
               刷新
             </el-button>
-            <el-button @click="manualMode = !manualMode">
-              {{ manualMode ? '从列表选择' : '手动输入路径' }}
-            </el-button>
           </div>
-          <div v-if="projectPaths.length > 0 && !manualMode" class="selected-project-hint">
+          <div v-if="projectPaths.length > 0" class="selected-project-hint">
             <el-icon :size="14"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="14" height="14"><path fill="currentColor" d="M512 64a448 448 0 1 1 0 896 448 448 0 0 1 0-896m-55.808 536.384-99.52-99.584a38.4 38.4 0 1 0-54.336 54.336l126.72 126.72a38.272 38.272 0 0 0 54.336 0l262.4-262.464a38.4 38.4 0 1 0-54.336-54.336z"/></svg></el-icon>
             <span>已选 {{ projectPaths.length }} 个项目</span>
           </div>
-          <div v-if="manualMode && projectPaths.length > 0" class="manual-paths-list">
-            <el-tag
-              v-for="(p, idx) in projectPaths"
-              :key="idx"
-              closable
-              size="small"
-              @close="projectPaths.splice(idx, 1)"
-            >{{ p }}</el-tag>
+          <div v-if="projects.length === 0 && groups.length === 0 && !loadingProjects" class="empty-hint">
+            未扫描到 Git 仓库，可点击「更多选择方式」手动输入路径，或在「项目管理」中克隆/添加项目。
           </div>
-          <div v-if="!manualMode && projects.length === 0 && !loadingProjects" class="empty-hint">
-            未扫描到 Git 仓库，可点击「手动输入路径」直接填写绝对路径，或在「项目管理」中克隆/添加项目。
-          </div>
+
+          <!-- R-14: Advanced options collapsed by default -->
+          <el-collapse class="advanced-collapse">
+            <el-collapse-item>
+              <template #title>
+                <span class="advanced-toggle" @click.stop="showAdvanced = !showAdvanced">
+                  {{ showAdvanced ? '收起高级选项' : '更多选择方式' }}
+                </span>
+              </template>
+              <div v-if="showAdvanced" class="advanced-content">
+                <div class="manual-mode-row">
+                  <el-input
+                    v-model="manualInput"
+                    placeholder="输入项目绝对路径，回车添加（可添加多个）"
+                    clearable
+                    style="flex: 1"
+                    data-test="ram-project-manual"
+                    @keyup.enter="addManualPath"
+                  >
+                    <template #append>
+                      <el-button @click="addManualPath">添加</el-button>
+                    </template>
+                  </el-input>
+                </div>
+                <div class="manual-hint">手动输入的路径将添加到上方下拉列表的已选项目中</div>
+              </div>
+            </el-collapse-item>
+          </el-collapse>
         </el-form-item>
 
-        <!-- 需求原文 - only for demand mode -->
-        <el-form-item v-if="analysisMode === 'demand'" label="需求原文" required>
+        <!-- 需求原文 -->
+        <el-form-item label="需求原文" required>
           <el-input
             v-model="rawInput"
             type="textarea"
@@ -324,20 +289,6 @@ async function onSubmit(): Promise<void> {
           />
         </el-form-item>
 
-        <!-- 问题输入 - only for status mode -->
-        <el-form-item v-if="analysisMode === 'status'" label="分析问题">
-          <el-input
-            v-model="statusQuestion"
-            type="textarea"
-            :rows="5"
-            placeholder="输入你想了解的问题，如：'需求状态会受哪些接口影响？这些接口的逻辑是什么？'"
-            data-test="status-question-input"
-          />
-          <div class="question-hint">
-            <span>可选。如不输入，将生成项目概览报告（入口点、核心调用链、模块划分、技术栈）。</span>
-          </div>
-        </el-form-item>
-
         <el-form-item>
           <el-button
             type="primary"
@@ -345,7 +296,7 @@ async function onSubmit(): Promise<void> {
             data-test="ram-submit"
             @click="onSubmit"
           >
-            {{ analysisMode === 'demand' ? '开始分析' : '生成分析报告' }}
+            开始分析
           </el-button>
         </el-form-item>
       </el-form>
@@ -366,31 +317,31 @@ async function onSubmit(): Promise<void> {
   color: #909399;
   font-size: 12px;
 }
-.mode-switch {
-  margin-bottom: 20px;
-}
 .project-row {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.project-select {
+  flex: 1;
+  min-width: 200px;
+}
+.project-select :deep(.el-select__wrapper) {
+  min-height: 32px;
 }
 .empty-hint {
   margin-top: 6px;
   color: #909399;
   font-size: 12px;
 }
-.proj-option {
+.option-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
-.proj-name {
-  font-weight: 500;
-}
-.proj-meta {
-  display: inline-flex;
-  gap: 4px;
+.option-count {
+  color: #909399;
+  font-size: 12px;
 }
 .selected-project-hint {
   display: flex;
@@ -417,21 +368,39 @@ async function onSubmit(): Promise<void> {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.manual-paths-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
+
+/* R-14: Advanced options collapse styling */
+.advanced-collapse {
+  margin-top: 12px;
+  border: none;
 }
-.appId-hint {
+.advanced-collapse :deep(.el-collapse-item__header) {
+  border: none;
+  background: transparent;
+  height: 32px;
+  line-height: 32px;
+}
+.advanced-collapse :deep(.el-collapse-item__wrap) {
+  border: none;
+  background: transparent;
+}
+.advanced-toggle {
+  font-size: 13px;
+  color: #409eff;
+  cursor: pointer;
+}
+.advanced-toggle:hover {
+  color: #66b1ff;
+}
+.advanced-content {
+  padding: 12px 0;
+}
+.manual-mode-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 6px;
-  color: #909399;
-  font-size: 12px;
+  gap: 8px;
 }
-.question-hint {
+.manual-hint {
   margin-top: 6px;
   color: #909399;
   font-size: 12px;

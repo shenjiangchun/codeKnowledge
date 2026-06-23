@@ -225,6 +225,14 @@ apm:
   span-ttl-hours: 24
   target-shutdown-grace-seconds: 5
 
+# RAM（Requirement Analysis Master）SSE 配置
+ram:
+  sse:
+    # SSE 轮询线程池大小
+    pool-size: 2
+    # SSE 轮询间隔（毫秒）
+    poll-interval-ms: 500
+
 # 意图感知多通道检索配置
 search:
   # 各意图类型的原始权重（对数缩放前）

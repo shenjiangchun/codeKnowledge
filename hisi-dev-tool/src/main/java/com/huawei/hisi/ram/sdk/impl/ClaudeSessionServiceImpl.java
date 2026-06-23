@@ -6,6 +6,7 @@ import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.AgentSession;
 import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.model.SessionStatus;
+import com.huawei.hisi.ram.model.SessionType;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
 import com.huawei.hisi.ram.sdk.ClaudeSessionService;
@@ -57,7 +58,7 @@ public class ClaudeSessionServiceImpl implements ClaudeSessionService {
 
     @Override
     public long createSession(String userId, Map<String, Object> plan) {
-        AgentSession s = sessionRepo.save(AgentSession.newRunning(userId));
+        AgentSession s = sessionRepo.save(AgentSession.newRunning(userId, SessionType.DEMAND));
         return s.getId();
     }
 
@@ -221,7 +222,7 @@ public class ClaudeSessionServiceImpl implements ClaudeSessionService {
     public long forkSession(long sid, long atEventId) {
         AgentSession parent = sessionRepo.findById(sid)
                 .orElseThrow(() -> new IllegalArgumentException("session not found: " + sid));
-        AgentSession forked = sessionRepo.save(AgentSession.newRunning(parent.getUserId()));
+        AgentSession forked = sessionRepo.save(AgentSession.newRunning(parent.getUserId(), SessionType.DEMAND));
         long newSid = forked.getId();
         for (AgentEvent e : eventRepo.findBySessionId(sid)) {
             if (e.getId() != null && e.getId() <= atEventId) {

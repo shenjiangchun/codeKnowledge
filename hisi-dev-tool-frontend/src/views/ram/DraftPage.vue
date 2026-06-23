@@ -21,18 +21,19 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { marked } from 'marked'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { renderMarkdown } from '@/utils/markdown'
 import CostMeter from '@/components/ram/CostMeter.vue'
 import ClarifyModal from '@/components/ram/ClarifyModal.vue'
 import ConfirmModal from '@/components/ram/ConfirmModal.vue'
 import DagFlow from '@/components/ram/DagFlow.vue'
 import ImpactOutputView from '@/components/ram/ImpactOutputView.vue'
 import TechPlanOutputView from '@/components/ram/TechPlanOutputView.vue'
-import { deriveDagSnapshot, type DagNodeKey } from '@/components/ram/dagModel'
+import type { DagNodeKey } from '@/components/ram/dagModel'
 import { useRamSession } from '@/composables/useRamSession'
+import { useDagEventHandler } from '@/composables/useDagEventHandler'
 import { executeTechPlan, getRamHealth, getRamSession, rerunFromNode, listClarifyRounds, rerunFromRound, type ClarifyRoundSummary } from '@/api/ram'
-import { useRamStore, type ImpactPayload } from '@/stores/ram'
+import { useRamStore } from '@/stores/ram'
 
 const route = useRoute()
 const router = useRouter()
@@ -40,510 +41,46 @@ const ramStore = useRamStore()
 const session = useRamSession()
 
 const sid = computed<string>(() => String(route.params.sid ?? ''))
+
+// Event handler composable - manages node outputs and event processing
+const eventHandler = useDagEventHandler({ session, sid })
+
+// Destructure state and methods from composable
+const {
+  draftMd,
+  impactMd,
+  implementMd,
+  verifyMd,
+  techPlanMd,
+  impactOutputData,
+  techPlanOutputData,
+  impactPayload,
+  nodeReasoning,
+  progressMessage,
+  clearedNodeKeys,
+  processEvent,
+  resetProcessedSeq,
+  dagNodes
+} = eventHandler
+
+// Local UI state
 const activeNode = ref<DagNodeKey>('clarify')
 const showClarify = ref<boolean>(false)
+const showClarifyAlert = ref<boolean>(false)  // Controls clarify alert bar instead of auto-popup
 const showConfirm = ref<boolean>(false)
-const draftMd = ref<string>('')
-const impactMd = ref<string>('')
-const implementMd = ref<string>('')
-const verifyMd = ref<string>('')
-const techPlanMd = ref<string>('')
-const impactOutputData = ref<Record<string, unknown> | null>(null)
-const techPlanOutputData = ref<Record<string, unknown> | null>(null)
-const impactPayload = ref<ImpactPayload | null>(null)
-
-// Per-node reasoning from CHECKPOINT output
-const nodeReasoning = ref<Record<string, string>>({})
-
-// Current progress message for running node
-const progressMessage = ref<string>('')
 
 // Clarify rounds history
 const clarifyRounds = ref<ClarifyRoundSummary[]>([])
 const clarifyRoundsLoading = ref(false)
 
-// Nodes whose CHECKPOINT results were cleared by rerun-from-node.
-// The DAG snapshot still sees old events, so we override status here.
-const clearedNodeKeys = ref<Set<DagNodeKey>>(new Set())
-
-const dagNodes = computed(() => {
-  const snapshot = deriveDagSnapshot(session.events.value, session.status.value)
-  // Override status for nodes cleared by rerun: first cleared node → running, rest → pending
-  const cleared = clearedNodeKeys.value
-  if (cleared.size === 0) return snapshot
-  const rerunNode = [...cleared][0]
-  return snapshot.map(n => {
-    if (!cleared.has(n.key)) return n
-    const isRerunNode = n.key === rerunNode
-    return { ...n, status: isRerunNode ? 'running' as const : 'pending' as const }
-  })
-})
-
-function asString(value: unknown): string | null {
-  return typeof value === 'string' ? value : null
-}
-
-/** Try to extract a markdown/text string from the payload or its nested output. */
-function extractMd(payload: Readonly<Record<string, unknown>>): string | null {
-  return (
-    asString(payload['markdown']) ??
-    asString(payload['text']) ??
-    asString(payload['content']) ??
-    null
-  )
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value != null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null
-}
-
-/**
- * Extract an array of nodeId strings from a payload field that may contain:
- *   - string[] (nodeId directly)
- *   - object[] with {nodeId: "..."} or {className: "..."}
- */
-function extractNodeIds(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value
-    .map((v) => {
-      if (typeof v === 'string') return v
-      if (v != null && typeof v === 'object') {
-        const rec = v as Record<string, unknown>
-        // Prefer nodeId, fallback to className
-        if (typeof rec['nodeId'] === 'string' && rec['nodeId']) return rec['nodeId']
-        if (typeof rec['className'] === 'string' && rec['className']) return rec['className']
-        // Last resort: JSON to avoid [object Object]
-        return JSON.stringify(v)
-      }
-      return String(v)
-    })
-    .filter((s) => s.length > 0 && s !== '{}')
-}
-
-/**
- * Resolve the DAG node key from any event, handling both legacy phase-based
- * events and the current CHECKPOINT format (which uses {@code nodeName}).
- */
-function resolveNodeKey(evt: { type: string; payload: Record<string, unknown> }): DagNodeKey | null {
-  const phase = String(evt.payload['phase'] ?? evt.payload['nodeName'] ?? '').toLowerCase()
-  const map: Record<string, DagNodeKey> = {
-    clarify: 'clarify',
-    draft: 'clarify',
-    impact: 'impact',
-    implement: 'implement',
-    verify: 'verify',
-    tech_plan: 'tech_plan'
-  }
-  if (phase && map[phase]) return map[phase]
-  const t = evt.type
-  if (t === 'CLARIFY_REQ' || t === 'CLARIFY_REQUIRED' || t === 'CLARIFY_RES') return 'clarify'
-  if (t === 'IMPACT_DONE' || t === 'IMPACT_UPDATE') return 'impact'
-  if (t === 'IMPLEMENT_DONE' || t === 'IMPLEMENT_UPDATE' || t === 'DRAFT_UPDATE') return 'implement'
-  if (t === 'VERIFY_DONE' || t === 'VERIFY_UPDATE') return 'verify'
-  if (t === 'TECH_PLAN_DONE' || t === 'TECH_PLAN_UPDATE') return 'tech_plan'
-  return null
-}
-
-/** Format the structured clarify output into readable text. */
-function formatClarifyOutput(output: Record<string, unknown>): string {
-  const lines: string[] = []
-  const intent = asString(output['intent'])
-  if (intent) lines.push(`## 需求意图\n${intent}`)
-  const paths = output['project_paths']
-  if (Array.isArray(paths) && paths.length > 0) {
-    const projectPaths: string[] = []
-    const filePaths: string[] = []
-    for (const p of paths) {
-      if (typeof p !== 'string') continue
-      // Distinguish: project dirs (no .java/.py etc, no src/main) vs file paths
-      if (/\.java\b|\.py\b|\.xml\b|src\/main|src\/test/.test(p)) {
-        filePaths.push(p)
-      } else {
-        projectPaths.push(p)
-      }
-    }
-    if (projectPaths.length > 0) {
-      lines.push(`## 项目路径\n${projectPaths.map((p) => `- ${p}`).join('\n')}`)
-    }
-    if (filePaths.length > 0) {
-      lines.push(`## 影响范围\n${filePaths.map((p) => `- ${p}`).join('\n')}`)
-    }
-  }
-  const criteria = output['acceptance_criteria']
-  if (Array.isArray(criteria) && criteria.length > 0) {
-    lines.push(`## 验收标准\n${criteria.map((c, i) => `${i + 1}. ${c}`).join('\n')}`)
-  }
-  // Show any other top-level string fields
-  for (const [k, v] of Object.entries(output)) {
-    if (['intent', 'project_paths', 'acceptance_criteria'].includes(k)) continue
-    if (typeof v === 'string' && v.length > 0) {
-      lines.push(`## ${k}\n${v}`)
-    }
-  }
-  return lines.length > 0 ? lines.join('\n\n') : JSON.stringify(output, null, 2)
-}
-
-/** Format the structured impact output into readable text. */
-function formatImpactOutput(output: Record<string, unknown>): string {
-  const lines: string[] = []
-  const involved = asRecord(output['involved'])
-  if (involved) {
-    const seeds = Array.isArray(involved['seeds']) ? involved['seeds'].length : 0
-    const entries = Array.isArray(involved['entries']) ? involved['entries'].length : 0
-    const impls = Array.isArray(involved['impls']) ? involved['impls'].length : 0
-    lines.push(`## 受影响的入口 (InvolvedRing)\n- Seeds: ${seeds}\n- Entry points: ${entries}\n- Implementations: ${impls}`)
-  }
-  const impacted = asRecord(output['impacted'])
-  if (impacted) {
-    const up = Array.isArray(impacted['upstream']) ? impacted['upstream'].length : 0
-    const down = Array.isArray(impacted['downstream']) ? impacted['downstream'].length : 0
-    const cross = Array.isArray(impacted['crossService']) ? impacted['crossService'].length : 0
-    const bridges = Array.isArray(impacted['bridges']) ? impacted['bridges'].length : 0
-    lines.push(`## 影响范围 (ImpactRing)\n- Upstream: ${up}\n- Downstream: ${down}\n- Cross-service: ${cross}\n- Bridges: ${bridges}`)
-  }
-  const risk = asRecord(output['risk'])
-  if (risk) {
-    lines.push(`## 风险评分\n- Score: ${risk['score'] ?? '—'}\n- Level: ${risk['level'] ?? '—'}`)
-  }
-  const validation = asRecord(output['validation'])
-  if (validation) {
-    const passed = validation['passed'] === true ? '✅ 通过' : '❌ 未通过'
-    lines.push(`## 验证\n${passed}`)
-    const violations = validation['violations']
-    if (Array.isArray(violations) && violations.length > 0) {
-      lines.push(violations.map((v) => `- ${v}`).join('\n'))
-    }
-  }
-  return lines.length > 0 ? lines.join('\n\n') : JSON.stringify(output, null, 2)
-}
-
-/** Format the structured implement output into readable text. */
-function formatImplementOutput(output: Record<string, unknown>): string {
-  const lines: string[] = []
-  const biz = asRecord(output['biz_plan'])
-  if (biz) {
-    lines.push('## 业务方案 (biz_plan)')
-    const steps = biz['steps']
-    if (Array.isArray(steps) && steps.length > 0) {
-      lines.push(steps.map((s, i) => `${i + 1}. ${s}`).join('\n'))
-    }
-    const dataFlow = biz['data_flow']
-    if (typeof dataFlow === 'string' && dataFlow.length > 0) {
-      lines.push(`### 数据流\n${dataFlow}`)
-    }
-    const acceptanceMapping = biz['acceptance_mapping']
-    if (acceptanceMapping != null) {
-      if (typeof acceptanceMapping === 'string' && acceptanceMapping.length > 0) {
-        lines.push(`### 验收标准映射\n${acceptanceMapping}`)
-      } else if (typeof acceptanceMapping === 'object') {
-        lines.push('### 验收标准映射')
-        if (Array.isArray(acceptanceMapping)) {
-          lines.push(acceptanceMapping.map((item) => `- ${typeof item === 'string' ? item : JSON.stringify(item)}`).join('\n'))
-        } else {
-          for (const [k, v] of Object.entries(acceptanceMapping as Record<string, unknown>)) {
-            lines.push(`- **${k}**: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
-          }
-        }
-      }
-    }
-    // Show any other biz_plan fields not yet handled
-    for (const [k, v] of Object.entries(biz)) {
-      if (['steps', 'data_flow', 'acceptance_mapping'].includes(k)) continue
-      if (typeof v === 'string') lines.push(`### ${k}\n${v}`)
-    }
-  }
-  // api_changes: array of API change entries
-  const apiChanges = output['api_changes']
-  if (Array.isArray(apiChanges) && apiChanges.length > 0) {
-    lines.push('## API 变更 (api_changes)')
-    lines.push(apiChanges.map((item) => `- ${typeof item === 'string' ? item : JSON.stringify(item)}`).join('\n'))
-  }
-  // state_machine_changes: array of state machine change entries
-  const stateChanges = output['state_machine_changes']
-  if (Array.isArray(stateChanges) && stateChanges.length > 0) {
-    lines.push('## 状态机变更 (state_machine_changes)')
-    lines.push(stateChanges.map((item) => `- ${typeof item === 'string' ? item : JSON.stringify(item)}`).join('\n'))
-  }
-  // data_model_changes: array of data model change entries
-  const dataModelChanges = output['data_model_changes']
-  if (Array.isArray(dataModelChanges) && dataModelChanges.length > 0) {
-    lines.push('## 数据模型变更 (data_model_changes)')
-    lines.push(dataModelChanges.map((item) => `- ${typeof item === 'string' ? item : JSON.stringify(item)}`).join('\n'))
-  }
-  // config_changes: array of config change entries
-  const configChanges = output['config_changes']
-  if (Array.isArray(configChanges) && configChanges.length > 0) {
-    lines.push('## 配置变更 (config_changes)')
-    lines.push(configChanges.map((item) => `- ${typeof item === 'string' ? item : JSON.stringify(item)}`).join('\n'))
-  }
-  // Fallback: show any other top-level string fields
-  for (const [k, v] of Object.entries(output)) {
-    if (['biz_plan', 'api_changes', 'state_machine_changes', 'data_model_changes', 'config_changes'].includes(k)) continue
-    if (typeof v === 'string' && v.length > 0) lines.push(`## ${k}\n${v}`)
-  }
-  return lines.length > 0 ? lines.join('\n\n') : JSON.stringify(output, null, 2)
-}
-
-/** Chinese labels for the 6 VerifyNode check keys. */
-const VERIFY_CHECK_LABELS: Record<string, string> = {
-  acceptance_criteria_addressed: '验收标准覆盖',
-  api_changes_consistent: 'API变更一致性',
-  state_changes_complete: '状态变更完整性',
-  data_migration_covered: '数据迁移覆盖',
-  impact_validation_passed: '影响分析验证',
-  change_coverage_ratio: '变更覆盖率'
-}
-
-/** Format the structured verify output into readable text. */
-function formatVerifyOutput(output: Record<string, unknown>): string {
-  const lines: string[] = []
-  const pass = output['pass'] === true
-  lines.push(`## 验证结果: ${pass ? '✅ 通过' : '❌ 未通过'}`)
-
-  // Render the 6 check keys as a structured checklist
-  for (const [key, label] of Object.entries(VERIFY_CHECK_LABELS)) {
-    const val = output[key]
-    if (val === undefined || val === null) continue
-    if (typeof val === 'boolean') {
-      lines.push(`${val ? '✅' : '❌'} **${label}**: ${val ? '通过' : '未通过'}`)
-    } else if (typeof val === 'number') {
-      // change_coverage_ratio is a ratio (0~1 or percentage)
-      const icon = val >= 1 ? '✅' : val > 0 ? '⚠️' : '❌'
-      lines.push(`${icon} **${label}**: ${val}`)
-    } else if (typeof val === 'string') {
-      lines.push(`- **${label}**: ${val}`)
-    } else if (typeof val === 'object') {
-      // Object-valued check: render detail
-      const rec = asRecord(val)
-      if (rec) {
-        const passed = rec['passed']
-        const detail = rec['detail'] ?? rec['reason'] ?? ''
-        const icon = passed === true ? '✅' : '❌'
-        lines.push(`${icon} **${label}**: ${detail || (passed ? '通过' : '未通过')}`)
-      } else {
-        lines.push(`- **${label}**: ${JSON.stringify(val)}`)
-      }
-    }
-  }
-
-  // Fallback: if checks array is present (legacy or alternative format), render it
-  const checks = output['checks']
-  if (Array.isArray(checks) && checks.length > 0) {
-    lines.push('## 检查项')
-    for (const c of checks) {
-      const rec = asRecord(c)
-      if (!rec) continue
-      const icon = rec['passed'] === true ? '✅' : '❌'
-      const name = rec['name'] ?? '—'
-      const label = VERIFY_CHECK_LABELS[name] ?? name
-      lines.push(`${icon} **${label}**: ${rec['detail'] ?? '—'}`)
-    }
-  }
-
-  const blockers = output['blockers']
-  if (Array.isArray(blockers) && blockers.length > 0) {
-    lines.push(`## 阻塞项\n${blockers.map((b) => `- ${b}`).join('\n')}`)
-  }
-  return lines.join('\n\n')
-}
-
-/** Format a CHECKPOINT output map based on the node it belongs to. */
-function formatNodeOutput(nodeKey: DagNodeKey, output: Record<string, unknown>): string {
-  switch (nodeKey) {
-    case 'clarify':
-      return formatClarifyOutput(output)
-    case 'impact':
-      return formatImpactOutput(output)
-    case 'implement':
-      return formatImplementOutput(output)
-    case 'verify':
-      return formatVerifyOutput(output)
-    case 'tech_plan':
-      // TechPlan uses a specialized view; fallback to markdown_report or JSON
-      return asString(output['markdown_report']) ?? JSON.stringify(output, null, 2)
-    default:
-      // Exhaustive check for TypeScript
-      return JSON.stringify(output, null, 2)
-  }
-}
-
-function extractImpactFromCheckpoint(output: Record<string, unknown>): ImpactPayload | null {
-  // New structure: methods_to_modify + affected_entries
-  const methodsToModify = output['methods_to_modify']
-  const affectedEntries = asRecord(output['affected_entries'])
-  if (methodsToModify || affectedEntries) {
-    const modifiedIds = extractNodeIds(methodsToModify)
-    const impactedIds = [
-      ...extractNodeIds(affectedEntries?.['direct']),
-      ...extractNodeIds(affectedEntries?.['indirect'])
-    ]
-    const risk = asRecord(output['risk'])
-    const riskScores = risk
-      ? (Object.fromEntries(
-          Object.entries(risk).map(([k, v]) => [k, Number(v) || 0])
-        ) as Record<string, number>)
-      : undefined
-    return { involved: [], modified: modifiedIds, impacted: impactedIds, riskScores }
-  }
-
-  // Legacy structure: involved + modified + impacted
-  const involved = asRecord(output['involved'])
-  const modified = asRecord(output['modified'])
-  const impacted = asRecord(output['impacted'])
-  if (!involved && !modified && !impacted) return null
-
-  const involvedIds = [
-    ...extractNodeIds(involved?.['seeds']),
-    ...extractNodeIds(involved?.['entries']),
-    ...extractNodeIds(involved?.['impls'])
-  ]
-  const modifiedIds = extractNodeIds(modified?.['tree'])
-  const impactedIds = [
-    ...extractNodeIds(impacted?.['upstream']),
-    ...extractNodeIds(impacted?.['downstream']),
-    ...extractNodeIds(impacted?.['bridges'])
-  ]
-
-  const risk = asRecord(output['risk'])
-  const riskScores = risk
-    ? (Object.fromEntries(
-        Object.entries(risk).map(([k, v]) => [k, Number(v) || 0])
-      ) as Record<string, number>)
-    : undefined
-
-  return {
-    involved: involvedIds,
-    modified: modifiedIds,
-    impacted: impactedIds,
-    riskScores
-  }
-}
-
-// Track which events we already processed to avoid re-processing the full list
-// every time a new event arrives.
-let processedSeq = 0
-
+// Watch for new events and process them via the composable
 watch(
   () => session.events.value,
   (list) => {
     for (const evt of list) {
-      // Skip already processed events
-      if (evt.seq <= processedSeq) continue
-      processedSeq = evt.seq
-
-      const nodeKey = resolveNodeKey(evt)
-      if (!nodeKey) continue
-
-      // When a rerun produces a CHECKPOINT for a cleared node, remove only that
-      // node from the cleared set. Downstream nodes stay cleared until they
-      // receive their own new CHECKPOINTs, so the DAG override keeps them as
-      // pending/running instead of showing stale "done" from old events.
-      const cleared = clearedNodeKeys.value
-      if (cleared.has(nodeKey) && evt.type === 'CHECKPOINT') {
-        const newCleared = new Set(cleared)
-        newCleared.delete(nodeKey)
-        clearedNodeKeys.value = newCleared
-      }
-
-      // --- CHECKPOINT events: content is in payload.output ---
-      if (evt.type === 'CHECKPOINT') {
-        const output = asRecord(evt.payload['output'])
-        if (!output) continue
-
-        const formatted = formatNodeOutput(nodeKey, output)
-        // Extract reasoning from output
-        const reasoning = typeof output['reasoning'] === 'string' ? output['reasoning'] as string : ''
-        if (reasoning) {
-          nodeReasoning.value = { ...nodeReasoning.value, [nodeKey]: reasoning }
-        }
-        progressMessage.value = ''
-        switch (nodeKey) {
-          case 'clarify':
-            draftMd.value = formatted
-            break
-          case 'impact': {
-            impactMd.value = formatted
-            impactOutputData.value = output
-            const impact = extractImpactFromCheckpoint(output)
-            if (impact) {
-              impactPayload.value = impact
-              ramStore.setImpact(sid.value, impact)
-            }
-            break
-          }
-          case 'implement':
-            implementMd.value = formatted
-            break
-          case 'verify':
-            verifyMd.value = formatted
-            break
-          case 'tech_plan':
-            techPlanMd.value = formatted
-            techPlanOutputData.value = output
-            break
-        }
-        continue
-      }
-
-      // --- Legacy events: content may be at payload top level ---
-      const md = extractMd(evt.payload)
-      // Update progress message for running nodes
-      if (nodeKey && evt.type !== 'CHECKPOINT') {
-        const progressLabels: Record<string, string> = {
-          clarify: '正在分析需求...',
-          impact: '正在分析影响范围...',
-          implement: '正在生成实现方案...',
-          verify: '正在验证...',
-          tech_plan: '正在生成技术方案...'
-        }
-        progressMessage.value = progressLabels[nodeKey] ?? '处理中...'
-      }
-      switch (nodeKey) {
-        case 'clarify':
-          if (md) draftMd.value = md
-          // CLARIFY_REQ/CLARIFY_REQUIRED may carry partialOutput from the LLM
-          // so the user sees the draft even when clarification is needed
-          if (evt.type === 'CLARIFY_REQ' || evt.type === 'CLARIFY_REQUIRED') {
-            const partial = asRecord(evt.payload['partialOutput'])
-            if (partial && Object.keys(partial).length > 0) {
-              draftMd.value = formatClarifyOutput(partial)
-            }
-          }
-          break
-        case 'impact': {
-          if (md) impactMd.value = md
-          const involved = extractNodeIds(evt.payload['involved'])
-          const modified = extractNodeIds(evt.payload['modified'])
-          const impacted = extractNodeIds(evt.payload['impacted'])
-          if (involved.length > 0 || modified.length > 0 || impacted.length > 0) {
-            const riskRaw = evt.payload['riskScores']
-            const riskScores =
-              riskRaw && typeof riskRaw === 'object'
-                ? (Object.fromEntries(
-                    Object.entries(riskRaw as Record<string, unknown>).map(([k, v]) => [k, Number(v) || 0])
-                  ) as Record<string, number>)
-                : undefined
-            const payload: ImpactPayload = { involved, modified, impacted, riskScores }
-            impactPayload.value = payload
-            ramStore.setImpact(sid.value, payload)
-          }
-          break
-        }
-        case 'implement':
-          if (md) implementMd.value = md
-          break
-        case 'verify':
-          if (md) verifyMd.value = md
-          break
-        case 'tech_plan':
-          if (md) techPlanMd.value = md
-          break
-      }
+      processEvent(evt)
     }
-    // Auto-advance the active card focus to the latest running stage so the
-    // user's eyes naturally follow the orchestrator without manual clicks.
+    // Auto-advance the active card focus to the latest running stage
     const running = dagNodes.value.find((n) => n.status === 'running' || n.status === 'awaiting-hitl')
     if (running) activeNode.value = running.key
   },
@@ -553,7 +90,12 @@ watch(
 watch(
   () => session.status.value,
   (s) => {
-    showClarify.value = s === 'clarify'
+    // R-12: Show alert bar instead of auto-popup on first clarify
+    if (s === 'clarify') {
+      showClarifyAlert.value = true
+    } else {
+      showClarifyAlert.value = false
+    }
     showConfirm.value = s === 'confirm'
     if (s === 'completed' || s === 'error' || s === 'aborted') {
       showClarify.value = false
@@ -648,7 +190,7 @@ async function onTriggerTechPlan(): Promise<void> {
     session.status.value = 'running'
     // Use nextSeq to skip already-processed events and rejoin SSE
     const nextSeq = typeof resp['nextSeq'] === 'number' ? resp['nextSeq'] as number : 0
-    processedSeq = nextSeq
+    resetProcessedSeq(nextSeq)
     session.rejoin(sid.value, nextSeq)
     ElMessage.success('技术方案已开始生成')
   } catch (e) {
@@ -668,18 +210,47 @@ const dagKeyToNodeName: Record<DagNodeKey, string> = {
   tech_plan: 'tech_plan'
 }
 
+/** Chinese labels for DAG nodes. */
+const dagNodeLabels: Record<DagNodeKey, string> = {
+  clarify: '澄清',
+  impact: '影响分析',
+  implement: '实现方案',
+  verify: '验证',
+  tech_plan: '技术方案'
+}
+
 const rerunning = ref(false)
 
 async function onRerunFromNode(key: DagNodeKey): Promise<void> {
   const nodeName = dagKeyToNodeName[key]
+  const nodeLabel = dagNodeLabels[key]
+
+  // Calculate downstream nodes to clear
+  const downstream: DagNodeKey[] = ['impact', 'implement', 'verify', 'tech_plan']
+  const startIdx = downstream.indexOf(key)
+  const toClear = key === 'clarify' ? ['clarify', ...downstream] as DagNodeKey[] : [key, ...downstream.slice(startIdx)]
+  const toClearLabels = toClear.map(k => dagNodeLabels[k]).join('、')
+
+  try {
+    await ElMessageBox.confirm(
+      `将重跑「${nodeLabel}」及其下游共 ${toClear.length} 个节点（${toClearLabels}），已完成的结果将被清除。确定继续？`,
+      '确认重跑',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch {
+    // User cancelled
+    return
+  }
+
   try {
     const resp = await rerunFromNode(sid.value, nodeName)
     rerunning.value = true
     ElMessage.success(`将从 ${nodeName} 节点重新分析`)
     // Mark this node + downstream as cleared so DAG shows correct status
-    const downstream: DagNodeKey[] = ['impact', 'implement', 'verify', 'tech_plan']
-    const startIdx = downstream.indexOf(key)
-    const toClear = key === 'clarify' ? ['clarify', ...downstream] as DagNodeKey[] : [key, ...downstream.slice(startIdx)]
     clearedNodeKeys.value = new Set(toClear)
     // Clear output for this node + downstream
     for (const k of toClear) {
@@ -693,7 +264,7 @@ async function onRerunFromNode(key: DagNodeKey): Promise<void> {
     }
     // Use nextSeq from backend to skip all historical events
     const nextSeq = typeof resp['nextSeq'] === 'number' ? resp['nextSeq'] as number : 0
-    processedSeq = nextSeq
+    resetProcessedSeq(nextSeq)
     // Set session status to running so DAG shows correct state
     session.status.value = 'running'
     // Rejoin with nextSeq so SSE starts after historical events
@@ -725,10 +296,27 @@ async function loadClarifyRounds(): Promise<void> {
 }
 
 async function onRerunFromRound(roundNo: number): Promise<void> {
+  const toClear: DagNodeKey[] = ['impact', 'implement', 'verify', 'tech_plan']
+  const toClearLabels = toClear.map(k => dagNodeLabels[k]).join('、')
+
+  try {
+    await ElMessageBox.confirm(
+      `将从第 ${roundNo} 轮澄清结果重新执行后续节点（${toClearLabels}），已完成的结果将被清除。确定继续？`,
+      '确认重跑',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch {
+    // User cancelled
+    return
+  }
+
   try {
     const resp = await rerunFromRound(sid.value, roundNo)
     // Clear impact + downstream
-    const toClear: DagNodeKey[] = ['impact', 'implement', 'verify', 'tech_plan']
     clearedNodeKeys.value = new Set(toClear)
     for (const k of toClear) {
       switch (k) {
@@ -739,7 +327,7 @@ async function onRerunFromRound(roundNo: number): Promise<void> {
       }
     }
     const nextSeq = typeof resp['nextSeq'] === 'number' ? resp['nextSeq'] as number : 0
-    processedSeq = nextSeq
+    resetProcessedSeq(nextSeq)
     session.status.value = 'running'
     session.rejoin(sid.value, nextSeq)
     ElMessage.success(`从第 ${roundNo} 轮澄清结果重新执行后续节点`)
@@ -781,7 +369,7 @@ const detailMarkdown = computed(() => {
 const detailHtml = computed(() => {
   const md = detailMarkdown.value
   if (!md) return ''
-  return marked(md, { breaks: true }) as string
+  return renderMarkdown(md)
 })
 
 const activeReasoning = computed(() => nodeReasoning.value[activeNode.value] ?? '')
@@ -821,7 +409,7 @@ async function initSession(id: string): Promise<void> {
   nodeReasoning.value = {}
   progressMessage.value = ''
   clearedNodeKeys.value = new Set()
-  processedSeq = 0
+  resetProcessedSeq(0)
   clarifyRounds.value = []
 
   // Capture backend startedAt for restart detection
@@ -832,8 +420,9 @@ async function initSession(id: string): Promise<void> {
   // rejoin resets composable state and loads historical events
   await session.rejoin(id, 0)
   // Sync UI state from composable
+  // R-12: Show alert bar instead of auto-popup on clarify
   if (session.status.value === 'clarify') {
-    showClarify.value = true
+    showClarifyAlert.value = true
   }
   if (session.status.value === 'confirm') {
     showConfirm.value = true
@@ -841,7 +430,7 @@ async function initSession(id: string): Promise<void> {
   try {
     const info = await getRamSession(id)
     if (info.clarifyPending) {
-      showClarify.value = true
+      showClarifyAlert.value = true
     }
     if (info.hitlPending) {
       showConfirm.value = true
@@ -940,6 +529,23 @@ onBeforeUnmount(() => {
         中止
       </el-button>
     </header>
+
+    <!-- R-12: Clarify alert bar (replaces auto-popup) -->
+    <el-alert
+      v-if="showClarifyAlert"
+      type="warning"
+      :closable="false"
+      class="clarify-alert"
+    >
+      <template #title>
+        <div class="clarify-alert-content">
+          <span>需要澄清：分析器需要更多信息才能继续。</span>
+          <el-button type="primary" size="small" @click="showClarify = true; showClarifyAlert = false">
+            打开
+          </el-button>
+        </div>
+      </template>
+    </el-alert>
 
     <section class="dag-section">
       <DagFlow :nodes="dagNodes" :active-key="activeNode" @node-click="onDagClick" />
@@ -1121,6 +727,17 @@ onBeforeUnmount(() => {
 }
 .topbar-spacer {
   flex: 1;
+}
+
+.clarify-alert {
+  margin-bottom: 0;
+}
+.clarify-alert-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
 }
 
 .dag-section {

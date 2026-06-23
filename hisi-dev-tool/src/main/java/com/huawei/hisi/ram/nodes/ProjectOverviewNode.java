@@ -5,7 +5,7 @@ import com.huawei.hisi.ram.kg.KgMcpClient;
 import com.huawei.hisi.ram.kg.dto.CallTreeNode;
 import com.huawei.hisi.ram.kg.dto.Entry;
 import com.huawei.hisi.ram.kg.dto.Seed;
-import com.huawei.hisi.ram.orchestrator.DagNode;
+import com.huawei.hisi.workflow.DagNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 

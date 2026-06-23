@@ -2,7 +2,7 @@ package com.huawei.hisi.ram.mcp.tools;
 
 import com.huawei.hisi.ram.mcp.McpTool;
 import com.huawei.hisi.ram.mcp.RamDagNodes;
-import com.huawei.hisi.ram.orchestrator.ExecutionResult;
+import com.huawei.hisi.workflow.ExecutionResult;
 import com.huawei.hisi.ram.orchestrator.RequirementAnalysisOrchestrator;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import org.springframework.stereotype.Component;

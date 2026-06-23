@@ -38,6 +38,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { escapeHtml, escapeRegExp } from '@/utils/markdown'
 
 interface ChainNode {
   name: string
@@ -116,9 +117,11 @@ const visibleChildren = computed(() => {
 const hasVisibleChildren = computed(() => visibleChildren.value.length > 0)
 
 const highlightedName = computed(() => {
-  if (!props.search) return props.node.name
-  return props.node.name.replace(
-    new RegExp(`(${props.search})`, 'gi'),
+  if (!props.search) return escapeHtml(props.node.name)
+  const escapedSearch = escapeRegExp(props.search)
+  const escapedName = escapeHtml(props.node.name)
+  return escapedName.replace(
+    new RegExp(`(${escapedSearch})`, 'gi'),
     '<mark>$1</mark>'
   )
 })

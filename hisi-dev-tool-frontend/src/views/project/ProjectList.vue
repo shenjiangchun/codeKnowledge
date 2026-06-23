@@ -100,124 +100,148 @@
               </el-button>
             </div>
           </div>
-          <el-table :data="projects" v-loading="loading" stripe @selection-change="handleSelectionChange">
-            <el-table-column type="selection" width="55" />
-            <el-table-column prop="name" label="项目名称">
-              <template #default="{ row }">
-                <div class="project-name-cell">
-                  <span>{{ row.name }}</span>
-                  <el-tag v-if="appStore.selectedProjectNames.includes(row.name)" type="success" size="small">
-                    已选择
-                  </el-tag>
+          <el-collapse v-model="expandedGroups" v-loading="loading">
+            <el-collapse-item
+              v-for="gp in groupedProjects"
+              :key="gp.group?.appId || 'ungrouped'"
+              :name="gp.group?.appId || 'ungrouped'"
+            >
+              <template #title>
+                <div class="group-header" @click.stop>
+                  <el-checkbox
+                    :model-value="groupSelectionState.get(gp.group?.appId || 'ungrouped') || false"
+                    @change="toggleGroupSelection(gp.group?.appId || 'ungrouped', gp.projects)"
+                    @click.stop
+                  />
+                  <span class="group-name">{{ gp.group?.appName || '未分组' }}</span>
+                  <el-tag size="small" type="info">{{ gp.projects.length }} 个项目</el-tag>
+                  <el-tag v-if="gp.group?.appId" size="small">{{ gp.group.appId }}</el-tag>
                 </div>
               </template>
-            </el-table-column>
-            <el-table-column prop="branch" label="分支" width="100" />
-            <el-table-column prop="remoteUrl" label="远程地址" show-overflow-tooltip>
-              <template #default="{ row }">
-                {{ row.remoteUrl || row.url || '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="状态" width="120">
-              <template #default="{ row }">
-                <el-tag :type="getStatusType(row)">{{ getStatusText(row) }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="来源" width="80" align="center">
-              <template #default="{ row }">
-                <el-tag :type="row.source === 'scanned' ? 'primary' : 'info'" size="small">
-                  {{ row.source === 'scanned' ? '扫描' : '克隆' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="图谱状态" width="120" align="center">
-              <template #default="{ row }">
-                <div class="status-indicator">
-                  <span
-                    class="status-dot"
-                    :class="getKnowledgeGraphStatusClass(getProjectKnowledgeGraphStatus(row.path))"
-                    :title="getKnowledgeGraphStatusTooltip(row.path)"
-                  ></span>
-                  <span class="status-text">{{ getKnowledgeGraphStatusText(getProjectKnowledgeGraphStatus(row.path)) }}</span>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="向量状态" width="120" align="center">
-              <template #default="{ row }">
-                <div class="vector-status">
-                  <div class="status-indicator">
-                    <span
-                      class="status-dot"
-                      :class="getVectorStatusClass(getProjectVectorStatus(row.path))"
-                      :title="getVectorStatusTooltip(row.path)"
-                    ></span>
-                    <span class="status-text">{{ getVectorStatusText(getProjectVectorStatus(row.path)) }}</span>
-                  </div>
-                  <span v-if="getProjectVectorProgress(row.path)" class="progress-text">
-                    {{ getProjectVectorProgress(row.path)!.processed }}/{{ getProjectVectorProgress(row.path)!.total }}
-                  </span>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column prop="lastCommitMessage" label="最近提交" show-overflow-tooltip>
-              <template #default="{ row }">
-                <span v-if="row.lastCommitMessage">{{ row.lastCommitMessage }}</span>
-                <span v-else class="text-muted">-</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="450">
-              <template #default="{ row }">
-                <el-button
-                  type="primary"
-                  link
-                  @click="handleSelect(row)"
-                  :disabled="!appStore.projectDirConfigured"
-                >
-                  <el-icon><Select /></el-icon>
-                  选择
-                </el-button>
-                <el-button
-                  type="info"
-                  link
-                  @click="showCommitDialog(row)"
-                  :disabled="!appStore.projectDirConfigured"
-                >
-                  <el-icon><Document /></el-icon>
-                  提交分析
-                </el-button>
-                <el-button
-                  type="success"
-                  link
-                  @click="handleGenerateKnowledgeGraph(row)"
-                  :loading="generatingKnowledgeGraph.has(row.path)"
-                  :disabled="isKnowledgeGraphButtonDisabled(row.path)"
-                >
-                  <el-icon><DataAnalysis /></el-icon>
-                  生成图谱
-                </el-button>
-                <el-button
-                  type="primary"
-                  link
-                  @click="handleGenerateVector(row)"
-                  :loading="isVectorGenerating(row.path)"
-                  :disabled="isVectorButtonDisabled(row.path)"
-                >
-                  <el-icon><Collection /></el-icon>
-                  描述&amp;向量
-                </el-button>
-                <GitOperations
-                  v-if="hasGit(row) && appStore.projectDirConfigured"
-                  :project-path="getProjectPath(row.name)"
-                />
-                <el-button type="primary" link @click="handlePull(row)">拉取</el-button>
-                <el-button type="info" link @click="handleRefreshProject(row)" :disabled="!appStore.projectDirConfigured">
-                  <el-icon><Refresh /></el-icon>
-                  图谱刷新
-                </el-button>
-                <el-button type="danger" link @click="handleDelete(row)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
+              <el-table
+                :data="gp.projects"
+                stripe
+                @selection-change="(selection: any[]) => handleGroupSelectionChange(gp.group?.appId || 'ungrouped', selection)"
+              >
+                <el-table-column type="selection" width="55" />
+                <el-table-column prop="name" label="项目名称">
+                  <template #default="{ row }">
+                    <div class="project-name-cell">
+                      <span>{{ row.name }}</span>
+                      <el-tag v-if="appStore.selectedProjectNames.includes(row.name)" type="success" size="small">
+                        已选择
+                      </el-tag>
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="branch" label="分支" width="100" />
+                <el-table-column prop="remoteUrl" label="远程地址" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    {{ row.remoteUrl || row.url || '-' }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="状态" width="120">
+                  <template #default="{ row }">
+                    <el-tag :type="getStatusType(row)">{{ getStatusText(row) }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="来源" width="80" align="center">
+                  <template #default="{ row }">
+                    <el-tag :type="row.source === 'scanned' ? 'primary' : 'info'" size="small">
+                      {{ row.source === 'scanned' ? '扫描' : '克隆' }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="图谱状态" width="120" align="center">
+                  <template #default="{ row }">
+                    <div class="status-indicator">
+                      <span
+                        class="status-dot"
+                        :class="getKnowledgeGraphStatusClass(getProjectKnowledgeGraphStatus(row.path))"
+                        :title="getKnowledgeGraphStatusTooltip(row.path)"
+                      ></span>
+                      <span class="status-text">{{ getKnowledgeGraphStatusText(getProjectKnowledgeGraphStatus(row.path)) }}</span>
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="向量状态" width="120" align="center">
+                  <template #default="{ row }">
+                    <div class="vector-status">
+                      <div class="status-indicator">
+                        <span
+                          class="status-dot"
+                          :class="getVectorStatusClass(getProjectVectorStatus(row.path))"
+                          :title="getVectorStatusTooltip(row.path)"
+                        ></span>
+                        <span class="status-text">{{ getVectorStatusText(getProjectVectorStatus(row.path)) }}</span>
+                      </div>
+                      <span v-if="getProjectVectorProgress(row.path)" class="progress-text">
+                        {{ getProjectVectorProgress(row.path)!.processed }}/{{ getProjectVectorProgress(row.path)!.total }}
+                      </span>
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="lastCommitMessage" label="最近提交" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <span v-if="row.lastCommitMessage">{{ row.lastCommitMessage }}</span>
+                    <span v-else class="text-muted">-</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="450">
+                  <template #default="{ row }">
+                    <el-button
+                      type="primary"
+                      link
+                      @click="handleSelect(row)"
+                      :disabled="!appStore.projectDirConfigured"
+                    >
+                      <el-icon><Select /></el-icon>
+                      选择
+                    </el-button>
+                    <el-button
+                      type="info"
+                      link
+                      @click="showCommitDialog(row)"
+                      :disabled="!appStore.projectDirConfigured"
+                    >
+                      <el-icon><Document /></el-icon>
+                      提交分析
+                    </el-button>
+                    <el-button
+                      type="success"
+                      link
+                      @click="handleGenerateKnowledgeGraph(row)"
+                      :loading="generatingKnowledgeGraph.has(row.path)"
+                      :disabled="isKnowledgeGraphButtonDisabled(row.path)"
+                    >
+                      <el-icon><DataAnalysis /></el-icon>
+                      生成图谱
+                    </el-button>
+                    <el-button
+                      type="primary"
+                      link
+                      @click="handleGenerateVector(row)"
+                      :loading="isVectorGenerating(row.path)"
+                      :disabled="isVectorButtonDisabled(row.path)"
+                    >
+                      <el-icon><Collection /></el-icon>
+                      描述&amp;向量
+                    </el-button>
+                    <GitOperations
+                      v-if="hasGit(row) && appStore.projectDirConfigured"
+                      :project-path="getProjectPath(row.name)"
+                    />
+                    <el-button type="primary" link @click="handlePull(row)">拉取</el-button>
+                    <el-button type="info" link @click="handleRefreshProject(row)" :disabled="!appStore.projectDirConfigured">
+                      <el-icon><Refresh /></el-icon>
+                      图谱刷新
+                    </el-button>
+                    <el-button type="danger" link @click="handleDelete(row)">删除</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-collapse-item>
+          </el-collapse>
         </el-tab-pane>
 
         <!-- ========== 远端项目 Tab ========== -->
@@ -827,6 +851,75 @@ const showGroupFormDialog = ref(false)
 const groups = ref<ProjectGroup[]>([])
 const loadingGroups = ref(false)
 const editingGroup = ref<ProjectGroup | null>(null)
+const expandedGroups = ref<string[]>([])
+
+// 分组选择状态
+const groupSelectionState = ref<Map<string, boolean>>(new Map())
+
+// 每个分组的当前选中行
+const groupSelections = ref<Map<string, any[]>>(new Map())
+
+// 切换分组全选
+const toggleGroupSelection = (groupKey: string, groupProjects: GitRepositoryInfo[]) => {
+  const currentState = groupSelectionState.value.get(groupKey) || false
+  const newState = !currentState
+  groupSelectionState.value.set(groupKey, newState)
+
+  if (newState) {
+    groupSelections.value.set(groupKey, [...groupProjects])
+  } else {
+    groupSelections.value.set(groupKey, [])
+  }
+  mergeAllGroupSelections()
+}
+
+// 合并所有分组的选择状态
+const mergeAllGroupSelections = () => {
+  const allSelection: any[] = []
+  groupSelections.value.forEach((selection) => {
+    allSelection.push(...selection)
+  })
+  selectedProjects.value = allSelection
+}
+
+// 处理分组内选择变化（由 el-table 的 selection-change 事件触发）
+const handleGroupSelectionChange = (groupKey: string, selection: any[]) => {
+  groupSelections.value.set(groupKey, selection)
+  const group = groupedProjects.value.find(g => (g.group?.appId || 'ungrouped') === groupKey)
+  if (group) {
+    groupSelectionState.value.set(groupKey, selection.length === group.projects.length && group.projects.length > 0)
+  }
+  mergeAllGroupSelections()
+}
+
+// 未分组项目 computed
+const ungroupedProjects = computed(() => {
+  const assignedPaths = new Set(groups.value.flatMap(g => g.projectPaths))
+  return projects.value.filter(p => !assignedPaths.has(normalizePath(p.path)))
+})
+
+// 按分组归类项目 computed
+const groupedProjects = computed(() => {
+  const result: { group: ProjectGroup | null; projects: GitRepositoryInfo[] }[] = []
+  const assigned = new Set<string>()
+
+  // 按分组归类
+  for (const g of groups.value) {
+    const matched = projects.value.filter(p => g.projectPaths.includes(normalizePath(p.path)))
+    if (matched.length > 0) {
+      result.push({ group: g, projects: matched })
+      matched.forEach(p => assigned.add(normalizePath(p.path)))
+    }
+  }
+
+  // 未分组项目
+  const ungrouped = projects.value.filter(p => !assigned.has(normalizePath(p.path)))
+  if (ungrouped.length > 0) {
+    result.push({ group: null, projects: ungrouped })
+  }
+
+  return result
+})
 const groupForm = reactive({
   appId: '',
   appName: '',
@@ -1036,6 +1129,12 @@ const loadGroups = async () => {
   loadingGroups.value = true
   try {
     groups.value = await projectGroupApi.getGroups()
+    // 默认展开所有分组
+    expandedGroups.value = groups.value.map(g => g.appId)
+    // 始终包含未分组
+    if (ungroupedProjects.value.length > 0) {
+      expandedGroups.value.push('ungrouped')
+    }
   } catch (e) {
     ElMessage.error('加载分组列表失败')
   } finally {
@@ -1077,6 +1176,15 @@ const handleGroupSave = async () => {
   if (groupForm.projectPaths.length === 0) {
     ElMessage.warning('请选择至少一个项目')
     return
+  }
+
+  // 创建模式：检查 appId 是否已存在
+  if (!editingGroup.value) {
+    const exists = groups.value.some(g => g.appId === groupForm.appId)
+    if (exists) {
+      ElMessage.warning(`appId "${groupForm.appId}" 已存在，请使用其他名称`)
+      return
+    }
   }
 
   try {
@@ -1551,7 +1659,8 @@ const loadProjects = async () => {
     // Load task statuses in parallel after projects are loaded
     await Promise.all([
       loadAllKnowledgeGraphStatuses(),
-      loadAllVectorGenerationStatuses()
+      loadAllVectorGenerationStatuses(),
+      loadGroups()
     ])
   } catch (error) {
     ElMessage.error('加载项目列表失败')
@@ -1572,10 +1681,11 @@ const handleScan = async () => {
     // axios 拦截器已提取 data，res 直接就是仓库数组
     projects.value = Array.isArray(res) ? res : (res as any)?.data || []
     ElMessage.success(`扫描完成，发现 ${projects.value.length} 个仓库`)
-    // Load task statuses in parallel after scan
+    // Load task statuses and groups in parallel after scan
     await Promise.all([
       loadAllKnowledgeGraphStatuses(),
-      loadAllVectorGenerationStatuses()
+      loadAllVectorGenerationStatuses(),
+      loadGroups()
     ])
   } catch (error) {
     ElMessage.error('扫描失败')
@@ -1928,10 +2038,6 @@ const handleGenerateVector = async (row: GitRepositoryInfo) => {
 const selectedProjects = ref<any[]>([])
 const selectedRemoteProjects = ref<any[]>([])
 const crossServiceBuilding = ref(false)
-
-function handleSelectionChange(selection: any[]) {
-  selectedProjects.value = selection
-}
 
 function handleRemoteSelectionChange(selection: any[]) {
   selectedRemoteProjects.value = selection
@@ -2454,6 +2560,22 @@ const handleScheduleSubmit = async () => {
 .header-buttons {
   display: flex;
   gap: 8px;
+}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.group-header .el-checkbox {
+  margin-right: 4px;
+}
+
+.group-name {
+  font-weight: 600;
+  font-size: 14px;
 }
 
 .project-name-cell {

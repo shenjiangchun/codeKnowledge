@@ -1,5 +1,6 @@
 package com.huawei.hisi.ram.orchestrator;
 
+import com.huawei.hisi.workflow.InputsHasher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

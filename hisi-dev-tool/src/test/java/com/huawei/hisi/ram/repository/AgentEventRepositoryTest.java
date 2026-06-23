@@ -2,6 +2,7 @@ package com.huawei.hisi.ram.repository;
 
 import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.AgentSession;
+import com.huawei.hisi.ram.model.SessionType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,7 +34,7 @@ class AgentEventRepositoryTest {
     @Test
     @DisplayName("append is idempotent on duplicate idempotency key")
     void append_isIdempotent_onDuplicateKey() {
-        AgentSession s = sessionRepo.save(AgentSession.newRunning("user-1"));
+        AgentSession s = sessionRepo.save(AgentSession.newRunning("user-1", SessionType.DEMAND));
         String key = "k-" + System.nanoTime();
 
         AgentEvent first = eventRepo.append(AgentEvent.userMsg(s.getId(), 1, "hello", key));
@@ -46,7 +47,7 @@ class AgentEventRepositoryTest {
     @Test
     @DisplayName("append assigns auto-increment id and persists all fields")
     void append_assignsAutoIncrementIdAndPersistsAllFields() {
-        AgentSession s = sessionRepo.save(AgentSession.newRunning("user-2"));
+        AgentSession s = sessionRepo.save(AgentSession.newRunning("user-2", SessionType.DEMAND));
         String key = "k-detail-" + System.nanoTime();
 
         AgentEvent event = AgentEvent.toolUse(
@@ -68,7 +69,7 @@ class AgentEventRepositoryTest {
     @Test
     @DisplayName("findBySessionId returns events in seq order (server-assigned)")
     void findBySessionId_returnsEventsInSeqOrder() {
-        AgentSession s = sessionRepo.save(AgentSession.newRunning("user-3"));
+        AgentSession s = sessionRepo.save(AgentSession.newRunning("user-3", SessionType.DEMAND));
         long sid = s.getId();
         long nano = System.nanoTime();
 
@@ -88,7 +89,7 @@ class AgentEventRepositoryTest {
     @Test
     @DisplayName("findMaxSeq returns zero when session has no events, and tracks server-assigned seq")
     void findMaxSeq_returnsZero_whenSessionHasNoEvents() {
-        AgentSession s = sessionRepo.save(AgentSession.newRunning("user-4"));
+        AgentSession s = sessionRepo.save(AgentSession.newRunning("user-4", SessionType.DEMAND));
 
         assertThat(eventRepo.findMaxSeq(s.getId())).isEqualTo(0L);
 
