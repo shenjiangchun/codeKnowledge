@@ -6,9 +6,15 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 /**
  * 报告导出服务
@@ -170,5 +176,33 @@ public class ReportExportService {
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * 批量导出日志分析报告为 ZIP 文件
+     *
+     * @param startTime 开始时间
+     * @param endTime 结束时间
+     * @return ZIP 文件字节数组
+     * @throws IOException 如果 ZIP 创建失败
+     */
+    public byte[] exportLogReportsAsZip(LocalDateTime startTime, LocalDateTime endTime) throws IOException {
+        List<LogAnalysisReportEntity> reports = logAnalysisRepository.findByCreatedAtBetween(startTime, endTime);
+
+        log.info("批量导出报告: 共 {} 条记录 ({} - {})", reports.size(), startTime, endTime);
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (ZipOutputStream zos = new ZipOutputStream(baos)) {
+            for (LogAnalysisReportEntity report : reports) {
+                String mdContent = exportLogReportAsMd(report.getReportId());
+                String entryName = "report-" + report.getReportId() + ".md";
+                ZipEntry entry = new ZipEntry(entryName);
+                zos.putNextEntry(entry);
+                zos.write(mdContent.getBytes(StandardCharsets.UTF_8));
+                zos.closeEntry();
+            }
+        }
+
+        return baos.toByteArray();
     }
 }

@@ -10,12 +10,15 @@ import com.huawei.hisi.utils.SnowflakeIdGenerator;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -431,6 +434,33 @@ public class LogAnalysisController {
         } catch (IllegalArgumentException e) {
             log.warn("导出报告失败: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("报告不存在: " + id);
+        }
+    }
+
+    /**
+     * 批量导出报告为 ZIP 文件
+     * GET /api/log/reports/export/zip?startTime=&endTime=
+     *
+     * @param startTime 开始时间 (ISO 格式: yyyy-MM-ddTHH:mm:ss)
+     * @param endTime 结束时间 (ISO 格式: yyyy-MM-ddTHH:mm:ss)
+     * @return ZIP 文件
+     */
+    @GetMapping("/reports/export/zip")
+    public ResponseEntity<byte[]> exportReportsZip(
+            @RequestParam("startTime") LocalDateTime startTime,
+            @RequestParam("endTime") LocalDateTime endTime) {
+        try {
+            byte[] zipContent = reportExportService.exportLogReportsAsZip(startTime, endTime);
+
+            String filename = "reports-" + startTime.format(DateTimeFormatter.ofPattern("yyyyMMdd")) + ".zip";
+
+            return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, "application/zip")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .body(zipContent);
+        } catch (Exception e) {
+            log.error("批量导出报告失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 }

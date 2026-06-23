@@ -248,4 +248,36 @@ class LogAnalysisControllerTest {
         assertEquals(404, response.getStatusCodeValue());
         assertTrue(response.getBody().contains("报告不存在"));
     }
+
+    @Test
+    @DisplayName("批量导出报告 ZIP - 正常返回")
+    void exportReportsZip_returnsZipContent() throws Exception {
+        LocalDateTime startTime = LocalDateTime.of(2025, 1, 1, 0, 0);
+        LocalDateTime endTime = LocalDateTime.of(2025, 1, 31, 23, 59);
+        byte[] expectedZip = new byte[]{0x50, 0x4B, 0x03, 0x04}; // ZIP file signature
+
+        when(reportExportService.exportLogReportsAsZip(startTime, endTime)).thenReturn(expectedZip);
+
+        ResponseEntity<byte[]> response = controller.exportReportsZip(startTime, endTime);
+
+        assertEquals(200, response.getStatusCodeValue());
+        assertEquals("application/zip", response.getHeaders().getContentType().toString());
+        assertTrue(response.getHeaders().getFirst("Content-Disposition").contains("attachment"));
+        assertTrue(response.getHeaders().getFirst("Content-Disposition").contains("reports-20250101.zip"));
+        assertArrayEquals(expectedZip, response.getBody());
+    }
+
+    @Test
+    @DisplayName("批量导出报告 ZIP - 异常应返回500")
+    void exportReportsZip_withException_shouldReturn500() throws Exception {
+        LocalDateTime startTime = LocalDateTime.of(2025, 1, 1, 0, 0);
+        LocalDateTime endTime = LocalDateTime.of(2025, 1, 31, 23, 59);
+
+        when(reportExportService.exportLogReportsAsZip(startTime, endTime))
+            .thenThrow(new RuntimeException("导出失败"));
+
+        ResponseEntity<byte[]> response = controller.exportReportsZip(startTime, endTime);
+
+        assertEquals(500, response.getStatusCodeValue());
+    }
 }

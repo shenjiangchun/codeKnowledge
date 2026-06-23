@@ -590,4 +590,22 @@ public class LogAnalysisRepository {
             return List.of();
         }
     }
+
+    /**
+     * 根据创建时间范围查询报告列表
+     * @param startTime 开始时间
+     * @param endTime 结束时间
+     * @return 报告列表
+     */
+    public List<LogAnalysisReportEntity> findByCreatedAtBetween(LocalDateTime startTime, LocalDateTime endTime) {
+        String sql = "SELECT * FROM log_analysis_report WHERE created_at >= ? AND created_at <= ? ORDER BY created_at DESC";
+        try {
+            long startEpoch = startTime.atZone(ZoneId.systemDefault()).toEpochSecond();
+            long endEpoch = endTime.atZone(ZoneId.systemDefault()).toEpochSecond();
+            return jdbcTemplate.query(sql, new LogAnalysisReportRowMapper(), startEpoch, endEpoch);
+        } catch (Exception e) {
+            log.error("查询报告列表失败 (startTime={}, endTime={}): {}", startTime, endTime, e.getMessage());
+            return List.of();
+        }
+    }
 }
