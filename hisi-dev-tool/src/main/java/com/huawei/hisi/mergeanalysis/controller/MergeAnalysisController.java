@@ -11,14 +11,18 @@ import com.huawei.hisi.ram.model.AgentSession;
 import com.huawei.hisi.ram.model.SessionStatus;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
+import com.huawei.hisi.service.ReportExportService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.DependsOn;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
@@ -40,6 +44,7 @@ public class MergeAnalysisController {
     private final AgentSessionRepository sessionRepository;
     private final AgentEventRepository eventRepository;
     private final ObjectMapper objectMapper;
+    private final ReportExportService reportExportService;
 
     private final Map<String, Long> sessionIdMap = new ConcurrentHashMap<>();
     private final ScheduledExecutorService streamScheduler = Executors.newScheduledThreadPool(2);
@@ -51,14 +56,15 @@ public class MergeAnalysisController {
                                    MergeAnalysisService mergeAnalysisService,
                                    AgentSessionRepository sessionRepository,
                                    AgentEventRepository eventRepository,
-                                   ObjectMapper objectMapper) {
+                                   ObjectMapper objectMapper,
+                                   ReportExportService reportExportService) {
         this.diffExtractService = diffExtractService;
         this.mergeAnalysisService = mergeAnalysisService;
         this.sessionRepository = sessionRepository;
         this.eventRepository = eventRepository;
         this.objectMapper = objectMapper;
+        this.reportExportService = reportExportService;
     }
-
     @PreDestroy
     void shutdown() {
         streamScheduler.shutdownNow();
@@ -336,6 +342,36 @@ public class MergeAnalysisController {
             return objectMapper.readValue(payload, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             return Map.of("raw", payload);
+        }
+    }
+
+    // ──────────────── Export ────────────────
+
+    /**
+     * 导出合入分析报告为 Markdown 文件
+     *
+     * @param handle 会话 UUID
+     * @return Markdown 文件字节流
+     */
+    @GetMapping("/sessions/{sid}/export/md")
+    public ResponseEntity<byte[]> exportReportMd(@PathVariable("sid") String handle) {
+        Long backendId = resolveBackendId(handle);
+        if (backendId == null) {
+            return ResponseEntity.status(404)
+                    .body(("Session not found: " + handle).getBytes(StandardCharsets.UTF_8));
+        }
+
+        try {
+            String mdContent = reportExportService.exportMergeReportAsMd(handle);
+            String filename = "merge-report-" + handle + ".md";
+            
+            return ResponseEntity.ok()
+                    .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                    .contentType(MediaType.parseMediaType("text/markdown"))
+                    .body(mdContent.getBytes(StandardCharsets.UTF_8));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(404)
+                    .body(e.getMessage().getBytes(StandardCharsets.UTF_8));
         }
     }
 }

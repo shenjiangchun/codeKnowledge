@@ -297,4 +297,68 @@ public class ReportExportService {
 
         return baos.toByteArray();
     }
+
+    /**
+     * 将合入分析报告导出为 Markdown 格式
+     *
+     * @param sessionId 前端 UUID 会话标识
+     * @return Markdown 格式的报告内容
+     * @throws IllegalArgumentException 如果会话不存在
+     */
+    public String exportMergeReportAsMd(String sessionId) {
+        Optional<AgentSession> sessionOpt = agentSessionRepository.findByUuid(sessionId);
+        if (sessionOpt.isEmpty()) {
+            throw new IllegalArgumentException("会话不存在: " + sessionId);
+        }
+
+        AgentSession session = sessionOpt.get();
+        long backendId = session.getId();
+        List<AgentEvent> events = agentEventRepository.findBySessionId(backendId);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("# 合入分析报告 #").append(sessionId).append("\n\n");
+
+        // 基本信息
+        sb.append("## 基本信息\n\n");
+        sb.append("| 字段 | 值 |\n");
+        sb.append("|------|----|\n");
+        sb.append("| 会话ID | ").append(sessionId).append(" |\n");
+        sb.append("| 项目路径 | ").append(session.getProjectPaths() != null ? session.getProjectPaths() : "-").append(" |\n");
+        sb.append("| 源分支 | ").append(session.getSourceBranch() != null ? session.getSourceBranch() : "-").append(" |\n");
+        sb.append("| 目标分支 | ").append(session.getTargetBranch() != null ? session.getTargetBranch() : "-").append(" |\n");
+        sb.append("| 状态 | ").append(session.getStatus() != null ? session.getStatus().name() : "-").append(" |\n");
+        sb.append("| 当前节点 | ").append(session.getCurrentNode() != null ? session.getCurrentNode() : "-").append(" |\n");
+        sb.append("| 步骤数 | ").append(session.getStepCount()).append(" |\n");
+        sb.append("| 创建时间 | ").append(formatEpoch(session.getCreatedAt())).append(" |\n");
+        sb.append("| 更新时间 | ").append(formatEpoch(session.getUpdatedAt())).append(" |\n\n");
+
+        // 分析意图
+        sb.append("## 分析意图\n\n");
+        if (session.getIntent() != null && !session.getIntent().isBlank()) {
+            sb.append(session.getIntent()).append("\n\n");
+        } else {
+            sb.append("暂无\n\n");
+        }
+
+        // 分析过程事件
+        sb.append("## 分析过程\n\n");
+        if (!events.isEmpty()) {
+            for (AgentEvent event : events) {
+                if (event.getType() == null) continue;
+                
+                sb.append("### ").append(event.getType().name());
+                sb.append(" (seq=").append(event.getSeq()).append(")\n\n");
+                sb.append("- 时间: ").append(formatEpoch(event.getCreatedAt())).append("\n");
+                
+                if (event.getPayload() != null && !event.getPayload().isBlank()) {
+                    sb.append("- Payload:\n```\n").append(event.getPayload()).append("\n```\n");
+                }
+                sb.append("\n");
+            }
+        } else {
+            sb.append("暂无分析记录\n\n");
+        }
+
+        return sb.toString();
+    }
 }

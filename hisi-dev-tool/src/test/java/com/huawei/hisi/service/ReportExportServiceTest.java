@@ -205,4 +205,112 @@ class ReportExportServiceTest {
         assertThat(result).contains("impact");
         assertThat(result).contains("LoginController.java");
     }
+    // ========== MergeAnalysis Export Tests ==========
+
+    @Test
+    @DisplayName("exportMergeReportAsMd - 正常导出包含基本信息")
+    void exportMergeReportAsMd_shouldContainBasicInfo() {
+        // Arrange
+        AgentSession mergeSession = AgentSession.builder()
+                .id(testBackendId)
+                .uuid(testUuid)
+                .userId("merge-analysis")
+                .status(SessionStatus.DONE)
+                .currentNode("test_scope")
+                .stepCount(3)
+                .intent("合入分析: feature/login -> main")
+                .projectPaths("/project/hisi-dev-tool")
+                .sourceBranch("feature/login")
+                .targetBranch("main")
+                .createdAt(System.currentTimeMillis() / 1000L)
+                .updatedAt(System.currentTimeMillis() / 1000L)
+                .build();
+        
+        when(sessionRepository.findByUuid(testUuid)).thenReturn(Optional.of(mergeSession));
+        when(eventRepository.findBySessionId(testBackendId)).thenReturn(List.of());
+
+        // Act
+        String result = reportExportService.exportMergeReportAsMd(testUuid);
+
+        // Assert
+        assertThat(result).contains("# 合入分析报告");
+        assertThat(result).contains(testUuid);
+        assertThat(result).contains("/project/hisi-dev-tool");
+        assertThat(result).contains("feature/login");
+        assertThat(result).contains("main");
+        assertThat(result).contains("DONE");
+    }
+
+    @Test
+    @DisplayName("exportMergeReportAsMd - Session不存在时抛出异常")
+    void exportMergeReportAsMd_shouldThrowWhenSessionNotFound() {
+        // Arrange
+        when(sessionRepository.findByUuid("non-existent-uuid")).thenReturn(Optional.empty());
+
+        // Act & Assert
+        assertThatThrownBy(() -> reportExportService.exportMergeReportAsMd("non-existent-uuid"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("会话不存在");
+    }
+
+    @Test
+    @DisplayName("exportMergeReportAsMd - 包含分析阶段事件")
+    void exportMergeReportAsMd_shouldContainAnalysisEvents() {
+        // Arrange
+        AgentSession mergeSession = AgentSession.builder()
+                .id(testBackendId)
+                .uuid(testUuid)
+                .userId("merge-analysis")
+                .status(SessionStatus.DONE)
+                .currentNode("test_scope")
+                .stepCount(3)
+                .intent("合入分析: feature/login -> main")
+                .projectPaths("/project/hisi-dev-tool")
+                .sourceBranch("feature/login")
+                .targetBranch("main")
+                .createdAt(System.currentTimeMillis() / 1000L)
+                .updatedAt(System.currentTimeMillis() / 1000L)
+                .build();
+        
+        AgentEvent diffEvent = AgentEvent.builder()
+                .id(1L)
+                .sessionId(testBackendId)
+                .seq(1L)
+                .type(EventType.CHECKPOINT)
+                .payload("{\"nodeName\":\"diff_extract\",\"output\":{\"totalFiles\":5,\"totalAdditions\":120,\"totalDeletions\":30}}")
+                .createdAt(System.currentTimeMillis() / 1000L)
+                .build();
+        
+        AgentEvent impactEvent = AgentEvent.builder()
+                .id(2L)
+                .sessionId(testBackendId)
+                .seq(2L)
+                .type(EventType.CHECKPOINT)
+                .payload("{\"nodeName\":\"impact_analysis\",\"output\":{\"affectedEntryPoints\":3,\"riskLevel\":\"medium\"}}")
+                .createdAt(System.currentTimeMillis() / 1000L)
+                .build();
+        
+        AgentEvent testScopeEvent = AgentEvent.builder()
+                .id(3L)
+                .sessionId(testBackendId)
+                .seq(3L)
+                .type(EventType.CHECKPOINT)
+                .payload("{\"nodeName\":\"test_scope\",\"output\":{\"testCaseCount\":8}}")
+                .createdAt(System.currentTimeMillis() / 1000L)
+                .build();
+        
+        when(sessionRepository.findByUuid(testUuid)).thenReturn(Optional.of(mergeSession));
+        when(eventRepository.findBySessionId(testBackendId)).thenReturn(List.of(diffEvent, impactEvent, testScopeEvent));
+
+        // Act
+        String result = reportExportService.exportMergeReportAsMd(testUuid);
+
+        // Assert
+        assertThat(result).contains("## 分析过程");
+        assertThat(result).contains("diff_extract");
+        assertThat(result).contains("impact_analysis");
+        assertThat(result).contains("test_scope");
+        assertThat(result).contains("totalFiles");
+        assertThat(result).contains("affectedEntryPoints");
+    }
 }
