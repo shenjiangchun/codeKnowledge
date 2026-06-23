@@ -12,6 +12,7 @@ import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.model.SessionStatus;
 import com.huawei.hisi.ram.model.SessionType;
 import com.huawei.hisi.ram.nodes.TechPlanNode;
+import com.huawei.hisi.service.ReportExportService;
 import com.huawei.hisi.workflow.InputsHasher;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
@@ -20,6 +21,10 @@ import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import jakarta.servlet.http.HttpServletResponse;
@@ -98,6 +103,7 @@ public class RamController {
     private final ObjectMapper objectMapper;
     private final TechPlanNode techPlanNode;
     private final SessionMappingService sessionMappingService;
+    private final ReportExportService reportExportService;
 
     private final long startedAt = System.currentTimeMillis();
 
@@ -121,7 +127,8 @@ public class RamController {
                          AgentSessionRepository sessionRepository,
                          ObjectMapper objectMapper,
                          TechPlanNode techPlanNode,
-                         SessionMappingService sessionMappingService) {
+                         SessionMappingService sessionMappingService,
+                         ReportExportService reportExportService) {
         // Bounded thread pool to prevent resource exhaustion under concurrent load
         ExecutorService async = Executors.newFixedThreadPool(10, r -> {
             Thread t = new Thread(r, "ram-controller-async");
@@ -139,6 +146,7 @@ public class RamController {
         this.objectMapper = objectMapper;
         this.techPlanNode = techPlanNode;
         this.sessionMappingService = sessionMappingService;
+        this.reportExportService = reportExportService;
         this.asyncExecutor = async;
         this.streamScheduler = sched;
         this.ownedAsyncExecutor = async;
@@ -152,6 +160,7 @@ public class RamController {
                   ObjectMapper objectMapper,
                   TechPlanNode techPlanNode,
                   SessionMappingService sessionMappingService,
+                  ReportExportService reportExportService,
                   java.util.concurrent.Executor asyncExecutor,
                   ScheduledExecutorService streamScheduler) {
         this.ramMcpServer = ramMcpServer;
@@ -160,6 +169,7 @@ public class RamController {
         this.objectMapper = objectMapper;
         this.techPlanNode = techPlanNode;
         this.sessionMappingService = sessionMappingService;
+        this.reportExportService = reportExportService;
         this.asyncExecutor = asyncExecutor;
         this.streamScheduler = streamScheduler;
         this.ownedAsyncExecutor = null;
@@ -1101,5 +1111,32 @@ public class RamController {
                 "rerunFromNode", "impact",
                 "dispatched", true,
                 "nextSeq", nextSeq));
+
+    }
+    // ---------------------------------------------------------------------
+    // GET /sessions/{sid}/export/md — export session as Markdown
+    // ---------------------------------------------------------------------
+
+    @GetMapping("/sessions/{sid}/export/md")
+    public ResponseEntity<byte[]> exportSessionAsMd(@PathVariable("sid") String handle) {
+        Long backendId = sessionMappingService.resolveBackendId(handle);
+        if (backendId == null) {
+            return ResponseEntity.notFound().build();
+        }
+        
+        try {
+            String mdContent = reportExportService.exportRamSessionAsMd(handle);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.TEXT_MARKDOWN);
+            headers.setContentDisposition(ContentDisposition.attachment()
+                    .filename("ram-session-" + handle + ".md")
+                    .build());
+            return ResponseEntity.ok()
+                    .headers(headers)
+                    .body(mdContent.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (IllegalArgumentException e) {
+            log.warn("[RAM][export-md] session not found: handle={}", handle);
+            return ResponseEntity.notFound().build();
+        }
     }
 }

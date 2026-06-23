@@ -1,5 +1,9 @@
 package com.huawei.hisi.service;
 
+import com.huawei.hisi.ram.model.AgentEvent;
+import com.huawei.hisi.ram.model.AgentSession;
+import com.huawei.hisi.ram.repository.AgentEventRepository;
+import com.huawei.hisi.ram.repository.AgentSessionRepository;
 import com.huawei.hisi.repository.LogAnalysisRepository;
 import com.huawei.hisi.repository.LogAnalysisRepository.LogAnalysisReportEntity;
 import lombok.RequiredArgsConstructor;
@@ -9,10 +13,13 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -26,6 +33,8 @@ import java.util.zip.ZipOutputStream;
 public class ReportExportService {
 
     private final LogAnalysisRepository logAnalysisRepository;
+    private final AgentSessionRepository agentSessionRepository;
+    private final AgentEventRepository agentEventRepository;
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -107,6 +116,89 @@ public class ReportExportService {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * 将 RAM 需求分析会话导出为 Markdown 格式
+     *
+     * @param sessionId 前端 UUID 会话标识
+     * @return Markdown 格式的会话内容
+     * @throws IllegalArgumentException 如果会话不存在
+     */
+    public String exportRamSessionAsMd(String sessionId) {
+        Optional<AgentSession> sessionOpt = agentSessionRepository.findByUuid(sessionId);
+        if (sessionOpt.isEmpty()) {
+            throw new IllegalArgumentException("会话不存在: " + sessionId);
+        }
+
+        AgentSession session = sessionOpt.get();
+        long backendId = session.getId();
+        List<AgentEvent> events = agentEventRepository.findBySessionId(backendId);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("# RAM 需求分析会话 #").append(sessionId).append("\n\n");
+
+        // 基本信息
+        sb.append("## 基本信息\n\n");
+        sb.append("| 字段 | 值 |\n");
+        sb.append("|------|----|\n");
+        sb.append("| 会话ID | ").append(sessionId).append(" |\n");
+        sb.append("| 后端ID | ").append(backendId).append(" |\n");
+        sb.append("| 用户 | ").append(session.getUserId() != null ? session.getUserId() : "-").append(" |\n");
+        sb.append("| 状态 | ").append(session.getStatus() != null ? session.getStatus().name() : "-").append(" |\n");
+        sb.append("| 类型 | ").append(session.getSessionType() != null ? session.getSessionType().name() : "DEMAND").append(" |\n");
+        sb.append("| 当前节点 | ").append(session.getCurrentNode() != null ? session.getCurrentNode() : "-").append(" |\n");
+        sb.append("| 步骤数 | ").append(session.getStepCount()).append(" |\n");
+        sb.append("| 创建时间 | ").append(formatEpoch(session.getCreatedAt())).append(" |\n");
+        sb.append("| 更新时间 | ").append(formatEpoch(session.getUpdatedAt())).append(" |\n\n");
+
+        // 需求描述
+        sb.append("## 需求描述\n\n");
+        if (session.getIntent() != null && !session.getIntent().isBlank()) {
+            sb.append(session.getIntent()).append("\n\n");
+        } else {
+            sb.append("暂无\n\n");
+        }
+
+        // 项目路径
+        sb.append("## 项目路径\n\n");
+        if (session.getProjectPaths() != null && !session.getProjectPaths().isBlank()) {
+            sb.append(session.getProjectPaths()).append("\n\n");
+        } else {
+            sb.append("暂无\n\n");
+        }
+
+        // 事件历史
+        sb.append("## 事件历史\n\n");
+        if (!events.isEmpty()) {
+            for (AgentEvent event : events) {
+                sb.append("### ").append(event.getType() != null ? event.getType().name() : "UNKNOWN");
+                sb.append(" (seq=").append(event.getSeq()).append(")\n\n");
+                sb.append("- 时间: ").append(formatEpoch(event.getCreatedAt())).append("\n");
+                if (event.getClarifyRoundNo() != null) {
+                    sb.append("- 澄清轮次: ").append(event.getClarifyRoundNo()).append("\n");
+                }
+                if (event.getPayload() != null && !event.getPayload().isBlank()) {
+                    sb.append("- Payload:\n```\n").append(event.getPayload()).append("\n```\n");
+                }
+                sb.append("\n");
+            }
+        } else {
+            sb.append("暂无事件记录\n\n");
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * 格式化 epoch 秒为可读时间字符串
+     */
+    private String formatEpoch(long epochSeconds) {
+        if (epochSeconds <= 0) {
+            return "-";
+        }
+        return LocalDateTime.ofInstant(Instant.ofEpochSecond(epochSeconds), ZoneId.systemDefault())
+                .format(TIME_FMT);
     }
 
     /**
