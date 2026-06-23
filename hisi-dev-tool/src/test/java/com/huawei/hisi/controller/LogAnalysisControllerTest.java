@@ -236,4 +236,16 @@ class LogAnalysisControllerTest {
         assertTrue(response.getHeaders().getFirst("Content-Disposition").contains("report-1.md"));
         assertTrue(response.getBody().contains("# 日志分析报告"));
     }
+
+    @Test
+    @DisplayName("导出报告 Markdown - 报告不存在应返回404")
+    void exportReportMd_notFound_shouldReturn404() {
+        when(reportExportService.exportLogReportAsMd(999L))
+            .thenThrow(new IllegalArgumentException("报告不存在: 999"));
+
+        ResponseEntity<String> response = controller.exportReportMd(999L);
+
+        assertEquals(404, response.getStatusCodeValue());
+        assertTrue(response.getBody().contains("报告不存在"));
+    }
 }

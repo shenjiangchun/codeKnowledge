@@ -10,6 +10,7 @@ import com.huawei.hisi.utils.SnowflakeIdGenerator;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -421,10 +422,15 @@ public class LogAnalysisController {
      */
     @GetMapping("/report/{id}/export/md")
     public ResponseEntity<String> exportReportMd(@PathVariable("id") Long id) {
-        String markdown = reportExportService.exportLogReportAsMd(id);
-        return ResponseEntity.ok()
-            .header("Content-Type", "text/markdown; charset=utf-8")
-            .header("Content-Disposition", "attachment; filename=\"report-" + id + ".md\"")
-            .body(markdown);
+        try {
+            String markdown = reportExportService.exportLogReportAsMd(id);
+            return ResponseEntity.ok()
+                .header("Content-Type", "text/markdown; charset=utf-8")
+                .header("Content-Disposition", "attachment; filename=\"report-" + id + ".md\"")
+                .body(markdown);
+        } catch (IllegalArgumentException e) {
+            log.warn("导出报告失败: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("报告不存在: " + id);
+        }
     }
 }
