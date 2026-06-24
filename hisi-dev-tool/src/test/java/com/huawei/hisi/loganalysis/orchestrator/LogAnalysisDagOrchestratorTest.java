@@ -304,4 +304,111 @@ java.lang.Exception: Error
         assertThat(keyFrames).hasSize(2);
         assertThat(keyFrames.get(0).get("simpleClassName")).isEqualTo("VendorService");
     }
+
+    @Test
+    @DisplayName("递进搜索：第一批空时继续搜索后续帧，找到 KG 数据后停止")
+    void progressiveSearch_firstBatchEmptyThenFound() {
+        // 模拟第一批搜索返回空，第二批返回数据
+        // 使用 lenient 避免 strict stubbing 问题
+
+        // 第一批：keyFrames 中的帧返回空
+        lenient().when(kgMcpClient.hybridSearch(anyString(), anyList(), anyInt()))
+                .thenReturn(Collections.emptyList());
+
+        // 重新设置第二批返回数据 - 使用 Answer 来根据参数返回不同结果
+        when(kgMcpClient.hybridSearch(anyString(), anyList(), anyInt()))
+                .thenAnswer(invocation -> {
+                    String term = invocation.getArgument(0);
+                    // 如果是 OtherLib.run，返回数据
+                    if (term.contains("OtherLib")) {
+                        return List.of(new Seed("node-other-1", 0.90, "com.other.lib.OtherLib#run"));
+                    }
+                    // 其他返回空
+                    return Collections.emptyList();
+                });
+
+        lenient().when(kgMcpClient.rootEntries(anyString(), anyString(), anyString()))
+                .thenReturn(Collections.emptyList());
+
+        lenient().when(kgMcpClient.calleesTree(anyString(), anyString(), anyString(), anyInt()))
+                .thenReturn(null);
+
+        lenient().when(kgMcpClient.loadMethodBodies(anyList(), anyString()))
+                .thenReturn(Collections.emptyList());
+
+        lenient().when(claudeClient.isAvailable()).thenReturn(false);
+
+        // Input with deep stack - first frames not in KG, later frames in KG
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("message", "Error");
+        input.put("stackTrace", """
+java.lang.Exception: Error
+	at com.vendor.external.VendorService.process(VendorService.java:100)
+	at com.other.lib.OtherLib.run(OtherLib.java:50)
+	at com.kg.project.KgService.execute(KgService.java:30)
+	at org.springframework.web.servlet.FrameworkServlet.service(FrameworkServlet.java:1002)
+""");
+        input.put("projectPath", "/path/to/project");
+        // No projectPackagePrefixes - will use otherNonFrameworkFrames for progressive search
+
+        // Execute DAG
+        Map<String, Object> result = orchestrator.run(input);
+
+        // Verify ParseNode - otherNonFrameworkFrames has 3 frames
+        List<Map<String, Object>> otherNonFrameworkFrames = (List<Map<String, Object>>) result.get("otherNonFrameworkFrames");
+        assertThat(otherNonFrameworkFrames).hasSize(3); // VendorService, OtherLib, KgService
+
+        // Verify KgSearchNode - matchedMethods should have results from progressive search
+        List<?> matchedMethods = (List<?>) result.get("matchedMethods");
+        assertThat(matchedMethods).isNotEmpty(); // Should have found KG data via progressive search
+
+        // Verify keyFrames was updated with KG-found frames
+        List<Map<String, Object>> keyFrames = (List<Map<String, Object>>) result.get("keyFrames");
+        assertThat(keyFrames.size()).isGreaterThanOrEqualTo(2); // Original + KG-found frames
+    }
+
+    @Test
+    @DisplayName("递进搜索：所有批次都空 - 最终返回空结果但不报错")
+    void progressiveSearch_allBatchesEmpty() {
+        // 模拟所有搜索都返回空
+        lenient().when(kgMcpClient.hybridSearch(anyString(), anyList(), anyInt()))
+                .thenReturn(Collections.emptyList());
+
+        lenient().when(kgMcpClient.rootEntries(anyString(), anyString(), anyString()))
+                .thenReturn(Collections.emptyList());
+
+        lenient().when(kgMcpClient.calleesTree(anyString(), anyString(), anyString(), anyInt()))
+                .thenReturn(null);
+
+        lenient().when(kgMcpClient.loadMethodBodies(anyList(), anyString()))
+                .thenReturn(Collections.emptyList());
+
+        lenient().when(claudeClient.isAvailable()).thenReturn(false);
+
+        // Input with many frames - none in KG
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("message", "Error");
+        input.put("stackTrace", """
+java.lang.Exception: Error
+	at com.vendor1.external.Vendor1Service.process(Vendor1Service.java:100)
+	at com.vendor2.external.Vendor2Service.run(Vendor2Service.java:50)
+	at com.vendor3.external.Vendor3Service.execute(Vendor3Service.java:30)
+	at com.vendor4.external.Vendor4Service.handle(Vendor4Service.java:20)
+	at com.vendor5.external.Vendor5Service.work(Vendor5Service.java:10)
+	at org.springframework.web.servlet.FrameworkServlet.service(FrameworkServlet.java:1002)
+""");
+        input.put("projectPath", "/path/to/project");
+
+        // Execute DAG - should not fail even with empty KG results
+        Map<String, Object> result = orchestrator.run(input);
+
+        // Verify matchedMethods is empty (all batches searched, none found)
+        List<?> matchedMethods = (List<?>) result.get("matchedMethods");
+        assertThat(matchedMethods).isEmpty();
+
+        // Verify fallback entryPoints were generated
+        List<Map<String, Object>> entryPointsWithLayers = (List<Map<String, Object>>) result.get("entryPointsWithLayers");
+        assertThat(entryPointsWithLayers).isNotEmpty();
+        assertThat(entryPointsWithLayers.get(0).get("source")).isEqualTo("stack_trace"); // Fallback source
+    }
 }

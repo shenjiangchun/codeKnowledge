@@ -50,10 +50,12 @@ class LogAnalysisExecutorDedupTest {
         when(repository.findByFingerprint(fingerprint)).thenReturn(null);
 
         // When
-        Long reportId = executor.submitForAnalysis(message, stackTrace, "user1", null);
+        SubmitResult result = executor.submitForAnalysis(message, stackTrace, "user1", null);
 
         // Then
-        assertEquals(expectedReportId, reportId);
+        assertEquals(expectedReportId, result.reportId());
+        assertTrue(result.isNew());
+        assertFalse(result.isDuplicate());
         verify(repository).save(any(LogAnalysisReportEntity.class));
         verify(repository, never()).incrementOccurrenceCount(anyLong());
     }
@@ -75,15 +77,19 @@ class LogAnalysisExecutorDedupTest {
         when(fingerprintService.generateFingerprint(anyString())).thenReturn(fingerprint);
         when(repository.findByFingerprint(fingerprint)).thenReturn(existingReport);
 
-        // When - first log
-        Long reportId1 = executor.submitForAnalysis(message, stackTrace1, "user1", null);
-        // When - duplicate log
-        Long reportId2 = executor.submitForAnalysis(message, stackTrace2, "user1", null);
+        // When - first log (duplicate)
+        SubmitResult result1 = executor.submitForAnalysis(message, stackTrace1, "user1", null);
+        // When - second log (duplicate)
+        SubmitResult result2 = executor.submitForAnalysis(message, stackTrace2, "user1", null);
 
-        // Then - both should return same reportId
-        assertEquals(12345L, reportId1);
-        assertEquals(12345L, reportId2);
-        assertEquals(reportId1, reportId2);
+        // Then - both should return same reportId and isDuplicate=true
+        assertEquals(12345L, result1.reportId());
+        assertEquals(12345L, result2.reportId());
+        assertEquals(result1.reportId(), result2.reportId());
+        assertTrue(result1.isDuplicate());
+        assertTrue(result2.isDuplicate());
+        assertFalse(result1.isNew());
+        assertFalse(result2.isNew());
         verify(repository, times(2)).incrementOccurrenceCount(12345L);
         verify(repository, never()).save(any(LogAnalysisReportEntity.class));
     }
@@ -103,9 +109,10 @@ class LogAnalysisExecutorDedupTest {
         when(repository.findByFingerprint(expectedFingerprint)).thenReturn(null);
 
         // When
-        executor.submitForAnalysis(message, stackTrace, "user1", null);
+        SubmitResult result = executor.submitForAnalysis(message, stackTrace, "user1", null);
 
         // Then
+        assertTrue(result.isNew());
         verify(fingerprintService).generateFingerprint(message + "\n" + stackTrace);
         verify(repository).save(argThat(report ->
             report.getErrorFingerprint().equals(expectedFingerprint) &&
