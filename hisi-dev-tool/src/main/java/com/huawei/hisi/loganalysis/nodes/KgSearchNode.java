@@ -19,12 +19,18 @@ import java.util.stream.Collectors;
  *
  * Input: { parsedError, keyFrames, searchTerms, projectPath }
  * Output: { matchedMethods, callChains, entryPoints }
+ *
+ * 改进：递进搜索机制 - 当第一批 keyFrames 搜索结果为空时，继续搜索后续帧
  */
 @Slf4j
 @Component
 public class KgSearchNode implements LogAnalysisDagNode {
 
     private final KgMcpClient kgMcpClient;
+
+    // 递进搜索配置：每批搜索帧数、最大批次
+    private static final int BATCH_SIZE = 5;
+    private static final int MAX_BATCHES = 3; // 最多搜索 15 帧
 
     public KgSearchNode(KgMcpClient kgMcpClient) {
         this.kgMcpClient = kgMcpClient;
@@ -46,15 +52,17 @@ public class KgSearchNode implements LogAnalysisDagNode {
         // Get layered frames from ParseNode (new layered extraction)
         List<Map<String, Object>> businessFrames = (List<Map<String, Object>>) input.get("businessFrames");
         List<Map<String, Object>> rootCauseFrames = (List<Map<String, Object>>) input.get("rootCauseFrames");
+        List<Map<String, Object>> otherNonFrameworkFrames = (List<Map<String, Object>>) input.get("otherNonFrameworkFrames");
         boolean deepMode = Boolean.TRUE.equals(input.get("deepMode"));
 
         // Diagnostic: show what we got
-        log.info("[KgSearchNode] 输入诊断: projectPathRaw长度={}, searchTerms数量={}, keyFrames数量={}, businessFrames={}, rootCauseFrames={}, deepMode={}",
+        log.info("[KgSearchNode] 输入诊断: projectPathRaw长度={}, searchTerms数量={}, keyFrames数量={}, businessFrames={}, rootCauseFrames={}, otherNonFramework={}, deepMode={}",
                 projectPathRaw != null ? projectPathRaw.length() : 0,
                 searchTerms != null ? searchTerms.size() : 0,
                 keyFrames != null ? keyFrames.size() : 0,
                 businessFrames != null ? businessFrames.size() : 0,
                 rootCauseFrames != null ? rootCauseFrames.size() : 0,
+                otherNonFrameworkFrames != null ? otherNonFrameworkFrames.size() : 0,
                 deepMode);
 
         // Split comma-separated projectPath if needed
@@ -78,25 +86,70 @@ public class KgSearchNode implements LogAnalysisDagNode {
         String firstPath = projectPaths.isEmpty() ? "" : projectPaths.get(0);
 
         // 1. Hybrid search for each search term (use multi-path overload)
+        // 改进：递进搜索机制 - 第一批空时继续搜索后续帧
         List<Seed> matchedMethods = new ArrayList<>();
         Set<String> seenNodeIds = new HashSet<>();
+        List<Map<String, Object>> matchedFrames = new ArrayList<>(); // 记录找到 KG 数据的帧
 
-        if (searchTerms != null) {
-            for (String term : searchTerms) {
-                if (term == null || term.isBlank()) continue;
-                // Use multi-path overload for better coverage
-                List<Seed> results = kgMcpClient.hybridSearch(term, projectPaths, 10);
-                for (Seed seed : results) {
-                    if (!seenNodeIds.contains(seed.nodeId())) {
-                        matchedMethods.add(seed);
-                        seenNodeIds.add(seed.nodeId());
-                    }
-                }
-            }
+        // 第一批：从 searchTerms（keyFrames）搜索
+        if (searchTerms != null && !searchTerms.isEmpty()) {
+            matchedMethods = hybridSearchBatch(searchTerms, projectPaths, seenNodeIds, matchedFrames);
         }
 
-        log.info("[KgSearchNode] hybridSearch 检索到 {} 个方法 (搜索词: {})",
+        log.info("[KgSearchNode] 第一批搜索结果: {} 个方法 (搜索词: {})",
                 matchedMethods.size(), searchTerms != null ? searchTerms.size() : 0);
+
+        // 递进搜索：第一批空时，继续从 otherNonFrameworkFrames 搜索后续帧
+        if (matchedMethods.isEmpty() && otherNonFrameworkFrames != null && !otherNonFrameworkFrames.isEmpty()) {
+            log.info("[KgSearchNode] 第一批搜索空，启用递进搜索...");
+
+            int totalFrames = otherNonFrameworkFrames.size();
+            int searchedFrames = 0;
+
+            for (int batch = 1; batch <= MAX_BATCHES && searchedFrames < totalFrames; batch++) {
+                int startIdx = searchedFrames;
+                int endIdx = Math.min(startIdx + BATCH_SIZE, totalFrames);
+
+                List<Map<String, Object>> batchFrames = otherNonFrameworkFrames.subList(startIdx, endIdx);
+                List<String> batchTerms = buildSearchTermsFromFrames(batchFrames);
+
+                log.info("[KgSearchNode] 递进搜索批次 {}: 帧 {}-{} (共 {} 帧)",
+                        batch, startIdx, endIdx - 1, batchFrames.size());
+
+                List<Seed> batchResults = hybridSearchBatch(batchTerms, projectPaths, seenNodeIds, matchedFrames);
+
+                if (!batchResults.isEmpty()) {
+                    matchedMethods.addAll(batchResults);
+                    log.info("[KgSearchNode] 递进搜索批次 {} 找到 {} 个方法，停止搜索",
+                            batch, batchResults.size());
+                    break; // 找到数据就停止
+                }
+
+                searchedFrames = endIdx;
+            }
+
+            log.info("[KgSearchNode] 递进搜索完成: 共搜索 {} 帧，找到 {} 个方法",
+                    Math.min(searchedFrames + BATCH_SIZE, totalFrames), matchedMethods.size());
+        }
+
+        // 更新 keyFrames：如果递进搜索找到了新帧，将其加入 keyFrames
+        if (!matchedFrames.isEmpty() && keyFrames != null) {
+            Set<String> existingFrames = keyFrames.stream()
+                    .map(f -> f.get("className") + "#" + f.get("methodName"))
+                    .collect(Collectors.toSet());
+
+            for (Map<String, Object> frame : matchedFrames) {
+                String frameKey = frame.get("className") + "#" + frame.get("methodName");
+                if (!existingFrames.contains(frameKey)) {
+                    keyFrames.add(frame);
+                    existingFrames.add(frameKey);
+                }
+            }
+            log.info("[KgSearchNode] keyFrames 更新: 从 {} 增加到 {} 个",
+                    keyFrames.size() - matchedFrames.size(), keyFrames.size());
+        }
+
+        log.info("[KgSearchNode] hybridSearch 最终结果: {} 个方法", matchedMethods.size());
 
         // 2. Find root entry points for business frames (per roundtable conclusion)
         // Default: call kg_root_entries for top 3 business frames
@@ -233,6 +286,63 @@ public class KgSearchNode implements LogAnalysisDagNode {
         }
         // Single path
         return Collections.singletonList(projectPathRaw.trim());
+    }
+
+    /**
+     * 执行一批 hybridSearch 搜索，返回匹配的方法和帧。
+     */
+    private List<Seed> hybridSearchBatch(List<String> terms, List<String> projectPaths,
+                                          Set<String> seenNodeIds, List<Map<String, Object>> matchedFrames) {
+        List<Seed> results = new ArrayList<>();
+
+        for (String term : terms) {
+            if (term == null || term.isBlank()) continue;
+
+            try {
+                List<Seed> seeds = kgMcpClient.hybridSearch(term, projectPaths, 10);
+                if (seeds != null && !seeds.isEmpty()) {
+                    for (Seed seed : seeds) {
+                        if (!seenNodeIds.contains(seed.nodeId())) {
+                            results.add(seed);
+                            seenNodeIds.add(seed.nodeId());
+
+                            // 记录找到 KG 数据的帧（用于后续分析）
+                            // 从 seed.summary 提取 className#methodName
+                            if (seed.summary() != null && seed.summary().contains("#")) {
+                                String[] parts = seed.summary().split("#");
+                                if (parts.length >= 2) {
+                                    Map<String, Object> frame = new LinkedHashMap<>();
+                                    frame.put("className", parts[0]);
+                                    frame.put("methodName", parts[1]);
+                                    frame.put("source", "kg_hybrid_search");
+                                    matchedFrames.add(frame);
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("[KgSearchNode] hybridSearch 失败 (term={}): {}", term, e.getMessage());
+            }
+        }
+
+        return results;
+    }
+
+    /**
+     * 从帧列表构建搜索词列表。
+     */
+    private List<String> buildSearchTermsFromFrames(List<Map<String, Object>> frames) {
+        List<String> terms = new ArrayList<>();
+        for (Map<String, Object> frame : frames) {
+            String className = (String) frame.get("className");
+            String methodName = (String) frame.get("methodName");
+            if (className != null && methodName != null) {
+                // 搜索词：className.methodName
+                terms.add(className + "." + methodName);
+            }
+        }
+        return terms;
     }
 
     /**
