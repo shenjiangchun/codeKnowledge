@@ -40,8 +40,13 @@ public class FingerprintService {
      */
     public String generateFingerprint(String logContent) {
         if (logContent == null || logContent.isEmpty()) {
+            log.warn("[FingerprintService] logContent is null or empty, returning default fingerprint");
             return DEFAULT_FINGERPRINT;
         }
+
+        log.info("[FingerprintService] 输入长度: {}, 前200字符: {}",
+                logContent.length(),
+                logContent.length() > 200 ? logContent.substring(0, 200) + "..." : logContent);
 
         StringBuilder normalized = new StringBuilder();
 
@@ -49,6 +54,9 @@ public class FingerprintService {
         Matcher errorMatcher = ERROR_TYPE_PATTERN.matcher(logContent);
         if (errorMatcher.find()) {
             normalized.append(errorMatcher.group(1)).append("|");
+            log.info("[FingerprintService] 提取到错误类型: {}", errorMatcher.group(1));
+        } else {
+            log.info("[FingerprintService] 未找到错误类型模式");
         }
 
         // Extract top 3 stack frames (class + method only, no line numbers)
@@ -61,11 +69,21 @@ public class FingerprintService {
             if (!isFrameworkClass(className)) {
                 normalized.append(className).append(".").append(methodName).append("|");
                 frameCount++;
+                log.info("[FingerprintService] 提取到栈帧 #{}: {}.{}", frameCount, className, methodName);
             }
         }
 
+        if (frameCount == 0) {
+            log.warn("[FingerprintService] 未找到有效的非框架栈帧");
+        }
+
         // Generate MD5 hash
-        return md5Hash(normalized.toString());
+        String normalizedStr = normalized.toString();
+        log.info("[FingerprintService] normalized长度: {}, 内容: {}",
+                normalizedStr.length(),
+                normalizedStr.length() > 100 ? normalizedStr.substring(0, 100) + "..." : normalizedStr);
+
+        return md5Hash(normalizedStr);
     }
 
     private boolean isFrameworkClass(String className) {
@@ -79,6 +97,7 @@ public class FingerprintService {
 
     private String md5Hash(String input) {
         if (input.isEmpty()) {
+            log.warn("[FingerprintService] normalized input is empty, returning default fingerprint");
             return DEFAULT_FINGERPRINT;
         }
         try {
@@ -88,9 +107,11 @@ public class FingerprintService {
             for (byte b : digest) {
                 sb.append(String.format("%02x", b));
             }
-            return sb.toString();
+            String fingerprint = sb.toString();
+            log.info("[FingerprintService] 生成的指纹: {}", fingerprint);
+            return fingerprint;
         } catch (Exception e) {
-            log.error("MD5 hash failed", e);
+            log.error("[FingerprintService] MD5 hash failed", e);
             return DEFAULT_FINGERPRINT;
         }
     }

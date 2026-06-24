@@ -25,8 +25,10 @@ public class ParseNode implements LogAnalysisDagNode {
         Pattern.compile("([\\w.]+(?:Exception|Error|Throwable))[:\\s]");
     private static final Pattern CAUSED_BY_PATTERN =
         Pattern.compile("Caused by:\\s*([\\w.]+(?:Exception|Error|Throwable))[:\\s]");
+    // 正则模式：允许行首零或多个空格（兼容不同日志格式的堆栈）
+    // 标准 Java 堆栈有 4 个空格，但某些日志聚合系统可能去除缩进
     private static final Pattern AT_PATTERN =
-        Pattern.compile("^\\s+at\\s+([\\w.$]+)\\.([\\w<>]+)\\(([\\w.]+):(\\d+)\\)", Pattern.MULTILINE);
+        Pattern.compile("^\\s*at\\s+([\\w.$]+)\\.([\\w<>]+)\\(([\\w.]+):(\\d+)\\)", Pattern.MULTILINE);
 
     @Override
     public String name() {
@@ -40,6 +42,18 @@ public class ParseNode implements LogAnalysisDagNode {
         String message = (String) input.get("message");
         String stackTrace = (String) input.get("stackTrace");
         String fullContent = buildFullContent(message, stackTrace);
+
+        // Diagnostic logs to understand why keyFrames might be empty
+        log.info("[ParseNode] 输入诊断: message长度={}, stackTrace长度={}, fullContent长度={}",
+                message != null ? message.length() : 0,
+                stackTrace != null ? stackTrace.length() : 0,
+                fullContent.length());
+        if (message != null && !message.isEmpty()) {
+            log.info("[ParseNode] message前200字符: {}", truncate(message, 200));
+        }
+        if (stackTrace != null && !stackTrace.isEmpty()) {
+            log.info("[ParseNode] stackTrace前300字符: {}", truncate(stackTrace, 300));
+        }
 
         Map<String, Object> output = new LinkedHashMap<>(input);
 
