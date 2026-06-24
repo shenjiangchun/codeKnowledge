@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-06-24T02:43:37.447Z",
+  "lastUpdated": "2026-06-24T02:50:41.190Z",
   "stats": {
-    "totalOperations": 1287,
-    "totalFilesEdited": 545,
-    "totalAiLines": 36628,
-    "totalAiLinesDeleted": 5006,
-    "totalCommits": 79
+    "totalOperations": 1289,
+    "totalFilesEdited": 546,
+    "totalAiLines": 36658,
+    "totalAiLinesDeleted": 5008,
+    "totalCommits": 80
   },
   "pendingFiles": [
     {
@@ -1138,11 +1138,11 @@
       "lastModified": "2026-06-23T01:13:14.357Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/loganalysis/nodes/ParseNode.java",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/test/java/com/huawei/hisi/loganalysis/LogAnalysisFlowDebugTest.java",
       "tool": "Edit",
-      "operations": 3,
-      "timestamp": "2026-06-24T02:42:49.814Z",
-      "lastModified": "2026-06-24T02:43:37.447Z",
+      "operations": 2,
+      "timestamp": "2026-06-24T02:49:29.339Z",
+      "lastModified": "2026-06-24T02:50:41.190Z",
       "lastTool": "Edit"
     }
   ]
