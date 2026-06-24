@@ -105,7 +105,7 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
         }
 
         output.put("rootCauseAnalysis", analysis.toString());
-        output.put("fixSuggestions", Collections.singletonList("请手动分析代码并检查错误位置"));
+        output.put("fixSuggestions", Collections.singletonList(Map.of("suggestion", "请手动分析代码并检查错误位置", "priority", "medium")));
         output.put("analysisConfidence", "low");
 
         return output;

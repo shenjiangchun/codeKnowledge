@@ -132,7 +132,7 @@ public class KgSearchNode implements LogAnalysisDagNode {
 
         log.info("[KgSearchNode] 构建了 {} 个调用链", callChains.size());
 
-        // 4. Combine entry points with layer separation
+        // 4. Combine entry points with layer separation (for ReportNode)
         List<Map<String, Object>> entryPointsWithLayers = new ArrayList<>();
         for (Entry entry : businessEntryPoints) {
             entryPointsWithLayers.add(entryToMap(entry, "business"));
@@ -142,7 +142,7 @@ public class KgSearchNode implements LogAnalysisDagNode {
         }
 
         // Fallback: if no KG entry points found, generate from stack frames (降级策略)
-        if (entryPointsWithLayers.isEmpty() && keyFrames != null && !keyFrames.isEmpty()) {
+        if (businessEntryPoints.isEmpty() && rootCauseEntryPoints.isEmpty() && keyFrames != null && !keyFrames.isEmpty()) {
             log.warn("[KgSearchNode] KG 入口点为空，启用降级策略：从堆栈帧生成");
             for (Map<String, Object> frame : keyFrames.subList(0, Math.min(keyFrames.size(), 3))) {
                 Map<String, Object> fallbackEntry = new LinkedHashMap<>();
@@ -150,13 +150,21 @@ public class KgSearchNode implements LogAnalysisDagNode {
                 fallbackEntry.put("methodName", frame.get("methodName"));
                 fallbackEntry.put("layer", "fallback");
                 fallbackEntry.put("source", "stack_trace");
+                fallbackEntry.put("nodeId", null); // No nodeId for fallback
+                fallbackEntry.put("type", "UNKNOWN");
                 entryPointsWithLayers.add(fallbackEntry);
             }
         }
 
+        // Keep original Entry list for CodeContextNode (needs Entry type)
+        List<Entry> allEntryPoints = new ArrayList<>();
+        allEntryPoints.addAll(businessEntryPoints);
+        allEntryPoints.addAll(rootCauseEntryPoints);
+
         output.put("matchedMethods", matchedMethods);
         output.put("callChains", callChains);
-        output.put("entryPoints", entryPointsWithLayers);
+        output.put("entryPoints", allEntryPoints); // Original Entry list for CodeContextNode
+        output.put("entryPointsWithLayers", entryPointsWithLayers); // Map format for ReportNode
         output.put("businessEntryPoints", businessEntryPoints);
         output.put("rootCauseEntryPoints", rootCauseEntryPoints);
 
