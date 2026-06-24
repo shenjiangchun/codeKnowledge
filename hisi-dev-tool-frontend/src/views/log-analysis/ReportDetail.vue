@@ -5,6 +5,9 @@
         <div class="card-header">
           <span>分析报告 #{{ reportId }}</span>
           <div>
+            <el-button type="success" :loading="exporting" @click="handleExportMd">
+              导出 MD
+            </el-button>
             <el-button type="primary" :loading="reanalyzing" @click="handleReanalyze">重新分析</el-button>
             <el-button @click="goBack">返回</el-button>
           </div>
@@ -62,12 +65,14 @@ import { ElMessage } from 'element-plus'
 import { logAnalysisApi } from '@/api/logAnalysis'
 import type { DetailedAnalysisReport } from '@/types/log'
 import { renderMarkdown } from '@/utils/markdown'
+import { downloadBlob } from '@/utils/download'
 
 const route = useRoute()
 const router = useRouter()
 const reportId = computed(() => route.params.id as string)
 const loading = ref(false)
 const reanalyzing = ref(false)
+const exporting = ref(false)
 const report = ref<DetailedAnalysisReport | null>(null)
 
 const getStatusType = (status: string) => {
@@ -121,6 +126,20 @@ const handleReanalyze = async () => {
     ElMessage.error('触发重新分析失败')
   } finally {
     reanalyzing.value = false
+  }
+}
+
+const handleExportMd = async () => {
+  exporting.value = true
+  try {
+    const blob = await logAnalysisApi.exportReportMd(reportId.value)
+    const filename = `log-report-${reportId.value}.md`
+    downloadBlob(blob, filename)
+    ElMessage.success('报告已导出')
+  } catch (error: any) {
+    ElMessage.error('导出失败: ' + (error.message || '请稍后重试'))
+  } finally {
+    exporting.value = false
   }
 }
 

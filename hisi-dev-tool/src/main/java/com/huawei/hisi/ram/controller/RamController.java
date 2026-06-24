@@ -205,7 +205,8 @@ public class RamController {
     // ---------------------------------------------------------------------
 
     public record StartSessionRequest(String rawInput, String projectPath,
-                                       java.util.List<String> projectPaths, String userId) {}
+                                       java.util.List<String> projectPaths, String userId,
+                                       java.util.List<java.util.Map<String, Object>> images) {}
 
     public record StartSessionResponse(String sessionId) {}
 
@@ -257,6 +258,11 @@ public class RamController {
         if (!allPaths.isEmpty()) {
             args.put("project_path", allPaths.get(0)); // backward compat
             args.put("project_paths", allPaths);
+        }
+        // 多模态输入：传递图片 Base64 数据
+        if (request.images() != null && !request.images().isEmpty()) {
+            args.put("images", request.images());
+            log.info("[RAM][POST /sessions] included {} images in request", request.images().size());
         }
 
         CompletableFuture.runAsync(() -> dispatchAnalyze(handle, args), asyncExecutor);

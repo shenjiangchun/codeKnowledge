@@ -1,6 +1,14 @@
 import request from '@/utils/request'
 import type { DiffResult } from '@/types/merge-analysis'
 
+/** 图片数据格式（OpenAI Vision API） */
+export interface ImageContent {
+  type: 'image_url'
+  image_url: {
+    url: string // data:image/jpeg;base64,... 或 URL
+  }
+}
+
 export function listBranches(projectPath: string): Promise<string[]> {
   return request.get('/merge-analysis/branches', { params: { projectPath } })
 }
@@ -17,6 +25,8 @@ export function startMergeAnalysis(data: {
   projectPath: string
   sourceBranch: string
   targetBranch: string
+  /** 多模态图片输入（Base64 格式） */
+  images?: ImageContent[]
 }): Promise<{ sessionHandle: string }> {
   return request.post('/merge-analysis/sessions', data)
 }
@@ -68,4 +78,11 @@ export function rerunMergeAnalysisNode(
   nodeName: string
 ): Promise<Record<string, unknown>> {
   return request.post(`/merge-analysis/sessions/${sessionId}/rerun-from/${nodeName}`)
+}
+
+// ──────────────── Session Export ────────────────
+
+/** Export merge analysis session as Markdown file. */
+export function exportMergeAnalysisMd(sessionId: string): Promise<Blob> {
+  return request.get(`/merge-analysis/sessions/${sessionId}/export/md`, { responseType: 'blob' })
 }

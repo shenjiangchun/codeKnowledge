@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useMergeAnalysisSession } from '@/composables/useMergeAnalysisSession'
 import { rerunMergeAnalysisNode } from '@/api/merge-analysis'
+import { exportMergeAnalysisMd } from '@/api/merge-analysis'
+import { downloadBlob } from '@/utils/download'
 import type { ImpactResult, TestScopeResult, DiffResult } from '@/types/merge-analysis'
 
 const route = useRoute()
@@ -119,6 +121,28 @@ function handleBack() {
   })
 }
 
+const exportingMd = ref(false)
+
+async function handleExportMd(): Promise<void> {
+  if (!sid) {
+    ElMessage.warning("无法导出：缺少会话ID")
+    return
+  }
+  exportingMd.value = true
+  try {
+    const blob = await exportMergeAnalysisMd(sid)
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, "")
+    const filename = `merge-analysis-${sid.slice(0, 8)}-${timestamp}.md`
+    downloadBlob(blob, filename)
+    ElMessage.success("分析报告已导出")
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "导出失败"
+    ElMessage.error(msg)
+  } finally {
+    exportingMd.value = false
+  }
+}
+
 onMounted(async () => {
   // If sid is provided, rejoin an existing session (from history list)
   if (sid) {
@@ -153,6 +177,17 @@ onMounted(async () => {
         </el-tag>
       </template>
     </el-page-header>
+
+    <div style="margin-bottom: 20px; display: flex; justify-content: flex-end">
+      <el-button
+        type="success"
+        :loading="exportingMd"
+        :disabled="!sid || status !== 'completed'"
+        @click="handleExportMd"
+      >
+        导出 MD
+      </el-button>
+    </div>
 
     <!-- Progress Steps -->
     <el-steps :active="activeStep" finish-status="success" align-center style="margin-bottom: 30px">

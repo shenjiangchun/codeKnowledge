@@ -33,6 +33,8 @@ import type { DagNodeKey } from '@/components/ram/dagModel'
 import { useRamSession } from '@/composables/useRamSession'
 import { useDagEventHandler } from '@/composables/useDagEventHandler'
 import { executeTechPlan, getRamHealth, getRamSession, rerunFromNode, listClarifyRounds, rerunFromRound, type ClarifyRoundSummary } from '@/api/ram'
+import { exportRamSessionMd } from '@/api/ram'
+import { downloadBlob } from '@/utils/download'
 import { useRamStore } from '@/stores/ram'
 
 const route = useRoute()
@@ -163,6 +165,22 @@ async function onAbort(): Promise<void> {
   }
 }
 
+async function handleExportMd(): Promise<void> {
+  exportingMd.value = true
+  try {
+    const blob = await exportRamSessionMd(sid.value)
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, "")
+    const filename = `ram-session-${sid.value.slice(0, 8)}-${timestamp}.md`
+    downloadBlob(blob, filename)
+    ElMessage.success("会话已导出")
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "导出失败"
+    ElMessage.error(msg)
+  } finally {
+    exportingMd.value = false
+  }
+}
+
 function onDagClick(key: DagNodeKey): void {
   activeNode.value = key
 }
@@ -220,6 +238,7 @@ const dagNodeLabels: Record<DagNodeKey, string> = {
 }
 
 const rerunning = ref(false)
+const exportingMd = ref(false)
 
 async function onRerunFromNode(key: DagNodeKey): Promise<void> {
   const nodeName = dagKeyToNodeName[key]
@@ -527,6 +546,14 @@ onBeforeUnmount(() => {
         @click="onAbort"
       >
         中止
+      </el-button>
+      <el-button
+        type="success"
+        size="small"
+        :loading="exportingMd"
+        @click="handleExportMd"
+      >
+        导出 MD
       </el-button>
     </header>
 

@@ -286,8 +286,13 @@ public class ReportExportService {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (ZipOutputStream zos = new ZipOutputStream(baos)) {
             for (LogAnalysisReportEntity report : reports) {
-                String mdContent = exportLogReportAsMd(report.getReportId());
-                String entryName = "report-" + report.getReportId() + ".md";
+                Long reportId = report.getReportId();
+                if (reportId == null) {
+                    log.warn("[Export] Skipping report with null reportId");
+                    continue;
+                }
+                String mdContent = exportLogReportAsMd(reportId);
+                String entryName = "report-" + reportId + ".md";
                 ZipEntry entry = new ZipEntry(entryName);
                 zos.putNextEntry(entry);
                 zos.write(mdContent.getBytes(StandardCharsets.UTF_8));

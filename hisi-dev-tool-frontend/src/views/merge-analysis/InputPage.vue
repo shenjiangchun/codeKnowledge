@@ -2,10 +2,12 @@
 import { ref, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Plus, Close } from '@element-plus/icons-vue'
 import { useAppStore } from '@/stores/app'
 import { projectApi } from '@/api/project'
 import { listRemoteProjects } from '@/api/remote-project'
-import { listBranches } from '@/api/merge-analysis'
+import { listBranches, type ImageContent } from '@/api/merge-analysis'
+import type { UploadFile } from 'element-plus'
 
 const router = useRouter()
 const appStore = useAppStore()
@@ -26,6 +28,10 @@ const projects = ref<ProjectItem[]>([])
 const branches = ref<string[]>([])
 const loadingProjects = ref(false)
 const loadingBranches = ref(false)
+
+// 多模态图片上传
+const uploadedImages = ref<ImageContent[]>([])
+const imagePreviewUrls = ref<string[]>([])
 
 const canProceed = computed(() =>
   form.value.projectPath &&
@@ -85,14 +91,63 @@ watch(() => form.value.projectPath, async (newPath) => {
   }
 })
 
+// 图片上传处理：转为 Base64 格式
+function handleImageUpload(file: UploadFile): boolean {
+  const rawFile = file.raw
+  if (!rawFile) return false
+
+  if (rawFile.size > 500 * 1024) {
+    ElMessage.warning('图片大小不能超过 500KB')
+    return false
+  }
+
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+  if (!allowedTypes.includes(rawFile.type)) {
+    ElMessage.warning('仅支持 JPEG、PNG、GIF、WebP 格式')
+    return false
+  }
+
+  if (uploadedImages.value.length >= 5) {
+    ElMessage.warning('最多上传 5 张图片')
+    return false
+  }
+
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    const base64 = e.target?.result as string
+    uploadedImages.value.push({
+      type: 'image_url',
+      image_url: { url: base64 }
+    })
+    imagePreviewUrls.value.push(base64)
+  }
+  reader.readAsDataURL(rawFile)
+
+  return false
+}
+
+function removeImage(index: number): void {
+  uploadedImages.value.splice(index, 1)
+  imagePreviewUrls.value.splice(index, 1)
+}
+
 function handleNext() {
   if (!canProceed.value) return
+
+  // 存储图片数据到 sessionStorage，避免 URL 长度限制
+  if (uploadedImages.value.length > 0) {
+    sessionStorage.setItem('mergeAnalysisImages', JSON.stringify(uploadedImages.value))
+  } else {
+    sessionStorage.removeItem('mergeAnalysisImages')
+  }
+
   router.push({
     name: 'MergeAnalysisDiff',
     query: {
       projectPath: form.value.projectPath,
       sourceBranch: form.value.sourceBranch,
-      targetBranch: form.value.targetBranch
+      targetBranch: form.value.targetBranch,
+      hasImages: uploadedImages.value.length > 0 ? 'true' : undefined
     }
   })
 }
@@ -152,6 +207,39 @@ fetchProjects()
             <el-option v-for="b in branches" :key="b" :label="b" :value="b" />
           </el-select>
         </el-form-item>
+
+        <!-- 多模态图片上传 -->
+        <el-form-item label="附加图片">
+          <div class="image-upload-section">
+            <el-upload
+              :auto-upload="false"
+              :show-file-list="false"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              :on-change="handleImageUpload"
+              :multiple="true"
+            >
+              <el-button type="default" :icon="Plus">
+                上传图片
+              </el-button>
+            </el-upload>
+            <span class="image-hint">（最多 5 张，每张不超过 500KB）</span>
+          </div>
+          <!-- 图片预览 -->
+          <div v-if="imagePreviewUrls.length > 0" class="image-preview-list">
+            <div v-for="(url, idx) in imagePreviewUrls" :key="idx" class="image-preview-item">
+              <img :src="url" class="preview-img" />
+              <el-button
+                type="danger"
+                :icon="Close"
+                circle
+                size="small"
+                class="remove-btn"
+                @click="removeImage(idx)"
+              />
+            </div>
+          </div>
+        </el-form-item>
+
         <el-form-item>
           <el-button type="primary" :disabled="!canProceed" @click="handleNext">
             下一步 — 查看 Diff
@@ -166,5 +254,44 @@ fetchProjects()
 .merge-analysis-input {
   max-width: 700px;
   margin: 40px auto;
+}
+
+/* 图片上传样式 */
+.image-upload-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.image-hint {
+  color: #909399;
+  font-size: 12px;
+}
+.image-preview-list {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.image-preview-item {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.remove-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  opacity: 0.8;
+}
+.remove-btn:hover {
+  opacity: 1;
 }
 </style>

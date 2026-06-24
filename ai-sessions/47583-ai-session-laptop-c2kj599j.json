@@ -3,10 +3,10 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-06-23T11:13:02.835Z",
+  "lastUpdated": "2026-06-24T01:34:02.125Z",
   "stats": {
-    "totalOperations": 1246,
-    "totalFilesEdited": 526,
+    "totalOperations": 1276,
+    "totalFilesEdited": 540,
     "totalAiLines": 32855,
     "totalAiLinesDeleted": 2870,
     "totalCommits": 77
@@ -1143,6 +1143,112 @@
       "operations": 1,
       "timestamp": "2026-06-23T09:27:56.480Z",
       "lastModified": "2026-06-23T09:27:56.480Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/controller/RamController.java",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-06-24T00:52:41.528Z",
+      "lastModified": "2026-06-24T00:54:35.829Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/controller/MergeAnalysisController.java",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-06-24T00:55:48.457Z",
+      "lastModified": "2026-06-24T01:22:33.127Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/service/UnifiedTextService.java",
+      "tool": "Edit",
+      "operations": 4,
+      "timestamp": "2026-06-24T00:56:46.153Z",
+      "lastModified": "2026-06-24T01:21:51.296Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/config/TextModelConfig.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-24T00:57:34.794Z",
+      "lastModified": "2026-06-24T00:57:34.794Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/api/ram.ts",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-24T00:58:13.339Z",
+      "lastModified": "2026-06-24T00:58:13.339Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/ram/InputPage.vue",
+      "tool": "Edit",
+      "operations": 4,
+      "timestamp": "2026-06-24T01:00:08.129Z",
+      "lastModified": "2026-06-24T01:06:10.309Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/api/merge-analysis.ts",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-24T01:10:23.701Z",
+      "lastModified": "2026-06-24T01:10:23.701Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/merge-analysis/InputPage.vue",
+      "tool": "Edit",
+      "operations": 4,
+      "timestamp": "2026-06-24T01:11:05.058Z",
+      "lastModified": "2026-06-24T01:19:20.145Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/test/java/com/huawei/hisi/service/ReportExportServiceTest.java",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-06-24T01:16:33.594Z",
+      "lastModified": "2026-06-24T01:16:50.845Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/test/java/com/huawei/hisi/ram/controller/RamControllerTest.java",
+      "tool": "Edit",
+      "operations": 4,
+      "timestamp": "2026-06-24T01:17:00.994Z",
+      "lastModified": "2026-06-24T01:30:37.970Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/log-analysis/LogQuery.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-24T01:18:20.157Z",
+      "lastModified": "2026-06-24T01:18:20.157Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/merge-analysis/DiffPreviewPage.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-24T01:20:14.050Z",
+      "lastModified": "2026-06-24T01:20:14.050Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/mergeanalysis/service/MergeAnalysisService.java",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-06-24T01:21:47.438Z",
+      "lastModified": "2026-06-24T01:22:18.938Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/e2e/export.spec.ts",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-06-24T01:34:02.125Z",
+      "lastModified": "2026-06-24T01:34:02.125Z"
     }
   ]
 }

@@ -23,6 +23,9 @@ public class TextModelConfig {
     /** 模型名称 */
     private String model = "glm-4-flash";
 
+    /** 多模态/Vision 模型名称（如 glm-4v-flash），不配置则使用 model 字段 */
+    private String visionModel;
+
     /** 温度参数 */
     private double temperature = 0.1;
 

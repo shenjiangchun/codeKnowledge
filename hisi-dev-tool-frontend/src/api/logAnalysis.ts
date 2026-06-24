@@ -87,5 +87,20 @@ export const logAnalysisApi = {
   // 切换启用状态
   toggleConfig(appId: string): Promise<AppLogConfig> {
     return request.post(`/log/config/${appId}/toggle`) as Promise<AppLogConfig>
+  },
+
+  // ========== 报告导出 ==========
+
+  // 导出单个报告为 Markdown
+  exportReportMd(id: string): Promise<Blob> {
+    return request.get(`/log/report/${id}/export/md`, { responseType: 'blob' })
+  },
+
+  // 批量导出报告为 ZIP（带时间范围筛选）
+  exportReportsZip(startTime?: string, endTime?: string): Promise<Blob> {
+    return request.get('/log/reports/export/zip', {
+      params: { startTime, endTime },
+      responseType: 'blob'
+    })
   }
 }

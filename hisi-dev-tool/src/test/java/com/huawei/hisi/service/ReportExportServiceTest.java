@@ -16,6 +16,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -312,5 +313,43 @@ class ReportExportServiceTest {
         assertThat(result).contains("test_scope");
         assertThat(result).contains("totalFiles");
         assertThat(result).contains("affectedEntryPoints");
+    }
+
+    // ========== LogAnalysis Export Tests ==========
+
+    @Test
+    @DisplayName("exportLogReportAsMd - 报告不存在时抛出异常")
+    void exportLogReportAsMd_shouldThrowWhenReportNotFound() {
+        // Arrange
+        Long nonExistentId = 99999L;
+        when(logAnalysisRepository.findById(nonExistentId)).thenReturn(null);
+
+        // Act & Assert
+        assertThatThrownBy(() -> reportExportService.exportLogReportAsMd(nonExistentId))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("报告不存在");
+    }
+
+    @Test
+    @DisplayName("exportLogReportsAsZip - 空结果返回空ZIP")
+    void exportLogReportsAsZip_emptyResults_returnsEmptyZip() throws Exception {
+        // Arrange
+        LocalDateTime startTime = LocalDateTime.of(2024, 1, 1, 0, 0);
+        LocalDateTime endTime = LocalDateTime.of(2024, 1, 2, 0, 0);
+        when(logAnalysisRepository.findByCreatedAtBetween(startTime, endTime)).thenReturn(List.of());
+
+        // Act
+        byte[] result = reportExportService.exportLogReportsAsZip(startTime, endTime);
+
+        // Assert
+        assertThat(result).isNotNull();
+        assertThat(result.length).isGreaterThan(0); // ZIP 结构本身有最小大小
+
+        // 验证可以解析为 ZIP（没有文件条目）
+        try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(
+                new java.io.ByteArrayInputStream(result))) {
+            java.util.zip.ZipEntry entry = zis.getNextEntry();
+            assertThat(entry).isNull(); // 空 ZIP 没有任何条目
+        }
     }
 }

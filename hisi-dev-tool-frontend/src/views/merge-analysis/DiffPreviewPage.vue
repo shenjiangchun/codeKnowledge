@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getDiff, startMergeAnalysis } from '@/api/merge-analysis'
+import { getDiff, startMergeAnalysis, type ImageContent } from '@/api/merge-analysis'
 import type { DiffResult, FileDiff } from '@/types/merge-analysis'
 
 const route = useRoute()
@@ -11,10 +11,23 @@ const router = useRouter()
 const projectPath = route.query.projectPath as string
 const sourceBranch = route.query.sourceBranch as string
 const targetBranch = route.query.targetBranch as string
+const hasImages = route.query.hasImages === 'true'
 
 const diffResult = ref<DiffResult | null>(null)
 const loading = ref(false)
 const expandedFiles = ref<string[]>([])
+
+// 从 sessionStorage 读取图片数据
+function getStoredImages(): ImageContent[] | undefined {
+  if (!hasImages) return undefined
+  const stored = sessionStorage.getItem('mergeAnalysisImages')
+  if (!stored) return undefined
+  try {
+    return JSON.parse(stored) as ImageContent[]
+  } catch {
+    return undefined
+  }
+}
 
 function changeTypeColor(type: string): string {
   switch (type) {
@@ -39,7 +52,10 @@ const starting = ref(false)
 async function handleStartAnalysis() {
   starting.value = true
   try {
-    const resp = await startMergeAnalysis({ projectPath, sourceBranch, targetBranch })
+    const images = getStoredImages()
+    const resp = await startMergeAnalysis({ projectPath, sourceBranch, targetBranch, images })
+    // 清理 sessionStorage
+    sessionStorage.removeItem('mergeAnalysisImages')
     router.push({
       name: 'MergeAnalysisResult',
       query: { projectPath, sourceBranch, targetBranch, sid: resp.sessionHandle }

@@ -13,11 +13,21 @@ import type {
   StartSessionResponse
 } from '@/types/ram'
 
+/** 图片数据格式（OpenAI Vision API） */
+export interface ImageContent {
+  type: 'image_url'
+  image_url: {
+    url: string // data:image/jpeg;base64,... 或 URL
+  }
+}
+
 export interface StartSessionPayload {
   rawInput: string
   projectPath?: string
   projectPaths?: string[]
   userId?: string
+  /** 多模态图片输入（Base64 格式） */
+  images?: ImageContent[]
 }
 
 export function startRamSession(payload: StartSessionPayload): Promise<StartSessionResponse> {
@@ -178,4 +188,11 @@ export function startPhase2Analysis(payload: StartPhase2Payload): Promise<Phase2
 /** Get Phase2 analysis report. */
 export function getPhase2Report(sessionId: string): Promise<Phase2ReportResponse> {
   return request.get(`/ram/status/phase2/${sessionId}/report`)
+}
+
+// ──────────────── Session Export ────────────────
+
+/** Export RAM session as Markdown file. */
+export function exportRamSessionMd(sessionId: string): Promise<Blob> {
+  return request.get(`/ram/sessions/${sessionId}/export/md`, { responseType: 'blob' })
 }

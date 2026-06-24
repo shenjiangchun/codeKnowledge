@@ -341,9 +341,27 @@
                 <el-option label="失败" value="failed" />
               </el-select>
             </el-form-item>
+            <el-form-item label="时间范围">
+              <el-date-picker
+                v-model="reportFilter.startTime"
+                type="datetime"
+                placeholder="开始时间"
+                style="width: 180px"
+              />
+              <span style="margin: 0 4px">-</span>
+              <el-date-picker
+                v-model="reportFilter.endTime"
+                type="datetime"
+                placeholder="结束时间"
+                style="width: 180px"
+              />
+            </el-form-item>
             <el-form-item>
               <el-button type="primary" @click="loadReports" :loading="reportsLoading">
                 <el-icon><Search /></el-icon> 查询
+              </el-button>
+              <el-button type="success" :loading="exportingZip" @click="handleExportZip">
+                <el-icon><Download /></el-icon> 批量导出 ZIP
               </el-button>
             </el-form-item>
           </el-form>
@@ -688,7 +706,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Search, Document, Warning, Cpu, Check, Delete, Plus } from '@element-plus/icons-vue'
+import { Search, Document, Warning, Cpu, Check, Delete, Plus, Download } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { logAnalysisApi, type AppLogConfig } from '@/api/logAnalysis'
 import { aiAnalysisApi } from '@/api/aiAnalysis'
@@ -697,6 +715,7 @@ import { projectGroupApi, type ProjectGroup } from '@/api/projectGroup'
 import type { LogEntry } from '@/types/log'
 import { parseJavaErrorLog, formatForAnalysis, type ParsedErrorLog } from '@/utils/logParser'
 import { renderMarkdown } from '@/utils/markdown'
+import { downloadBlob } from '@/utils/download'
 
 const router = useRouter()
 const workspaceStore = useWorkspaceStore()
@@ -892,7 +911,9 @@ const formatConfigTime = (timestamp: number) => {
 const reportsLoading = ref(false)
 const reports = ref<any[]>([])
 const reportFilter = reactive({
-  status: ''
+  status: '' ,
+  startTime: null as Date | null, 
+  endTime: null as Date | null
 })
 const reportsPagination = reactive({
   page: 1,
@@ -900,6 +921,7 @@ const reportsPagination = reactive({
   total: 0
 })
 const reportDetailVisible = ref(false)
+const exportingZip = ref(false)
 const selectedReport = ref<any | null>(null)
 
 // L-11: 分析进度反馈
@@ -1065,6 +1087,24 @@ const handleDeleteReport = async (report: any) => {
     }
   }
 }
+
+const handleExportZip = async () => {
+  exportingZip.value = true
+  try {
+    const startTime = reportFilter.startTime ? reportFilter.startTime.toISOString() : undefined
+    const endTime = reportFilter.endTime ? reportFilter.endTime.toISOString() : undefined
+    const blob = await logAnalysisApi.exportReportsZip(startTime, endTime)
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '' )
+    const filename = `log-reports-${timestamp}.zip`
+    downloadBlob(blob, filename)
+    ElMessage.success('报告已批量导出' )
+  } catch (e: any) {
+    ElMessage.error('导出失败: ' + (e.message || '请稍后重试' ))
+  } finally {
+    exportingZip.value = false
+  }
+}
+
 
 const getReportStatusType = (status: string): string => {
   switch (status) {

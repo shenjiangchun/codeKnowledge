@@ -398,6 +398,113 @@ public class UnifiedTextService {
         return rateLimiter == null ? 0 : rateLimiter.availablePermits();
     }
 
+    /**
+     * 多模态文本生成 — 支持图片输入
+     *
+     * <p>图片格式遵循 OpenAI Vision API：
+     * {@code [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}]}}
+     *
+     * @param textPrompt 文本提示词（不能为空）
+     * @param images     图片内容数组（OpenAI vision 格式）
+     * @param maxTokens  最大 token 数
+     * @return 生成的文本内容（不截断）
+     */
+    public String generateWithImages(String textPrompt, java.util.List<java.util.Map<String, Object>> images, int maxTokens) {
+        // 参数校验
+        if (textPrompt == null || textPrompt.isBlank()) {
+            throw new IllegalArgumentException("textPrompt is required");
+        }
+        if (images == null || images.isEmpty()) {
+            return chat("", textPrompt, maxTokens);
+        }
+
+        int maxRetries = config.getMaxRetries();
+        long baseDelay = config.getRetryBaseDelayMs();
+
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                if (!rateLimiter.tryAcquire(config.getAcquireTimeoutSeconds(), TimeUnit.SECONDS)) {
+                    throw new RuntimeException("[TextModel] generateWithImages: 获取令牌超时");
+                }
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("[TextModel] generateWithImages: 等待令牌被中断", ie);
+            }
+
+            try {
+                String url = config.getBaseUrl() + "/chat/completions";
+
+                ObjectNode requestBody = objectMapper.createObjectNode();
+                requestBody.put("model", config.getVisionModel() != null ? config.getVisionModel() : config.getModel());
+                requestBody.put("temperature", config.getTemperature());
+                requestBody.put("max_tokens", maxTokens);
+
+                ArrayNode messages = requestBody.putArray("messages");
+                ObjectNode userMsg = messages.addObject();
+                userMsg.put("role", "user");
+
+                // 构建多模态 content 数组：文本 + 图片
+                ArrayNode contentArray = userMsg.putArray("content");
+                ObjectNode textPart = contentArray.addObject();
+                textPart.put("type", "text");
+                textPart.put("text", textPrompt);
+
+                // 添加图片
+                for (java.util.Map<String, Object> img : images) {
+                    Object urlObj = img.get("url");
+                    if (!(urlObj instanceof String imageUrl)) {
+                        log.warn("[TextModel] generateWithImages: invalid image url format, skipping");
+                        continue;
+                    }
+                    ObjectNode imgPart = contentArray.addObject();
+                    imgPart.put("type", "image_url");
+                    ObjectNode imgUrl = imgPart.putObject("image_url");
+                    imgUrl.put("url", imageUrl);
+                }
+
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                headers.set("Authorization", "Bearer " + config.getApiKey());
+
+                HttpEntity<String> entity = new HttpEntity<>(
+                        objectMapper.writeValueAsString(requestBody), headers);
+
+                log.info("[TextModel] generateWithImages: model={}, images={}, max_tokens={}, attempt={}/{}",
+                        config.getVisionModel() != null ? config.getVisionModel() : config.getModel(),
+                        images.size(), maxTokens, attempt + 1, maxRetries + 1);
+
+                RestTemplate rt = proxyConfig.getCurrentRestTemplate();
+                ResponseEntity<String> response = rt.exchange(url, HttpMethod.POST, entity, String.class);
+
+                return extractFullTextContent(response.getBody());
+
+            } catch (HttpClientErrorException e) {
+                if (e.getStatusCode().value() == 429 && attempt < maxRetries) {
+                    long delay = computeRetryDelay(e.getResponseHeaders(), baseDelay, attempt);
+                    log.warn("[TextModel] generateWithImages: 限流(429)，第{}次重试，等待{}ms", attempt + 1, delay);
+                    sleepQuietly(delay);
+                    continue;
+                }
+                throw new RuntimeException("generateWithImages 调用失败: " + e.getMessage(), e);
+            } catch (HttpServerErrorException e) {
+                if (attempt < maxRetries) {
+                    sleepQuietly(baseDelay * (1L << attempt));
+                    continue;
+                }
+                throw new RuntimeException("generateWithImages 调用失败: " + e.getMessage(), e);
+            } catch (ResourceAccessException e) {
+                if (attempt < maxRetries) {
+                    sleepQuietly(baseDelay * (1L << attempt));
+                    continue;
+                }
+                throw new RuntimeException("generateWithImages 调用失败(IO): " + e.getMessage(), e);
+            } catch (Exception e) {
+                throw new RuntimeException("generateWithImages 调用失败: " + e.getMessage(), e);
+            }
+        }
+        throw new RuntimeException("generateWithImages 调用失败: 超过最大重试次数");
+    }
+
     // ==================== 内部方法 ====================
 
     private long computeRetryDelay(HttpHeaders headers, long baseDelay, int attempt) {

@@ -44,6 +44,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -234,4 +235,59 @@ class RamControllerTest {
         verify(sessionRepository, timeout(3000).atLeast(1)).findById(sid);
     }
 
+    // ========== Export Endpoint Tests ==========
+
+    @Test
+    @DisplayName("GET /sessions/{sid}/export/md returns 404 when session not found")
+    void exportSessionAsMd_notFound_returns404() throws Exception {
+        // Arrange
+        String unknownHandle = "unknown-handle-for-export";
+        when(sessionMappingService.resolveBackendId(unknownHandle)).thenReturn(null);
+
+        // Act & Assert
+        mockMvc.perform(get("/api/ram/sessions/" + unknownHandle + "/export/md"))
+                .andExpect(status().isNotFound());
     }
+
+    @Test
+    @DisplayName("GET /sessions/{sid}/export/md returns markdown content when session exists")
+    void exportSessionAsMd_existingSession_returnsMarkdown() throws Exception {
+        // Arrange
+        String handle = UUID.randomUUID().toString();
+        when(sessionMappingService.resolveBackendId(handle)).thenReturn(42L);
+        String expectedMd = "# RAM Session Test\n\nContent here...";
+        when(reportExportService.exportRamSessionAsMd(handle))
+                .thenReturn(expectedMd);
+
+        // Act & Assert
+        mockMvc.perform(get("/api/ram/sessions/" + handle + "/export/md"))
+                .andExpect(status().isOk())
+                .andExpect(result -> {
+                    String contentType = result.getResponse().getContentType();
+                    assertThat(contentType).contains("text/markdown");
+                })
+                .andExpect(result -> {
+                    byte[] content = result.getResponse().getContentAsByteArray();
+                    String mdContent = new String(content, java.nio.charset.StandardCharsets.UTF_8);
+                    assertThat(mdContent).contains("# RAM Session Test");
+                });
+
+        // Verify the export service was called
+        verify(reportExportService).exportRamSessionAsMd(handle);
+    }
+
+    @Test
+    @DisplayName("GET /sessions/{sid}/export/md returns 404 when export service throws IllegalArgumentException")
+    void exportSessionAsMd_sessionNotFoundInDb_returns404() throws Exception {
+        // Arrange
+        String handle = UUID.randomUUID().toString();
+        when(sessionMappingService.resolveBackendId(handle)).thenReturn(42L);
+        when(reportExportService.exportRamSessionAsMd(handle))
+                .thenThrow(new IllegalArgumentException("会话不存在: " + handle));
+
+        // Act & Assert
+        mockMvc.perform(get("/api/ram/sessions/" + handle + "/export/md"))
+                .andExpect(status().isNotFound());
+    }
+
+}

@@ -61,17 +61,22 @@ public class MergeAnalysisService {
         return saved.getId();
     }
 
-    public void runAnalysis(long sessionId, String projectPath, String sourceBranch, String targetBranch) {
+    public void runAnalysis(long sessionId, String projectPath, String sourceBranch, String targetBranch,
+                            java.util.List<java.util.Map<String, Object>> images) {
         CompletableFuture.runAsync(() -> {
             try {
                 // Store initial input as USER_MSG event (same pattern as RAM)
-                storeInitialInput(sessionId, projectPath, sourceBranch, targetBranch);
+                storeInitialInput(sessionId, projectPath, sourceBranch, targetBranch, images);
 
                 // Build input map for DagExecutor
                 Map<String, Object> input = new LinkedHashMap<>();
                 input.put("projectPath", projectPath);
                 input.put("sourceBranch", sourceBranch);
                 input.put("targetBranch", targetBranch);
+                if (images != null && !images.isEmpty()) {
+                    input.put("images", images);
+                    log.info("[MergeAnalysis] Session {} — included {} images in input", sessionId, images.size());
+                }
 
                 log.info("[MergeAnalysis] Session {} — starting DAG execution", sessionId);
                 dagExecutor.run(dagNodes.nodes(), sessionId, input);
@@ -117,13 +122,17 @@ public class MergeAnalysisService {
         }, asyncExecutor);
     }
 
-    private void storeInitialInput(long sessionId, String projectPath, String sourceBranch, String targetBranch) {
+    private void storeInitialInput(long sessionId, String projectPath, String sourceBranch, String targetBranch,
+                                   java.util.List<java.util.Map<String, Object>> images) {
         try {
             Map<String, Object> payload = new LinkedHashMap<>();
             Map<String, Object> initialInput = new LinkedHashMap<>();
             initialInput.put("projectPath", projectPath);
             initialInput.put("sourceBranch", sourceBranch);
             initialInput.put("targetBranch", targetBranch);
+            if (images != null && !images.isEmpty()) {
+                initialInput.put("images", images);
+            }
             payload.put("initialInput", initialInput);
 
             AgentEvent ev = AgentEvent.builder()

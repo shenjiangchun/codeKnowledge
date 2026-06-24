@@ -97,7 +97,8 @@ public class MergeAnalysisController {
     }
 
     public record DiffRequest(String projectPath, String sourceBranch, String targetBranch) {}
-    public record StartRequest(String projectPath, String sourceBranch, String targetBranch) {}
+    public record StartRequest(String projectPath, String sourceBranch, String targetBranch,
+                               java.util.List<java.util.Map<String, Object>> images) {}
     public record StartResponse(String sessionHandle) {}
     public record SessionInfo(String status, String currentNode, long lastSeq) {}
 
@@ -127,7 +128,12 @@ public class MergeAnalysisController {
             s.setIntent("合入分析: " + request.sourceBranch() + " → " + request.targetBranch());
             sessionRepository.update(s);
         });
-        mergeAnalysisService.runAnalysis(id, request.projectPath(), request.sourceBranch(), request.targetBranch());
+        // 传递 images 参数（多模态输入）
+        mergeAnalysisService.runAnalysis(id, request.projectPath(), request.sourceBranch(), request.targetBranch(),
+                request.images());
+        if (request.images() != null && !request.images().isEmpty()) {
+            log.info("[MergeAnalysis][POST /sessions] included {} images in request", request.images().size());
+        }
         return ApiResponse.success(new StartResponse(handle));
     }
 

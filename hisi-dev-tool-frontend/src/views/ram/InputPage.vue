@@ -12,16 +12,21 @@
  * - el-select with filterable search + status tag (branch / clean / source)
  * - Manual-path fallback toggle for paths outside the scanned roots
  * - appId options merged with project options in a single dropdown
+ *
+ * Multimodal support:
+ * - Upload images and convert to Base64 for vision model input
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Plus, Close } from '@element-plus/icons-vue'
 import { useAppStore } from '@/stores/app'
-import { startRamSession } from '@/api/ram'
+import { startRamSession, type ImageContent } from '@/api/ram'
 import { projectApi } from '@/api/project'
 import { listRemoteProjects } from '@/api/remote-project'
 import { projectGroupApi, type ProjectGroup } from '@/api/projectGroup'
 import type { GitRepositoryInfo } from '@/types/callchain'
+import type { UploadFile } from 'element-plus'
 
 const router = useRouter()
 const appStore = useAppStore()
@@ -33,6 +38,10 @@ const projects = ref<GitRepositoryInfo[]>([])
 const loadingProjects = ref<boolean>(false)
 const submitting = ref<boolean>(false)
 const showAdvanced = ref<boolean>(false)  // R-14: Toggle for advanced project selection options
+
+// 多模态图片上传
+const uploadedImages = ref<ImageContent[]>([])
+const imagePreviewUrls = ref<string[]>([]) // 用于预览显示
 
 // Task 72: appId selector (merged with project selector)
 const groups = ref<ProjectGroup[]>([])
@@ -163,6 +172,51 @@ onMounted(() => {
   loadGroups()  // Task 72: Load project groups for appId selector
 })
 
+// 图片上传处理：转为 Base64 格式
+function handleImageUpload(file: UploadFile): boolean {
+  const rawFile = file.raw
+  if (!rawFile) return false
+
+  // 限制文件大小（500KB）
+  if (rawFile.size > 500 * 1024) {
+    ElMessage.warning('图片大小不能超过 500KB')
+    return false
+  }
+
+  // 限制文件类型
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+  if (!allowedTypes.includes(rawFile.type)) {
+    ElMessage.warning('仅支持 JPEG、PNG、GIF、WebP 格式')
+    return false
+  }
+
+  // 限制数量（最多 5 张）
+  if (uploadedImages.value.length >= 5) {
+    ElMessage.warning('最多上传 5 张图片')
+    return false
+  }
+
+  // 转为 Base64
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    const base64 = e.target?.result as string
+    uploadedImages.value.push({
+      type: 'image_url',
+      image_url: { url: base64 }
+    })
+    imagePreviewUrls.value.push(base64)
+  }
+  reader.readAsDataURL(rawFile)
+
+  return false // 阻止 el-upload 默认上传行为
+}
+
+// 移除图片
+function removeImage(index: number): void {
+  uploadedImages.value.splice(index, 1)
+  imagePreviewUrls.value.splice(index, 1)
+}
+
 async function onSubmit(): Promise<void> {
   // R-14: projectPaths now combines both dropdown selection and manual input
   if (projectPaths.value.length === 0) {
@@ -179,7 +233,8 @@ async function onSubmit(): Promise<void> {
   try {
     const resp = await startRamSession({
       rawInput: rawInput.value,
-      projectPaths: projectPaths.value
+      projectPaths: projectPaths.value,
+      images: uploadedImages.value.length > 0 ? uploadedImages.value : undefined
     })
     await router.push({ name: 'RamDraft', params: { sid: resp.sessionId } })
   } catch (error) {
@@ -287,6 +342,38 @@ async function onSubmit(): Promise<void> {
             placeholder="贴入需求文档片段、用户故事或问题描述..."
             data-test="ram-raw-input"
           />
+        </el-form-item>
+
+        <!-- 多模态图片上传 -->
+        <el-form-item label="附加图片">
+          <div class="image-upload-section">
+            <el-upload
+              :auto-upload="false"
+              :show-file-list="false"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              :on-change="handleImageUpload"
+              :multiple="true"
+            >
+              <el-button type="default" :icon="Plus">
+                上传图片
+              </el-button>
+            </el-upload>
+            <span class="image-hint">（最多 5 张，每张不超过 500KB）</span>
+          </div>
+          <!-- 图片预览 -->
+          <div v-if="imagePreviewUrls.length > 0" class="image-preview-list">
+            <div v-for="(url, idx) in imagePreviewUrls" :key="idx" class="image-preview-item">
+              <img :src="url" class="preview-img" />
+              <el-button
+                type="danger"
+                :icon="Close"
+                circle
+                size="small"
+                class="remove-btn"
+                @click="removeImage(idx)"
+              />
+            </div>
+          </div>
         </el-form-item>
 
         <el-form-item>
@@ -404,5 +491,44 @@ async function onSubmit(): Promise<void> {
   margin-top: 6px;
   color: #909399;
   font-size: 12px;
+}
+
+/* 图片上传样式 */
+.image-upload-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.image-hint {
+  color: #909399;
+  font-size: 12px;
+}
+.image-preview-list {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.image-preview-item {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.remove-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  opacity: 0.8;
+}
+.remove-btn:hover {
+  opacity: 1;
 }
 </style>
