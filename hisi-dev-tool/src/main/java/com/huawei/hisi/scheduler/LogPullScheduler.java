@@ -6,6 +6,7 @@ import com.huawei.hisi.model.LogQueryDto;
 import com.huawei.hisi.repository.AppLogConfigRepository;
 import com.huawei.hisi.service.LogAnalysisExecutor;
 import com.huawei.hisi.service.LogCloudService;
+import com.huawei.hisi.service.SubmitResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -83,6 +84,7 @@ public class LogPullScheduler {
 
         // 3. 入库（带指纹去重）
         int storedCount = 0;
+        int duplicateCount = 0;
         for (LogEntry entry : logs) {
             if (entry.getMessage() == null || entry.getMessage().isEmpty()) {
                 continue;
@@ -94,10 +96,14 @@ public class LogPullScheduler {
             queryParams.put("projectPath", config.getProjectPath());
             queryParams.put("dslQuery", config.getDslQuery());
             queryParams.put("pullTime", LocalDateTime.now().toString());
+            // Task: Pass projectPackagePrefixes for stack frame identification
+            if (config.getProjectPackagePrefixes() != null && !config.getProjectPackagePrefixes().isEmpty()) {
+                queryParams.put("projectPackagePrefixes", config.getProjectPackagePrefixes());
+            }
 
             // 调用 submitForAnalysis（带指纹去重），使用 sys_admin 作为 userId 以便前端查询
             // Task 71: Pass configId and appId for grouping reports by scheduled task
-            Long reportId = logAnalysisExecutor.submitForAnalysis(
+            SubmitResult result = logAnalysisExecutor.submitForAnalysis(
                 entry.getMessage(),
                 entry.getStackTrace() != null ? entry.getStackTrace() : "",
                 "sys_admin",
@@ -106,11 +112,20 @@ public class LogPullScheduler {
                 config.getAppId()
             );
 
-            if (reportId != null) {
+            if (result.reportId() != null) {
                 storedCount++;
-                // 触发异步分析流水线
-                logAnalysisExecutor.executeAnalysis(reportId);
+                // 只有新报告才触发异步分析流水线（避免重复分析）
+                if (result.isNew()) {
+                    logAnalysisExecutor.executeAnalysis(result.reportId());
+                } else if (result.isDuplicate()) {
+                    duplicateCount++;
+                    log.debug("[LogPullScheduler] 重复日志跳过分析 (reportId={})", result.reportId());
+                }
             }
+        }
+
+        if (duplicateCount > 0) {
+            log.info("[LogPullScheduler] 应用 {} 检测到 {} 条重复日志，跳过分析", config.getAppId(), duplicateCount);
         }
 
         return storedCount;

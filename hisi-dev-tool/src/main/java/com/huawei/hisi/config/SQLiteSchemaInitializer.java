@@ -222,11 +222,20 @@ public class SQLiteSchemaInitializer {
                 pull_interval_minutes INTEGER DEFAULT 10,
                 enabled INTEGER DEFAULT 1,
                 last_pull_at INTEGER,
+                project_package_prefixes TEXT,
                 created_at INTEGER DEFAULT (strftime('%s','now')),
                 updated_at INTEGER DEFAULT (strftime('%s','now'))
             )
             """);
         log.info("[SQLite] Created app_log_config table");
+
+        // Migration: Add project_package_prefixes column if upgrading from older schema
+        try {
+            jdbcTemplate.execute("ALTER TABLE app_log_config ADD COLUMN project_package_prefixes TEXT");
+            log.info("[SQLite] Added project_package_prefixes column to app_log_config");
+        } catch (Exception ignored) {
+            // Column already exists
+        }
 
         jdbcTemplate.execute("""
             CREATE TABLE IF NOT EXISTS remote_project (

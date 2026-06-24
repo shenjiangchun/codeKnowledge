@@ -49,9 +49,9 @@ public class LogAnalysisExecutor {
      * @param stackTrace 堆栈跟踪
      * @param userId 用户ID
      * @param queryParams 查询参数
-     * @return 报告ID（新日志返回新ID，重复日志返回已有ID）
+     * @return SubmitResult 包含报告ID和是否为新创建的标志
      */
-    public Long submitForAnalysis(String message, String stackTrace, String userId, Map<String, Object> queryParams) {
+    public SubmitResult submitForAnalysis(String message, String stackTrace, String userId, Map<String, Object> queryParams) {
         return submitForAnalysis(message, stackTrace, userId, queryParams, null, null);
     }
 
@@ -64,9 +64,9 @@ public class LogAnalysisExecutor {
      * @param queryParams 查询参数
      * @param configId 定时任务配置ID（AppLogConfig.id）
      * @param appId 应用ID（AppLogConfig.appId）
-     * @return 报告ID（新日志返回新ID，重复日志返回已有ID）
+     * @return SubmitResult 包含报告ID和是否为新创建的标志
      */
-    public Long submitForAnalysis(String message, String stackTrace, String userId,
+    public SubmitResult submitForAnalysis(String message, String stackTrace, String userId,
                                   Map<String, Object> queryParams, Long configId, String appId) {
         // Generate fingerprint
         String fingerprint = fingerprintService.generateFingerprint(message + "\n" + stackTrace);
@@ -77,12 +77,13 @@ public class LogAnalysisExecutor {
         if (existing != null) {
             // Duplicate found - increment count and return existing reportId
             repository.incrementOccurrenceCount(existing.getReportId());
-            log.info("重复日志检测到 (fingerprint={}), 出现次数增加", fingerprint);
-            return existing.getReportId();
+            log.info("重复日志检测到 (fingerprint={}), 出现次数增加, reportId={}", fingerprint, existing.getReportId());
+            return SubmitResult.duplicate(existing.getReportId());
         }
 
         // New log - create report
-        return createNewReport(message, stackTrace, userId, queryParams, fingerprint, configId, appId);
+        Long reportId = createNewReport(message, stackTrace, userId, queryParams, fingerprint, configId, appId);
+        return SubmitResult.newReport(reportId);
     }
 
     private Long createNewReport(String message, String stackTrace, String userId,

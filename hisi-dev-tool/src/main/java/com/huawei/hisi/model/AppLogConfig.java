@@ -51,4 +51,10 @@ public class AppLogConfig {
      * 上次拉取时间
      */
     private Long lastPullAt;
+
+    /**
+     * 项目包名前缀（逗号分隔，如 "com.hisilicon,com.huawei"）
+     * 用于日志分析时识别项目代码堆栈帧
+     */
+    private String projectPackagePrefixes;
 }

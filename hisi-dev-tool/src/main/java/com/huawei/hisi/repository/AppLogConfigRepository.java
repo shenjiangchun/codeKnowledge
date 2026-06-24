@@ -55,13 +55,14 @@ public class AppLogConfigRepository {
      */
     public void save(AppLogConfig config) {
         String sql = """
-            INSERT INTO app_log_config (app_id, project_path, dsl_query, pull_interval_minutes, enabled)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO app_log_config (app_id, project_path, dsl_query, pull_interval_minutes, enabled, project_package_prefixes)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(app_id) DO UPDATE SET
                 project_path = excluded.project_path,
                 dsl_query = excluded.dsl_query,
                 pull_interval_minutes = excluded.pull_interval_minutes,
                 enabled = excluded.enabled,
+                project_package_prefixes = excluded.project_package_prefixes,
                 updated_at = strftime('%s','now')
             """;
         jdbcTemplate.update(sql,
@@ -69,7 +70,8 @@ public class AppLogConfigRepository {
             config.getProjectPath(),
             config.getDslQuery(),
             config.getPullIntervalMinutes(),
-            config.getEnabled() != null && config.getEnabled() ? 1 : 0
+            config.getEnabled() != null && config.getEnabled() ? 1 : 0,
+            config.getProjectPackagePrefixes()
         );
     }
 
@@ -111,6 +113,7 @@ public class AppLogConfigRepository {
                 .pullIntervalMinutes(rs.getInt("pull_interval_minutes"))
                 .enabled(rs.getInt("enabled") == 1)
                 .lastPullAt(rs.getObject("last_pull_at") != null ? rs.getLong("last_pull_at") : null)
+                .projectPackagePrefixes(rs.getString("project_package_prefixes"))
                 .build();
         }
     }
