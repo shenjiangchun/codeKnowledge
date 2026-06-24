@@ -26,10 +26,25 @@ public class FingerprintService {
     private static final Pattern ERROR_TYPE_PATTERN =
         Pattern.compile("^([\\w.]+Exception|[\\w.]+Error|[\\w.]+Throwable):");
 
-    // Framework class prefixes to exclude
+    // Framework class prefixes to exclude（扩展列表，参考实际日志分析经验）
     private static final String[] FRAMEWORK_PREFIXES = {
-        "java.", "javax.", "sun.", "org.springframework.",
-        "org.apache.", "com.google.", "io.netty.", "reactor.", "org.slf4j."
+        // Java 标准库
+        "java.", "javax.", "sun.", "com.sun.",
+        // Jakarta（Servlet 新标准）
+        "jakarta.",
+        // Spring 框架
+        "org.springframework.", "org.mybatis.spring",
+        // Apache 框架
+        "org.apache.",
+        // AWS SDK
+        "com.amazonaws.",
+        // Feign HTTP 客户端
+        "feign.", "reactor.feign.",
+        // 其他常见框架
+        "com.google.", "io.netty.", "reactor.", "org.slf4j.",
+        "ch.qos.logback.", "com.fasterxml.", "com.grapecity.",
+        // 华为内部框架（非项目代码）
+        "com.huawei.opengauss.", "com.huawei.it.jalor5."
     };
 
     private static final String DEFAULT_FINGERPRINT = "00000000000000000000000000000000";

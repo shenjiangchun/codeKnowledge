@@ -194,7 +194,15 @@ public class ParseNode implements LogAnalysisDagNode {
                className.startsWith("java.lang.reflect.") ||
                className.startsWith("com.grapecity.") ||
                className.startsWith("com.huawei.opengauss.") ||
-               className.startsWith("com.huawei.it.jalor5.");
+               className.startsWith("com.huawei.it.jalor5.") ||
+               // AWS SDK（新增）
+               className.startsWith("com.amazonaws.") ||
+               className.startsWith("software.amazon.") ||
+               // Feign HTTP 客户端（新增）
+               className.startsWith("feign.") ||
+               // OkHttp（新增）
+               className.startsWith("okhttp3.") ||
+               className.startsWith("okio.");
     }
 
     /**
