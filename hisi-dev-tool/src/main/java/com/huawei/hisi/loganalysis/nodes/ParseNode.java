@@ -30,6 +30,14 @@ public class ParseNode implements LogAnalysisDagNode {
     private static final Pattern AT_PATTERN =
         Pattern.compile("^\\s*at\\s+([\\w.$]+)\\.([\\w<>]+)\\(([\\w.]+):(\\d+)\\)", Pattern.MULTILINE);
 
+    // "... N more" 续行模式（堆栈省略行的 continuation）
+    private static final Pattern CONTINUATION_PATTERN =
+        Pattern.compile("^\\s*\\.\\.\\.\\s+\\d+\\s+more", Pattern.MULTILINE);
+
+    // CGLIB/Spring 生成的代理类后缀（应过滤掉）
+    private static final Pattern GENERATED_METHOD_PATTERN =
+        Pattern.compile("$$\\w+\\$$|<generated>|FastClassBySpringCGLIB");
+
     @Override
     public String name() {
         return "ParseNode";
@@ -126,7 +134,8 @@ public class ParseNode implements LogAnalysisDagNode {
             String fileName = m.group(3);
             int lineNum = Integer.parseInt(m.group(4));
 
-            if (isFrameworkClass(className)) continue;
+            // 过滤框架类和生成的方法（CGLIB代理等）
+            if (isFrameworkClass(className) || isGeneratedMethod(className, methodName)) continue;
 
             Map<String, Object> frame = new LinkedHashMap<>();
             frame.put("className", className);
@@ -166,17 +175,36 @@ public class ParseNode implements LogAnalysisDagNode {
     }
 
     private boolean isFrameworkClass(String className) {
+        // 扩展的框架类排除列表（参考日志分析经验）
         return className.startsWith("java.") ||
                className.startsWith("javax.") ||
                className.startsWith("sun.") ||
+               className.startsWith("sun.reflect.") ||
+               className.startsWith("com.sun.") ||
                className.startsWith("org.springframework.") ||
                className.startsWith("org.apache.") ||
+               className.startsWith("org.mybatis.spring") ||
                className.startsWith("com.fasterxml.") ||
                className.startsWith("io.netty.") ||
                className.startsWith("reactor.") ||
                className.startsWith("org.slf4j.") ||
                className.startsWith("ch.qos.logback.") ||
-               className.startsWith("jakarta.");
+               className.startsWith("jakarta.") ||
+               className.startsWith("java.util.concurrent.") ||
+               className.startsWith("java.lang.reflect.") ||
+               className.startsWith("com.grapecity.") ||
+               className.startsWith("com.huawei.opengauss.") ||
+               className.startsWith("com.huawei.it.jalor5.");
+    }
+
+    /**
+     * 判断是否为生成的方法（CGLIB代理、反射生成的临时类等）
+     */
+    private boolean isGeneratedMethod(String className, String methodName) {
+        return GENERATED_METHOD_PATTERN.matcher(className).find() ||
+               GENERATED_METHOD_PATTERN.matcher(methodName).find() ||
+               methodName.contains("intercept") ||
+               methodName.contains("invoke");
     }
 
     private String truncate(String s, int maxLen) {
