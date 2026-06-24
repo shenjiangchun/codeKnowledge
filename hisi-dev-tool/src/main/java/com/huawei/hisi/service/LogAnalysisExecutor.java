@@ -11,6 +11,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -166,19 +167,38 @@ public class LogAnalysisExecutor {
     private AnalysisResult executeDagAnalysis(LogAnalysisReportEntity report) {
         // Extract projectPath from queryParams
         String projectPath = null;
+        List<String> projectPackagePrefixes = null;
         if (report.getQueryParams() != null) {
             Object pp = report.getQueryParams().get("projectPath");
             if (pp instanceof String s && !s.isBlank()) {
                 projectPath = s;
             }
+            // Extract project package prefixes for stack frame prioritization
+            Object prefixes = report.getQueryParams().get("projectPackagePrefixes");
+            if (prefixes instanceof List<?> list) {
+                projectPackagePrefixes = list.stream()
+                        .filter(obj -> obj instanceof String)
+                        .map(obj -> (String) obj)
+                        .filter(s -> !s.isBlank())
+                        .toList();
+            } else if (prefixes instanceof String s && !s.isBlank()) {
+                // Comma-separated format
+                projectPackagePrefixes = Arrays.stream(s.split(","))
+                        .map(String::trim)
+                        .filter(trimmed -> !trimmed.isEmpty())
+                        .toList();
+            }
         }
+
+        log.info("DAG分析参数: projectPath={}, projectPackagePrefixes={}", projectPath, projectPackagePrefixes);
 
         Map<String, Object> dagResult = dagOrchestrator.analyzeLog(
                 report.getLogMessage(),
                 report.getLogStackTrace(),
                 projectPath,
                 report.getServiceName(),
-                report.getTraceId()
+                report.getTraceId(),
+                projectPackagePrefixes
         );
 
         // Extract results from DAG output

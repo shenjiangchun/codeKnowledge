@@ -140,4 +140,79 @@ java.lang.RuntimeException: Application error
         assertThat(keyFrames).hasSize(1);
         assertThat(keyFrames.get(0).get("simpleClassName")).isEqualTo("MyService");
     }
+
+    @Test
+    @DisplayName("prioritize project package prefixes when provided")
+    void prioritizeProjectPackagePrefixes() {
+        // Simulate production scenario: project code buried deep after AWS SDK/Feign/Jakarta frames
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("message", "Request processing failed");
+        input.put("stackTrace", """
+feign.RetryableException: Error executing request
+	at feign.SynchronousMethodHandler.executeAndDecode(SynchronousMethodHandler.java:108)
+	at feign.SynchronousMethodHandler.invoke(SynchronousMethodHandler.java:78)
+	at feign.ReflectiveFeign$FeignInvocationHandler.invoke(ReflectiveFeign.java:103)
+	at com.sun.proxy.$Proxy153.handleRequest(Unknown Source)
+	at jakarta.servlet.http.HttpServlet.service(HttpServlet.java:590)
+	at jakarta.servlet.http.HttpServlet.service(HttpServlet.java:665)
+	at org.springframework.web.servlet.FrameworkServlet.service(FrameworkServlet.java:1002)
+	at org.apache.coyote.http11.Http11Processor.service(Http11Processor.java:261)
+	at org.apache.coyote.AbstractProcessorLight.process(AbstractProcessorLight.java:63)
+	at org.apache.coyote.AbstractProtocol$ConnectionHandler.process(AbstractProtocol.java:934)
+	at org.apache.tomcat.util.net.NioEndpoint$SocketProcessor.doRun(NioEndpoint.java:1787)
+	at org.apache.tomcat.util.net.SocketProcessorBase.run(SocketProcessorBase.java:49)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1135)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at org.apache.tomcat.util.threads.TaskThread$WrappingRunnable.run(TaskThread.java:61)
+	at java.lang.Thread.run(Thread.java:833)
+	at com.hisilicon.product.service.ProductService.getProduct(ProductService.java:125)
+	at com.hisilicon.product.controller.ProductController.handleQuery(ProductController.java:45)
+	at com.hisilicon.common.filter.RequestFilter.doFilter(RequestFilter.java:30)
+	at com.other.vendor.VendorService.processVendor(VendorService.java:88)
+""");
+        // Project package prefix configuration
+        input.put("projectPackagePrefixes", List.of("com.hisilicon"));
+
+        Map<String, Object> output = parseNode.execute(input);
+
+        List<Map<String, Object>> keyFrames = (List<Map<String, Object>>) output.get("keyFrames");
+
+        // Project frames should be extracted first even though they appear after 20+ framework frames
+        assertThat(keyFrames).isNotEmpty();
+        assertThat(keyFrames).hasSize(4); // ProductService, ProductController, RequestFilter, VendorService
+
+        // First three frames should be project-specific (com.hisilicon.*)
+        assertThat((String) keyFrames.get(0).get("className")).startsWith("com.hisilicon");
+        assertThat(keyFrames.get(0).get("simpleClassName")).isEqualTo("ProductService");
+        assertThat(keyFrames.get(1).get("simpleClassName")).isEqualTo("ProductController");
+        assertThat(keyFrames.get(2).get("simpleClassName")).isEqualTo("RequestFilter");
+
+        // Fourth frame should be other non-framework (com.other.vendor)
+        assertThat(keyFrames.get(3).get("simpleClassName")).isEqualTo("VendorService");
+    }
+
+    @Test
+    @DisplayName("without projectPackagePrefixes, extract non-framework frames in order")
+    void withoutProjectPrefixesExtractsInOrder() {
+        // Same stack trace but without projectPackagePrefixes
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("message", "Request processing failed");
+        input.put("stackTrace", """
+feign.RetryableException: Error executing request
+	at feign.SynchronousMethodHandler.executeAndDecode(SynchronousMethodHandler.java:108)
+	at com.other.vendor.VendorService.processVendor(VendorService.java:88)
+	at com.hisilicon.product.service.ProductService.getProduct(ProductService.java:125)
+	at com.hisilicon.product.controller.ProductController.handleQuery(ProductController.java:45)
+""");
+
+        Map<String, Object> output = parseNode.execute(input);
+
+        List<Map<String, Object>> keyFrames = (List<Map<String, Object>>) output.get("keyFrames");
+
+        // Without prefixes, non-framework frames extracted in order of appearance
+        assertThat(keyFrames).hasSize(3);
+        assertThat(keyFrames.get(0).get("simpleClassName")).isEqualTo("VendorService");
+        assertThat(keyFrames.get(1).get("simpleClassName")).isEqualTo("ProductService");
+        assertThat(keyFrames.get(2).get("simpleClassName")).isEqualTo("ProductController");
+    }
 }

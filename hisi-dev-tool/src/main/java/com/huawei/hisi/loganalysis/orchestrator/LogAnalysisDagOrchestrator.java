@@ -106,12 +106,34 @@ public class LogAnalysisDagOrchestrator {
                                           String projectPath,
                                           String serviceName,
                                           String traceId) {
+        return analyzeLog(message, stackTrace, projectPath, serviceName, traceId, null);
+    }
+
+    /**
+     * Run DAG for a specific log analysis request with project package prefixes.
+     *
+     * @param message Error message
+     * @param stackTrace Stack trace
+     * @param projectPath Project path for KG search (optional)
+     * @param serviceName Service name (optional)
+     * @param traceId Trace ID (optional)
+     * @param projectPackagePrefixes List of project package prefixes to prioritize stack frame extraction
+     *                               (e.g., ["com.hisilicon", "com.huawei.xxx"])
+     * @return Analysis result with finalReport
+     */
+    public Map<String, Object> analyzeLog(String message,
+                                          String stackTrace,
+                                          String projectPath,
+                                          String serviceName,
+                                          String traceId,
+                                          List<String> projectPackagePrefixes) {
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("message", message);
         input.put("stackTrace", stackTrace);
         input.put("projectPath", projectPath);
         input.put("serviceName", serviceName);
         input.put("traceId", traceId);
+        input.put("projectPackagePrefixes", projectPackagePrefixes);
 
         return run(input);
     }
