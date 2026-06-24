@@ -178,17 +178,57 @@ feign.RetryableException: Error executing request
         List<Map<String, Object>> keyFrames = (List<Map<String, Object>>) output.get("keyFrames");
 
         // Project frames should be extracted first even though they appear after 20+ framework frames
+        // Default mode: only first 3 business frames
         assertThat(keyFrames).isNotEmpty();
-        assertThat(keyFrames).hasSize(4); // ProductService, ProductController, RequestFilter, VendorService
+        assertThat(keyFrames).hasSize(3); // ProductService, ProductController, RequestFilter (default: 3 frames)
 
-        // First three frames should be project-specific (com.hisilicon.*)
+        // All frames should be project-specific (com.hisilicon.*)
         assertThat((String) keyFrames.get(0).get("className")).startsWith("com.hisilicon");
         assertThat(keyFrames.get(0).get("simpleClassName")).isEqualTo("ProductService");
         assertThat(keyFrames.get(1).get("simpleClassName")).isEqualTo("ProductController");
         assertThat(keyFrames.get(2).get("simpleClassName")).isEqualTo("RequestFilter");
 
-        // Fourth frame should be other non-framework (com.other.vendor)
-        assertThat(keyFrames.get(3).get("simpleClassName")).isEqualTo("VendorService");
+        // Verify layered output contains all frames
+        List<Map<String, Object>> businessFrames = (List<Map<String, Object>>) output.get("businessFrames");
+        assertThat(businessFrames).hasSize(3);
+        List<Map<String, Object>> otherNonFrameworkFrames = (List<Map<String, Object>>) output.get("otherNonFrameworkFrames");
+        assertThat(otherNonFrameworkFrames).hasSize(1); // VendorService
+    }
+
+    @Test
+    @DisplayName("deep mode includes root cause frames")
+    void deepModeIncludesRootCauseFrames() {
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("message", "Request processing failed");
+        input.put("stackTrace", """
+java.lang.RuntimeException: Surface error
+	at com.hisilicon.app.controller.AppController.handle(AppController.java:50)
+	at org.springframework.web.servlet.FrameworkServlet.service(FrameworkServlet.java:1002)
+Caused by: java.lang.IllegalStateException: Intermediate error
+	at com.hisilicon.app.service.AppService.process(AppService.java:120)
+Caused by: java.lang.NullPointerException: Root cause
+	at com.hisilicon.core.util.CoreUtils.compute(CoreUtils.java:200)
+	at com.hisilicon.core.engine.CoreEngine.run(CoreEngine.java:88)
+""");
+        input.put("projectPackagePrefixes", List.of("com.hisilicon"));
+        input.put("deepMode", true);
+
+        Map<String, Object> output = parseNode.execute(input);
+
+        List<Map<String, Object>> keyFrames = (List<Map<String, Object>>) output.get("keyFrames");
+
+        // Deep mode: business frames (3) + root cause frames (5)
+        assertThat(keyFrames.size()).isGreaterThanOrEqualTo(4);
+
+        // Verify business frames extracted
+        // Simplified 2-layer design: business layer = all frames before last "Caused by"
+        // AppController (before first Caused by) + AppService (between first and last Caused by)
+        List<Map<String, Object>> businessFrames = (List<Map<String, Object>>) output.get("businessFrames");
+        assertThat(businessFrames).hasSize(2); // AppController, AppService (both before last "Caused by")
+
+        // Verify root cause frames extracted
+        List<Map<String, Object>> rootCauseFrames = (List<Map<String, Object>>) output.get("rootCauseFrames");
+        assertThat(rootCauseFrames).hasSize(2); // CoreUtils, CoreEngine (after last "Caused by")
     }
 
     @Test
@@ -214,5 +254,112 @@ feign.RetryableException: Error executing request
         assertThat(keyFrames.get(0).get("simpleClassName")).isEqualTo("VendorService");
         assertThat(keyFrames.get(1).get("simpleClassName")).isEqualTo("ProductService");
         assertThat(keyFrames.get(2).get("simpleClassName")).isEqualTo("ProductController");
+    }
+
+    @Test
+    @DisplayName("extract project code from extremely deep stack (50+ frames)")
+    void extractFromExtremelyDeepStack() {
+        // Simulate production scenario: project code at position 40+ after massive framework frames
+        StringBuilder stackTrace = new StringBuilder();
+        stackTrace.append("java.lang.RuntimeException: Application error\n");
+
+        // Add 35 framework frames
+        for (int i = 1; i <= 35; i++) {
+            stackTrace.append("	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:").append(1100 + i).append(")\n");
+        }
+        for (int i = 1; i <= 5; i++) {
+            stackTrace.append("	at org.springframework.web.servlet.FrameworkServlet.service(FrameworkServlet.java:").append(1000 + i).append(")\n");
+        }
+        for (int i = 1; i <= 5; i++) {
+            stackTrace.append("	at jakarta.servlet.http.HttpServlet.service(HttpServlet.java:").append(600 + i).append(")\n");
+        }
+        for (int i = 1; i <= 5; i++) {
+            stackTrace.append("	at io.netty.channel.DefaultChannelPipeline.fireChannelRead(DefaultChannelPipeline.java:").append(i).append(")\n");
+        }
+
+        // Add project code at position 50+
+        stackTrace.append("	at com.hisilicon.core.engine.ProcessEngine.execute(ProcessEngine.java:125)\n");
+        stackTrace.append("	at com.hisilicon.core.handler.RequestHandler.process(RequestHandler.java:88)\n");
+        stackTrace.append("	at com.hisilicon.app.service.BusinessService.doWork(BusinessService.java:45)\n");
+
+        // Add some external non-framework code
+        stackTrace.append("	at com.vendor.external.VendorClient.callApi(VendorClient.java:200)\n");
+
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("message", "Deep stack error");
+        input.put("stackTrace", stackTrace.toString());
+        input.put("projectPackagePrefixes", List.of("com.hisilicon"));
+
+        Map<String, Object> output = parseNode.execute(input);
+
+        List<Map<String, Object>> keyFrames = (List<Map<String, Object>>) output.get("keyFrames");
+
+        // Should extract project frames even at position 50+
+        assertThat(keyFrames).isNotEmpty();
+        assertThat(keyFrames.size()).isGreaterThanOrEqualTo(3);
+
+        // First 3 should be project frames
+        assertThat((String) keyFrames.get(0).get("className")).startsWith("com.hisilicon");
+        assertThat(keyFrames.get(0).get("simpleClassName")).isEqualTo("ProcessEngine");
+        assertThat(keyFrames.get(1).get("simpleClassName")).isEqualTo("RequestHandler");
+        assertThat(keyFrames.get(2).get("simpleClassName")).isEqualTo("BusinessService");
+
+        // Last one should be vendor external (other non-framework)
+        if (keyFrames.size() > 3) {
+            assertThat(keyFrames.get(3).get("simpleClassName")).isEqualTo("VendorClient");
+        }
+    }
+
+    @Test
+    @DisplayName("handle nested Caused by exceptions - extract deepest root cause")
+    void handleNestedCausedByExceptions() {
+        // Nested exception chain: Surface -> Intermediate -> Root Cause
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("message", "Request failed");
+        input.put("stackTrace", """
+java.lang.RuntimeException: Request processing failed
+	at com.hisilicon.app.controller.AppController.handle(AppController.java:50)
+	at org.springframework.web.servlet.FrameworkServlet.service(FrameworkServlet.java:1002)
+Caused by: java.lang.IllegalStateException: Invalid state
+	at com.hisilicon.app.service.AppService.process(AppService.java:120)
+	at com.hisilicon.app.handler.StateHandler.validate(StateHandler.java:30)
+	at jakarta.servlet.http.HttpServlet.service(HttpServlet.java:590)
+Caused by: java.lang.NullPointerException: Cannot invoke method on null
+	at com.hisilicon.core.util.CoreUtils.compute(CoreUtils.java:200)
+	at com.hisilicon.core.engine.CoreEngine.run(CoreEngine.java:88)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1135)
+""");
+        input.put("projectPackagePrefixes", List.of("com.hisilicon"));
+        input.put("deepMode", true); // Enable deep mode to include root cause frames
+
+        Map<String, Object> output = parseNode.execute(input);
+
+        Map<String, Object> parsedError = (Map<String, Object>) output.get("parsedError");
+
+        // Root cause should be the deepest exception (NullPointerException)
+        assertThat(parsedError.get("rootCauseException")).isEqualTo("NullPointerException");
+        assertThat(parsedError.get("errorType")).isEqualTo("NullPointerException");
+
+        // Deep mode: key frames should include business + root cause frames
+        List<Map<String, Object>> keyFrames = (List<Map<String, Object>>) output.get("keyFrames");
+        assertThat(keyFrames).isNotEmpty();
+        assertThat(keyFrames.size()).isGreaterThanOrEqualTo(3);
+
+        // Verify layered extraction (simplified 2-layer design per roundtable)
+        // Business layer: all frames before last "Caused by"
+        List<Map<String, Object>> businessFrames = (List<Map<String, Object>>) output.get("businessFrames");
+        assertThat(businessFrames).hasSize(3); // AppController, AppService, StateHandler (all before last "Caused by")
+
+        // Root cause layer: frames after last "Caused by"
+        List<Map<String, Object>> rootCauseFrames = (List<Map<String, Object>>) output.get("rootCauseFrames");
+        assertThat(rootCauseFrames).hasSize(2); // CoreUtils, CoreEngine (after last "Caused by")
+
+        // Contains methods from surface level (AppController)
+        List<String> classNames = keyFrames.stream()
+                .map(f -> (String) f.get("className"))
+                .toList();
+        assertThat(classNames.stream().anyMatch(c -> c.contains("AppController"))).isTrue();
+        // Contains methods from root cause level (CoreUtils or CoreEngine)
+        assertThat(classNames.stream().anyMatch(c -> c.contains("CoreUtils") || c.contains("CoreEngine"))).isTrue();
     }
 }

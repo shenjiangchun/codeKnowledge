@@ -54,19 +54,29 @@ public class ParseNode implements LogAnalysisDagNode {
         // Extract project package prefixes from input (if provided)
         List<String> projectPackagePrefixes = extractProjectPackagePrefixes(input);
 
+        // Extract deep mode flag (optional, default false)
+        boolean deepMode = Boolean.TRUE.equals(input.get("deepMode"));
+
         // Diagnostic logs to understand why keyFrames might be empty
-        log.info("[ParseNode] 输入诊断: message长度={}, stackTrace长度={}, fullContent长度={}, projectPrefixes={}",
+        log.info("[ParseNode] 输入诊断: message长度={}, stackTrace长度={}, fullContent长度={}, projectPrefixes={}, deepMode={}",
                 message != null ? message.length() : 0,
                 stackTrace != null ? stackTrace.length() : 0,
                 fullContent.length(),
-                projectPackagePrefixes);
+                projectPackagePrefixes,
+                deepMode);
 
         Map<String, Object> output = new LinkedHashMap<>(input);
 
         // Extract error info
         String errorType = extractErrorType(fullContent);
         String rootCause = extractRootCause(fullContent);
-        List<Map<String, Object>> keyFrames = extractKeyStackFrames(fullContent, projectPackagePrefixes);
+
+        // Layered stack frame extraction (business layer + root cause layer)
+        StackFrameLayers layers = extractStackFrameLayers(fullContent, projectPackagePrefixes);
+
+        // Default: business frames (first 3 project frames)
+        // Deep mode: include root cause frames
+        List<Map<String, Object>> keyFrames = buildKeyFrames(layers, deepMode);
         List<String> searchTerms = buildSearchTerms(keyFrames);
 
         // Build parsed error structure
@@ -81,9 +91,16 @@ public class ParseNode implements LogAnalysisDagNode {
         output.put("searchTerms", searchTerms);
         output.put("errorFingerprint", buildFingerprint(errorType, keyFrames));
 
-        log.info("[ParseNode] 解析完成: errorType={}, rootCause={}, keyFrames={}, projectFrames={}",
-                errorType, rootCause, keyFrames.size(),
-                keyFrames.stream().filter(f -> isProjectClass((String) f.get("className"), projectPackagePrefixes)).count());
+        // Output layered frames for KG integration (KgSearchNode can use these)
+        output.put("businessFrames", layers.businessFrames());
+        output.put("rootCauseFrames", layers.rootCauseFrames());
+        output.put("otherNonFrameworkFrames", layers.otherNonFrameworkFrames());
+
+        log.info("[ParseNode] 解析完成: errorType={}, rootCause={}, businessFrames={}, rootCauseFrames={}, deepMode={}",
+                errorType, rootCause,
+                layers.businessFrames().size(),
+                layers.rootCauseFrames().size(),
+                deepMode);
 
         return output;
     }
@@ -161,15 +178,35 @@ public class ParseNode implements LogAnalysisDagNode {
      * (e.g., after 20+ framework/external dependency frames).
      */
     private List<Map<String, Object>> extractKeyStackFrames(String content, List<String> projectPackagePrefixes) {
-        List<Map<String, Object>> projectFrames = new ArrayList<>();
+        StackFrameLayers layers = extractStackFrameLayers(content, projectPackagePrefixes);
+        return buildKeyFrames(layers, false);
+    }
+
+    /**
+     * Layered stack frame extraction based on "Caused by" separators.
+     *
+     * Strategy (per roundtable discussion conclusion):
+     * 1. Split stack trace by "Caused by" positions → layers
+     * 2. For each layer, extract project frames + other non-framework frames
+     * 3. Business layer: frames before last "Caused by" (surface exception)
+     * 4. Root cause layer: frames after last "Caused by" (deepest exception)
+     */
+    private StackFrameLayers extractStackFrameLayers(String content, List<String> projectPackagePrefixes) {
+        List<Map<String, Object>> businessProjectFrames = new ArrayList<>();
+        List<Map<String, Object>> rootCauseProjectFrames = new ArrayList<>();
         List<Map<String, Object>> otherNonFrameworkFrames = new ArrayList<>();
 
+        // Find "Caused by" positions to split layers
+        List<Integer> causedByPositions = findCausedByPositions(content);
+
+        // Scan all stack frames and assign to appropriate layer
         Matcher m = AT_PATTERN.matcher(content);
         while (m.find()) {
             String className = m.group(1);
             String methodName = m.group(2);
             String fileName = m.group(3);
             int lineNum = Integer.parseInt(m.group(4));
+            int framePosition = m.start();
 
             // Skip framework classes and generated methods
             if (isFrameworkClass(className) || isGeneratedMethod(className, methodName)) continue;
@@ -182,28 +219,91 @@ public class ParseNode implements LogAnalysisDagNode {
             frame.put("lineNumber", lineNum);
             frame.put("fullSignature", className + "." + methodName);
 
-            // Separate into project frames vs other non-framework frames
-            if (isProjectClass(className, projectPackagePrefixes)) {
-                projectFrames.add(frame);
+            // Determine layer: business layer or root cause layer
+            boolean isRootCauseLayer = isAfterLastCausedBy(framePosition, causedByPositions);
+            boolean isProjectFrame = isProjectClass(className, projectPackagePrefixes);
+
+            if (isRootCauseLayer) {
+                if (isProjectFrame) {
+                    rootCauseProjectFrames.add(frame);
+                } else {
+                    otherNonFrameworkFrames.add(frame);
+                }
             } else {
-                otherNonFrameworkFrames.add(frame);
+                if (isProjectFrame) {
+                    businessProjectFrames.add(frame);
+                } else {
+                    otherNonFrameworkFrames.add(frame);
+                }
             }
         }
 
-        // Combine: project frames first (up to 10), then fill with other non-framework frames
-        List<Map<String, Object>> result = new ArrayList<>();
-        result.addAll(projectFrames.subList(0, Math.min(projectFrames.size(), 10)));
+        log.info("[ParseNode] 分层提取: businessProject={}, rootCauseProject={}, otherNonFramework={}",
+                businessProjectFrames.size(), rootCauseProjectFrames.size(), otherNonFrameworkFrames.size());
 
-        if (result.size() < 10 && !otherNonFrameworkFrames.isEmpty()) {
-            int remaining = 10 - result.size();
-            result.addAll(otherNonFrameworkFrames.subList(0, Math.min(otherNonFrameworkFrames.size(), remaining)));
+        return new StackFrameLayers(businessProjectFrames, rootCauseProjectFrames, otherNonFrameworkFrames);
+    }
+
+    /**
+     * Find positions of all "Caused by:" markers in the content.
+     */
+    private List<Integer> findCausedByPositions(String content) {
+        List<Integer> positions = new ArrayList<>();
+        Matcher m = Pattern.compile("Caused by:").matcher(content);
+        while (m.find()) {
+            positions.add(m.start());
+        }
+        return positions;
+    }
+
+    /**
+     * Check if a position is after the last "Caused by:" marker.
+     * If no "Caused by" exists, all frames belong to business layer.
+     */
+    private boolean isAfterLastCausedBy(int position, List<Integer> causedByPositions) {
+        if (causedByPositions.isEmpty()) {
+            return false; // No "Caused by" → all frames are business layer
+        }
+        int lastCausedBy = causedByPositions.get(causedByPositions.size() - 1);
+        return position > lastCausedBy;
+    }
+
+    /**
+     * Build key frames from layered extraction.
+     * Default mode: first 3 business project frames
+     * Deep mode: business + root cause frames
+     */
+    private List<Map<String, Object>> buildKeyFrames(StackFrameLayers layers, boolean deepMode) {
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        // Default: first 3 business project frames
+        int businessLimit = 3;
+        result.addAll(layers.businessFrames().subList(0, Math.min(layers.businessFrames().size(), businessLimit)));
+
+        // Deep mode: add root cause project frames
+        if (deepMode && !layers.rootCauseFrames().isEmpty()) {
+            int rootCauseLimit = 5;
+            result.addAll(layers.rootCauseFrames().subList(0, Math.min(layers.rootCauseFrames().size(), rootCauseLimit)));
         }
 
-        log.info("[ParseNode] 堆栈帧分离: projectFrames={}, otherNonFramework={}, 结果={}",
-                projectFrames.size(), otherNonFrameworkFrames.size(), result.size());
+        // Fallback: if no business frames, use other non-framework frames
+        if (result.isEmpty() && !layers.otherNonFrameworkFrames().isEmpty()) {
+            int fallbackLimit = deepMode ? 10 : 5;
+            result.addAll(layers.otherNonFrameworkFrames().subList(0, Math.min(layers.otherNonFrameworkFrames().size(), fallbackLimit)));
+        }
 
+        log.info("[ParseNode] 构建关键帧: deepMode={}, 结果数量={}", deepMode, result.size());
         return result;
     }
+
+    /**
+     * Record for layered stack frame extraction result.
+     */
+    private record StackFrameLayers(
+        List<Map<String, Object>> businessFrames,      // Project frames before last "Caused by"
+        List<Map<String, Object>> rootCauseFrames,     // Project frames after last "Caused by"
+        List<Map<String, Object>> otherNonFrameworkFrames  // Non-framework, non-project frames
+    ) {}
 
     /**
      * Check if a class belongs to the project based on package prefixes.

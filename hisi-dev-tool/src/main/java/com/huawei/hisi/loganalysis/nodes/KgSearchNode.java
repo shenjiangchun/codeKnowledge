@@ -43,11 +43,19 @@ public class KgSearchNode implements LogAnalysisDagNode {
         List<String> searchTerms = (List<String>) input.get("searchTerms");
         List<Map<String, Object>> keyFrames = (List<Map<String, Object>>) input.get("keyFrames");
 
+        // Get layered frames from ParseNode (new layered extraction)
+        List<Map<String, Object>> businessFrames = (List<Map<String, Object>>) input.get("businessFrames");
+        List<Map<String, Object>> rootCauseFrames = (List<Map<String, Object>>) input.get("rootCauseFrames");
+        boolean deepMode = Boolean.TRUE.equals(input.get("deepMode"));
+
         // Diagnostic: show what we got
-        log.info("[KgSearchNode] 输入诊断: projectPathRaw长度={}, searchTerms数量={}, keyFrames数量={}",
+        log.info("[KgSearchNode] 输入诊断: projectPathRaw长度={}, searchTerms数量={}, keyFrames数量={}, businessFrames={}, rootCauseFrames={}, deepMode={}",
                 projectPathRaw != null ? projectPathRaw.length() : 0,
                 searchTerms != null ? searchTerms.size() : 0,
-                keyFrames != null ? keyFrames.size() : 0);
+                keyFrames != null ? keyFrames.size() : 0,
+                businessFrames != null ? businessFrames.size() : 0,
+                rootCauseFrames != null ? rootCauseFrames.size() : 0,
+                deepMode);
 
         // Split comma-separated projectPath if needed
         List<String> projectPaths = parseProjectPaths(projectPathRaw);
@@ -90,7 +98,19 @@ public class KgSearchNode implements LogAnalysisDagNode {
         log.info("[KgSearchNode] hybridSearch 检索到 {} 个方法 (搜索词: {})",
                 matchedMethods.size(), searchTerms != null ? searchTerms.size() : 0);
 
-        // 2. Build call chains for key stack frames (use firstPath for single-path calls)
+        // 2. Find root entry points for business frames (per roundtable conclusion)
+        // Default: call kg_root_entries for top 3 business frames
+        List<Entry> businessEntryPoints = findEntryPoints(businessFrames, firstPath, 3);
+        log.info("[KgSearchNode] 业务帧入口点: {} 个", businessEntryPoints.size());
+
+        // Deep mode: also find entry points for root cause frames
+        List<Entry> rootCauseEntryPoints = new ArrayList<>();
+        if (deepMode && rootCauseFrames != null && !rootCauseFrames.isEmpty()) {
+            rootCauseEntryPoints = findEntryPoints(rootCauseFrames, firstPath, 5);
+            log.info("[KgSearchNode] 根因帧入口点: {} 个", rootCauseEntryPoints.size());
+        }
+
+        // 3. Build call chains for key stack frames (use firstPath for single-path calls)
         List<Map<String, Object>> callChains = new ArrayList<>();
         if (keyFrames != null) {
             for (Map<String, Object> frame : keyFrames) {
@@ -112,25 +132,80 @@ public class KgSearchNode implements LogAnalysisDagNode {
 
         log.info("[KgSearchNode] 构建了 {} 个调用链", callChains.size());
 
-        // 3. Find root entry points that reach the error methods (use firstPath)
-        List<Entry> entryPoints = new ArrayList<>();
-        if (keyFrames != null && !keyFrames.isEmpty()) {
-            // Get first key frame's entry points
-            Map<String, Object> firstFrame = keyFrames.get(0);
-            String className = (String) firstFrame.get("className");
-            String methodName = (String) firstFrame.get("methodName");
-            if (className != null && methodName != null) {
-                entryPoints = kgMcpClient.rootEntries(className, methodName, firstPath);
+        // 4. Combine entry points with layer separation
+        List<Map<String, Object>> entryPointsWithLayers = new ArrayList<>();
+        for (Entry entry : businessEntryPoints) {
+            entryPointsWithLayers.add(entryToMap(entry, "business"));
+        }
+        for (Entry entry : rootCauseEntryPoints) {
+            entryPointsWithLayers.add(entryToMap(entry, "rootCause"));
+        }
+
+        // Fallback: if no KG entry points found, generate from stack frames (降级策略)
+        if (entryPointsWithLayers.isEmpty() && keyFrames != null && !keyFrames.isEmpty()) {
+            log.warn("[KgSearchNode] KG 入口点为空，启用降级策略：从堆栈帧生成");
+            for (Map<String, Object> frame : keyFrames.subList(0, Math.min(keyFrames.size(), 3))) {
+                Map<String, Object> fallbackEntry = new LinkedHashMap<>();
+                fallbackEntry.put("className", frame.get("className"));
+                fallbackEntry.put("methodName", frame.get("methodName"));
+                fallbackEntry.put("layer", "fallback");
+                fallbackEntry.put("source", "stack_trace");
+                entryPointsWithLayers.add(fallbackEntry);
             }
         }
 
-        log.info("[KgSearchNode] 找到 {} 个入口点", entryPoints.size());
-
         output.put("matchedMethods", matchedMethods);
         output.put("callChains", callChains);
-        output.put("entryPoints", entryPoints);
+        output.put("entryPoints", entryPointsWithLayers);
+        output.put("businessEntryPoints", businessEntryPoints);
+        output.put("rootCauseEntryPoints", rootCauseEntryPoints);
 
         return output;
+    }
+
+    /**
+     * Find root entry points for a list of frames (with limit).
+     * Implements降级策略: returns empty list gracefully on KG failure.
+     */
+    private List<Entry> findEntryPoints(List<Map<String, Object>> frames, String projectPath, int limit) {
+        List<Entry> entries = new ArrayList<>();
+        if (frames == null || frames.isEmpty()) {
+            return entries;
+        }
+
+        int count = 0;
+        for (Map<String, Object> frame : frames) {
+            if (count >= limit) break;
+
+            String className = (String) frame.get("className");
+            String methodName = (String) frame.get("methodName");
+            if (className == null || methodName == null) continue;
+
+            try {
+                List<Entry> frameEntries = kgMcpClient.rootEntries(className, methodName, projectPath);
+                if (frameEntries != null && !frameEntries.isEmpty()) {
+                    entries.addAll(frameEntries);
+                    count++;
+                }
+            } catch (Exception e) {
+                log.warn("[KgSearchNode] kg_root_entries 调用失败 ({}.{}): {}", className, methodName, e.getMessage());
+                // 降级：继续处理下一个帧，不中断流程
+            }
+        }
+        return entries;
+    }
+
+    /**
+     * Convert Entry to Map with layer info.
+     */
+    private Map<String, Object> entryToMap(Entry entry, String layer) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("className", entry.className());
+        map.put("methodName", entry.methodName());
+        map.put("entryType", entry.type());
+        map.put("layer", layer);
+        map.put("source", "kg_root_entries");
+        return map;
     }
 
     /**
