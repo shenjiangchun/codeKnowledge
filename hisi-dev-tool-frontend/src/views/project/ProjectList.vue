@@ -249,7 +249,7 @@
           <div class="card-header tab-header">
             <span>远端项目管理</span>
             <div class="header-buttons">
-              <el-button type="info" @click="showRemoteGroupDialog = true">
+              <el-button type="info" @click="showGroupDialog = true">
                 <el-icon><FolderAdd /></el-icon>
                 项目分组
               </el-button>
@@ -775,15 +775,27 @@
               v-model="groupForm.projectPaths"
               multiple
               filterable
-              placeholder="选择项目"
+              placeholder="选择项目（本地+远端）"
               style="width: 100%"
             >
-              <el-option
-                v-for="p in projects"
-                :key="normalizePath(p.path)"
-                :label="p.name"
-                :value="normalizePath(p.path)"
-              />
+              <!-- 本地项目 -->
+              <el-option-group label="本地项目">
+                <el-option
+                  v-for="p in projects"
+                  :key="normalizePath(p.path)"
+                  :label="p.name"
+                  :value="normalizePath(p.path)"
+                />
+              </el-option-group>
+              <!-- 远端项目（已克隆） -->
+              <el-option-group label="远端项目">
+                <el-option
+                  v-for="p in remoteProjects.filter(rp => rp.cloneStatus === 'CLONED' && rp.localPath)"
+                  :key="normalizePath(p.localPath)"
+                  :label="p.name"
+                  :value="normalizePath(p.localPath)"
+                />
+              </el-option-group>
             </el-select>
           </el-form-item>
           <el-form-item label="描述">
@@ -864,7 +876,6 @@ const updatingAll = ref(false)
 const showCloneDialog = ref(false)
 // Task 75: 项目分组状态
 const showGroupDialog = ref(false)
-const showRemoteGroupDialog = ref(false)
 const showGroupFormDialog = ref(false)
 const groups = ref<ProjectGroup[]>([])
 const loadingGroups = ref(false)
