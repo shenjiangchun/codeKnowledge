@@ -10,6 +10,7 @@ import com.huawei.hisi.utils.SnowflakeIdGenerator;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -441,15 +442,21 @@ public class LogAnalysisController {
      * 批量导出报告为 ZIP 文件
      * GET /api/log/reports/export/zip?startTime=&endTime=
      *
-     * @param startTime 开始时间 (ISO 格式: yyyy-MM-ddTHH:mm:ss)
-     * @param endTime 结束时间 (ISO 格式: yyyy-MM-ddTHH:mm:ss)
+     * @param startTime 开始时间 (ISO 格式: yyyy-MM-ddTHH:mm:ss，可选)
+     * @param endTime 结束时间 (ISO 格式: yyyy-MM-ddTHH:mm:ss，可选)
      * @return ZIP 文件
      */
     @GetMapping("/reports/export/zip")
     public ResponseEntity<byte[]> exportReportsZip(
-            @RequestParam("startTime") LocalDateTime startTime,
-            @RequestParam("endTime") LocalDateTime endTime) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {
         try {
+            // 如果不传日期，导出全部报告
+            if (startTime == null || endTime == null) {
+                startTime = LocalDateTime.of(2020, 1, 1, 0, 0);
+                endTime = LocalDateTime.now();
+            }
+
             byte[] zipContent = reportExportService.exportLogReportsAsZip(startTime, endTime);
 
             String filename = "reports-" + startTime.format(DateTimeFormatter.ofPattern("yyyyMMdd")) + ".zip";

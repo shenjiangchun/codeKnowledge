@@ -123,4 +123,43 @@ class FingerprintServiceTest {
         assertThat(fingerprintService.generateFingerprint(stackTrace4Frames))
             .isEqualTo(fingerprintService.generateFingerprint(stackTrace3Frames));
     }
+
+    @Test
+    @DisplayName("生成指纹 - 日志带时间戳前缀也能正确匹配")
+    void testFingerprintWithTimestampPrefix() {
+        // Real-world log format with timestamp and log level prefix
+        String logWithPrefix = """
+            2024-01-15 10:30:45.123 ERROR [thread-1] --- java.lang.NullPointerException: Cannot invoke method on null object
+                at com.example.service.UserService.getUserProfile(UserService.java:45)
+                at com.example.controller.UserController.handleRequest(UserController.java:120)
+            """;
+
+        String logWithoutPrefix = """
+            java.lang.NullPointerException: Cannot invoke method on null object
+                at com.example.service.UserService.getUserProfile(UserService.java:45)
+                at com.example.controller.UserController.handleRequest(UserController.java:120)
+            """;
+
+        // Both should produce the same fingerprint (error type + stack frames)
+        assertThat(fingerprintService.generateFingerprint(logWithPrefix))
+            .isEqualTo(fingerprintService.generateFingerprint(logWithoutPrefix));
+    }
+
+    @Test
+    @DisplayName("生成指纹 - Caused by 格式也能正确匹配")
+    void testFingerprintWithCausedBy() {
+        String logWithCausedBy = """
+            java.lang.Exception: Wrapper exception
+                at com.example.service.UserService.method1(UserService.java:10)
+            Caused by: java.lang.NullPointerException: Root cause
+                at com.example.dao.UserDao.findById(UserDao.java:25)
+            """;
+
+        // Should extract the first error type (java.lang.Exception) for fingerprint
+        // Note: Caused by matching uses first match, not last
+        String fingerprint = fingerprintService.generateFingerprint(logWithCausedBy);
+        assertThat(fingerprint).hasSize(32);
+        // Verify it's not the default fingerprint
+        assertThat(fingerprint).isNotEqualTo("00000000000000000000000000000000");
+    }
 }

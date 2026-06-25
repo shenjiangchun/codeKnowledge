@@ -1,7 +1,9 @@
 package com.huawei.hisi.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.AgentSession;
+import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
 import com.huawei.hisi.repository.LogAnalysisRepository;
@@ -120,6 +122,7 @@ public class ReportExportService {
 
     /**
      * 将 RAM 需求分析会话导出为 Markdown 格式
+     * 优化：提取节点关键结果，不输出原始 JSON
      *
      * @param sessionId 前端 UUID 会话标识
      * @return Markdown 格式的会话内容
@@ -134,6 +137,7 @@ public class ReportExportService {
         AgentSession session = sessionOpt.get();
         long backendId = session.getId();
         List<AgentEvent> events = agentEventRepository.findBySessionId(backendId);
+        ObjectMapper objectMapper = new ObjectMapper();
 
         StringBuilder sb = new StringBuilder();
         sb.append("# RAM 需求分析会话 #").append(sessionId).append("\n\n");
@@ -143,12 +147,10 @@ public class ReportExportService {
         sb.append("| 字段 | 值 |\n");
         sb.append("|------|----|\n");
         sb.append("| 会话ID | ").append(sessionId).append(" |\n");
-        sb.append("| 后端ID | ").append(backendId).append(" |\n");
         sb.append("| 用户 | ").append(session.getUserId() != null ? session.getUserId() : "-").append(" |\n");
         sb.append("| 状态 | ").append(session.getStatus() != null ? session.getStatus().name() : "-").append(" |\n");
         sb.append("| 类型 | ").append(session.getSessionType() != null ? session.getSessionType().name() : "DEMAND").append(" |\n");
         sb.append("| 当前节点 | ").append(session.getCurrentNode() != null ? session.getCurrentNode() : "-").append(" |\n");
-        sb.append("| 步骤数 | ").append(session.getStepCount()).append(" |\n");
         sb.append("| 创建时间 | ").append(formatEpoch(session.getCreatedAt())).append(" |\n");
         sb.append("| 更新时间 | ").append(formatEpoch(session.getUpdatedAt())).append(" |\n\n");
 
@@ -168,26 +170,244 @@ public class ReportExportService {
             sb.append("暂无\n\n");
         }
 
-        // 事件历史
-        sb.append("## 事件历史\n\n");
-        if (!events.isEmpty()) {
-            for (AgentEvent event : events) {
-                sb.append("### ").append(event.getType() != null ? event.getType().name() : "UNKNOWN");
-                sb.append(" (seq=").append(event.getSeq()).append(")\n\n");
-                sb.append("- 时间: ").append(formatEpoch(event.getCreatedAt())).append("\n");
-                if (event.getClarifyRoundNo() != null) {
-                    sb.append("- 澄清轮次: ").append(event.getClarifyRoundNo()).append("\n");
+        // 节点结果汇总（提取 CHECKPOINT 事件）
+        sb.append("## 分析结果\n\n");
+        boolean hasCheckpoint = false;
+        for (AgentEvent event : events) {
+            if (event.getType() == EventType.CHECKPOINT && event.getPayload() != null) {
+                hasCheckpoint = true;
+                try {
+                    Map<String, Object> checkpoint = objectMapper.readValue(event.getPayload(), Map.class);
+                    String nodeName = (String) checkpoint.get("nodeName");
+                    if (nodeName == null) nodeName = "unknown";
+
+                    sb.append("### ").append(nodeName).append("\n\n");
+
+                    // 提取关键输出字段
+                    extractAndFormatNodeOutput(sb, checkpoint, nodeName);
+                } catch (Exception e) {
+                    log.warn("解析 CHECKPOINT payload 失败: {}", e.getMessage());
+                    sb.append("（解析失败）\n\n");
                 }
-                if (event.getPayload() != null && !event.getPayload().isBlank()) {
-                    sb.append("- Payload:\n```\n").append(event.getPayload()).append("\n```\n");
-                }
-                sb.append("\n");
             }
-        } else {
-            sb.append("暂无事件记录\n\n");
+        }
+        if (!hasCheckpoint) {
+            sb.append("暂无分析结果\n\n");
+        }
+
+        // 澄清问答汇总
+        sb.append("## 澄清问答\n\n");
+        boolean hasClarify = false;
+        for (AgentEvent event : events) {
+            if (event.getType() == EventType.CLARIFY_REQ && event.getPayload() != null) {
+                hasClarify = true;
+                try {
+                    Map<String, Object> clarify = objectMapper.readValue(event.getPayload(), Map.class);
+                    Integer roundNo = event.getClarifyRoundNo();
+                    sb.append("**澄清轮次 ").append(roundNo != null ? roundNo : 1).append("**\n\n");
+
+                    String question = (String) clarify.get("question");
+                    if (question != null && !question.isBlank()) {
+                        sb.append("问: ").append(question).append("\n\n");
+                    }
+                } catch (Exception e) {
+                    log.warn("解析 CLARIFY_REQ payload 失败: {}", e.getMessage());
+                }
+            }
+            if (event.getType() == EventType.CLARIFY_RES && event.getPayload() != null) {
+                try {
+                    Map<String, Object> res = objectMapper.readValue(event.getPayload(), Map.class);
+                    String answer = (String) res.get("answer");
+                    if (answer != null && !answer.isBlank()) {
+                        sb.append("答: ").append(answer).append("\n\n");
+                    }
+                } catch (Exception e) {
+                    log.warn("解析 CLARIFY_RES payload 失败: {}", e.getMessage());
+                }
+            }
+        }
+        if (!hasClarify) {
+            sb.append("暂无澄清记录\n\n");
         }
 
         return sb.toString();
+    }
+
+    /**
+     * 提取并格式化节点输出
+     */
+    @SuppressWarnings("unchecked")
+    private void extractAndFormatNodeOutput(StringBuilder sb, Map<String, Object> checkpoint, String nodeName) {
+        // 根据节点类型提取不同的关键字段
+        Map<String, Object> output = (Map<String, Object>) checkpoint.get("output");
+        if (output == null || output.isEmpty()) {
+            sb.append("暂无输出\n\n");
+            return;
+        }
+
+        switch (nodeName) {
+            case "clarify":
+                // 澄清节点：提取澄清问题和答案
+                formatClarifyOutput(sb, output);
+                break;
+            case "search":
+                // 搜索节点：提取匹配方法列表
+                formatSearchOutput(sb, output);
+                break;
+            case "impact":
+                // 影响分析节点：提取影响范围
+                formatImpactOutput(sb, output);
+                break;
+            case "techPlan":
+                // 技术方案节点：提取方案内容
+                formatTechPlanOutput(sb, output);
+                break;
+            case "implement":
+                // 实现节点：提取代码改动
+                formatImplementOutput(sb, output);
+                break;
+            case "verify":
+                // 验证节点：提取验证结果
+                formatVerifyOutput(sb, output);
+                break;
+            case "report":
+                // 报告节点：提取最终报告
+                formatReportOutput(sb, output);
+                break;
+            default:
+                // 默认：提取主要字段
+                formatGenericOutput(sb, output);
+        }
+    }
+
+    private void formatClarifyOutput(StringBuilder sb, Map<String, Object> output) {
+        List<Map<String, Object>> questions = (List<Map<String, Object>>) output.get("questions");
+        if (questions != null && !questions.isEmpty()) {
+            sb.append("**澄清问题列表:**\n\n");
+            for (int i = 0; i < questions.size(); i++) {
+                Map<String, Object> q = questions.get(i);
+                sb.append((i + 1)).append(". ").append(q.getOrDefault("question", "-")).append("\n");
+            }
+            sb.append("\n");
+        }
+        String summary = (String) output.get("summary");
+        if (summary != null && !summary.isBlank()) {
+            sb.append("**澄清总结:**\n").append(summary).append("\n\n");
+        }
+    }
+
+    private void formatSearchOutput(StringBuilder sb, Map<String, Object> output) {
+        List<Map<String, Object>> methods = (List<Map<String, Object>>) output.get("matchedMethods");
+        if (methods != null && !methods.isEmpty()) {
+            sb.append("**匹配方法 (共 ").append(methods.size()).append(" 个):**\n\n");
+            for (int i = 0; i < Math.min(10, methods.size()); i++) {
+                Map<String, Object> m = methods.get(i);
+                String className = (String) m.getOrDefault("className", "-");
+                String methodName = (String) m.getOrDefault("methodName", "-");
+                sb.append("- ").append(className).append(".").append(methodName).append("\n");
+            }
+            if (methods.size() > 10) {
+                sb.append("- ... (共 ").append(methods.size()).append(" 个)\n");
+            }
+            sb.append("\n");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void formatImpactOutput(StringBuilder sb, Map<String, Object> output) {
+        Map<String, Object> impact = (Map<String, Object>) output.get("impact");
+        if (impact != null) {
+            String riskLevel = (String) impact.getOrDefault("riskLevel", "-");
+            sb.append("**风险评估:** ").append(riskLevel).append("\n\n");
+
+            List<String> affectedClasses = (List<String>) impact.get("affectedClasses");
+            if (affectedClasses != null && !affectedClasses.isEmpty()) {
+                sb.append("**受影响类:**\n");
+                for (String cls : affectedClasses) {
+                    sb.append("- ").append(cls).append("\n");
+                }
+                sb.append("\n");
+            }
+        }
+        String summary = (String) output.get("summary");
+        if (summary != null && !summary.isBlank()) {
+            sb.append("**影响分析:**\n").append(summary).append("\n\n");
+        }
+    }
+
+    private void formatTechPlanOutput(StringBuilder sb, Map<String, Object> output) {
+        String plan = (String) output.get("techPlan");
+        if (plan != null && !plan.isBlank()) {
+            sb.append("**技术方案:**\n\n").append(plan).append("\n\n");
+        }
+        List<String> steps = (List<String>) output.get("steps");
+        if (steps != null && !steps.isEmpty()) {
+            sb.append("**实现步骤:**\n\n");
+            for (int i = 0; i < steps.size(); i++) {
+                sb.append((i + 1)).append(". ").append(steps.get(i)).append("\n");
+            }
+            sb.append("\n");
+        }
+    }
+
+    private void formatImplementOutput(StringBuilder sb, Map<String, Object> output) {
+        String codeChanges = (String) output.get("codeChanges");
+        if (codeChanges != null && !codeChanges.isBlank()) {
+            sb.append("**代码改动:**\n\n```java\n").append(codeChanges).append("\n```\n\n");
+        }
+        List<String> files = (List<String>) output.get("modifiedFiles");
+        if (files != null && !files.isEmpty()) {
+            sb.append("**修改文件:**\n");
+            for (String f : files) {
+                sb.append("- ").append(f).append("\n");
+            }
+            sb.append("\n");
+        }
+    }
+
+    private void formatVerifyOutput(StringBuilder sb, Map<String, Object> output) {
+        String result = (String) output.getOrDefault("result", "-");
+        sb.append("**验证结果:** ").append(result).append("\n\n");
+        List<String> tests = (List<String>) output.get("testCases");
+        if (tests != null && !tests.isEmpty()) {
+            sb.append("**测试用例:**\n");
+            for (String t : tests) {
+                sb.append("- ").append(t).append("\n");
+            }
+            sb.append("\n");
+        }
+    }
+
+    private void formatReportOutput(StringBuilder sb, Map<String, Object> output) {
+        String summary = (String) output.get("summary");
+        if (summary != null && !summary.isBlank()) {
+            sb.append("**分析总结:**\n\n").append(summary).append("\n\n");
+        }
+        String recommendation = (String) output.get("recommendation");
+        if (recommendation != null && !recommendation.isBlank()) {
+            sb.append("**建议:**\n\n").append(recommendation).append("\n\n");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void formatGenericOutput(StringBuilder sb, Map<String, Object> output) {
+        // 提取常见字段
+        String summary = (String) output.get("summary");
+        if (summary != null && !summary.isBlank()) {
+            sb.append("**摘要:**\n").append(summary).append("\n\n");
+        }
+        String result = (String) output.get("result");
+        if (result != null && !result.isBlank()) {
+            sb.append("**结果:**\n").append(result).append("\n\n");
+        }
+        List<String> items = (List<String>) output.get("items");
+        if (items != null && !items.isEmpty()) {
+            sb.append("**列表:**\n");
+            for (String item : items) {
+                sb.append("- ").append(item).append("\n");
+            }
+            sb.append("\n");
+        }
     }
 
     /**
@@ -305,6 +525,7 @@ public class ReportExportService {
 
     /**
      * 将合入分析报告导出为 Markdown 格式
+     * 优化：提取节点关键结果，不输出原始 JSON
      *
      * @param sessionId 前端 UUID 会话标识
      * @return Markdown 格式的报告内容
@@ -319,6 +540,7 @@ public class ReportExportService {
         AgentSession session = sessionOpt.get();
         long backendId = session.getId();
         List<AgentEvent> events = agentEventRepository.findBySessionId(backendId);
+        ObjectMapper objectMapper = new ObjectMapper();
 
         StringBuilder sb = new StringBuilder();
         sb.append("# 合入分析报告 #").append(sessionId).append("\n\n");
@@ -333,7 +555,6 @@ public class ReportExportService {
         sb.append("| 目标分支 | ").append(session.getTargetBranch() != null ? session.getTargetBranch() : "-").append(" |\n");
         sb.append("| 状态 | ").append(session.getStatus() != null ? session.getStatus().name() : "-").append(" |\n");
         sb.append("| 当前节点 | ").append(session.getCurrentNode() != null ? session.getCurrentNode() : "-").append(" |\n");
-        sb.append("| 步骤数 | ").append(session.getStepCount()).append(" |\n");
         sb.append("| 创建时间 | ").append(formatEpoch(session.getCreatedAt())).append(" |\n");
         sb.append("| 更新时间 | ").append(formatEpoch(session.getUpdatedAt())).append(" |\n\n");
 
@@ -345,23 +566,61 @@ public class ReportExportService {
             sb.append("暂无\n\n");
         }
 
-        // 分析过程事件
-        sb.append("## 分析过程\n\n");
-        if (!events.isEmpty()) {
-            for (AgentEvent event : events) {
-                if (event.getType() == null) continue;
-                
-                sb.append("### ").append(event.getType().name());
-                sb.append(" (seq=").append(event.getSeq()).append(")\n\n");
-                sb.append("- 时间: ").append(formatEpoch(event.getCreatedAt())).append("\n");
-                
-                if (event.getPayload() != null && !event.getPayload().isBlank()) {
-                    sb.append("- Payload:\n```\n").append(event.getPayload()).append("\n```\n");
+        // 节点结果汇总（提取 CHECKPOINT 事件）
+        sb.append("## 分析结果\n\n");
+        boolean hasCheckpoint = false;
+        for (AgentEvent event : events) {
+            if (event.getType() == EventType.CHECKPOINT && event.getPayload() != null) {
+                hasCheckpoint = true;
+                try {
+                    Map<String, Object> checkpoint = objectMapper.readValue(event.getPayload(), Map.class);
+                    String nodeName = (String) checkpoint.get("nodeName");
+                    if (nodeName == null) nodeName = "unknown";
+
+                    sb.append("### ").append(nodeName).append("\n\n");
+                    extractAndFormatNodeOutput(sb, checkpoint, nodeName);
+                } catch (Exception e) {
+                    log.warn("解析 CHECKPOINT payload 失败: {}", e.getMessage());
+                    sb.append("（解析失败）\n\n");
                 }
-                sb.append("\n");
             }
-        } else {
-            sb.append("暂无分析记录\n\n");
+        }
+        if (!hasCheckpoint) {
+            sb.append("暂无分析结果\n\n");
+        }
+
+        // 澄清问答汇总
+        sb.append("## 澄清问答\n\n");
+        boolean hasClarify = false;
+        for (AgentEvent event : events) {
+            if (event.getType() == EventType.CLARIFY_REQ && event.getPayload() != null) {
+                hasClarify = true;
+                try {
+                    Map<String, Object> clarify = objectMapper.readValue(event.getPayload(), Map.class);
+                    Integer roundNo = event.getClarifyRoundNo();
+                    sb.append("**澄清轮次 ").append(roundNo != null ? roundNo : 1).append("**\n\n");
+                    String question = (String) clarify.get("question");
+                    if (question != null && !question.isBlank()) {
+                        sb.append("问: ").append(question).append("\n\n");
+                    }
+                } catch (Exception e) {
+                    log.warn("解析 CLARIFY_REQ payload 失败: {}", e.getMessage());
+                }
+            }
+            if (event.getType() == EventType.CLARIFY_RES && event.getPayload() != null) {
+                try {
+                    Map<String, Object> res = objectMapper.readValue(event.getPayload(), Map.class);
+                    String answer = (String) res.get("answer");
+                    if (answer != null && !answer.isBlank()) {
+                        sb.append("答: ").append(answer).append("\n\n");
+                    }
+                } catch (Exception e) {
+                    log.warn("解析 CLARIFY_RES payload 失败: {}", e.getMessage());
+                }
+            }
+        }
+        if (!hasClarify) {
+            sb.append("暂无澄清记录\n\n");
         }
 
         return sb.toString();

@@ -22,9 +22,11 @@ public class FingerprintService {
     private static final Pattern STACK_FRAME_PATTERN =
         Pattern.compile("at\\s+([\\w.]+)\\.([\\w]+|<[\\w]+>)\\([\\w.]+:\\d+\\)");
 
-    // Error type pattern: java.lang.ExceptionType: message
+    // Error type pattern: java.lang.ExceptionType: message or ExceptionType: message
+    // No ^ anchor to allow matching anywhere in the log (timestamps, log levels may precede)
+    // Also matches Caused by: prefix format
     private static final Pattern ERROR_TYPE_PATTERN =
-        Pattern.compile("^([\\w.]+Exception|[\\w.]+Error|[\\w.]+Throwable):");
+        Pattern.compile("(?:Caused by:\\s*)?([\\w.]+(?:Exception|Error|Throwable))[:\\s]");
 
     // Framework class prefixes to exclude（扩展列表，参考实际日志分析经验）
     private static final String[] FRAMEWORK_PREFIXES = {
