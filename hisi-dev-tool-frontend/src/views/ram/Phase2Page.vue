@@ -39,7 +39,7 @@ const status = computed(() => {
 
 const isRunning = computed(() => loading.value || status.value === 'RUNNING')
 const isSuccess = computed(() => status.value === 'DONE' && report.value?.['success'] !== false)
-const isFailed = computed(() => status.value === 'FAILED' || report.value?.['success'] === false)
+const isFailed = computed(() => status.value === 'FAILED' || (report.value?.['success'] === false && status.value !== 'RUNNING'))
 
 const markdownReport = computed(() => {
   const md = report.value?.['markdown_report']

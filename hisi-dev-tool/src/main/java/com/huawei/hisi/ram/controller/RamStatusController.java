@@ -221,10 +221,13 @@ public class RamStatusController {
 
     /**
      * Create default status report with all expected frontend fields.
+     * Note: Only set success=false for FAILED status; RUNNING should use null
+     * to avoid frontend misjudging as failed.
      */
     private Map<String, Object> createDefaultStatusReport(String status) {
         Map<String, Object> report = new LinkedHashMap<>();
-        report.put("success", false);
+        // Only mark success=false for FAILED; RUNNING uses null to avoid red status tag
+        report.put("success", "FAILED".equals(status) ? false : null);
         report.put("message", status.equals("RUNNING")
                 ? "分析正在执行中，请稍候..."
                 : "分析尚未完成或未生成结果");
