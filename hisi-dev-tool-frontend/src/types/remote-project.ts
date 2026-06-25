@@ -10,6 +10,8 @@ export interface RemoteProject {
   lastSyncAt: number | null
   authType: 'PASSWORD' | 'SSH_KEY' | 'TOKEN'
   sshKeyPath?: string
+  groupId?: string
+  groupName?: string
 }
 
 export interface CreateRemoteProjectRequest {
@@ -21,6 +23,7 @@ export interface CreateRemoteProjectRequest {
   authType?: 'PASSWORD' | 'SSH_KEY' | 'TOKEN'
   sshKeyPath?: string
   token?: string
+  groupId?: string
 }
 
 export interface UpdateRemoteProjectRequest {
@@ -32,6 +35,7 @@ export interface UpdateRemoteProjectRequest {
   authType?: 'PASSWORD' | 'SSH_KEY' | 'TOKEN'
   sshKeyPath?: string
   token?: string
+  groupId?: string
 }
 
 export interface KgSchedule {

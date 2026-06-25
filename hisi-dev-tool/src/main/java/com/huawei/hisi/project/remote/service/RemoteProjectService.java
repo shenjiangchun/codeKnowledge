@@ -1,5 +1,6 @@
 package com.huawei.hisi.project.remote.service;
 
+import com.huawei.hisi.config.DataSourceConfig;
 import com.huawei.hisi.project.remote.model.AuthType;
 import com.huawei.hisi.project.remote.model.RemoteProject;
 import com.huawei.hisi.project.remote.repository.RemoteProjectRepository;
@@ -281,8 +282,19 @@ public class RemoteProjectService {
         }
     }
 
+    /**
+     * 解析远端项目克隆目录。
+     * 优先使用配置的项目目录（app.project_dir），确保路径一致性。
+     * 如果未配置，则使用 ~/.hisi-devtool/remote-repos 作为 fallback。
+     */
     private Path resolveCloneDir(String localPath) {
-        return Paths.get(System.getProperty("user.dir"), "remote-repos", localPath);
+        String baseDir = DataSourceConfig.PROJECT_DIR;
+        if (baseDir == null || baseDir.isBlank()) {
+            // Fallback: 使用用户目录下的固定位置
+            baseDir = Paths.get(System.getProperty("user.home"), ".hisi-devtool").toString();
+            log.warn("[RemoteProject] app.project_dir not configured, using fallback: {}", baseDir);
+        }
+        return Paths.get(baseDir, "remote-repos", localPath);
     }
 
     public String getFullLocalPath(String localPath) {

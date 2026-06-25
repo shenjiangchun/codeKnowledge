@@ -249,6 +249,10 @@
           <div class="card-header tab-header">
             <span>远端项目管理</span>
             <div class="header-buttons">
+              <el-button type="info" @click="showRemoteGroupDialog = true">
+                <el-icon><FolderAdd /></el-icon>
+                项目分组
+              </el-button>
               <el-button type="primary" @click="handleAddRemote">
                 <el-icon><Plus /></el-icon>
                 添加远端项目
@@ -321,6 +325,14 @@
                 <el-tag v-else :type="remoteCloneStatusType(row.cloneStatus)" size="small">
                   {{ remoteCloneStatusText(row.cloneStatus) }}
                 </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="分组" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag v-if="row.groupName" type="warning" size="small">
+                  {{ row.groupName }}
+                </el-tag>
+                <span v-else class="text-muted">-</span>
               </template>
             </el-table-column>
             <el-table-column label="最后同步" width="170">
@@ -591,6 +603,11 @@
         <el-form-item label="分支">
           <el-input v-model="remoteForm.branch" placeholder="默认: main" />
         </el-form-item>
+        <el-form-item label="分组">
+          <el-select v-model="remoteForm.groupId" placeholder="选择分组（可选）" clearable style="width: 100%">
+            <el-option v-for="g in groups" :key="g.appId" :label="g.appName || g.appId" :value="g.appId" />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showRemoteDialog = false">取消</el-button>
@@ -847,6 +864,7 @@ const updatingAll = ref(false)
 const showCloneDialog = ref(false)
 // Task 75: 项目分组状态
 const showGroupDialog = ref(false)
+const showRemoteGroupDialog = ref(false)
 const showGroupFormDialog = ref(false)
 const groups = ref<ProjectGroup[]>([])
 const loadingGroups = ref(false)
@@ -2226,7 +2244,7 @@ const showRemoteDialog = ref(false)
 const remoteIsEdit = ref(false)
 const remoteEditId = ref<number | null>(null)
 const remoteSubmitting = ref(false)
-const remoteForm = ref<CreateRemoteProjectRequest & { password?: string; token?: string }>({
+const remoteForm = ref<CreateRemoteProjectRequest & { password?: string; token?: string; groupId?: string }>({
   name: '',
   gitUrl: '',
   username: '',
@@ -2234,7 +2252,8 @@ const remoteForm = ref<CreateRemoteProjectRequest & { password?: string; token?:
   branch: 'main',
   authType: 'PASSWORD',
   sshKeyPath: '',
-  token: ''
+  token: '',
+  groupId: undefined
 })
 
 const remoteCloneStatusType = (status: string) => {
@@ -2329,7 +2348,7 @@ const loadRemoteProjectTaskStatuses = async () => {
 const handleAddRemote = () => {
   remoteIsEdit.value = false
   remoteEditId.value = null
-  remoteForm.value = { name: '', gitUrl: '', username: '', password: '', branch: 'main', authType: 'PASSWORD', sshKeyPath: '', token: '' }
+  remoteForm.value = { name: '', gitUrl: '', username: '', password: '', branch: 'main', authType: 'PASSWORD', sshKeyPath: '', token: '', groupId: undefined }
   showRemoteDialog.value = true
 }
 
@@ -2357,7 +2376,8 @@ const handleEditRemote = (row: RemoteProject) => {
     branch: row.branch,
     authType: row.authType || 'PASSWORD',
     sshKeyPath: row.sshKeyPath || '',
-    token: ''
+    token: '',
+    groupId: row.groupId || undefined
   }
   showRemoteDialog.value = true
 }
@@ -2382,7 +2402,8 @@ const handleRemoteSubmit = async () => {
       name: remoteForm.value.name.trim(),
       gitUrl: remoteForm.value.gitUrl.trim(),
       branch: remoteForm.value.branch.trim() || 'main',
-      authType: remoteForm.value.authType
+      authType: remoteForm.value.authType,
+      groupId: remoteForm.value.groupId || undefined
     }
     // 根据认证方式填充相关字段
     if (remoteForm.value.authType === 'PASSWORD') {

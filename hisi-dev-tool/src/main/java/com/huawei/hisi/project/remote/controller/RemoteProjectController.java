@@ -1,5 +1,6 @@
 package com.huawei.hisi.project.remote.controller;
 
+import com.huawei.hisi.config.DataSourceConfig;
 import com.huawei.hisi.model.ApiResponse;
 import com.huawei.hisi.project.group.repository.ProjectGroupRepository;
 import com.huawei.hisi.project.group.model.ProjectGroup;
@@ -92,9 +93,13 @@ public class RemoteProjectController {
     }
 
     private ProjectResponse toResponse(RemoteProject p) {
-        // Normalize path to forward slashes for consistency with KG task storage
+        // 使用配置的项目目录作为基准路径，确保与 KG 生成路径一致
+        String baseDir = DataSourceConfig.PROJECT_DIR;
+        if (baseDir == null || baseDir.isBlank()) {
+            baseDir = java.nio.file.Paths.get(System.getProperty("user.home"), ".hisi-devtool").toString();
+        }
         String fullPath = com.huawei.hisi.utils.PathUtils.normalize(
-            java.nio.file.Paths.get(System.getProperty("user.dir"), "remote-repos", p.getLocalPath()).toString()
+            java.nio.file.Paths.get(baseDir, "remote-repos", p.getLocalPath()).toString()
         );
         // Convert seconds to milliseconds for frontend
         Long lastSyncAtMs = p.getLastSyncAt() != null ? p.getLastSyncAt() * 1000 : null;
