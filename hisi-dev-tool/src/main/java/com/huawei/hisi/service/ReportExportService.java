@@ -512,7 +512,8 @@ public class ReportExportService {
                     continue;
                 }
                 String mdContent = exportLogReportAsMd(reportId);
-                String entryName = "report-" + reportId + ".md";
+                String briefDesc = extractBriefDescription(report);
+                String entryName = "report-" + reportId + "-" + briefDesc + ".md";
                 ZipEntry entry = new ZipEntry(entryName);
                 zos.putNextEntry(entry);
                 zos.write(mdContent.getBytes(StandardCharsets.UTF_8));
@@ -521,6 +522,49 @@ public class ReportExportService {
         }
 
         return baos.toByteArray();
+    }
+
+    /**
+     * 从报告实体中提取简要描述用于文件名。
+     * 优先使用 errorType，其次从 logMessage 截取前50字符。
+     * 清理文件名中的非法字符（Windows 不允许的字符）。
+     */
+    private String extractBriefDescription(LogAnalysisReportEntity report) {
+        String desc = null;
+
+        // 优先使用 errorType
+        if (report.getErrorType() != null && !report.getErrorType().isBlank()) {
+            desc = report.getErrorType();
+        }
+
+        // 其次尝试从 errorSummary 中获取 errorType
+        if (desc == null && report.getErrorSummary() != null) {
+            Object et = report.getErrorSummary().get("errorType");
+            if (et instanceof String s && !s.isBlank()) {
+                desc = s;
+            }
+        }
+
+        // 最后从 logMessage 截取
+        if (desc == null && report.getLogMessage() != null && !report.getLogMessage().isBlank()) {
+            desc = report.getLogMessage();
+            // 截取前50字符
+            if (desc.length() > 50) {
+                desc = desc.substring(0, 50);
+            }
+        }
+
+        // 默认值
+        if (desc == null || desc.isBlank()) {
+            desc = "unknown";
+        }
+
+        // 清理文件名非法字符：\/:*?"<>| 以及换行符
+        desc = desc.replaceAll("[\\\\/:*?\"<>|\\r\\n]", "_");
+        // 去除多余空格
+        desc = desc.trim().replaceAll("\\s+", "_");
+
+        return desc;
     }
 
     /**
