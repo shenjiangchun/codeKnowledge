@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-06-25T12:30:22.464Z",
+  "lastUpdated": "2026-06-25T12:42:44.134Z",
   "stats": {
-    "totalOperations": 1368,
-    "totalFilesEdited": 581,
-    "totalAiLines": 38398,
+    "totalOperations": 1378,
+    "totalFilesEdited": 585,
+    "totalAiLines": 38818,
     "totalAiLinesDeleted": 5153,
-    "totalCommits": 94
+    "totalCommits": 95
   },
   "pendingFiles": [
     {
@@ -1138,26 +1138,33 @@
       "lastModified": "2026-06-23T01:13:14.357Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/controller/KgPathAdminController.java",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-06-25T12:27:53.699Z",
-      "lastModified": "2026-06-25T12:27:53.699Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/api/knowledgeGraph.ts",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/model/RemoteProject.java",
       "tool": "Edit",
       "operations": 1,
-      "timestamp": "2026-06-25T12:28:30.772Z",
-      "lastModified": "2026-06-25T12:28:30.772Z"
+      "timestamp": "2026-06-25T12:39:15.426Z",
+      "lastModified": "2026-06-25T12:39:15.426Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/knowledge-graph/KnowledgeGraphView.vue",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/repository/RemoteProjectRepository.java",
       "tool": "Edit",
-      "operations": 3,
-      "timestamp": "2026-06-25T12:29:05.206Z",
-      "lastModified": "2026-06-25T12:30:22.464Z",
+      "operations": 7,
+      "timestamp": "2026-06-25T12:39:27.971Z",
+      "lastModified": "2026-06-25T12:42:44.134Z",
       "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/service/RemoteProjectService.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-25T12:41:12.436Z",
+      "lastModified": "2026-06-25T12:41:12.436Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/controller/RemoteProjectController.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-25T12:41:48.760Z",
+      "lastModified": "2026-06-25T12:41:48.760Z"
     }
   ]
 }

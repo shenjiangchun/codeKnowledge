@@ -32,4 +32,8 @@ public class RemoteProject {
 
     // Group association
     private Long groupId;
+
+    // Full physical path where the project is cloned
+    // This is set at clone time and remains immutable, decoupling from PROJECT_DIR config changes
+    private String fullPath;
 }

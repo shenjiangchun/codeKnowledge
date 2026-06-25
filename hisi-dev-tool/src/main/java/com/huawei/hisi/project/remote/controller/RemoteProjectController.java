@@ -93,14 +93,19 @@ public class RemoteProjectController {
     }
 
     private ProjectResponse toResponse(RemoteProject p) {
-        // 使用配置的项目目录作为基准路径，确保与 KG 生成路径一致
-        String baseDir = DataSourceConfig.PROJECT_DIR;
-        if (baseDir == null || baseDir.isBlank()) {
-            baseDir = java.nio.file.Paths.get(System.getProperty("user.home"), ".hisi-devtool").toString();
+        // Use stored fullPath if available (immutable, set at clone time)
+        // Otherwise fallback to dynamic calculation for legacy projects
+        String fullPath = p.getFullPath();
+        if (fullPath == null || fullPath.isBlank()) {
+            // Fallback: dynamically calculate path for legacy projects without fullPath
+            String baseDir = DataSourceConfig.PROJECT_DIR;
+            if (baseDir == null || baseDir.isBlank()) {
+                baseDir = java.nio.file.Paths.get(System.getProperty("user.home"), ".hisi-devtool").toString();
+            }
+            fullPath = com.huawei.hisi.utils.PathUtils.normalize(
+                java.nio.file.Paths.get(baseDir, "remote-repos", p.getLocalPath()).toString()
+            );
         }
-        String fullPath = com.huawei.hisi.utils.PathUtils.normalize(
-            java.nio.file.Paths.get(baseDir, "remote-repos", p.getLocalPath()).toString()
-        );
         // Convert seconds to milliseconds for frontend
         Long lastSyncAtMs = p.getLastSyncAt() != null ? p.getLastSyncAt() * 1000 : null;
         // Get group name if groupId exists

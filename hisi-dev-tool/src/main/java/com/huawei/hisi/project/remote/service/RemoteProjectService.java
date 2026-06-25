@@ -4,6 +4,7 @@ import com.huawei.hisi.config.DataSourceConfig;
 import com.huawei.hisi.project.remote.model.AuthType;
 import com.huawei.hisi.project.remote.model.RemoteProject;
 import com.huawei.hisi.project.remote.repository.RemoteProjectRepository;
+import com.huawei.hisi.utils.PathUtils;
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.JSchException;
 import com.jcraft.jsch.Session;
@@ -232,8 +233,12 @@ public class RemoteProjectService {
                 log.info("[Clone] Success: url={}, target={}", project.getGitUrl(), targetDir);
             }
 
+            // Store the immutable full path at clone time
+            String fullPath = PathUtils.normalize(targetDir.toString());
+            repository.updateFullPath(id, fullPath);
             repository.updateCloneStatus(id, "CLONED");
             repository.updateLastSyncAt(id, Instant.now().getEpochSecond());
+            log.info("[Clone] Stored fullPath: {}", fullPath);
 
         } catch (Exception e) {
             String errorDetail = extractRootCause(e);
