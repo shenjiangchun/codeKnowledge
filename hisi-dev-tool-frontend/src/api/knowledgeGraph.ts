@@ -730,4 +730,42 @@ export const knowledgeGraphApi = {
       projectPath
     })
   },
+
+  // ============================================================
+  // KG 路径管理接口
+  // ============================================================
+
+  /** KG 路径诊断：检查 KG 数据路径与当前配置是否一致 */
+  diagnosePaths() {
+    return request.get<{
+      currentProjectDir: string
+      kgProjectPaths: string[]
+      totalKgPaths: number
+      inconsistentPaths: Array<{
+        path: string
+        normalized: string
+        reason: string
+        projectName: string
+        expectedPath: string
+      }>
+      inconsistentCount: number
+    }>('/knowledge-graph/admin/paths/diagnosis')
+  },
+
+  /** KG 路径迁移：将旧路径更新为当前配置 */
+  migratePaths(oldBaseDir: string, dryRun = true) {
+    return request.post<{
+      oldBaseDir: string
+      newBaseDir: string
+      dryRun: boolean
+      methodCount: number
+      entryCount: number
+      sqlCount: number
+      totalAffected: number
+      affectedPaths: string[]
+      message: string
+    }>('/knowledge-graph/admin/paths/migrate', null, {
+      params: { oldBaseDir, dryRun }
+    })
+  },
 }

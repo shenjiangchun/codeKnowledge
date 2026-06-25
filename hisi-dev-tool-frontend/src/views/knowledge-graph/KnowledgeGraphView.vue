@@ -100,6 +100,13 @@
             >
               术语配置
             </el-button>
+            <!-- KG 路径诊断按钮 -->
+            <el-button
+              type="info"
+              @click="showPathDiagnosisDialog = true"
+            >
+              路径诊断
+            </el-button>
             <!-- 补齐缺失向量按钮 -->
             <el-button
               v-if="missingInfo && missingInfo.missingCount > 0"
@@ -337,6 +344,81 @@
           </template>
         </el-table-column>
       </el-table>
+    </el-dialog>
+
+    <!-- KG 路径诊断对话框 -->
+    <el-dialog
+      v-model="showPathDiagnosisDialog"
+      title="KG 路径诊断"
+      width="800px"
+      destroy-on-close
+    >
+      <p style="color: #909399; margin: 0 0 16px 0; font-size: 13px;">
+        当 PROJECT_DIR 配置变更后，KG 数据可能使用旧路径存储，导致查询失败。使用此工具诊断和修复路径不一致问题。
+      </p>
+
+      <el-card v-loading="pathDiagnosisLoading" shadow="never">
+        <template #header>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span>诊断结果</span>
+            <el-button size="small" @click="loadPathDiagnosis">刷新</el-button>
+          </div>
+        </template>
+
+        <el-descriptions v-if="pathDiagnosisResult" :column="2" border>
+          <el-descriptions-item label="当前 PROJECT_DIR">
+            <el-tag type="success">{{ pathDiagnosisResult.currentProjectDir }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="KG 项目路径数">
+            {{ pathDiagnosisResult.totalKgPaths }}
+          </el-descriptions-item>
+          <el-descriptions-item label="不一致路径数">
+            <el-tag :type="pathDiagnosisResult.inconsistentCount > 0 ? 'danger' : 'success'">
+              {{ pathDiagnosisResult.inconsistentCount }}
+            </el-tag>
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <div v-if="pathDiagnosisResult?.inconsistentPaths?.length > 0" style="margin-top: 16px;">
+          <p style="color: #e6a23c; font-weight: 600;">以下路径与当前配置不一致：</p>
+          <el-table :data="pathDiagnosisResult.inconsistentPaths" stripe size="small" max-height="300">
+            <el-table-column prop="path" label="KG 存储路径" show-overflow-tooltip />
+            <el-table-column prop="expectedPath" label="期望路径" show-overflow-tooltip />
+            <el-table-column prop="projectName" label="项目名" width="150" />
+          </el-table>
+        </div>
+
+        <el-empty v-else-if="pathDiagnosisResult && !pathDiagnosisLoading" description="所有路径与当前配置一致，无需迁移" />
+      </el-card>
+
+      <!-- 迁移操作 -->
+      <div v-if="pathDiagnosisResult?.inconsistentCount > 0" style="margin-top: 20px;">
+        <el-divider>路径迁移</el-divider>
+        <el-form label-width="140px">
+          <el-form-item label="旧基础目录">
+            <el-input
+              v-model="migrationOldBaseDir"
+              placeholder="输入旧的基础目录，如 D:/codeknowledge"
+              style="width: 300px;"
+            />
+          </el-form-item>
+          <el-form-item label="预览模式">
+            <el-switch v-model="migrationDryRun" />
+            <span style="color: #909399; font-size: 12px; margin-left: 8px;">
+              开启预览模式只显示将要更新的节点，不执行实际迁移
+            </span>
+          </el-form-item>
+          <el-form-item>
+            <el-button
+              type="primary"
+              :loading="pathMigrationLoading"
+              @click="handleMigratePaths"
+            >
+              {{ migrationDryRun ? '预览迁移' : '执行迁移' }}
+            </el-button>
+          </el-form-item>
+        </el-form>
+      </div>
     </el-dialog>
 
     <!-- 术语新增/编辑子对话框 -->
@@ -1183,6 +1265,54 @@ const glossarySubmit = async () => {
     ElMessage.error('保存失败')
   } finally {
     glossarySubmitting.value = false
+  }
+}
+
+// ==================== KG 路径诊断 ====================
+const showPathDiagnosisDialog = ref(false)
+const pathDiagnosisLoading = ref(false)
+const pathDiagnosisResult = ref<any>(null)
+const pathMigrationLoading = ref(false)
+const migrationOldBaseDir = ref('')
+const migrationDryRun = ref(true)
+
+const loadPathDiagnosis = async () => {
+  pathDiagnosisLoading.value = true
+  try {
+    pathDiagnosisResult.value = await knowledgeGraphApi.diagnosePaths()
+  } catch (e: any) {
+    ElMessage.error('路径诊断失败: ' + (e.message || '未知错误'))
+  } finally {
+    pathDiagnosisLoading.value = false
+  }
+}
+
+watch(showPathDiagnosisDialog, (visible) => {
+  if (visible) loadPathDiagnosis()
+})
+
+const handleMigratePaths = async () => {
+  if (!migrationOldBaseDir.value.trim()) {
+    ElMessage.warning('请输入旧的基础目录路径')
+    return
+  }
+  pathMigrationLoading.value = true
+  try {
+    const result = await knowledgeGraphApi.migratePaths(
+      migrationOldBaseDir.value.trim(),
+      migrationDryRun.value
+    )
+    ElMessage.success(result.data.message)
+    if (!migrationDryRun.value && result.data.totalAffected > 0) {
+      // 迁移完成后刷新诊断结果
+      await loadPathDiagnosis()
+      // 清空旧目录输入
+      migrationOldBaseDir.value = ''
+    }
+  } catch (e: any) {
+    ElMessage.error('路径迁移失败: ' + (e.message || '未知错误'))
+  } finally {
+    pathMigrationLoading.value = false
   }
 }
 

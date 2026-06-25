@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-06-25T11:57:25.624Z",
+  "lastUpdated": "2026-06-25T12:30:22.464Z",
   "stats": {
-    "totalOperations": 1363,
-    "totalFilesEdited": 578,
-    "totalAiLines": 38392,
-    "totalAiLinesDeleted": 5150,
-    "totalCommits": 93
+    "totalOperations": 1368,
+    "totalFilesEdited": 581,
+    "totalAiLines": 38398,
+    "totalAiLinesDeleted": 5153,
+    "totalCommits": 94
   },
   "pendingFiles": [
     {
@@ -1138,25 +1138,26 @@
       "lastModified": "2026-06-23T01:13:14.357Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/controller/RamStatusController.java",
-      "tool": "Edit",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/knowledgegraph/controller/KgPathAdminController.java",
+      "tool": "Write",
       "operations": 1,
-      "timestamp": "2026-06-25T11:56:56.566Z",
-      "lastModified": "2026-06-25T11:56:56.566Z"
+      "timestamp": "2026-06-25T12:27:53.699Z",
+      "lastModified": "2026-06-25T12:27:53.699Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/ram/StatusPage.vue",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/api/knowledgeGraph.ts",
       "tool": "Edit",
       "operations": 1,
-      "timestamp": "2026-06-25T11:57:07.373Z",
-      "lastModified": "2026-06-25T11:57:07.373Z"
+      "timestamp": "2026-06-25T12:28:30.772Z",
+      "lastModified": "2026-06-25T12:28:30.772Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/ram/Phase2Page.vue",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/knowledge-graph/KnowledgeGraphView.vue",
       "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-25T11:57:25.624Z",
-      "lastModified": "2026-06-25T11:57:25.624Z"
+      "operations": 3,
+      "timestamp": "2026-06-25T12:29:05.206Z",
+      "lastModified": "2026-06-25T12:30:22.464Z",
+      "lastTool": "Edit"
     }
   ]
 }
