@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-06-25T11:08:47.587Z",
+  "lastUpdated": "2026-06-25T11:41:46.159Z",
   "stats": {
-    "totalOperations": 1355,
-    "totalFilesEdited": 573,
-    "totalAiLines": 38271,
-    "totalAiLinesDeleted": 5129,
-    "totalCommits": 90
+    "totalOperations": 1357,
+    "totalFilesEdited": 574,
+    "totalAiLines": 38321,
+    "totalAiLinesDeleted": 5137,
+    "totalCommits": 91
   },
   "pendingFiles": [
     {
@@ -1138,34 +1138,11 @@
       "lastModified": "2026-06-23T01:13:14.357Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/project/ProjectList.vue",
-      "tool": "Edit",
-      "operations": 9,
-      "timestamp": "2026-06-25T10:45:59.334Z",
-      "lastModified": "2026-06-25T10:48:48.503Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/types/remote-project.ts",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-25T10:49:23.524Z",
-      "lastModified": "2026-06-25T10:49:23.524Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/service/RemoteProjectService.java",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/knowledge-graph/KnowledgeGraphView.vue",
       "tool": "Edit",
       "operations": 2,
-      "timestamp": "2026-06-25T11:08:18.724Z",
-      "lastModified": "2026-06-25T11:08:30.025Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/controller/RemoteProjectController.java",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-06-25T11:08:37.559Z",
-      "lastModified": "2026-06-25T11:08:47.587Z",
+      "timestamp": "2026-06-25T11:40:39.438Z",
+      "lastModified": "2026-06-25T11:41:46.159Z",
       "lastTool": "Edit"
     }
   ]

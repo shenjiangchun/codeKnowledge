@@ -185,7 +185,17 @@
             :project-path="projectPath"
             :project-paths="projectPaths"
           />
-          <el-empty v-else description="请先选择项目" />
+          <el-empty v-else>
+            <template #description>
+              <div style="text-align: center;">
+                <p>请先选择项目</p>
+                <p style="color: #909399; font-size: 12px; margin-top: 8px;">
+                  在「项目管理」页面勾选项目后，点击「确认选择」按钮，再返回本页面
+                </p>
+              </div>
+            </template>
+            <el-button type="primary" @click="router.push('/project')">去项目管理</el-button>
+          </el-empty>
         </el-tab-pane>
         <el-tab-pane label="语义搜索" name="semanticSearch">
           <SemanticSearchPanel
@@ -195,7 +205,16 @@
             @view-detail="handleViewDetail"
             @view-call-chain="handleViewCallChain"
           />
-          <el-empty v-else description="请先选择项目" />
+          <el-empty v-else>
+            <template #description>
+              <div style="text-align: center;">
+                <p>请先选择项目</p>
+                <p style="color: #909399; font-size: 12px; margin-top: 8px;">
+                  在「项目管理」页面勾选项目后，点击「确认选择」按钮
+                </p>
+              </div>
+            </template>
+          </el-empty>
         </el-tab-pane>
         <el-tab-pane label="引用分析" name="methodRef">
           <MethodReferenceGraph ref="methodRefGraphRef" :project-paths="projectPaths" />
@@ -206,7 +225,16 @@
             :project-path="projectPath"
             :project-paths="projectPaths"
           />
-          <el-empty v-else description="请先选择项目" />
+          <el-empty v-else>
+            <template #description>
+              <div style="text-align: center;">
+                <p>请先选择项目</p>
+                <p style="color: #909399; font-size: 12px; margin-top: 8px;">
+                  在「项目管理」页面勾选项目后，点击「确认选择」按钮
+                </p>
+              </div>
+            </template>
+          </el-empty>
         </el-tab-pane>
         <el-tab-pane label="图谱探索" name="explorer">
           <GraphExplorerTab
@@ -214,7 +242,16 @@
             :project-path="projectPath"
             :project-paths="projectPaths"
           />
-          <el-empty v-else description="请先选择项目" />
+          <el-empty v-else>
+            <template #description>
+              <div style="text-align: center;">
+                <p>请先选择项目</p>
+                <p style="color: #909399; font-size: 12px; margin-top: 8px;">
+                  在「项目管理」页面勾选项目后，点击「确认选择」按钮
+                </p>
+              </div>
+            </template>
+          </el-empty>
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -1158,11 +1195,21 @@ onMounted(async () => {
   // Task 74: 加载项目名称分组
   await loadProjectNameGroups()
   // 项目列表加载完成后，再加载图谱数据
+  // 注意：projectPaths computed 会使用 fallback 从 appStore.selectedProjects 获取路径
+  // 所以即使 projects.value 还没包含远端项目，路径也应该正确
   if (projectPath.value) {
+    console.log('[KnowledgeGraph] onMounted - projectPath:', projectPath.value)
+    console.log('[KnowledgeGraph] onMounted - projectPaths:', projectPaths.value)
+    console.log('[KnowledgeGraph] onMounted - appStore.selectedProjects:', appStore.selectedProjects)
     loadGraphStatus()
     loadGitStatus()
     loadVectorStatus()
     loadMissingInfo()
+  } else {
+    console.warn('[KnowledgeGraph] onMounted - projectPath is empty')
+    console.log('[KnowledgeGraph] onMounted - selectedProjectNames:', selectedProjectNames.value)
+    console.log('[KnowledgeGraph] onMounted - projects:', projects.value.map(p => p.name))
+    console.log('[KnowledgeGraph] onMounted - appStore.selectedProjectNames:', appStore.selectedProjectNames)
   }
 })
 
