@@ -32,6 +32,13 @@ public class RemoteProjectRepository {
             jdbcTemplate.execute("ALTER TABLE remote_project ADD COLUMN encrypted_token VARCHAR(500)");
             log.info("[Migration] Added auth_type, ssh_key_path, encrypted_token columns to remote_project");
         }
+        // Add group_id column for project grouping
+        try {
+            jdbcTemplate.queryForRowSet("SELECT group_id FROM remote_project LIMIT 1");
+        } catch (Exception e) {
+            jdbcTemplate.execute("ALTER TABLE remote_project ADD COLUMN group_id INTEGER");
+            log.info("[Migration] Added group_id column to remote_project");
+        }
     }
 
     private static final RowMapper<RemoteProject> ROW_MAPPER = (rs, rowNum) ->
@@ -50,6 +57,7 @@ public class RemoteProjectRepository {
             .authType(rs.getString("auth_type") != null ? rs.getString("auth_type") : "PASSWORD")
             .sshKeyPath(rs.getString("ssh_key_path"))
             .encryptedToken(rs.getString("encrypted_token"))
+            .groupId(rs.getObject("group_id") != null ? rs.getLong("group_id") : null)
             .build();
 
     public List<RemoteProject> findAll() {
@@ -67,8 +75,8 @@ public class RemoteProjectRepository {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(
-                "INSERT INTO remote_project (name, git_url, username, encrypted_password, branch, local_path, clone_status, auth_type, ssh_key_path, encrypted_token) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO remote_project (name, git_url, username, encrypted_password, branch, local_path, clone_status, auth_type, ssh_key_path, encrypted_token, group_id) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS
             );
             ps.setString(1, p.getName());
@@ -81,6 +89,7 @@ public class RemoteProjectRepository {
             ps.setString(8, p.getAuthType());
             ps.setString(9, p.getSshKeyPath());
             ps.setString(10, p.getEncryptedToken());
+            ps.setObject(11, p.getGroupId());
             return ps;
         }, keyHolder);
 
@@ -91,10 +100,10 @@ public class RemoteProjectRepository {
     public int update(RemoteProject p) {
         return jdbcTemplate.update(
             "UPDATE remote_project SET name = ?, git_url = ?, username = ?, encrypted_password = ?, " +
-            "branch = ?, local_path = ?, clone_status = ?, auth_type = ?, ssh_key_path = ?, encrypted_token = ? WHERE id = ?",
+            "branch = ?, local_path = ?, clone_status = ?, auth_type = ?, ssh_key_path = ?, encrypted_token = ?, group_id = ? WHERE id = ?",
             p.getName(), p.getGitUrl(), p.getUsername(), p.getEncryptedPassword(),
             p.getBranch(), p.getLocalPath(), p.getCloneStatus(),
-            p.getAuthType(), p.getSshKeyPath(), p.getEncryptedToken(), p.getId()
+            p.getAuthType(), p.getSshKeyPath(), p.getEncryptedToken(), p.getGroupId(), p.getId()
         );
     }
 

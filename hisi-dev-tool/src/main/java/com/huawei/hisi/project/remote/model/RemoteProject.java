@@ -29,4 +29,7 @@ public class RemoteProject {
     private String authType = "PASSWORD"; // PASSWORD / SSH_KEY / TOKEN
     private String sshKeyPath; // SSH private key file path
     private String encryptedToken; // AES encrypted token
+
+    // Group association
+    private Long groupId;
 }

@@ -48,12 +48,18 @@ public class RemoteProjectService {
 
     // Original create method (backward compatibility)
     public long create(String name, String gitUrl, String username, String password, String branch) {
-        return create(name, gitUrl, username, password, "PASSWORD", null, null, branch);
+        return create(name, gitUrl, username, password, "PASSWORD", null, null, branch, null);
     }
 
-    // Enhanced create method with auth type support
+    // Enhanced create method with auth type support (backward compatibility)
     public long create(String name, String gitUrl, String username, String password,
                        String authType, String sshKeyPath, String token, String branch) {
+        return create(name, gitUrl, username, password, authType, sshKeyPath, token, branch, null);
+    }
+
+    // Full create method with groupId support
+    public long create(String name, String gitUrl, String username, String password,
+                       String authType, String sshKeyPath, String token, String branch, Long groupId) {
         String encryptedPassword = null;
         String encryptedToken = null;
 
@@ -77,6 +83,7 @@ public class RemoteProjectService {
             .authType(authType != null ? authType : "PASSWORD")
             .sshKeyPath(sshKeyPath)
             .encryptedToken(encryptedToken)
+            .groupId(groupId)
             .build();
 
         return repository.insert(project);
@@ -84,12 +91,18 @@ public class RemoteProjectService {
 
     // Original update method (backward compatibility)
     public void update(long id, String name, String gitUrl, String username, String password, String branch) {
-        update(id, name, gitUrl, username, password, null, null, null, branch);
+        update(id, name, gitUrl, username, password, null, null, null, branch, null);
     }
 
-    // Enhanced update method with auth type support
+    // Enhanced update method with auth type support (backward compatibility)
     public void update(long id, String name, String gitUrl, String username, String password,
                        String authType, String sshKeyPath, String token, String branch) {
+        update(id, name, gitUrl, username, password, authType, sshKeyPath, token, branch, null);
+    }
+
+    // Full update method with groupId support
+    public void update(long id, String name, String gitUrl, String username, String password,
+                       String authType, String sshKeyPath, String token, String branch, Long groupId) {
         RemoteProject existing = getById(id);
 
         String encryptedPassword = existing.getEncryptedPassword();
@@ -115,6 +128,7 @@ public class RemoteProjectService {
         existing.setAuthType(authType != null ? authType : existing.getAuthType());
         existing.setSshKeyPath("SSH_KEY".equals(authType) ? sshKeyPath : null);
         existing.setEncryptedToken(encryptedToken);
+        existing.setGroupId(groupId);
 
         repository.update(existing);
     }

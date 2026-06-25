@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-06-25T03:27:55.441Z",
+  "lastUpdated": "2026-06-25T06:34:37.029Z",
   "stats": {
-    "totalOperations": 1333,
-    "totalFilesEdited": 565,
-    "totalAiLines": 38173,
-    "totalAiLinesDeleted": 5112,
-    "totalCommits": 88
+    "totalOperations": 1341,
+    "totalFilesEdited": 569,
+    "totalAiLines": 38218,
+    "totalAiLinesDeleted": 5113,
+    "totalCommits": 89
   },
   "pendingFiles": [
     {
@@ -1138,11 +1138,34 @@
       "lastModified": "2026-06-23T01:13:14.357Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/service/ReportExportService.java",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/model/RemoteProject.java",
       "tool": "Edit",
       "operations": 1,
-      "timestamp": "2026-06-25T03:27:55.441Z",
-      "lastModified": "2026-06-25T03:27:55.441Z"
+      "timestamp": "2026-06-25T06:31:11.226Z",
+      "lastModified": "2026-06-25T06:31:11.226Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/repository/RemoteProjectRepository.java",
+      "tool": "Edit",
+      "operations": 4,
+      "timestamp": "2026-06-25T06:31:41.095Z",
+      "lastModified": "2026-06-25T06:32:37.790Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/controller/RemoteProjectController.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-25T06:33:39.634Z",
+      "lastModified": "2026-06-25T06:33:39.634Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/service/RemoteProjectService.java",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-06-25T06:34:11.159Z",
+      "lastModified": "2026-06-25T06:34:37.029Z",
+      "lastTool": "Edit"
     }
   ]
 }
