@@ -56,4 +56,9 @@ public class DetailedAnalysisReport {
      * 更新时间
      */
     private LocalDateTime updatedAt;
+
+    /**
+     * 出现次数（同类错误合并计数）
+     */
+    private Integer occurrenceCount;
 }

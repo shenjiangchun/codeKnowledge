@@ -81,6 +81,7 @@ export interface DetailedAnalysisReport {
   codeSnippets?: string
   createdAt: string
   updatedAt: string
+  occurrenceCount?: number  // 出现次数（同类错误合并计数）
 }
 
 export interface LogQueryResponse {

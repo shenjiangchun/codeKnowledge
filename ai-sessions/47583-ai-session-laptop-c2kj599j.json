@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-06-26T05:58:34.869Z",
+  "lastUpdated": "2026-06-26T08:20:58.946Z",
   "stats": {
-    "totalOperations": 1391,
-    "totalFilesEdited": 595,
-    "totalAiLines": 39184,
+    "totalOperations": 1395,
+    "totalFilesEdited": 599,
+    "totalAiLines": 39234,
     "totalAiLinesDeleted": 5332,
-    "totalCommits": 99
+    "totalCommits": 100
   },
   "pendingFiles": [
     {
@@ -1138,19 +1138,32 @@
       "lastModified": "2026-06-23T01:13:14.357Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/group/controller/ProjectGroupController.java",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-06-26T05:57:43.855Z",
-      "lastModified": "2026-06-26T05:58:05.979Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/repository/RemoteProjectRepository.java",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/model/DetailedAnalysisReport.java",
       "tool": "Edit",
       "operations": 1,
-      "timestamp": "2026-06-26T05:58:34.869Z",
-      "lastModified": "2026-06-26T05:58:34.869Z"
+      "timestamp": "2026-06-26T08:19:58.414Z",
+      "lastModified": "2026-06-26T08:19:58.414Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/controller/LogAnalysisController.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-26T08:20:21.143Z",
+      "lastModified": "2026-06-26T08:20:21.143Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/types/log.ts",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-26T08:20:38.817Z",
+      "lastModified": "2026-06-26T08:20:38.817Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/log-analysis/ReportDetail.vue",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-26T08:20:58.946Z",
+      "lastModified": "2026-06-26T08:20:58.946Z"
     }
   ]
 }

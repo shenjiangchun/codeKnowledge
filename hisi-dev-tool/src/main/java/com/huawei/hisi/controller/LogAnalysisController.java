@@ -272,6 +272,7 @@ public class LogAnalysisController {
                     .codeSnippets(report.getCodeSnippets())
                     .createdAt(report.getCreatedAt())
                     .updatedAt(report.getUpdatedAt())
+                    .occurrenceCount(report.getOccurrenceCount())
                     .build();
 
             return ApiResponse.success(response);

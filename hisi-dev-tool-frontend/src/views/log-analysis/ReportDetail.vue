@@ -22,6 +22,9 @@
           </el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatTime(report.createdAt) }}</el-descriptions-item>
           <el-descriptions-item label="更新时间">{{ formatTime(report.updatedAt) }}</el-descriptions-item>
+          <el-descriptions-item label="出现次数" v-if="report.occurrenceCount && report.occurrenceCount > 1">
+            <el-tag type="warning">{{ report.occurrenceCount }} 次合并</el-tag>
+          </el-descriptions-item>
         </el-descriptions>
 
         <el-divider />
@@ -133,7 +136,11 @@ const handleExportMd = async () => {
   exporting.value = true
   try {
     const blob = await logAnalysisApi.exportReportMd(reportId.value)
-    const filename = `log-report-${reportId.value}.md`
+    // Include occurrence count in filename when > 1
+    const countSuffix = (report.value?.occurrenceCount && report.value.occurrenceCount > 1)
+      ? `-x${report.value.occurrenceCount}`
+      : ''
+    const filename = `log-report-${reportId.value}${countSuffix}.md`
     downloadBlob(blob, filename)
     ElMessage.success('报告已导出')
   } catch (error: any) {
