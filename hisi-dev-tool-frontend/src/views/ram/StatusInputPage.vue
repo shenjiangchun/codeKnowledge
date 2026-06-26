@@ -128,10 +128,11 @@ async function loadProjects(): Promise<void> {
       : []
     const cloned = remoteList.status === 'fulfilled' && Array.isArray(remoteList.value)
       ? (remoteList.value as any[])
-          .filter((r: any) => r.cloneStatus === 'CLONED' && r.fullPath)
+          .filter((r: any) => r.cloneStatus === 'CLONED')
           .map((r: any) => ({
             name: r.name,
-            path: r.fullPath,  // Use fullPath (complete physical path) instead of localPath (just name slug)
+            // Use fullPath if available, otherwise fallback to localPath for backward compatibility
+            path: r.fullPath || r.localPath,
             branch: r.branch || 'main',
             clean: true,
             source: 'cloned' as const
