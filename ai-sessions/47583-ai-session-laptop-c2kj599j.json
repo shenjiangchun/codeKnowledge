@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-06-26T01:29:03.941Z",
+  "lastUpdated": "2026-06-26T05:58:34.869Z",
   "stats": {
-    "totalOperations": 1388,
-    "totalFilesEdited": 593,
-    "totalAiLines": 38958,
-    "totalAiLinesDeleted": 5188,
-    "totalCommits": 98
+    "totalOperations": 1391,
+    "totalFilesEdited": 595,
+    "totalAiLines": 39184,
+    "totalAiLinesDeleted": 5332,
+    "totalCommits": 99
   },
   "pendingFiles": [
     {
@@ -1138,12 +1138,19 @@
       "lastModified": "2026-06-23T01:13:14.357Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/project/ProjectList.vue",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/group/controller/ProjectGroupController.java",
       "tool": "Edit",
       "operations": 2,
-      "timestamp": "2026-06-26T01:27:46.588Z",
-      "lastModified": "2026-06-26T01:29:03.941Z",
+      "timestamp": "2026-06-26T05:57:43.855Z",
+      "lastModified": "2026-06-26T05:58:05.979Z",
       "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/project/remote/repository/RemoteProjectRepository.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-06-26T05:58:34.869Z",
+      "lastModified": "2026-06-26T05:58:34.869Z"
     }
   ]
 }

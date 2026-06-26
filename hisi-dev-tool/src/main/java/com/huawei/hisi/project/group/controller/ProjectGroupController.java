@@ -3,6 +3,8 @@ package com.huawei.hisi.project.group.controller;
 import com.huawei.hisi.model.ApiResponse;
 import com.huawei.hisi.project.group.model.ProjectGroup;
 import com.huawei.hisi.project.group.repository.ProjectGroupRepository;
+import com.huawei.hisi.project.remote.repository.RemoteProjectRepository;
+import com.huawei.hisi.utils.PathUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +25,7 @@ import java.util.List;
 public class ProjectGroupController {
 
     private final ProjectGroupRepository repository;
+    private final RemoteProjectRepository remoteProjectRepository;
 
     /**
      * 获取所有分组
@@ -57,6 +60,7 @@ public class ProjectGroupController {
 
     /**
      * 创建或更新分组
+     * 同时同步更新 remote_project 表中对应项目的 group_id
      */
     @PostMapping
     public ApiResponse<ProjectGroup> saveGroup(@Valid @RequestBody ProjectGroup group) {
@@ -71,7 +75,33 @@ public class ProjectGroupController {
                 return ApiResponse.error(400, "projectPaths 不能为空");
             }
 
+            // 查询之前的分组项目路径（用于清除旧的 group_id）
+            ProjectGroup existing = repository.findByAppId(group.getAppId());
+            List<String> oldPaths = existing != null ? existing.getProjectPaths() : List.of();
+
+            // 保存分组到 project_group 表
             repository.save(group);
+
+            // 同步更新 remote_project 表的 group_id
+            String groupId = group.getAppId();
+            String groupName = group.getAppName();
+
+            // 清除旧路径项目的 group_id（如果路径不再属于该分组）
+            for (String oldPath : oldPaths) {
+                if (!group.getProjectPaths().contains(oldPath)) {
+                    String normalizedOldPath = PathUtils.normalize(oldPath);
+                    remoteProjectRepository.clearGroupIdByPath(normalizedOldPath);
+                    log.info("[ProjectGroup] Cleared group_id for project path: {}", normalizedOldPath);
+                }
+            }
+
+            // 设置新路径项目的 group_id 和 groupName
+            for (String path : group.getProjectPaths()) {
+                String normalizedPath = PathUtils.normalize(path);
+                remoteProjectRepository.setGroupIdByPath(normalizedPath, groupId, groupName);
+                log.info("[ProjectGroup] Set group_id={} for project path: {}", groupId, normalizedPath);
+            }
+
             ProjectGroup saved = repository.findByAppId(group.getAppId());
             return ApiResponse.success(saved);
         } catch (Exception e) {

@@ -214,4 +214,24 @@ public class RemoteProjectRepository {
             "UPDATE remote_project SET full_path = ? WHERE id = ?", fullPath, id
         );
     }
+
+    /**
+     * 根据项目路径设置 group_id 和 groupName
+     */
+    public int setGroupIdByPath(String normalizedPath, String groupId, String groupName) {
+        return jdbcTemplate.update(
+            "UPDATE remote_project SET group_id = ? WHERE full_path = ? OR local_path = ?",
+            groupId, normalizedPath, normalizedPath
+        );
+    }
+
+    /**
+     * 根据项目路径清除 group_id
+     */
+    public int clearGroupIdByPath(String normalizedPath) {
+        return jdbcTemplate.update(
+            "UPDATE remote_project SET group_id = NULL WHERE full_path = ? OR local_path = ?",
+            normalizedPath, normalizedPath
+        );
+    }
 }
