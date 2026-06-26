@@ -297,149 +297,165 @@
               </el-button>
             </div>
           </div>
-          <el-table :data="remoteProjects" v-loading="remoteLoading" stripe @selection-change="handleRemoteSelectionChange">
-            <el-table-column type="selection" width="55" />
-            <el-table-column prop="name" label="项目名称" min-width="120">
-              <template #default="{ row }">
-                <div class="project-name-cell">
-                  <span>{{ row.name }}</span>
-                  <el-tag v-if="row.cloneStatus === 'CLONED' && appStore.selectedProjectNames.includes(row.name)" type="success" size="small">
-                    已选择
-                  </el-tag>
+          <el-collapse v-model="expandedRemoteGroups" v-loading="remoteLoading">
+            <el-collapse-item
+              v-for="grp in groupedRemoteProjects"
+              :key="grp.group?.appId || 'ungrouped'"
+              :name="grp.group?.appId || 'ungrouped'"
+            >
+              <template #title>
+                <div class="group-header" @click.stop>
+                  <el-checkbox
+                    :model-value="remoteGroupSelectionState.get(grp.group?.appId || 'ungrouped') || false"
+                    @change="toggleRemoteGroupSelection(grp.group?.appId || 'ungrouped', grp.projects)"
+                    @click.stop
+                  />
+                  <span class="group-name">{{ grp.group?.appName || '未分组' }}</span>
+                  <el-tag size="small" type="info">{{ grp.projects.length }} 个项目</el-tag>
+                  <el-tag v-if="grp.group?.appId" size="small">{{ grp.group.appId }}</el-tag>
                 </div>
               </template>
-            </el-table-column>
-            <el-table-column prop="gitUrl" label="Git地址" min-width="200" show-overflow-tooltip />
-            <el-table-column prop="branch" label="分支" width="100" />
-            <el-table-column label="克隆状态" width="110" align="center">
-              <template #default="{ row }">
-                <el-tooltip
-                  v-if="row.cloneStatus === 'FAILED' && row.cloneError"
-                  :content="row.cloneError"
-                  placement="top"
-                >
-                  <el-tag type="danger" size="small" style="cursor: help;">
-                    {{ remoteCloneStatusText(row.cloneStatus) }}
-                  </el-tag>
-                </el-tooltip>
-                <el-tag v-else :type="remoteCloneStatusType(row.cloneStatus)" size="small">
-                  {{ remoteCloneStatusText(row.cloneStatus) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="分组" width="100" align="center">
-              <template #default="{ row }">
-                <el-tag v-if="row.groupName" type="warning" size="small">
-                  {{ row.groupName }}
-                </el-tag>
-                <span v-else class="text-muted">-</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="最后同步" width="170">
-              <template #default="{ row }">
-                {{ row.lastSyncAt ? formatTimestamp(row.lastSyncAt) : '-' }}
-              </template>
-            </el-table-column>
-            <el-table-column label="图谱状态" width="120" align="center">
-              <template #default="{ row }">
-                <template v-if="row.cloneStatus === 'CLONED'">
-                  <div class="status-indicator">
-                    <span
-                      class="status-dot"
-                      :class="getKnowledgeGraphStatusClass(getProjectKnowledgeGraphStatus(row.localPath))"
-                      :title="getKnowledgeGraphStatusTooltip(row.localPath)"
-                    ></span>
-                    <span class="status-text">{{ getKnowledgeGraphStatusText(getProjectKnowledgeGraphStatus(row.localPath)) }}</span>
-                  </div>
-                </template>
-                <span v-else class="text-muted">-</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="向量状态" width="120" align="center">
-              <template #default="{ row }">
-                <template v-if="row.cloneStatus === 'CLONED'">
-                  <div class="vector-status">
-                    <div class="status-indicator">
-                      <span
-                        class="status-dot"
-                        :class="getVectorStatusClass(getProjectVectorStatus(row.localPath))"
-                        :title="getVectorStatusTooltip(row.localPath)"
-                      ></span>
-                      <span class="status-text">{{ getVectorStatusText(getProjectVectorStatus(row.localPath)) }}</span>
+              <el-table
+                :data="grp.projects"
+                stripe
+                @selection-change="(selection: any[]) => handleRemoteGroupSelectionChange(grp.group?.appId || 'ungrouped', selection)"
+              >
+                <el-table-column type="selection" width="55" />
+                <el-table-column prop="name" label="项目名称" min-width="120">
+                  <template #default="{ row }">
+                    <div class="project-name-cell">
+                      <span>{{ row.name }}</span>
+                      <el-tag v-if="row.cloneStatus === 'CLONED' && appStore.selectedProjectNames.includes(row.name)" type="success" size="small">
+                        已选择
+                      </el-tag>
                     </div>
-                    <span v-if="getProjectVectorProgress(row.localPath)" class="progress-text">
-                      {{ getProjectVectorProgress(row.localPath)!.processed }}/{{ getProjectVectorProgress(row.localPath)!.total }}
-                    </span>
-                  </div>
-                </template>
-                <span v-else class="text-muted">-</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="420">
-              <template #default="{ row }">
-                <el-button type="primary" link @click="handleEditRemote(row)">编辑</el-button>
-                <el-button
-                  v-if="row.cloneStatus !== 'CLONED'"
-                  type="success"
-                  link
-                  @click="handleCloneRemote(row)"
-                  :disabled="row.cloneStatus === 'CLONING'"
-                >
-                  克隆
-                </el-button>
-                <el-button
-                  v-else
-                  type="success"
-                  link
-                  @click="handlePullRemote(row)"
-                >
-                  拉取
-                </el-button>
-                <el-button
-                  type="info"
-                  link
-                  @click="showCommitDialogForRemote(row)"
-                  :disabled="row.cloneStatus !== 'CLONED'"
-                >
-                  <el-icon><Document /></el-icon>
-                  提交分析
-                </el-button>
-                <GitOperations
-                  v-if="row.cloneStatus === 'CLONED'"
-                  :project-path="row.localPath"
-                />
-                <el-button
-                  type="info"
-                  link
-                  @click="handleRefreshProjectRemote(row)"
-                  :disabled="row.cloneStatus !== 'CLONED'"
-                >
-                  <el-icon><Refresh /></el-icon>
-                  图谱刷新
-                </el-button>
-                <el-button
-                  type="success"
-                  link
-                  @click="handleRemoteGenerateKg(row)"
-                  :disabled="row.cloneStatus !== 'CLONED'"
-                >
-                  <el-icon><DataAnalysis /></el-icon>
-                  生成图谱
-                </el-button>
-                <el-button
-                  type="primary"
-                  link
-                  @click="handleRemoteGenerateVector(row)"
-                  :disabled="row.cloneStatus !== 'CLONED'"
-                >
-                  <el-icon><Collection /></el-icon>
-                  描述&amp;向量
-                </el-button>
-                <el-button type="info" link @click="openScheduleDialog(row)">定时任务配置</el-button>
-                <el-button type="danger" link @click="handleDeleteRemote(row)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="gitUrl" label="Git地址" min-width="200" show-overflow-tooltip />
+                <el-table-column prop="branch" label="分支" width="100" />
+                <el-table-column label="克隆状态" width="110" align="center">
+                  <template #default="{ row }">
+                    <el-tooltip
+                      v-if="row.cloneStatus === 'FAILED' && row.cloneError"
+                      :content="row.cloneError"
+                      placement="top"
+                    >
+                      <el-tag type="danger" size="small" style="cursor: help;">
+                        {{ remoteCloneStatusText(row.cloneStatus) }}
+                      </el-tag>
+                    </el-tooltip>
+                    <el-tag v-else :type="remoteCloneStatusType(row.cloneStatus)" size="small">
+                      {{ remoteCloneStatusText(row.cloneStatus) }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="最后同步" width="170">
+                  <template #default="{ row }">
+                    {{ row.lastSyncAt ? formatTimestamp(row.lastSyncAt) : '-' }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="图谱状态" width="120" align="center">
+                  <template #default="{ row }">
+                    <template v-if="row.cloneStatus === 'CLONED'">
+                      <div class="status-indicator">
+                        <span
+                          class="status-dot"
+                          :class="getKnowledgeGraphStatusClass(getProjectKnowledgeGraphStatus(row.fullPath || row.localPath))"
+                          :title="getKnowledgeGraphStatusTooltip(row.fullPath || row.localPath)"
+                        ></span>
+                        <span class="status-text">{{ getKnowledgeGraphStatusText(getProjectKnowledgeGraphStatus(row.fullPath || row.localPath)) }}</span>
+                      </div>
+                    </template>
+                    <span v-else class="text-muted">-</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="向量状态" width="120" align="center">
+                  <template #default="{ row }">
+                    <template v-if="row.cloneStatus === 'CLONED'">
+                      <div class="vector-status">
+                        <div class="status-indicator">
+                          <span
+                            class="status-dot"
+                            :class="getVectorStatusClass(getProjectVectorStatus(row.fullPath || row.localPath))"
+                            :title="getVectorStatusTooltip(row.fullPath || row.localPath)"
+                          ></span>
+                          <span class="status-text">{{ getVectorStatusText(getProjectVectorStatus(row.fullPath || row.localPath)) }}</span>
+                        </div>
+                        <span v-if="getProjectVectorProgress(row.fullPath || row.localPath)" class="progress-text">
+                          {{ getProjectVectorProgress(row.fullPath || row.localPath)!.processed }}/{{ getProjectVectorProgress(row.fullPath || row.localPath)!.total }}
+                        </span>
+                      </div>
+                    </template>
+                    <span v-else class="text-muted">-</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="420">
+                  <template #default="{ row }">
+                    <el-button type="primary" link @click="handleEditRemote(row)">编辑</el-button>
+                    <el-button
+                      v-if="row.cloneStatus !== 'CLONED'"
+                      type="success"
+                      link
+                      @click="handleCloneRemote(row)"
+                      :disabled="row.cloneStatus === 'CLONING'"
+                    >
+                      克隆
+                    </el-button>
+                    <el-button
+                      v-else
+                      type="success"
+                      link
+                      @click="handlePullRemote(row)"
+                    >
+                      拉取
+                    </el-button>
+                    <el-button
+                      type="info"
+                      link
+                      @click="showCommitDialogForRemote(row)"
+                      :disabled="row.cloneStatus !== 'CLONED'"
+                    >
+                      <el-icon><Document /></el-icon>
+                      提交分析
+                    </el-button>
+                    <GitOperations
+                      v-if="row.cloneStatus === 'CLONED'"
+                      :project-path="row.fullPath || row.localPath"
+                    />
+                    <el-button
+                      type="info"
+                      link
+                      @click="handleRefreshProjectRemote(row)"
+                      :disabled="row.cloneStatus !== 'CLONED'"
+                    >
+                      <el-icon><Refresh /></el-icon>
+                      图谱刷新
+                    </el-button>
+                    <el-button
+                      type="success"
+                      link
+                      @click="handleRemoteGenerateKg(row)"
+                      :disabled="row.cloneStatus !== 'CLONED'"
+                    >
+                      <el-icon><DataAnalysis /></el-icon>
+                      生成图谱
+                    </el-button>
+                    <el-button
+                      type="primary"
+                      link
+                      @click="handleRemoteGenerateVector(row)"
+                      :disabled="row.cloneStatus !== 'CLONED'"
+                    >
+                      <el-icon><Collection /></el-icon>
+                      描述&amp;向量
+                    </el-button>
+                    <el-button type="info" link @click="openScheduleDialog(row)">定时任务配置</el-button>
+                    <el-button type="danger" link @click="handleDeleteRemote(row)">删除</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-collapse-item>
+          </el-collapse>
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -2068,10 +2084,6 @@ const selectedProjects = ref<any[]>([])
 const selectedRemoteProjects = ref<any[]>([])
 const crossServiceBuilding = ref(false)
 
-function handleRemoteSelectionChange(selection: any[]) {
-  selectedRemoteProjects.value = selection
-}
-
 /** 确认多选：将表格勾选的项目设置为全局选中 */
 function handleConfirmMultiSelect() {
   if (selectedProjects.value.length === 0) {
@@ -2266,6 +2278,76 @@ const remoteForm = ref<CreateRemoteProjectRequest & { password?: string; token?:
   token: '',
   groupId: undefined
 })
+
+// 远端项目分组状态（与本地项目分组展示一致）
+const expandedRemoteGroups = ref<string[]>([])
+const remoteGroupSelectionState = ref<Map<string, boolean>>(new Map())
+const remoteGroupSelections = ref<Map<string, RemoteProject[]>>(new Map())
+
+// 按分组归类远端项目 computed
+interface RemoteGroupedProjects {
+  group: { appId: string; appName: string } | null
+  projects: RemoteProject[]
+}
+const groupedRemoteProjects = computed<RemoteGroupedProjects[]>(() => {
+  const result: RemoteGroupedProjects[] = []
+  const assigned = new Set<number>()
+
+  // 按分组归类（使用 groupId 和 groupName）
+  const groupMap = new Map<string, { appId: string; appName: string }>()
+  remoteProjects.value.forEach(p => {
+    if (p.groupId && p.groupName) {
+      groupMap.set(p.groupId, { appId: p.groupId, appName: p.groupName })
+    }
+  })
+
+  for (const [groupId, groupInfo] of groupMap) {
+    const matched = remoteProjects.value.filter(p => p.groupId === groupId)
+    if (matched.length > 0) {
+      result.push({ group: groupInfo, projects: matched })
+      matched.forEach(p => assigned.add(p.id))
+    }
+  }
+
+  // 未分组项目
+  const ungrouped = remoteProjects.value.filter(p => !assigned.has(p.id))
+  if (ungrouped.length > 0) {
+    result.push({ group: null, projects: ungrouped })
+  }
+
+  return result
+})
+
+// 远端分组选择处理
+const toggleRemoteGroupSelection = (groupKey: string, groupProjects: RemoteProject[]) => {
+  const currentState = remoteGroupSelectionState.value.get(groupKey) || false
+  const newState = !currentState
+  remoteGroupSelectionState.value.set(groupKey, newState)
+
+  if (newState) {
+    remoteGroupSelections.value.set(groupKey, [...groupProjects])
+  } else {
+    remoteGroupSelections.value.set(groupKey, [])
+  }
+  mergeAllRemoteGroupSelections()
+}
+
+const mergeAllRemoteGroupSelections = () => {
+  const allSelection: RemoteProject[] = []
+  remoteGroupSelections.value.forEach((selection) => {
+    allSelection.push(...selection)
+  })
+  selectedRemoteProjects.value = allSelection
+}
+
+const handleRemoteGroupSelectionChange = (groupKey: string, selection: RemoteProject[]) => {
+  remoteGroupSelections.value.set(groupKey, selection)
+  const group = groupedRemoteProjects.value.find(g => (g.group?.appId || 'ungrouped') === groupKey)
+  if (group) {
+    remoteGroupSelectionState.value.set(groupKey, selection.length === group.projects.length && group.projects.length > 0)
+  }
+  mergeAllRemoteGroupSelections()
+}
 
 const remoteCloneStatusType = (status: string) => {
   const map: Record<string, string> = {

@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-06-26T01:23:11.366Z",
+  "lastUpdated": "2026-06-26T01:29:03.941Z",
   "stats": {
-    "totalOperations": 1386,
-    "totalFilesEdited": 592,
-    "totalAiLines": 38949,
-    "totalAiLinesDeleted": 5182,
-    "totalCommits": 97
+    "totalOperations": 1388,
+    "totalFilesEdited": 593,
+    "totalAiLines": 38958,
+    "totalAiLinesDeleted": 5188,
+    "totalCommits": 98
   },
   "pendingFiles": [
     {
@@ -1138,25 +1138,12 @@
       "lastModified": "2026-06-23T01:13:14.357Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/ram/StatusInputPage.vue",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/project/ProjectList.vue",
       "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-26T01:22:48.259Z",
-      "lastModified": "2026-06-26T01:22:48.259Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/ram/InputPage.vue",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-26T01:22:58.655Z",
-      "lastModified": "2026-06-26T01:22:58.655Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/merge-analysis/InputPage.vue",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-26T01:23:11.366Z",
-      "lastModified": "2026-06-26T01:23:11.366Z"
+      "operations": 2,
+      "timestamp": "2026-06-26T01:27:46.588Z",
+      "lastModified": "2026-06-26T01:29:03.941Z",
+      "lastTool": "Edit"
     }
   ]
 }
