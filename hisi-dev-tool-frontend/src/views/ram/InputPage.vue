@@ -137,20 +137,20 @@ async function loadProjects(): Promise<void> {
       : []
     const cloned = remoteList.status === 'fulfilled' && Array.isArray(remoteList.value)
       ? (remoteList.value as any[])
-          .filter((r: any) => r.cloneStatus === 'CLONED' && r.localPath)
+          .filter((r: any) => r.cloneStatus === 'CLONED' && r.fullPath)
           .map((r: any) => ({
             name: r.name,
-            path: r.localPath,
+            path: r.fullPath,  // Use fullPath (complete physical path) instead of localPath (just name slug)
             branch: r.branch || 'main',
             clean: true,
             source: 'cloned' as const
           }))
       : []
 
-    // 去重：远端项目 localPath 可能和本地项目 path 重复
-    const localPaths = new Set(local.map(p => p.path))
-    const dedupedRemote = cloned.filter(p => !localPaths.has(p.path))
-    projects.value = [...local, ...dedupedRemote]
+    // Dedup by project name (not path), prioritizing remote projects (correct KG path)
+    const clonedNames = new Set(cloned.map(p => p.name))
+    const dedupedLocal = local.filter(p => !clonedNames.has(p.name))
+    projects.value = [...cloned, ...dedupedLocal]
   } catch (error) {
     const msg = error instanceof Error ? error.message : '扫描项目失败'
     ElMessage.warning(`未能加载项目列表：${msg}`)

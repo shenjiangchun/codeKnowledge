@@ -57,17 +57,18 @@ async function fetchProjects() {
       : []
     const cloned = remoteResult.status === 'fulfilled' && Array.isArray(remoteResult.value)
       ? (remoteResult.value as any[])
-          .filter((r: any) => r.cloneStatus === 'CLONED' && r.localPath)
+          .filter((r: any) => r.cloneStatus === 'CLONED' && r.fullPath)
           .map((r: any) => ({
             name: r.name,
-            path: r.localPath,
+            path: r.fullPath,  // Use fullPath (complete physical path) instead of localPath (just name slug)
             source: 'remote'
           }))
       : []
 
-    const localPaths = new Set(local.map(p => p.path))
-    const dedupedRemote = cloned.filter(p => !localPaths.has(p.path))
-    projects.value = [...local, ...dedupedRemote]
+    // Dedup by project name, prioritizing remote projects (correct KG path)
+    const clonedNames = new Set(cloned.map(p => p.name))
+    const dedupedLocal = local.filter(p => !clonedNames.has(p.name))
+    projects.value = [...cloned, ...dedupedLocal]
   } catch {
     ElMessage.error('获取项目列表失败')
   } finally {

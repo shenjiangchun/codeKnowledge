@@ -4,7 +4,8 @@ export interface RemoteProject {
   gitUrl: string
   username: string
   branch: string
-  localPath: string
+  localPath: string  // Project name slug (e.g., "activity-management-service")
+  fullPath: string   // Complete physical path where project is cloned (e.g., "D:/codeknowledge/remote-repos/activity-management-service")
   cloneStatus: 'PENDING' | 'CLONING' | 'CLONED' | 'FAILED'
   cloneError: string | null
   lastSyncAt: number | null
