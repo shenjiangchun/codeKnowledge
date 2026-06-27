@@ -6,6 +6,9 @@ import com.huawei.hisi.ram.phase2v2.Phase2V2Orchestrator;
 import com.huawei.hisi.ram.phase2v2.model.Phase2V2Report;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
 import com.huawei.hisi.ram.service.SessionMappingService;
+import jakarta.annotation.PreDestroy;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -35,9 +38,24 @@ public class RamPhase2V2Controller {
         return t;
     });
 
+    @PreDestroy
+    public void shutdownExecutor() {
+        log.info("[Phase2V2] Shutting down async executor");
+        asyncExecutor.shutdown();
+        try {
+            if (!asyncExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                asyncExecutor.shutdownNow();
+                log.warn("[Phase2V2] Executor forced shutdown");
+            }
+        } catch (InterruptedException e) {
+            asyncExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
+
     public record Phase2V2StartRequest(
-        String sessionId,   // Phase1 session ID
-        String question     // User's follow-up question
+        @NotBlank(message = "sessionId is required") String sessionId,
+        @NotBlank(message = "question is required") String question
     ) {}
 
     public record Phase2V2StartResponse(
@@ -64,16 +82,9 @@ public class RamPhase2V2Controller {
      */
     @PostMapping("/start")
     public ApiResponse<Phase2V2StartResponse> startV2Analysis(
-            @RequestBody Phase2V2StartRequest request) {
+            @RequestBody @Valid Phase2V2StartRequest request) {
 
         log.info("[Phase2V2] POST /start request={}", request);
-
-        if (request == null || request.sessionId() == null || request.sessionId().isBlank()) {
-            return ApiResponse.error(400, "sessionId (Phase1) is required");
-        }
-        if (request.question() == null || request.question().isBlank()) {
-            return ApiResponse.error(400, "question is required");
-        }
 
         // Resolve parent session to get projectPath
         Long backendId = sessionMappingService.resolveBackendId(request.sessionId());
