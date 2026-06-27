@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "Ali-glm-5-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-06-27T00:59:55.982Z",
+  "lastUpdated": "2026-06-27T01:38:31.841Z",
   "stats": {
-    "totalOperations": 1403,
-    "totalFilesEdited": 607,
-    "totalAiLines": 41352,
+    "totalOperations": 1406,
+    "totalFilesEdited": 609,
+    "totalAiLines": 41607,
     "totalAiLinesDeleted": 5333,
-    "totalCommits": 103
+    "totalCommits": 104
   },
   "pendingFiles": [
     {
@@ -1138,46 +1138,19 @@
       "lastModified": "2026-06-23T01:13:14.357Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/phase2v2/model/ChainComplexity.java",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/test/java/com/huawei/hisi/ram/phase2v2/DynamicToolRegistryTest.java",
       "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-06-27T00:59:49.132Z",
-      "lastModified": "2026-06-27T00:59:49.132Z"
+      "operations": 2,
+      "timestamp": "2026-06-27T01:22:45.033Z",
+      "lastModified": "2026-06-27T01:38:31.840Z",
+      "lastTool": "Edit"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/phase2v2/model/ChainContext.java",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/phase2v2/DynamicToolRegistry.java",
       "tool": "Write",
       "operations": 1,
-      "timestamp": "2026-06-27T00:59:50.510Z",
-      "lastModified": "2026-06-27T00:59:50.510Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/phase2v2/model/ChainReport.java",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-06-27T00:59:51.882Z",
-      "lastModified": "2026-06-27T00:59:51.882Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/phase2v2/model/SummaryLayer.java",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-06-27T00:59:53.273Z",
-      "lastModified": "2026-06-27T00:59:53.273Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/phase2v2/model/DetailLayer.java",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-06-27T00:59:54.632Z",
-      "lastModified": "2026-06-27T00:59:54.632Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/phase2v2/model/Phase2V2Report.java",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-06-27T00:59:55.982Z",
-      "lastModified": "2026-06-27T00:59:55.982Z"
+      "timestamp": "2026-06-27T01:29:02.916Z",
+      "lastModified": "2026-06-27T01:29:02.916Z"
     }
   ]
 }
