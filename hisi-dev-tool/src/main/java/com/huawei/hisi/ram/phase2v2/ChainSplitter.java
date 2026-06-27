@@ -69,7 +69,7 @@ public class ChainSplitter {
             contexts.add(context);
         }
 
-        return contexts;
+        return List.copyOf(contexts);
     }
 
     /**
