@@ -131,10 +131,12 @@ public class RamPhase2V2Controller {
                 Phase2V2Report report = orchestrator.orchestrate(
                         request.sessionId(), request.question(), projectPath);
 
-                // Store report
-                reportStore.put(v2SessionId, report);
+                // Store report with final status (orchestrator may return skeleton with "RUNNING")
+                Phase2V2Report finalReport = new Phase2V2Report(
+                    report.summaryLayer(), report.detailLayer(), "DONE", report.question());
+                reportStore.put(v2SessionId, finalReport);
                 stateStore.put(v2SessionId, new V2ExecutionState(
-                    report.status(), 3, 3, "done", System.currentTimeMillis()));
+                    "DONE", 3, 3, "done", System.currentTimeMillis()));
 
                 log.info("[Phase2V2] Completed for v2SessionId={}, status={}",
                         v2SessionId, report.status());
