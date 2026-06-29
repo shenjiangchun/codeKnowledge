@@ -11,15 +11,21 @@
   "chatTabs": {
     "tabs": [
       {
-        "name": "拉取最新代码",
+        "name": "新建对话",
         "projectPath": "C:\\Users\\47583\\projects\\hisi_dev_tool v5.0",
-        "sessionId": "af2be6a5-0943-445a-aa1b-ad2648e3d326",
-        "agentProvider": "claude",
-        "providerSessionIds": {
-          "claude": "af2be6a5-0943-445a-aa1b-ad2648e3d326"
-        }
+        "sessionId": null
+      },
+      {
+        "name": "重启后依然一直转，你自己启动后端自己测试吧，魔方前端调用看看到底是什么问题",
+        "projectPath": "C:\\Users\\47583\\projects\\hisi_dev_tool v5.0",
+        "sessionId": "98c73b34-1175-4308-b601-8f3baffb7c93"
+      },
+      {
+        "name": "目前我要参与AI4Coding获奖案例深度解析与实战经验分享培训，我获奖项目就是当前目录内项目，请你帮我刷新材...",
+        "projectPath": "C:\\Users\\47583\\projects\\hisi_dev_tool v5.0",
+        "sessionId": "a6969100-a509-4b9d-ba9d-def43d9281f0"
       }
     ],
-    "activeIndex": 0
+    "activeIndex": 1
   }
 }

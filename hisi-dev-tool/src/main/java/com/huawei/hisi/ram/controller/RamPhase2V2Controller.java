@@ -14,7 +14,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -37,6 +39,18 @@ public class RamPhase2V2Controller {
         t.setDaemon(true);
         return t;
     });
+
+    // In-memory storage for V2 reports (TODO: migrate to AgentEvent checkpoint)
+    private final Map<String, Phase2V2Report> reportStore = new ConcurrentHashMap<>();
+    private final Map<String, V2ExecutionState> stateStore = new ConcurrentHashMap<>();
+
+    private record V2ExecutionState(
+        String status,
+        int chainsTotal,
+        int chainsCompleted,
+        String currentChain,
+        long startTime
+    ) {}
 
     @PreDestroy
     public void shutdownExecutor() {
@@ -106,6 +120,10 @@ public class RamPhase2V2Controller {
         // Generate new session UUID
         String v2SessionId = java.util.UUID.randomUUID().toString();
 
+        // Initialize execution state
+        stateStore.put(v2SessionId, new V2ExecutionState(
+            "RUNNING", 3, 0, "init", System.currentTimeMillis()));
+
         // Async execution with 5-minute timeout
         CompletableFuture.runAsync(() -> {
             try {
@@ -113,13 +131,18 @@ public class RamPhase2V2Controller {
                 Phase2V2Report report = orchestrator.orchestrate(
                         request.sessionId(), request.question(), projectPath);
 
-                // TODO: Store report in AgentEvent checkpoint
+                // Store report
+                reportStore.put(v2SessionId, report);
+                stateStore.put(v2SessionId, new V2ExecutionState(
+                    report.status(), 3, 3, "done", System.currentTimeMillis()));
 
                 log.info("[Phase2V2] Completed for v2SessionId={}, status={}",
                         v2SessionId, report.status());
             } catch (Exception e) {
                 log.error("[Phase2V2] Failed for v2SessionId={}: {}",
                         v2SessionId, e.getMessage(), e);
+                stateStore.put(v2SessionId, new V2ExecutionState(
+                    "FAILED", 3, 0, "error", System.currentTimeMillis()));
             }
         }, asyncExecutor)
         .orTimeout(5, TimeUnit.MINUTES);
@@ -137,11 +160,18 @@ public class RamPhase2V2Controller {
      */
     @GetMapping("/{sid}/status")
     public ApiResponse<Phase2V2StatusResponse> getStatus(@PathVariable("sid") String sessionId) {
-        // TODO: 实现状态查询
+        V2ExecutionState state = stateStore.get(sessionId);
+        if (state == null) {
+            return ApiResponse.error(404, "session not found: " + sessionId);
+        }
+
+        int elapsed = (int) ((System.currentTimeMillis() - state.startTime()) / 1000);
+        int estimatedRemaining = Math.max(0, 180 - elapsed); // 3 min estimate
+
         return ApiResponse.success(new Phase2V2StatusResponse(
-                "RUNNING",
-                new Progress(3, 1, "chain-xxx", 60)
-        ));
+                state.status(),
+                new Progress(state.chainsTotal(), state.chainsCompleted(),
+                    state.currentChain(), estimatedRemaining)));
     }
 
     /**
@@ -150,8 +180,23 @@ public class RamPhase2V2Controller {
      */
     @GetMapping("/{sid}/report")
     public ApiResponse<Phase2V2Report> getReport(@PathVariable("sid") String sessionId) {
-        // TODO: 实现报告查询
-        return ApiResponse.error(404, "Report not ready yet");
+        V2ExecutionState state = stateStore.get(sessionId);
+        if (state == null) {
+            return ApiResponse.error(404, "session not found: " + sessionId);
+        }
+
+        Phase2V2Report report = reportStore.get(sessionId);
+        if (report == null) {
+            // Report not yet available - return empty report with status
+            return ApiResponse.success(new Phase2V2Report(
+                null, // summaryLayer
+                null, // detailLayer
+                state.status(),
+                null  // question
+            ));
+        }
+
+        return ApiResponse.success(report);
     }
 
     @SuppressWarnings("unchecked")

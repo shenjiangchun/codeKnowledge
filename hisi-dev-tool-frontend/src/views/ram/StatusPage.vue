@@ -12,7 +12,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { renderMarkdown } from '@/utils/markdown'
-import { getStatusReport, startPhase2Analysis } from '@/api/ram'
+import { getStatusReport, startPhase2V2Analysis } from '@/api/ram'
 import { useRamSession } from '@/composables/useRamSession'
 
 const route = useRoute()
@@ -259,13 +259,13 @@ async function onStartPhase2(): Promise<void> {
 
   phase2Submitting.value = true
   try {
-    const resp = await startPhase2Analysis({
+    const resp = await startPhase2V2Analysis({
       sessionId: sid.value,
       question: phase2Question.value.trim()
     })
-    ElMessage.success('已启动精确分析')
+    ElMessage.success('已启动精确分析（V2多Agent编排）')
     showPhase2Dialog.value = false
-    await router.push({ name: 'RamPhase2', params: { sid: resp.phase2SessionId } })
+    await router.push({ name: 'RamPhase2', params: { sid: resp.sessionId } })
   } catch (e) {
     const msg = e instanceof Error ? e.message : '启动精确分析失败'
     ElMessage.error(msg)

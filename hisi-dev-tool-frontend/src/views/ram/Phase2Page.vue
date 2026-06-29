@@ -12,7 +12,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { renderMarkdown } from '@/utils/markdown'
-import { getPhase2Report } from '@/api/ram'
+import { getPhase2V2Report } from '@/api/ram'
 import { useRamSession } from '@/composables/useRamSession'
 
 const route = useRoute()
@@ -126,9 +126,13 @@ async function fetchReportFallback(): Promise<void> {
     return
   }
   try {
-    const resp = await getPhase2Report(sid.value)
-    if (resp.report && Object.keys(resp.report).length > 0) {
-      report.value = resp.report
+    const resp = await getPhase2V2Report(sid.value)
+    // V2 returns layered report: summaryLayer + detailLayer
+    if (resp.summaryLayer || resp.detailLayer) {
+      report.value = {
+        ...resp.summaryLayer,
+        detailLayer: resp.detailLayer
+      }
     }
 
     if (resp.status === 'DONE' || resp.status === 'FAILED') {
@@ -139,10 +143,6 @@ async function fetchReportFallback(): Promise<void> {
     if (resp.status === 'FAILED') {
       error.value = '精确分析执行失败'
       ElMessage.error('精确分析失败，请查看错误信息')
-    }
-
-    if (resp.report?.['success'] === false) {
-      error.value = String(resp.report?.['message'] || '数据生成失败')
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : '获取报告失败'
@@ -177,11 +177,15 @@ async function initSession(id: string): Promise<void> {
   report.value = null
   processedSeq = 0
 
-  // Step 1: REST authoritative — load report from REST API
+  // Step 1: REST authoritative — load report from REST API (V2)
   try {
-    const resp = await getPhase2Report(id)
-    if (resp.report && Object.keys(resp.report).length > 0) {
-      report.value = resp.report
+    const resp = await getPhase2V2Report(id)
+    // V2 returns layered report: summaryLayer + detailLayer
+    if (resp.summaryLayer || resp.detailLayer) {
+      report.value = {
+        ...resp.summaryLayer,
+        detailLayer: resp.detailLayer
+      }
     }
     if (resp.status === 'DONE' || resp.status === 'FAILED') {
       loading.value = false
@@ -203,9 +207,12 @@ async function initSession(id: string): Promise<void> {
   // Step 3: After rejoin, if report is still empty, try REST again
   if (!report.value || Object.keys(report.value).length === 0) {
     try {
-      const resp = await getPhase2Report(id)
-      if (resp.report && Object.keys(resp.report).length > 0) {
-        report.value = resp.report
+      const resp = await getPhase2V2Report(id)
+      if (resp.summaryLayer || resp.detailLayer) {
+        report.value = {
+          ...resp.summaryLayer,
+          detailLayer: resp.detailLayer
+        }
         loading.value = false
       }
     } catch { /* non-critical */ }

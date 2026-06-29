@@ -4,5 +4,7 @@
     <mapping directory="" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/hisi-mcp-server" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/remote-repos/nl2sql" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test-projects/java-spring-test" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test-projects/python-fastapi-test" vcs="Git" />
   </component>
 </project>

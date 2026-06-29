@@ -17,8 +17,7 @@ const detectModel = () => {
   const envKey = tier ? tierMap[tier] : null;
   return (envKey && process.env[envKey]) || process.env.ANTHROPIC_MODEL || process.env.ANTHROPIC_DEFAULT_SONNET_MODEL || 'claude-code';
 };
-const getGitUser = (cwd) => { try { const n = require('child_process').execSync('git config user.name', { encoding: 'utf8', timeout: 3000, stdio: ['pipe','pipe','pipe'], cwd }).trim(); if (n) return n; } catch {} return os.userInfo().username; };
-const sessionRelPath = `ai-sessions/${sanitize(getGitUser(projectRoot))}-ai-session-${sanitize(os.hostname())}.json`;
+const sessionRelPath = `ai-sessions/${sanitize(os.userInfo().username)}-ai-session-${sanitize(os.hostname())}.json`;
 const sessionFile = path.join(projectRoot, sessionRelPath);
 const stageSession = () => { try { if (fs.existsSync(sessionFile)) execSync(`git add \"${sessionRelPath}\"`, { cwd: projectRoot, stdio: 'pipe' }); } catch {} };
 let commitMsg = '';
@@ -44,45 +43,20 @@ try {
     if (!Number.isNaN(del)) { totalLinesDeleted += del; if (aiMatchedFiles.some((sf) => isMatch(sf, fPath))) aiLinesDeleted += del; }
   }
 } catch { aiLinesAdded = 0; aiLinesDeleted = 0; }
-const fallbackModel = String(detectModel()).replace(/-cc$/, '');
-const pendingObjMap = new Map();
-for (const f of (session?.pendingFiles || session?.files || [])) {
-  const p = (f.path || '').replace(/\\/g, '/');
-  if (p) pendingObjMap.set(p, f);
-}
-const toolCounter = {};
-for (const sf of aiMatchedFiles) {
-  let entry = pendingObjMap.get(sf);
-  if (!entry) {
-    for (const [p, e] of pendingObjMap.entries()) { if (isMatch(p, sf)) { entry = e; break; } }
-  }
-  const aiTool = (entry && entry.aiTool) || 'claude-code';
-  const model = String((entry && entry.model) || fallbackModel).replace(/-cc$/, '');
-  const key = aiTool + '|' + model;
-  toolCounter[key] = (toolCounter[key] || 0) + 1;
-}
-let dominantAiTool = 'claude-code'; let dominantModel = fallbackModel; let dominantCount = -1;
-for (const [key, count] of Object.entries(toolCounter)) {
-  if (count > dominantCount) {
-    dominantCount = count;
-    const sep = key.indexOf('|');
-    dominantAiTool = key.slice(0, sep);
-    dominantModel = key.slice(sep + 1);
-  }
-}
+const model = String(detectModel()).replace(/-cc$/, '');
 const shortList = aiMatchedFiles.slice(0, 5).map((f) => { const p = f.split('/'); return p.length > 2 ? p.slice(-2).join('/') : f; }).join(', ');
 const extra = aiMatchedFiles.length > 5 ? ` (+${aiMatchedFiles.length - 5} more)` : '';
 const trailers = [
   'AI-Generated: true',
-  `AI-Tool: ${dominantAiTool}`,
-  `AI-Model: ${dominantModel}`,
+  'AI-Tool: claude-code',
+  `AI-Model: ${model}`,
   `AI-Lines: ${aiLinesAdded}`,
   `AI-Lines-Deleted: ${aiLinesDeleted}`,
   `AI-Total-Lines: ${totalLinesAdded}`,
   `AI-Total-Lines-Deleted: ${totalLinesDeleted}`,
   `AI-Files: ${aiMatchedFiles.length}`,
   `AI-File-List: ${shortList}${extra}`,
-  `AI-Developer: ${sanitize(getGitUser(projectRoot))}`
+  `AI-Developer: ${sanitize(os.userInfo().username)}@${sanitize(os.hostname())}`,
 ].join('\n');
 try { fs.writeFileSync(commitMsgFile, commitMsg.trimEnd() + '\n\n' + trailers + '\n', 'utf8'); } catch {}
 try {

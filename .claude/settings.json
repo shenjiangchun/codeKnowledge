@@ -35,6 +35,20 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/skill-forced-eval.js"
+          }
+        ]
+      }
     ]
-  }
+  },
+  "hasCompletedOnboarding": true,
+  "skipDangerousModePermissionPrompt": true,
+  "permissions": {}
 }

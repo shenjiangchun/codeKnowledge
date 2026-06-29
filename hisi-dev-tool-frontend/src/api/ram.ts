@@ -190,6 +190,45 @@ export function getPhase2Report(sessionId: string): Promise<Phase2ReportResponse
   return request.get(`/ram/status/phase2/${sessionId}/report`)
 }
 
+// ──────────────── Phase2 V2 Multi-Agent Orchestration ────────────────
+
+export interface Phase2V2StartResponse {
+  sessionId: string
+  status: string
+  estimatedChains: number
+}
+
+export interface Phase2V2StatusResponse {
+  status: string
+  progress: {
+    chainsTotal: number
+    chainsCompleted: number
+    currentChain: string
+    estimatedTimeRemaining: number
+  }
+}
+
+export interface Phase2V2ReportResponse {
+  status: string
+  summaryLayer: Record<string, unknown>
+  detailLayer: Record<string, unknown>
+}
+
+/** Start Phase2 V2 multi-agent orchestration analysis. */
+export function startPhase2V2Analysis(payload: StartPhase2Payload): Promise<Phase2V2StartResponse> {
+  return request.post('/ram/status/phase2/v2/start', payload)
+}
+
+/** Get Phase2 V2 execution status. */
+export function getPhase2V2Status(sessionId: string): Promise<Phase2V2StatusResponse> {
+  return request.get(`/ram/status/phase2/v2/${sessionId}/status`)
+}
+
+/** Get Phase2 V2 layered report. */
+export function getPhase2V2Report(sessionId: string): Promise<Phase2V2ReportResponse> {
+  return request.get(`/ram/status/phase2/v2/${sessionId}/report`)
+}
+
 // ──────────────── Session Export ────────────────
 
 /** Export RAM session as Markdown file. */

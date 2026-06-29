@@ -87,7 +87,8 @@
       "mcp__hisi-mcp-server__kg_entry_points",
       "mcp__hisi-mcp-server__kg_callers",
       "mcp__hisi-mcp-server__kg_callees",
-      "mcp__hisi-mcp-server__kg_method_by_class"
+      "mcp__hisi-mcp-server__kg_method_by_class",
+      "Bash(pnpm install *)"
     ]
   },
   "enableAllProjectMcpServers": true,
