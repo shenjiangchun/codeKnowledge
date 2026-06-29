@@ -80,6 +80,9 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
             log.error("[ClaudeAnalyzeNode] Claude 分析失败: {}", e.getMessage());
             output.put("rootCauseAnalysis", "分析失败: " + e.getMessage());
             output.put("fixSuggestions", Collections.emptyList());
+            output.put("causalChain", Collections.emptyList());
+            output.put("multiFactorAnalysis", Map.of());
+            output.put("timeline", Collections.emptyList());
             output.put("analysisError", e.getMessage());
         }
 
@@ -105,7 +108,7 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
         }
 
         output.put("rootCauseAnalysis", analysis.toString());
-        output.put("fixSuggestions", Collections.singletonList(Map.of("suggestion", "请手动分析代码并检查错误位置", "priority", "medium")));
+        output.put("fixSuggestions", Collections.singletonList(Map.of("suggestion", "请手动分析代码并检查错误位置", "priority", "P2")));
         output.put("analysisConfidence", "low");
 
         return output;
