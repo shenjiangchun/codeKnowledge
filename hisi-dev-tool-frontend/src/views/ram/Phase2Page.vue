@@ -1,17 +1,16 @@
 <script setup lang="ts">
 /**
- * Phase2Page — precise location analysis report display.
+ * Phase2Page — V2 multi-agent orchestration report display.
  *
- * Uses REST-first + SSE incremental pattern:
- * 1. Load report from REST API (authoritative source)
- * 2. If session still running, open SSE for live CHECKPOINT updates
- * 3. Monitor 'phase2_analysis' CHECKPOINT events for report payload
+ * REST-first pattern:
+ * 1. Load report from V2 REST API (authoritative source)
+ * 2. If session still running, poll REST API until report is available
+ * 3. Render SummaryLayer + DetailLayer structured report
  */
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
-import { renderMarkdown } from '@/utils/markdown'
 import { getPhase2V2Report } from '@/api/ram'
 import { useRamSession } from '@/composables/useRamSession'
 
@@ -28,53 +27,56 @@ const fallbackPollTimer = ref<number | null>(null)
 
 // Derive status from session status and report
 const status = computed(() => {
+  // V2 report has its own status field
+  if (report.value?.status) {
+    return report.value.status as string
+  }
   const s = session.status.value
   if (s === 'completed') return 'DONE'
   if (s === 'error') return 'FAILED'
   if (s === 'aborted') return 'FAILED'
-  if (report.value && report.value['success'] !== false) return 'DONE'
-  if (report.value?.['success'] === false) return 'FAILED'
   return 'RUNNING'
 })
 
 const isRunning = computed(() => loading.value || status.value === 'RUNNING')
-const isSuccess = computed(() => status.value === 'DONE' && report.value?.['success'] !== false)
-const isFailed = computed(() => status.value === 'FAILED' || (report.value?.['success'] === false && status.value !== 'RUNNING'))
+const isSuccess = computed(() => status.value === 'DONE')
+const isFailed = computed(() => status.value === 'FAILED')
 
-const markdownReport = computed(() => {
-  const md = report.value?.['markdown_report']
-  return typeof md === 'string' ? md : null
+// ── V2 SummaryLayer computed ──
+const domainOverview = computed(() => {
+  const val = report.value?.summaryLayer?.domainOverview
+  return typeof val === 'string' ? val : null
 })
 
-const analysisSummary = computed(() => {
-  const summary = report.value?.['analysis_summary']
-  return typeof summary === 'string' ? summary : null
+const overallFlowDiagramSvg = computed(() => {
+  const val = report.value?.summaryLayer?.overallFlowDiagramSvg
+  return typeof val === 'string' ? val : null
 })
 
-const coreMethods = computed(() => {
-  const methods = report.value?.['core_methods']
-  return Array.isArray(methods) ? methods : []
+const keyFindings = computed(() => {
+  const val = report.value?.summaryLayer?.keyFindings
+  return Array.isArray(val) ? val : []
 })
 
-const upstreamChains = computed(() => {
-  const chains = report.value?.['upstream_chains']
-  return Array.isArray(chains) ? chains : []
+const crossChainImpacts = computed(() => {
+  const val = report.value?.summaryLayer?.crossChainImpacts
+  return Array.isArray(val) ? val : []
 })
 
-const downstreamChains = computed(() => {
-  const chains = report.value?.['downstream_chains']
-  return Array.isArray(chains) ? chains : []
+const overallRecommendations = computed(() => {
+  const val = report.value?.summaryLayer?.overallRecommendations
+  return Array.isArray(val) ? val : []
 })
 
-const rootEntries = computed(() => {
-  const entries = report.value?.['root_entries']
-  return Array.isArray(entries) ? entries : []
+// ── V2 DetailLayer computed ──
+const chains = computed(() => {
+  const val = report.value?.detailLayer?.chains
+  return Array.isArray(val) ? val : []
 })
 
-const bridgePoints = computed(() => {
-  const bridges = report.value?.['bridge_points']
-  return Array.isArray(bridges) ? bridges : []
-})
+const chainCount = computed(() => report.value?.detailLayer?.chainCount ?? 0)
+const totalMethodsAnalyzed = computed(() => report.value?.detailLayer?.totalMethodsAnalyzed ?? 0)
+const totalCodeSnippets = computed(() => report.value?.detailLayer?.totalCodeSnippets ?? 0)
 
 // Track processed seq for SSE event dedup
 let processedSeq = 0
@@ -127,12 +129,8 @@ async function fetchReportFallback(): Promise<void> {
   }
   try {
     const resp = await getPhase2V2Report(sid.value)
-    // V2 returns layered report: summaryLayer + detailLayer
     if (resp.summaryLayer || resp.detailLayer) {
-      report.value = {
-        ...resp.summaryLayer,
-        detailLayer: resp.detailLayer
-      }
+      report.value = resp as unknown as Record<string, unknown>
     }
 
     if (resp.status === 'DONE' || resp.status === 'FAILED') {
@@ -180,12 +178,8 @@ async function initSession(id: string): Promise<void> {
   // Step 1: REST authoritative — load report from REST API (V2)
   try {
     const resp = await getPhase2V2Report(id)
-    // V2 returns layered report: summaryLayer + detailLayer
     if (resp.summaryLayer || resp.detailLayer) {
-      report.value = {
-        ...resp.summaryLayer,
-        detailLayer: resp.detailLayer
-      }
+      report.value = resp as unknown as Record<string, unknown>
     }
     if (resp.status === 'DONE' || resp.status === 'FAILED') {
       loading.value = false
@@ -209,10 +203,7 @@ async function initSession(id: string): Promise<void> {
     try {
       const resp = await getPhase2V2Report(id)
       if (resp.summaryLayer || resp.detailLayer) {
-        report.value = {
-          ...resp.summaryLayer,
-          detailLayer: resp.detailLayer
-        }
+        report.value = resp as unknown as Record<string, unknown>
         loading.value = false
       }
     } catch { /* non-critical */ }
@@ -251,7 +242,7 @@ function goBack(): void {
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>精确位置分析报告</span>
+          <span>Phase2 V2 多Agent协作分析报告</span>
           <div class="header-actions">
             <el-tag :type="isSuccess ? 'success' : isFailed ? 'danger' : 'warning'">
               {{ isSuccess ? '已完成' : isFailed ? '失败' : '运行中' }}
@@ -266,8 +257,8 @@ function goBack(): void {
         <el-icon class="is-loading" :size="32">
           <Loading />
         </el-icon>
-        <span class="loading-text">正在执行精确位置分析（预计耗时1-3分钟）...</span>
-        <span class="loading-hint">正在收集KG深度数据并生成分析报告</span>
+        <span class="loading-text">正在执行V2多Agent协作分析（预计耗时2-5分钟）...</span>
+        <span class="loading-hint">ChainSplitter 拆分链路 → ChainAnalysisAgent 并行分析 → ResultMerger 合并报告</span>
       </div>
 
       <!-- Failed: error message -->
@@ -281,87 +272,86 @@ function goBack(): void {
 
       <!-- Success: show report -->
       <div v-else-if="report && isSuccess" class="report-container">
-        <div v-if="markdownReport" class="markdown-section">
-          <div class="markdown-content" v-html="renderMarkdown(markdownReport)"></div>
-        </div>
+        <!-- V2 分层报告 -->
 
-        <!-- Fallback: segmented display -->
-        <div v-else>
-          <el-collapse>
-            <el-collapse-item title="分析摘要" name="summary">
-              <div v-if="analysisSummary" class="section-content">
-                {{ analysisSummary }}
-              </div>
-              <div v-else class="empty-hint">无数据</div>
-            </el-collapse-item>
+        <!-- SummaryLayer: 领域概览 -->
+        <el-card shadow="never" class="layer-card">
+          <template #header>
+            <span class="layer-title">第一层：领域概览</span>
+          </template>
 
-            <el-collapse-item title="核心方法" name="methods">
-              <div v-if="coreMethods.length > 0">
-                <ul>
-                  <li v-for="(m, idx) in coreMethods" :key="idx">
-                    <strong>{{ m['nodeId'] || m['summary'] }}</strong>
-                    <span v-if="m['className']" class="method-meta">
-                      {{ m['className'] }}#{{ m['methodName'] }}
-                    </span>
-                  </li>
-                </ul>
-              </div>
-              <div v-else class="empty-hint">无数据</div>
-            </el-collapse-item>
+          <!-- 领域概览描述 -->
+          <div v-if="domainOverview" class="section-content overview-text">
+            {{ domainOverview }}
+          </div>
+          <div v-else class="empty-hint">暂无领域概览</div>
 
-            <el-collapse-item title="上游调用链" name="upstream">
-              <div v-if="upstreamChains.length > 0">
-                <ul>
-                  <li v-for="(e, idx) in upstreamChains" :key="idx">
-                    {{ e['className'] }}#{{ e['methodName'] }}
-                    <el-tag size="small" type="info">{{ e['type'] }}</el-tag>
-                  </li>
-                </ul>
-              </div>
-              <div v-else class="empty-hint">无数据</div>
-            </el-collapse-item>
+          <!-- 整体流程图 -->
+          <div v-if="overallFlowDiagramSvg" class="svg-section" v-html="overallFlowDiagramSvg"></div>
 
-            <el-collapse-item title="下游调用链" name="downstream">
-              <div v-if="downstreamChains.length > 0">
-                <ul>
-                  <li v-for="(c, idx) in downstreamChains" :key="idx">
-                    {{ c['className'] }}#{{ c['methodName'] }}
-                    <span class="chain-depth">深度: {{ c['depth'] }}</span>
-                  </li>
-                </ul>
+          <!-- 关键发现 -->
+          <div v-if="keyFindings.length > 0" class="findings-section">
+            <h4>关键发现</h4>
+            <div v-for="finding in keyFindings" :key="finding.id" class="finding-item">
+              <el-tag size="small" :type="finding.type === 'CRITICAL' ? 'danger' : finding.type === 'WARNING' ? 'warning' : 'info'">
+                {{ finding.type }}
+              </el-tag>
+              <span class="finding-desc">{{ finding.description }}</span>
+              <div v-if="finding.chains?.length" class="finding-chains">
+                <el-tag v-for="c in finding.chains" :key="c" size="small" type="info" class="chain-tag">{{ c }}</el-tag>
               </div>
-              <div v-else class="empty-hint">无数据</div>
-            </el-collapse-item>
+            </div>
+          </div>
 
-            <el-collapse-item title="入口点来源" name="entries">
-              <div v-if="rootEntries.length > 0">
-                <ul>
-                  <li v-for="(e, idx) in rootEntries" :key="idx">
-                    <el-tag size="small" :type="e['type'] === 'CONTROLLER' ? 'primary' : e['type'] === 'MQ_LISTENER' ? 'warning' : 'info'">
-                      {{ e['type'] }}
-                    </el-tag>
-                    {{ e['className'] }}#{{ e['methodName'] }}
-                  </li>
-                </ul>
-              </div>
-              <div v-else class="empty-hint">无数据</div>
-            </el-collapse-item>
+          <!-- 跨链路影响 -->
+          <div v-if="crossChainImpacts.length > 0" class="impacts-section">
+            <h4>跨链路影响分析</h4>
+            <div v-for="(impact, idx) in crossChainImpacts" :key="idx" class="impact-item">
+              <span class="impact-from">{{ impact.fromChain }}</span>
+              <el-icon><span>→</span></el-icon>
+              <span class="impact-to">{{ impact.toChain }}</span>
+              <el-tag size="small" type="warning">{{ impact.relation }}</el-tag>
+              <span class="impact-desc">{{ impact.description }}</span>
+            </div>
+          </div>
 
-            <el-collapse-item title="桥接点（跨服务调用）" name="bridges">
-              <div v-if="bridgePoints.length > 0">
-                <ul>
-                  <li v-for="(b, idx) in bridgePoints" :key="idx">
-                    <el-tag size="small" :type="b['bridgeType'] === 'FEIGN' ? 'success' : b['bridgeType'] === 'MQ' ? 'warning' : 'info'">
-                      {{ b['bridgeType'] }}
-                    </el-tag>
-                    {{ b['sourceNode'] }} → {{ b['targetNode'] }}
-                  </li>
-                </ul>
+          <!-- 整体建议 -->
+          <div v-if="overallRecommendations.length > 0" class="recommendations-section">
+            <h4>整体建议</h4>
+            <ol>
+              <li v-for="(rec, idx) in overallRecommendations" :key="idx">{{ rec }}</li>
+            </ol>
+          </div>
+        </el-card>
+
+        <!-- DetailLayer: 链路详情 -->
+        <el-card shadow="never" class="layer-card" style="margin-top: 16px;">
+          <template #header>
+            <div class="detail-header">
+              <span class="layer-title">第二层：链路详情</span>
+              <div class="detail-stats">
+                <el-tag type="info" size="small">链路: {{ chainCount }}</el-tag>
+                <el-tag type="info" size="small">方法: {{ totalMethodsAnalyzed }}</el-tag>
+                <el-tag type="info" size="small">代码片段: {{ totalCodeSnippets }}</el-tag>
               </div>
-              <div v-else class="empty-hint">无数据</div>
-            </el-collapse-item>
-          </el-collapse>
-        </div>
+            </div>
+          </template>
+
+          <div v-if="chains.length > 0">
+            <el-collapse>
+              <el-collapse-item
+                v-for="chain in chains"
+                :key="chain.chainId"
+                :title="chain.chainName || chain.chainId"
+                :name="chain.chainId"
+              >
+                <div class="chain-summary">{{ chain.summary || '暂无摘要' }}</div>
+                <el-tag v-if="chain.expandable" size="small" type="success" class="expandable-tag">可展开详情</el-tag>
+              </el-collapse-item>
+            </el-collapse>
+          </div>
+          <div v-else class="empty-hint">暂无链路分析数据</div>
+        </el-card>
       </div>
 
       <!-- Empty -->
@@ -411,79 +401,10 @@ function goBack(): void {
 .report-container {
   padding: 16px;
 }
-.markdown-section {
-  background: #fafafa;
-  padding: 20px;
-  border-radius: 8px;
-}
-.markdown-content {
-  font-size: 14px;
-  line-height: 1.6;
-}
-.markdown-content h1,
-.markdown-content h2,
-.markdown-content h3 {
-  margin-top: 16px;
-  margin-bottom: 8px;
-}
-.markdown-content h1 {
-  font-size: 20px;
-  border-bottom: 1px solid #ebeef5;
-  padding-bottom: 8px;
-}
-.markdown-content h2 {
-  font-size: 18px;
-}
-.markdown-content h3 {
-  font-size: 16px;
-}
-.markdown-content ul,
-.markdown-content ol {
-  padding-left: 20px;
-}
-.markdown-content table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 12px 0;
-}
-.markdown-content th,
-.markdown-content td {
-  border: 1px solid #ebeef5;
-  padding: 8px 12px;
-}
-.markdown-content th {
-  background: #f5f7fa;
-}
-.markdown-content code {
-  background: #f5f7fa;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-.markdown-content pre {
-  background: #282c34;
-  color: #abb2bf;
-  padding: 16px;
-  border-radius: 8px;
-  overflow-x: auto;
-}
-.markdown-content pre code {
-  background: transparent;
-  padding: 0;
-}
 .section-content {
   padding: 12px;
   background: #f5f7fa;
   border-radius: 6px;
-}
-.method-meta {
-  color: #606266;
-  margin-left: 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-.chain-depth {
-  color: #909399;
-  margin-left: 8px;
 }
 .empty-hint {
   color: #909399;
@@ -494,5 +415,91 @@ function goBack(): void {
   text-align: center;
   padding: 40px;
   color: #909399;
+}
+/* V2 layered report styles */
+.layer-card {
+  margin-bottom: 0;
+}
+.layer-title {
+  font-weight: 600;
+  font-size: 16px;
+  color: #303133;
+}
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.detail-stats {
+  display: flex;
+  gap: 8px;
+}
+.overview-text {
+  white-space: pre-wrap;
+  line-height: 1.8;
+}
+.svg-section {
+  margin: 16px 0;
+  text-align: center;
+}
+.svg-section :deep(svg) {
+  max-width: 100%;
+  height: auto;
+}
+.findings-section,
+.impacts-section,
+.recommendations-section {
+  margin-top: 16px;
+}
+.findings-section h4,
+.impacts-section h4,
+.recommendations-section h4 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #606266;
+}
+.finding-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+.finding-desc {
+  color: #303133;
+}
+.finding-chains {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.chain-tag {
+  margin-left: 4px;
+}
+.impact-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+.impact-from,
+.impact-to {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  color: #409eff;
+}
+.impact-desc {
+  color: #606266;
+}
+.chain-summary {
+  padding: 8px 0;
+  color: #303133;
+  line-height: 1.6;
+}
+.expandable-tag {
+  margin-top: 8px;
 }
 </style>

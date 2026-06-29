@@ -1,15 +1,15 @@
 {
   "developer": "47583",
   "hostname": "laptop-c2kj599j",
-  "model": "Ali-glm-5-cc",
+  "model": "mimo-v2.5-pro-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-06-27T09:59:00.351Z",
+  "lastUpdated": "2026-06-29T07:40:19.707Z",
   "stats": {
-    "totalOperations": 1437,
-    "totalFilesEdited": 623,
-    "totalAiLines": 42672,
-    "totalAiLinesDeleted": 5347,
-    "totalCommits": 112
+    "totalOperations": 1449,
+    "totalFilesEdited": 625,
+    "totalAiLines": 42789,
+    "totalAiLinesDeleted": 5373,
+    "totalCommits": 113
   },
   "pendingFiles": [
     {
@@ -1138,34 +1138,18 @@
       "lastModified": "2026-06-23T01:13:14.357Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/api/ram.ts",
-      "tool": "Edit",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/HiSi-DevTool-AI4Coding获奖案例宣讲材料.md",
+      "tool": "Write",
       "operations": 1,
-      "timestamp": "2026-06-27T09:53:28.132Z",
-      "lastModified": "2026-06-27T09:53:28.132Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/ram/StatusPage.vue",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-06-27T09:53:46.747Z",
-      "lastModified": "2026-06-27T09:54:03.584Z",
-      "lastTool": "Edit"
+      "timestamp": "2026-06-29T02:55:50.449Z",
+      "lastModified": "2026-06-29T02:55:50.449Z"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/ram/Phase2Page.vue",
       "tool": "Edit",
-      "operations": 4,
-      "timestamp": "2026-06-27T09:54:19.057Z",
-      "lastModified": "2026-06-27T09:55:27.060Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/controller/RamPhase2V2Controller.java",
-      "tool": "Edit",
-      "operations": 5,
-      "timestamp": "2026-06-27T09:55:54.188Z",
-      "lastModified": "2026-06-27T09:59:00.351Z",
+      "operations": 11,
+      "timestamp": "2026-06-29T07:37:53.217Z",
+      "lastModified": "2026-06-29T07:40:19.707Z",
       "lastTool": "Edit"
     }
   ]
