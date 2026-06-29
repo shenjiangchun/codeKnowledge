@@ -82,6 +82,7 @@ public class ProjectOverviewNode implements DagNode {
         output.put("mode", mode);
         output.put("question", question);
         output.put("entry_points_summary", report.getOrDefault("entry_points_summary", ""));
+        output.put("entry_points", context.entryPoints);  // raw Entry list for Phase2 V2
         output.put("core_call_chains", report.getOrDefault("core_call_chains", List.of()));
         output.put("modules_analysis", report.getOrDefault("modules_analysis", ""));
         output.put("tech_stack", report.getOrDefault("tech_stack", Map.of()));

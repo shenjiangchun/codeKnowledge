@@ -98,8 +98,12 @@ public class Phase2V2Orchestrator {
                 Map<String, Object> output = (Map<String, Object>) payload.get("output");
                 if (output == null) continue;
 
-                // 提取 entryPoints
-                List<Entry> entryPoints = extractEntryPoints(output.get("entry_points_summary"));
+                // 提取 entryPoints (raw Entry list stored by Phase1)
+                List<Entry> entryPoints = extractEntryPoints(output.get("entry_points"));
+                if (entryPoints.isEmpty()) {
+                    // Fallback: try entry_points_summary (LLM text, may not parse)
+                    entryPoints = extractEntryPoints(output.get("entry_points_summary"));
+                }
 
                 // 提取 coreMethods nodeIds
                 List<String> coreMethodNodeIds = extractCoreMethodNodeIds(output.get("core_call_chains"));
