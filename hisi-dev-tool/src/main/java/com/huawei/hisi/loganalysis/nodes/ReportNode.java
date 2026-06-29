@@ -38,6 +38,11 @@ public class ReportNode implements LogAnalysisDagNode {
         String errorFingerprint = (String) input.get("errorFingerprint");
         Object rawAnalysis = input.get("rawAnalysis");
 
+        // v2: 深度分析结果
+        List<Map<String, Object>> causalChain = (List<Map<String, Object>>) input.get("causalChain");
+        Map<String, Object> multiFactorAnalysis = (Map<String, Object>) input.get("multiFactorAnalysis");
+        List<Map<String, Object>> timeline = (List<Map<String, Object>>) input.get("timeline");
+
         Map<String, Object> output = new LinkedHashMap<>(input);
 
         // Build final report
@@ -45,7 +50,7 @@ public class ReportNode implements LogAnalysisDagNode {
 
         // Metadata
         report.put("generatedAt", Instant.now().toString());
-        report.put("analysisVersion", "1.0");
+        report.put("analysisVersion", "2.0");
         report.put("errorFingerprint", errorFingerprint);
 
         // Error summary
@@ -61,7 +66,7 @@ public class ReportNode implements LogAnalysisDagNode {
         // Key stack frames
         if (keyFrames != null && !keyFrames.isEmpty()) {
             List<Map<String, Object>> framesForReport = new ArrayList<>();
-            for (Map<String, Object> frame : keyFrames.stream().limit(5).toList()) {
+            for (Map<String, Object> frame : keyFrames.stream().limit(8).toList()) {
                 Map<String, Object> frameInfo = new LinkedHashMap<>();
                 frameInfo.put("className", frame.get("simpleClassName"));
                 frameInfo.put("methodName", frame.get("methodName"));
@@ -77,6 +82,20 @@ public class ReportNode implements LogAnalysisDagNode {
         rootCauseSection.put("summary", rootCauseAnalysis);
         rootCauseSection.put("confidence", confidence != null ? confidence : "unknown");
         rootCauseSection.put("entryPointsCount", entryPoints != null ? entryPoints.size() : 0);
+
+        // v2: 因果链
+        if (causalChain != null && !causalChain.isEmpty()) {
+            rootCauseSection.put("causalChain", causalChain);
+        }
+        // v2: 多因素叠加分析
+        if (multiFactorAnalysis != null && !multiFactorAnalysis.isEmpty()) {
+            rootCauseSection.put("multiFactorAnalysis", multiFactorAnalysis);
+        }
+        // v2: 时序重建
+        if (timeline != null && !timeline.isEmpty()) {
+            rootCauseSection.put("timeline", timeline);
+        }
+
         report.put("rootCauseAnalysis", rootCauseSection);
 
         // Fix suggestions
@@ -87,6 +106,10 @@ public class ReportNode implements LogAnalysisDagNode {
                 suggestion.put("description", fix.get("suggestion"));
                 suggestion.put("priority", fix.get("priority"));
                 suggestion.put("affectedCode", fix.get("affectedCode"));
+                // v2: 预期效果
+                if (fix.get("expectedEffect") != null) {
+                    suggestion.put("expectedEffect", fix.get("expectedEffect"));
+                }
                 suggestions.add(suggestion);
             }
         }
@@ -97,9 +120,10 @@ public class ReportNode implements LogAnalysisDagNode {
             report.put("detailedAnalysis", rawAnalysis);
         }
 
-        log.info("[ReportNode] 报告生成完成: suggestions={}, frames={}, confidence={}",
+        log.info("[ReportNode] 报告生成完成: suggestions={}, frames={}, causalChain={}, confidence={}",
                 suggestions.size(),
                 keyFrames != null ? keyFrames.size() : 0,
+                causalChain != null ? causalChain.size() : 0,
                 confidence);
 
         output.put("finalReport", report);

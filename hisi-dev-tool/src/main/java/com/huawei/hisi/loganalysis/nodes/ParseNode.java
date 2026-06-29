@@ -83,8 +83,8 @@ public class ParseNode implements LogAnalysisDagNode {
         Map<String, Object> parsedError = new LinkedHashMap<>();
         parsedError.put("errorType", errorType);
         parsedError.put("rootCauseException", rootCause);
-        parsedError.put("fullMessage", truncate(message, 1000));
-        parsedError.put("stackTrace", truncate(stackTrace, 5000));
+        parsedError.put("fullMessage", truncate(message, 3000));
+        parsedError.put("stackTrace", truncate(stackTrace, 15000));
 
         output.put("parsedError", parsedError);
         output.put("keyFrames", keyFrames);
@@ -277,12 +277,12 @@ public class ParseNode implements LogAnalysisDagNode {
         List<Map<String, Object>> result = new ArrayList<>();
 
         // Default: first 3 business project frames
-        int businessLimit = 3;
+        int businessLimit = 8;
         result.addAll(layers.businessFrames().subList(0, Math.min(layers.businessFrames().size(), businessLimit)));
 
         // Deep mode: add root cause project frames
         if (deepMode && !layers.rootCauseFrames().isEmpty()) {
-            int rootCauseLimit = 5;
+            int rootCauseLimit = 8;
             result.addAll(layers.rootCauseFrames().subList(0, Math.min(layers.rootCauseFrames().size(), rootCauseLimit)));
         }
 

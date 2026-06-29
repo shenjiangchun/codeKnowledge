@@ -35,6 +35,66 @@
           <div class="markdown-content error-summary" v-html="renderMarkdown(report.errorSummary)"></div>
         </div>
 
+        <!-- 因果链 (v2) -->
+        <div v-if="report.causalChain && report.causalChain.length > 0" class="report-section">
+          <h4 class="section-title">因果链推理</h4>
+          <div class="causal-chain-container">
+            <div v-for="(step, idx) in report.causalChain" :key="idx" class="causal-chain-step">
+              <div class="step-number">{{ step.step }}</div>
+              <div class="step-content">
+                <div class="step-event">{{ step.event }}</div>
+                <div class="step-mechanism" v-if="step.mechanism">
+                  <strong>机制:</strong> {{ step.mechanism }}
+                </div>
+                <div class="step-evidence" v-if="step.evidence">
+                  <strong>证据:</strong> <code>{{ step.evidence }}</code>
+                </div>
+              </div>
+              <div v-if="idx < report.causalChain.length - 1" class="chain-arrow">→</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 多因素叠加分析 (v2) -->
+        <div v-if="report.multiFactorAnalysis && report.multiFactorAnalysis.primaryFactor" class="report-section">
+          <h4 class="section-title">多因素叠加分析</h4>
+          <div class="multi-factor-content">
+            <div class="primary-factor">
+              <strong>主要因素:</strong> {{ report.multiFactorAnalysis.primaryFactor }}
+            </div>
+            <div v-if="report.multiFactorAnalysis.cascadeEffect" class="cascade-effect">
+              <strong>级联效应:</strong> {{ report.multiFactorAnalysis.cascadeEffect }}
+            </div>
+            <div v-if="report.multiFactorAnalysis.contributingFactors?.length" class="contributing-factors">
+              <div class="sub-title">辅助因素:</div>
+              <ul>
+                <li v-for="(cf, cIdx) in report.multiFactorAnalysis.contributingFactors" :key="cIdx">
+                  {{ cf.factor }} — <em>{{ cf.interaction }}</em>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- 时序重建 (v2) -->
+        <div v-if="report.timeline && report.timeline.length > 0" class="report-section">
+          <h4 class="section-title">事故时序重建</h4>
+          <div class="timeline-container">
+            <div v-for="(phase, idx) in report.timeline" :key="idx" class="timeline-phase">
+              <div class="phase-marker">{{ phase.phase }}</div>
+              <div class="phase-content">
+                <div class="phase-event">{{ phase.event }}</div>
+                <div class="phase-duration" v-if="phase.duration">
+                  <strong>持续时间:</strong> {{ phase.duration }}
+                </div>
+                <div class="phase-evidence" v-if="phase.evidence">
+                  <strong>佐证:</strong> {{ phase.evidence }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 根本原因 -->
         <div v-if="report.rootCause" class="report-section">
           <h4 class="section-title">根本原因</h4>
@@ -297,4 +357,86 @@ onMounted(loadReport)
 .code-snippets.markdown-content p {
   color: #d4d4d4;
 }
+
+/* v2: 因果链 */
+.causal-chain-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.causal-chain-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: #ecf5ff;
+  border-radius: 6px;
+}
+.step-number {
+  min-width: 28px;
+  height: 28px;
+  line-height: 28px;
+  text-align: center;
+  background: #409eff;
+  color: #fff;
+  border-radius: 50%;
+  font-weight: 600;
+  font-size: 13px;
+}
+.step-content {
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.step-event { font-weight: 500; }
+.step-mechanism { color: #606266; margin-top: 4px; }
+.step-evidence { color: #909399; margin-top: 4px; }
+.step-evidence code { background: #f5f7fa; padding: 2px 4px; border-radius: 3px; color: #409eff; }
+.chain-arrow {
+  text-align: center;
+  font-size: 18px;
+  color: #409eff;
+  margin-left: 14px;
+}
+
+/* v2: 多因素叠加 */
+.multi-factor-content {
+  padding: 16px;
+  background: #fdf6ec;
+  border: 1px solid #faecd8;
+  border-radius: 6px;
+}
+.primary-factor { font-size: 14px; }
+.cascade-effect { margin-top: 8px; color: #e6a23c; }
+.contributing-factors { margin-top: 12px; }
+.sub-title { font-weight: 600; margin-bottom: 6px; }
+
+/* v2: 时序 */
+.timeline-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.timeline-phase {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  border-left: 2px solid #67c23a;
+  padding-left: 16px;
+  margin-left: 14px;
+}
+.phase-marker {
+  min-width: 32px;
+  font-weight: 600;
+  color: #67c23a;
+  font-size: 14px;
+}
+.phase-content {
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.phase-event { font-weight: 500; }
+.phase-duration { color: #606266; margin-top: 4px; }
+.phase-evidence { color: #909399; margin-top: 4px; }
 </style>
