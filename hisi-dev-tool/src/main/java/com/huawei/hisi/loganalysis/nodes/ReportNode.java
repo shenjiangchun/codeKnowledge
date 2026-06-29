@@ -50,8 +50,18 @@ public class ReportNode implements LogAnalysisDagNode {
 
         // Metadata
         report.put("generatedAt", Instant.now().toString());
-        report.put("analysisVersion", "2.0");
+        report.put("analysisVersion", input.getOrDefault("analysisVersion", "2.0"));
         report.put("errorFingerprint", errorFingerprint);
+
+        // v3: 模式识别结果
+        String patternType = (String) input.get("patternType");
+        String patternConfidence = (String) input.get("patternConfidence");
+        if (patternType != null) {
+            report.put("patternType", patternType);
+        }
+        if (patternConfidence != null) {
+            report.put("patternConfidence", patternConfidence);
+        }
 
         // Error summary
         Map<String, Object> errorSummary = new LinkedHashMap<>();
@@ -120,10 +130,11 @@ public class ReportNode implements LogAnalysisDagNode {
             report.put("detailedAnalysis", rawAnalysis);
         }
 
-        log.info("[ReportNode] 报告生成完成: suggestions={}, frames={}, causalChain={}, confidence={}",
+        log.info("[ReportNode] 报告生成完成: suggestions={}, frames={}, causalChain={}, pattern={}, confidence={}",
                 suggestions.size(),
                 keyFrames != null ? keyFrames.size() : 0,
                 causalChain != null ? causalChain.size() : 0,
+                patternType,
                 confidence);
 
         output.put("finalReport", report);

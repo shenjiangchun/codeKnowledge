@@ -29,6 +29,19 @@
 
         <el-divider />
 
+        <!-- 模式识别标签 (v3) -->
+        <div v-if="report.patternType && report.patternType !== 'UNKNOWN'" class="pattern-tag-bar">
+          <el-tag :type="getPatternTagType(report.patternType)" effect="dark" size="large">
+            {{ getPatternLabel(report.patternType) }}
+          </el-tag>
+          <el-tag v-if="report.patternConfidence" :type="getConfidenceType(report.patternConfidence)" effect="plain" class="confidence-tag">
+            置信度: {{ report.patternConfidence }}
+          </el-tag>
+          <el-tag v-if="report.analysisVersion" type="info" effect="plain" class="version-tag">
+            v{{ report.analysisVersion }}
+          </el-tag>
+        </div>
+
         <!-- 错误摘要 -->
         <div v-if="report.errorSummary" class="report-section">
           <h4 class="section-title">错误摘要</h4>
@@ -161,6 +174,39 @@ const goBack = () => {
   router.push('/log-analysis')
 }
 
+const getPatternLabel = (pattern: string): string => {
+  const labels: Record<string, string> = {
+    LOCK_AVALANCHE: '锁雪崩',
+    OOM_CASCADE: 'OOM 级联',
+    NPE_CHAIN: 'NPE 级联',
+    CONNECTION_EXHAUSTION: '连接池耗尽',
+    BROKEN_PIPE: '管道断裂',
+    SLOW_QUERY: '慢查询阻塞',
+    CONFIG_ERROR: '配置错误',
+    DATA_INCONSISTENCY: '数据不一致'
+  }
+  return labels[pattern] || pattern
+}
+
+const getPatternTagType = (pattern: string): string => {
+  const types: Record<string, string> = {
+    LOCK_AVALANCHE: 'danger',
+    OOM_CASCADE: 'danger',
+    NPE_CHAIN: 'warning',
+    CONNECTION_EXHAUSTION: 'warning',
+    BROKEN_PIPE: '',
+    SLOW_QUERY: 'warning',
+    CONFIG_ERROR: 'info',
+    DATA_INCONSISTENCY: 'info'
+  }
+  return types[pattern] || ''
+}
+
+const getConfidenceType = (confidence: string): string => {
+  if (confidence === 'high') return 'success'
+  if (confidence === 'medium') return 'warning'
+  return 'info'
+}
 
 const loadReport = async () => {
   loading.value = true
@@ -330,6 +376,18 @@ onMounted(loadReport)
 .error-summary.markdown-content {
   background: #fef0f0;
   border: 1px solid #fbc4c4;
+}
+
+.pattern-tag-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.confidence-tag,
+.version-tag {
+  font-size: 12px;
 }
 
 .root-cause.markdown-content {
