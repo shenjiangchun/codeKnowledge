@@ -16,8 +16,10 @@ import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -60,12 +62,21 @@ public class DiffExtractService {
                     sourceBranch, sourceId, targetBranch, targetId);
 
             RevTree sourceTree;
-            RevTree targetTree;
+            RevTree mergeBaseTree;
             try (RevWalk revWalk = new RevWalk(repository)) {
                 RevCommit sourceCommit = revWalk.parseCommit(sourceId);
                 RevCommit targetCommit = revWalk.parseCommit(targetId);
+
+                // Find merge-base (common ancestor) to diff only source's changes
+                RevCommit mergeBase = findMergeBase(repository, sourceCommit, targetCommit);
+                if (mergeBase != null) {
+                    log.info("[DiffExtract] Merge-base found: {}", mergeBase.name());
+                    mergeBaseTree = mergeBase.getTree();
+                } else {
+                    log.warn("[DiffExtract] No merge-base found, falling back to target tree");
+                    mergeBaseTree = targetCommit.getTree();
+                }
                 sourceTree = sourceCommit.getTree();
-                targetTree = targetCommit.getTree();
             }
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -77,7 +88,7 @@ public class DiffExtractService {
                 formatter.setRepository(repository);
                 formatter.setDetectRenames(true);
 
-                List<DiffEntry> entries = formatter.scan(targetTree, sourceTree);
+                List<DiffEntry> entries = formatter.scan(mergeBaseTree, sourceTree);
 
                 for (DiffEntry entry : entries) {
                     out.reset();
@@ -161,5 +172,33 @@ public class DiffExtractService {
 
         log.error("[DiffExtract] Failed to resolve branch: {}", branchName);
         throw new IllegalArgumentException("Cannot resolve branch: " + branchName);
+    }
+
+    /**
+     * Find the merge-base (common ancestor) of two commits.
+     * Walks ancestors of target first, then walks source to find first match.
+     */
+    private RevCommit findMergeBase(Repository repository, RevCommit source, RevCommit target) throws IOException {
+        // Collect all ancestors of target (including target itself)
+        Set<ObjectId> targetAncestors = new HashSet<>();
+        try (RevWalk walk = new RevWalk(repository)) {
+            walk.markStart(target);
+            RevCommit c;
+            while ((c = walk.next()) != null) {
+                targetAncestors.add(c.getId());
+            }
+        }
+
+        // Walk source ancestors; first hit in targetAncestors is the merge-base
+        try (RevWalk walk = new RevWalk(repository)) {
+            walk.markStart(source);
+            RevCommit c;
+            while ((c = walk.next()) != null) {
+                if (targetAncestors.contains(c.getId())) {
+                    return c;
+                }
+            }
+        }
+        return null;
     }
 }

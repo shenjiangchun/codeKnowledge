@@ -2,39 +2,32 @@
 /**
  * Phase2Page — V2 multi-agent orchestration report display.
  *
- * REST-first pattern:
+ * Pure REST polling pattern (V2 has its own status/report endpoints):
  * 1. Load report from V2 REST API (authoritative source)
- * 2. If session still running, poll REST API until report is available
+ * 2. If still running, poll V2 status endpoint every 3s until terminal
  * 3. Render SummaryLayer + DetailLayer structured report
  */
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
-import { getPhase2V2Report } from '@/api/ram'
-import { useRamSession } from '@/composables/useRamSession'
+import { getPhase2V2Report, getPhase2V2Status } from '@/api/ram'
 
 const route = useRoute()
 const router = useRouter()
-const session = useRamSession()
 
 const sid = computed<string>(() => String(route.params.sid ?? ''))
 
 const report = ref<Record<string, unknown> | null>(null)
 const loading = ref<boolean>(true)
 const error = ref<string | null>(null)
-const fallbackPollTimer = ref<number | null>(null)
+const pollTimer = ref<number | null>(null)
 
-// Derive status from session status and report
+// V2 report status: DONE / FAILED / RUNNING
 const status = computed(() => {
-  // V2 report has its own status field
   if (report.value?.status) {
     return report.value.status as string
   }
-  const s = session.status.value
-  if (s === 'completed') return 'DONE'
-  if (s === 'error') return 'FAILED'
-  if (s === 'aborted') return 'FAILED'
   return 'RUNNING'
 })
 
@@ -78,63 +71,18 @@ const chainCount = computed(() => report.value?.detailLayer?.chainCount ?? 0)
 const totalMethodsAnalyzed = computed(() => report.value?.detailLayer?.totalMethodsAnalyzed ?? 0)
 const totalCodeSnippets = computed(() => report.value?.detailLayer?.totalCodeSnippets ?? 0)
 
-// Track processed seq for SSE event dedup
-let processedSeq = 0
-
-/** Watch SSE events for phase2_analysis CHECKPOINT */
-watch(
-  () => session.events.value,
-  (events) => {
-    for (const evt of events) {
-      if (evt.seq <= processedSeq) continue
-      processedSeq = evt.seq
-
-      if (evt.type === 'CHECKPOINT') {
-        const nodeName = evt.payload['nodeName']
-        if (nodeName === 'phase2_analysis') {
-          const output = evt.payload['output']
-          if (output && typeof output === 'object' && !Array.isArray(output)) {
-            report.value = output as Record<string, unknown>
-            loading.value = false
-            stopFallbackPolling()
-          }
-        }
-      }
-    }
-  },
-  { deep: true }
-)
-
-/** Watch session status for completion */
-watch(
-  () => session.status.value,
-  (s) => {
-    if (s === 'completed' || s === 'error' || s === 'aborted') {
-      loading.value = false
-      stopFallbackPolling()
-    }
-    if (s === 'error') {
-      error.value = '精确分析执行失败'
-      ElMessage.error('精确分析失败，请查看错误信息')
-    }
-  }
-)
-
-/** Fallback polling when SSE fails */
-async function fetchReportFallback(): Promise<void> {
-  if (!sid.value) {
-    loading.value = false
-    error.value = '缺少会话ID参数'
-    return
-  }
+/** Poll V2 status + report until terminal */
+async function pollV2(): Promise<void> {
+  if (!sid.value) return
   try {
+    // Fetch report (includes status field)
     const resp = await getPhase2V2Report(sid.value)
     if (resp.summaryLayer || resp.detailLayer) {
       report.value = resp as unknown as Record<string, unknown>
     }
 
     if (resp.status === 'DONE' || resp.status === 'FAILED') {
-      stopFallbackPolling()
+      stopPolling()
       loading.value = false
     }
 
@@ -143,23 +91,35 @@ async function fetchReportFallback(): Promise<void> {
       ElMessage.error('精确分析失败，请查看错误信息')
     }
   } catch (e) {
-    const msg = e instanceof Error ? e.message : '获取报告失败'
-    error.value = msg
-    ElMessage.error(msg)
-    stopFallbackPolling()
-    loading.value = false
+    // If report not yet available, try status endpoint
+    try {
+      const st = await getPhase2V2Status(sid.value)
+      if (st.status === 'FAILED') {
+        stopPolling()
+        loading.value = false
+        error.value = '精确分析执行失败'
+        ElMessage.error('精确分析失败，请查看错误信息')
+      }
+      // else: still RUNNING, keep polling
+    } catch {
+      const msg = e instanceof Error ? e.message : '获取报告失败'
+      error.value = msg
+      ElMessage.error(msg)
+      stopPolling()
+      loading.value = false
+    }
   }
 }
 
-function startFallbackPolling(): void {
-  fetchReportFallback()
-  fallbackPollTimer.value = window.setInterval(fetchReportFallback, 3000)
+function startPolling(): void {
+  pollV2()
+  pollTimer.value = window.setInterval(pollV2, 3000)
 }
 
-function stopFallbackPolling(): void {
-  if (fallbackPollTimer.value != null) {
-    window.clearInterval(fallbackPollTimer.value)
-    fallbackPollTimer.value = null
+function stopPolling(): void {
+  if (pollTimer.value != null) {
+    window.clearInterval(pollTimer.value)
+    pollTimer.value = null
   }
 }
 
@@ -173,9 +133,8 @@ async function initSession(id: string): Promise<void> {
   loading.value = true
   error.value = null
   report.value = null
-  processedSeq = 0
 
-  // Step 1: REST authoritative — load report from REST API (V2)
+  // Step 1: Try to load report immediately
   try {
     const resp = await getPhase2V2Report(id)
     if (resp.summaryLayer || resp.detailLayer) {
@@ -183,42 +142,23 @@ async function initSession(id: string): Promise<void> {
     }
     if (resp.status === 'DONE' || resp.status === 'FAILED') {
       loading.value = false
-      return  // Session finished, no SSE needed
-    }
-  } catch (e) {
-    console.warn('[Phase2Page] Failed to load report via REST:', e)
-  }
-
-  // Step 2: Session still running, open SSE for live updates
-  try {
-    await session.rejoin(id, 0)
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'SSE连接失败'
-    console.warn('[Phase2Page] SSE rejoin failed, using fallback polling:', msg)
-    startFallbackPolling()
-  }
-
-  // Step 3: After rejoin, if report is still empty, try REST again
-  if (!report.value || Object.keys(report.value).length === 0) {
-    try {
-      const resp = await getPhase2V2Report(id)
-      if (resp.summaryLayer || resp.detailLayer) {
-        report.value = resp as unknown as Record<string, unknown>
-        loading.value = false
+      if (resp.status === 'FAILED') {
+        error.value = '精确分析执行失败'
       }
-    } catch { /* non-critical */ }
+      return
+    }
+  } catch {
+    // Report not ready yet, continue to polling
   }
 
-  // Step 4: If session reached terminal state, ensure loading is off
-  const finalStatus = session.status.value
-  if (finalStatus === 'completed' || finalStatus === 'error' || finalStatus === 'aborted') {
-    loading.value = false
-  }
+  // Step 2: Still running — start polling
+  startPolling()
 }
 
 // Watch sid for route param changes
 watch(sid, async (newSid, oldSid) => {
   if (newSid && newSid !== oldSid) {
+    stopPolling()
     await initSession(newSid)
   }
 })
@@ -228,8 +168,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  session.disconnect()
-  stopFallbackPolling()
+  stopPolling()
 })
 
 function goBack(): void {
