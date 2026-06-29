@@ -132,7 +132,11 @@ public class GitController {
                 } else if (mergeStatus == MergeResult.MergeStatus.FAST_FORWARD ||
                            mergeStatus == MergeResult.MergeStatus.MERGED) {
                     response.put("successful", true);
-                    response.put("newCommits", mergeResult.getMergedCommits());
+                    List<String> commitIds = new ArrayList<>();
+                    for (ObjectId oid : mergeResult.getMergedCommits()) {
+                        commitIds.add(oid.getName().substring(0, 8));
+                    }
+                    response.put("newCommits", commitIds);
                 } else if (mergeStatus == MergeResult.MergeStatus.ALREADY_UP_TO_DATE) {
                     response.put("message", "本地已是最新，无需合并");
                 }
