@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "mimo-v2.5-pro-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-06-29T11:08:52.887Z",
+  "lastUpdated": "2026-06-29T11:10:22.356Z",
   "stats": {
     "totalOperations": 1469,
     "totalFilesEdited": 635,
-    "totalAiLines": 43128,
-    "totalAiLinesDeleted": 5684,
-    "totalCommits": 118
+    "totalAiLines": 43145,
+    "totalAiLinesDeleted": 5689,
+    "totalCommits": 119
   },
   "pendingFiles": [
     {
@@ -1143,28 +1143,6 @@
       "operations": 1,
       "timestamp": "2026-06-29T02:55:50.449Z",
       "lastModified": "2026-06-29T02:55:50.449Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/controller/RamPhase2V2Controller.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-29T11:08:24.522Z",
-      "lastModified": "2026-06-29T11:08:24.522Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/phase2v2/ChainSplitter.java",
-      "tool": "Edit",
-      "operations": 3,
-      "timestamp": "2026-06-29T11:08:30.082Z",
-      "lastModified": "2026-06-29T11:08:44.448Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/phase2v2/Phase2V2Orchestrator.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-29T11:08:52.887Z",
-      "lastModified": "2026-06-29T11:08:52.887Z"
     }
   ]
 }
