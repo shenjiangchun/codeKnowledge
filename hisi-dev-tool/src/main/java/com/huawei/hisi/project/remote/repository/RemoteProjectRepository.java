@@ -150,6 +150,20 @@ public class RemoteProjectRepository {
         return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
     }
 
+    /**
+     * 根据路径查找远端项目（先精确匹配 full_path，再匹配 local_path）。
+     */
+    public Optional<RemoteProject> findByPath(String path) {
+        List<RemoteProject> results = jdbcTemplate.query(
+            "SELECT * FROM remote_project WHERE full_path = ? LIMIT 1", ROW_MAPPER, path
+        );
+        if (!results.isEmpty()) return Optional.of(results.get(0));
+        results = jdbcTemplate.query(
+            "SELECT * FROM remote_project WHERE local_path = ? LIMIT 1", ROW_MAPPER, path
+        );
+        return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
+    }
+
     public long insert(RemoteProject p) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {

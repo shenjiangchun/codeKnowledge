@@ -30,6 +30,7 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -133,6 +134,14 @@ public class RemoteProjectService {
         existing.setGroupId(groupId);
 
         repository.update(existing);
+    }
+
+    /**
+     * 根据本地路径解析项目凭据。返回 Optional.empty() 表示该路径不是远端项目。
+     */
+    public Optional<CredentialsProvider> resolveCredentialsByPath(String path) {
+        return repository.findByPath(path)
+                .map(this::getCredentialsProvider);
     }
 
     private CredentialsProvider getCredentialsProvider(RemoteProject project) {

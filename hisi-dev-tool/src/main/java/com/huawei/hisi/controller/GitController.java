@@ -1,6 +1,7 @@
 package com.huawei.hisi.controller;
 
 import com.huawei.hisi.model.ApiResponse;
+import com.huawei.hisi.project.remote.service.RemoteProjectService;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.jgit.api.Git;
@@ -12,8 +13,10 @@ import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.transport.CredentialsProvider;
 import org.eclipse.jgit.transport.FetchResult;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
@@ -29,6 +32,9 @@ import java.util.*;
 @RestController
 @RequestMapping("/api/git")
 public class GitController {
+
+    @Autowired
+    private RemoteProjectService remoteProjectService;
 
     @Value("${app.codeHubUser:}")
     private String gitUser;
@@ -85,7 +91,7 @@ public class GitController {
 
             // 先执行 fetch 确保获取远程最新数据
             FetchResult fetchResult = git.fetch()
-                .setCredentialsProvider(getCredentialsProvider())
+                .setCredentialsProvider(getCredentialsProvider(request.getPath()))
                 .call();
 
             log.info("Fetch result for {}: {}", request.getPath(),
@@ -106,7 +112,7 @@ public class GitController {
 
             // 执行 pull
             PullResult pullResult = git.pull()
-                .setCredentialsProvider(getCredentialsProvider())
+                .setCredentialsProvider(getCredentialsProvider(request.getPath()))
                 .call();
 
             Map<String, Object> response = new HashMap<>();
@@ -210,7 +216,7 @@ public class GitController {
             // 先执行 fetch 确保远程数据是最新的（静默执行，不阻塞）
             try {
                 git.fetch()
-                    .setCredentialsProvider(getCredentialsProvider())
+                    .setCredentialsProvider(getCredentialsProvider(path))
                     .call();
                 log.debug("Fetched latest remote data for {}", path);
             } catch (Exception e) {
@@ -402,12 +408,12 @@ public class GitController {
 
                     // 执行 fetch
                     FetchResult fetchResult = git.fetch()
-                        .setCredentialsProvider(getCredentialsProvider())
+                        .setCredentialsProvider(getCredentialsProvider(repoDir.getAbsolutePath()))
                         .call();
 
                     // 执行 pull
                     PullResult pullResult = git.pull()
-                        .setCredentialsProvider(getCredentialsProvider())
+                        .setCredentialsProvider(getCredentialsProvider(repoDir.getAbsolutePath()))
                         .call();
 
                     MergeResult mergeResult = pullResult.getMergeResult();
@@ -511,7 +517,15 @@ public class GitController {
         return "detached";
     }
 
-    private UsernamePasswordCredentialsProvider getCredentialsProvider() {
+    private CredentialsProvider getCredentialsProvider(String path) {
+        // 优先使用项目独立凭据
+        if (path != null) {
+            Optional<CredentialsProvider> projectCreds = remoteProjectService.resolveCredentialsByPath(path);
+            if (projectCreds.isPresent()) {
+                return projectCreds.get();
+            }
+        }
+        // 兜底：使用全局凭据
         if (gitUser != null && !gitUser.isEmpty() && gitPassword != null && !gitPassword.isEmpty()) {
             return new UsernamePasswordCredentialsProvider(gitUser, gitPassword);
         }
