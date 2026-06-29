@@ -51,6 +51,10 @@ public class Phase2V2Orchestrator {
                 ? inheritedData.entryPoints()
                 : fetchEntryPoints(projectPath);
 
+        log.info("[Phase2V2] EntryPoints source={}, count={}",
+                inheritedData != null ? "Phase1 checkpoint" : "KG fallback",
+                entryPoints.size());
+
         // Step 3: 拆分链路
         List<ChainContext> chainContexts = chainSplitter.split(
                 entryPoints, question, projectPath, parentSessionId);

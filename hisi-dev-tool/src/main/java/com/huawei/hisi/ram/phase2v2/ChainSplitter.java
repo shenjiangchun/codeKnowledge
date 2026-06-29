@@ -5,6 +5,7 @@ import com.huawei.hisi.ram.kg.dto.Entry;
 import com.huawei.hisi.ram.phase2v2.model.ChainComplexity;
 import com.huawei.hisi.ram.phase2v2.model.ChainContext;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -14,6 +15,7 @@ import java.util.UUID;
 /**
  * 链路拆分器：根据 KG entryPoints 和用户问题关键词拆分独立链路。
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class ChainSplitter {
@@ -43,9 +45,11 @@ public class ChainSplitter {
 
         // 1. 从问题提取关键词
         List<String> keywords = extractKeywords(question);
+        log.info("[ChainSplitter] entries={}, question={}, keywords={}", entries.size(), question, keywords);
 
         // 2. 过滤相关入口点
         List<Entry> relevantEntries = filterByKeywords(entries, keywords);
+        log.info("[ChainSplitter] relevantEntries={} (after keyword filter)", relevantEntries.size());
 
         // 3. 每个入口点创建一个 ChainContext
         for (Entry entry : relevantEntries) {

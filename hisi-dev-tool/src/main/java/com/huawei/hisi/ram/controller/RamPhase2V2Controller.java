@@ -131,15 +131,19 @@ public class RamPhase2V2Controller {
                 Phase2V2Report report = orchestrator.orchestrate(
                         request.sessionId(), request.question(), projectPath);
 
-                // Store report with final status (orchestrator may return skeleton with "RUNNING")
+                // Check if orchestrator produced real data or empty skeleton
+                boolean hasData = report.detailLayer() != null
+                        && report.detailLayer().chainCount() > 0;
+                String finalStatus = hasData ? "DONE" : "FAILED";
+
                 Phase2V2Report finalReport = new Phase2V2Report(
-                    report.summaryLayer(), report.detailLayer(), "DONE", report.question());
+                    report.summaryLayer(), report.detailLayer(), finalStatus, report.question());
                 reportStore.put(v2SessionId, finalReport);
                 stateStore.put(v2SessionId, new V2ExecutionState(
-                    "DONE", 3, 3, "done", System.currentTimeMillis()));
+                    finalStatus, 3, hasData ? 3 : 0, "done", System.currentTimeMillis()));
 
-                log.info("[Phase2V2] Completed for v2SessionId={}, status={}",
-                        v2SessionId, report.status());
+                log.info("[Phase2V2] Completed for v2SessionId={}, hasData={}, finalStatus={}",
+                        v2SessionId, hasData, finalStatus);
             } catch (Exception e) {
                 log.error("[Phase2V2] Failed for v2SessionId={}: {}",
                         v2SessionId, e.getMessage(), e);
