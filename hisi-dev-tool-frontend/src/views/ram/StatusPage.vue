@@ -196,6 +196,12 @@ async function initSession(id: string): Promise<void> {
       return  // Session finished, no SSE needed
     }
   } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    if (msg.includes('session not found')) {
+      error.value = '会话不存在或已失效，请返回列表页重试'
+      loading.value = false
+      return  // 阻断 Step 2/3，避免连锁 404
+    }
     console.warn('[StatusPage] Failed to load report via REST:', e)
   }
 
