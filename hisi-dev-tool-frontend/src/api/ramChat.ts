@@ -1,7 +1,7 @@
 import request from '@/utils/request'
 
 export interface CreateSessionRequest {
-  projectPaths: string[]
+  projectPath: string
   projectName?: string
   initialQuestion?: string
 }

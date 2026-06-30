@@ -22,7 +22,7 @@ class MethodTargetResolverTest {
 
     @Test
     void resolve_hashFormat_parsesAndResolves() {
-        when(kg.calleesTree("OrderService", "createOrder", List.of("/p"), 0))
+        when(kg.calleesTree("OrderService", "createOrder", "/p", 0))
                 .thenReturn(new CallTreeNode("n1", "OrderService", "createOrder", 0, List.of()));
 
         List<MethodTarget> targets = new MethodTargetResolver(kg)
@@ -36,7 +36,7 @@ class MethodTargetResolverTest {
 
     @Test
     void resolve_dotFormat_parsesFullyQualifiedName() {
-        when(kg.calleesTree("com.hisilicon.rms.RequireStatusServiceImpl", "syncReqStatus", List.of("/p"), 0))
+        when(kg.calleesTree("com.hisilicon.rms.RequireStatusServiceImpl", "syncReqStatus", "/p", 0))
                 .thenReturn(new CallTreeNode("n2", "com.hisilicon.rms.RequireStatusServiceImpl", "syncReqStatus", 0, List.of()));
 
         List<MethodTarget> targets = new MethodTargetResolver(kg)
@@ -58,9 +58,9 @@ class MethodTargetResolverTest {
 
     @Test
     void resolve_hybridSearchFallback_whenCalleesTreeReturnsNull() {
-        when(kg.calleesTree("ShortClass", "someMethod", List.of("/p"), 0))
+        when(kg.calleesTree("ShortClass", "someMethod", "/p", 0))
                 .thenReturn(new CallTreeNode(null, "ShortClass", "someMethod", 0, List.of()));
-        when(kg.hybridSearch("ShortClass#someMethod", List.of("/p"), 5))
+        when(kg.hybridSearch("ShortClass#someMethod", "/p", 5))
                 .thenReturn(List.of(new Seed("found-1", 0.8, "match")));
 
         List<MethodTarget> targets = new MethodTargetResolver(kg)

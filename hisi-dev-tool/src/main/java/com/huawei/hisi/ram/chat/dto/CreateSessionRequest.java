@@ -1,9 +1,7 @@
 package com.huawei.hisi.ram.chat.dto;
 
-import java.util.List;
-
 public record CreateSessionRequest(
-        List<String> projectPaths,
+        String projectPath,
         String projectName,
         String initialQuestion
 ) {}

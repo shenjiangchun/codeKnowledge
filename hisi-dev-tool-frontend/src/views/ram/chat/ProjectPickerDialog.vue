@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch } from 'vue'
 import { useRamChatStore } from '@/stores/ramChatStore'
 import { projectApi } from '@/api/project'
 import { listRemoteProjects } from '@/api/remote-project'
@@ -16,17 +16,9 @@ const emit = defineEmits<{
 const store = useRamChatStore()
 const visible = ref(props.modelValue)
 const projects = ref<Array<{ path: string; name: string }>>([])
-const selectedPaths = ref<string[]>([])
+const selectedPath = ref('')
+const selectedName = ref('')
 const creating = ref(false)
-
-const selectedName = computed(() => {
-  if (selectedPaths.value.length === 0) return ''
-  const first = projects.value.find(p => p.path === selectedPaths.value[0])
-  if (selectedPaths.value.length === 1) {
-    return first?.name || ''
-  }
-  return (first?.name || selectedPaths.value[0]) + ` +${selectedPaths.value.length - 1}`
-})
 
 watch(() => props.modelValue, (val) => {
   visible.value = val
@@ -66,13 +58,13 @@ async function loadProjects() {
 }
 
 async function create() {
-  if (selectedPaths.value.length === 0) {
-    ElMessage.warning('请选择至少一个项目')
+  if (!selectedPath.value) {
+    ElMessage.warning('请选择项目')
     return
   }
   creating.value = true
   try {
-    const data = await store.createSession(selectedPaths.value, selectedName.value)
+    const data = await store.createSession(selectedPath.value, selectedName.value)
     emit('created', data)
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : '未知错误'
@@ -84,17 +76,18 @@ async function create() {
 </script>
 
 <template>
-  <el-dialog v-model="visible" title="新建 RAM 对话" width="540px">
+  <el-dialog v-model="visible" title="新建 RAM 对话" width="500px">
     <el-form label-width="80px">
       <el-form-item label="选择项目">
         <el-select
-          v-model="selectedPaths"
-          multiple
-          collapse-tags
-          collapse-tags-tooltip
+          v-model="selectedPath"
           filterable
-          placeholder="请选择项目（可多选）"
+          placeholder="请选择项目"
           style="width: 100%"
+          @change="(val: string) => {
+            const p = projects.find(p => p.path === val)
+            selectedName = p?.name || ''
+          }"
         >
           <el-option
             v-for="p in projects"

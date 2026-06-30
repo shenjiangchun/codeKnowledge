@@ -27,7 +27,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -73,12 +72,20 @@ public class DirectKgClient implements KgMcpClient {
 
     @Override
     public List<Seed> hybridSearch(String query, List<String> projectPaths, int limit) {
-        List<String> normPaths = normalizePaths(projectPaths);
+        List<String> normPaths = projectPaths.stream()
+                .map(PathUtils::normalize)
+                .filter(p -> p != null && !p.isBlank())
+                .collect(Collectors.toList());
         return doHybridSearch(query, normPaths, limit);
     }
 
     private List<Seed> doHybridSearch(String query, List<String> normPaths, int limit) {
         try {
+            // graphDepth=0: skip graph expansion inside HybridSearchService — RAM performs
+            // its own callees-tree and impact-ring expansion, so the 2-hop graph expansion
+            // only inflates result count without adding value.
+            // 使用 projectPaths + language 重载，确保走 searchByNaturalLanguageWithScores
+            // （含关键词补充召回，弥合需求术语与代码术语的语义鸿沟）
             String firstPath = normPaths.isEmpty() ? "" : normPaths.get(0);
             SearchResult result = hybridSearchService.hybridSearch(
                     query, firstPath, normPaths, null, limit, 0);
@@ -101,23 +108,18 @@ public class DirectKgClient implements KgMcpClient {
     @Override
     public List<Entry> entryPoints(String projectPath, String entryType) {
         String normPath = PathUtils.normalize(projectPath);
-        return entryPoints(List.of(normPath), entryType);
-    }
-
-    @Override
-    public List<Entry> entryPoints(List<String> projectPaths, String entryType) {
-        List<String> normPaths = normalizePaths(projectPaths);
-        if (normPaths.isEmpty()) return Collections.emptyList();
         try {
             List<EntryPointNode> nodes;
             if (entryType == null || "ALL".equalsIgnoreCase(entryType)) {
-                nodes = entryPointRepository.findByProjectPaths(normPaths);
+                nodes = entryPointRepository.findByProjectPath(normPath);
             } else {
-                nodes = entryPointRepository.findByProjectPathsAndEntryType(normPaths, entryType);
+                nodes = entryPointRepository.findByProjectPathAndEntryType(normPath, entryType);
             }
-            return nodes.stream().map(this::toEntry).collect(Collectors.toList());
+            return nodes.stream()
+                    .map(this::toEntry)
+                    .collect(Collectors.toList());
         } catch (Exception e) {
-            log.warn("entryPoints failed for projectPaths={}: {}", normPaths, e.getMessage());
+            log.warn("entryPoints failed for projectPath='{}': {}", normPath, e.getMessage());
             return Collections.emptyList();
         }
     }
@@ -129,7 +131,10 @@ public class DirectKgClient implements KgMcpClient {
 
     @Override
     public BridgeStats bridgeStats(List<String> projectPaths) {
-        List<String> normPaths = normalizePaths(projectPaths);
+        List<String> normPaths = projectPaths.stream()
+                .map(PathUtils::normalize)
+                .filter(p -> p != null && !p.isBlank())
+                .collect(Collectors.toList());
         if (normPaths.isEmpty()) {
             return BridgeStats.builder().build();
         }
@@ -200,14 +205,9 @@ public class DirectKgClient implements KgMcpClient {
 
     @Override
     public List<Impl> implementations(String interfaceName, String projectPath) {
-        return implementations(interfaceName, List.of(PathUtils.normalize(projectPath)));
-    }
-
-    @Override
-    public List<Impl> implementations(String interfaceName, List<String> projectPaths) {
-        List<String> normPaths = normalizePaths(projectPaths);
-        if (normPaths.isEmpty()) return Collections.emptyList();
+        String normPath = PathUtils.normalize(projectPath);
         try {
+            // If interfaceName looks like a nodeId (contains ':'), try IMPLEMENTS-based lookup
             if (interfaceName != null && interfaceName.contains(":")) {
                 List<String> implNodeIds = methodNodeRepository.findImplementationMethodsByInterfaceMethod(interfaceName);
                 if (!implNodeIds.isEmpty()) {
@@ -216,6 +216,7 @@ public class DirectKgClient implements KgMcpClient {
                             .map(implId -> new Impl(implId, null, ifaceName))
                             .collect(Collectors.toList());
                 }
+                // If no implementations found via nodeId, extract className and try as interface name
                 String extracted = extractClassNameFromNodeId(interfaceName);
                 if (extracted != null) {
                     interfaceName = extracted;
@@ -224,7 +225,8 @@ public class DirectKgClient implements KgMcpClient {
                 }
             }
             final String resolvedName = interfaceName;
-            List<String> implClassNames = methodNodeRepository.findImplementationsByInterface(resolvedName, normPaths);
+            List<String> projectPaths = List.of(normPath);
+            List<String> implClassNames = methodNodeRepository.findImplementationsByInterface(resolvedName, projectPaths);
             return implClassNames.stream()
                     .map(className -> new Impl(null, className, resolvedName))
                     .collect(Collectors.toList());
@@ -236,20 +238,11 @@ public class DirectKgClient implements KgMcpClient {
 
     @Override
     public CallTreeNode calleesTree(String className, String methodName, String projectPath, int maxDepth) {
-        return calleesTree(className, methodName, List.of(PathUtils.normalize(projectPath)), maxDepth);
-    }
-
-    @Override
-    public CallTreeNode calleesTree(String className, String methodName, List<String> projectPaths, int maxDepth) {
-        List<String> normPaths = normalizePaths(projectPaths);
-        if (normPaths.isEmpty()) {
-            return new CallTreeNode(null, className, methodName, 0, List.of());
-        }
+        String normPath = PathUtils.normalize(projectPath);
         try {
-            MethodNode root = resolveMethod(className, methodName, normPaths);
+            MethodNode root = resolveMethod(className, methodName, normPath);
             if (root == null) {
-                log.debug("calleesTree: no method found for className='{}' methodName='{}' in {}",
-                        className, methodName, normPaths);
+                log.debug("calleesTree: no method found for className='{}' methodName='{}' in {}", className, methodName, normPath);
                 return new CallTreeNode(null, className, methodName, 0, List.of());
             }
             return buildCallTree(root, maxDepth, 0, new HashSet<>());
@@ -261,38 +254,34 @@ public class DirectKgClient implements KgMcpClient {
 
     @Override
     public List<Entry> rootEntries(String className, String methodName, String projectPath) {
-        return rootEntries(className, methodName, List.of(PathUtils.normalize(projectPath)));
-    }
-
-    @Override
-    public List<Entry> rootEntries(String className, String methodName, List<String> projectPaths) {
-        List<String> normPaths = normalizePaths(projectPaths);
-        if (normPaths.isEmpty()) return Collections.emptyList();
+        String normPath = PathUtils.normalize(projectPath);
         try {
             // Wildcard: find all entry points whose call chain reaches the target class
             if ("*".equals(methodName)) {
-                List<Entry> all = new ArrayList<>();
-                for (String p : normPaths) {
-                    List<EntryPointNode> eps = entryPointRepository.findEntryPointsAffectingClass(p, className, 10);
-                    eps.forEach(ep -> all.add(toEntry(ep)));
-                }
-                return dedupEntries(all);
+                List<EntryPointNode> eps = entryPointRepository.findEntryPointsAffectingClass(normPath, className, 10);
+                return eps.stream().map(this::toEntry).collect(Collectors.toList());
             }
 
-            MethodNode target = resolveMethod(className, methodName, normPaths);
-            if (target == null) return Collections.emptyList();
+            MethodNode target = resolveMethod(className, methodName, normPath);
+            if (target == null) {
+                return Collections.emptyList();
+            }
             List<MethodNode> callers = methodNodeRepository.findCallersUpToDepth(target.getNodeId(), 10);
 
+            // Find entry points among the callers
             List<Entry> entries = new ArrayList<>();
-            for (String p : normPaths) {
-                for (MethodNode caller : callers) {
-                    List<EntryPointNode> eps = entryPointRepository.findByProjectPathAndMethodNodeId(p, caller.getNodeId());
-                    eps.forEach(ep -> entries.add(toEntry(ep)));
+            for (MethodNode caller : callers) {
+                List<EntryPointNode> eps = entryPointRepository.findByProjectPathAndMethodNodeId(normPath, caller.getNodeId());
+                for (EntryPointNode ep : eps) {
+                    entries.add(toEntry(ep));
                 }
-                List<EntryPointNode> selfEps = entryPointRepository.findByProjectPathAndMethodNodeId(p, target.getNodeId());
-                selfEps.forEach(ep -> entries.add(toEntry(ep)));
             }
-            return dedupEntries(entries);
+            // Also check the target method itself
+            List<EntryPointNode> selfEps = entryPointRepository.findByProjectPathAndMethodNodeId(normPath, target.getNodeId());
+            for (EntryPointNode ep : selfEps) {
+                entries.add(toEntry(ep));
+            }
+            return entries;
         } catch (Exception e) {
             log.warn("rootEntries failed for {}#{}: {}", className, methodName, e.getMessage());
             return Collections.emptyList();
@@ -301,31 +290,22 @@ public class DirectKgClient implements KgMcpClient {
 
     @Override
     public List<Entry> affecting(String className, String methodName, String projectPath, int maxDepth) {
-        return affecting(className, methodName, List.of(PathUtils.normalize(projectPath)), maxDepth);
-    }
-
-    @Override
-    public List<Entry> affecting(String className, String methodName, List<String> projectPaths, int maxDepth) {
-        List<String> normPaths = normalizePaths(projectPaths);
-        if (normPaths.isEmpty()) return Collections.emptyList();
+        String normPath = PathUtils.normalize(projectPath);
         try {
             // Wildcard: find all upstream callers for the entire class
             if ("*".equals(methodName)) {
-                List<MethodNode> callers = new ArrayList<>();
-                for (String p : normPaths) {
-                    callers.addAll(methodNodeRepository.findCallersUpToDepthByClassName(p, className, maxDepth));
-                }
+                List<MethodNode> callers = methodNodeRepository.findCallersUpToDepthByClassName(normPath, className, maxDepth);
                 if (log.isDebugEnabled()) {
                     log.debug("affecting: className='{}' wildcard maxDepth={} → {} upstream callers",
                             className, maxDepth, callers.size());
                 }
-                return dedupMethodNodes(callers);
+                return callers.stream().map(this::toEntry).collect(Collectors.toList());
             }
 
-            MethodNode target = resolveMethod(className, methodName, normPaths);
+            MethodNode target = resolveMethod(className, methodName, normPath);
             if (target == null) {
-                log.debug("affecting: resolveMethod returned null for className='{}' methodName='{}' paths='{}'",
-                        className, methodName, normPaths);
+                log.debug("affecting: resolveMethod returned null for className='{}' methodName='{}' path='{}'",
+                        className, methodName, normPath);
                 return Collections.emptyList();
             }
             List<MethodNode> callers = methodNodeRepository.findCallersUpToDepth(target.getNodeId(), maxDepth);
@@ -333,7 +313,9 @@ public class DirectKgClient implements KgMcpClient {
                 log.debug("affecting: nodeId='{}' maxDepth={} → {} upstream callers",
                         target.getNodeId(), maxDepth, callers.size());
             }
-            return dedupMethodNodes(callers);
+            return callers.stream()
+                    .map(this::toEntry)
+                    .collect(Collectors.toList());
         } catch (Exception e) {
             log.warn("affecting failed for {}#{}: {}", className, methodName, e.getMessage());
             return Collections.emptyList();
@@ -342,15 +324,11 @@ public class DirectKgClient implements KgMcpClient {
 
     @Override
     public List<Entry> downstream(String nodeId, String projectPath, int maxDepth) {
-        return downstream(nodeId, List.of(PathUtils.normalize(projectPath)), maxDepth);
-    }
-
-    @Override
-    public List<Entry> downstream(String nodeId, List<String> projectPaths, int maxDepth) {
-        // nodeId-based query is project-agnostic; projectPaths reserved for future scope filtering
         try {
             List<MethodNode> callees = methodNodeRepository.findCalleesUpToDepth(nodeId, maxDepth);
-            return callees.stream().map(this::toEntry).collect(Collectors.toList());
+            return callees.stream()
+                    .map(this::toEntry)
+                    .collect(Collectors.toList());
         } catch (Exception e) {
             log.warn("downstream failed for nodeId='{}': {}", nodeId, e.getMessage());
             return Collections.emptyList();
@@ -359,15 +337,10 @@ public class DirectKgClient implements KgMcpClient {
 
     @Override
     public List<Bridge> feignChain(String serviceName, String projectPath) {
-        return feignChain(serviceName, List.of(PathUtils.normalize(projectPath)));
-    }
-
-    @Override
-    public List<Bridge> feignChain(String serviceName, List<String> projectPaths) {
-        List<String> normPaths = normalizePaths(projectPaths);
-        if (normPaths.isEmpty()) return Collections.emptyList();
+        String normPath = PathUtils.normalize(projectPath);
         try {
-            List<EntryPointNode> feignEntries = entryPointRepository.findByProjectPathsAndEntryType(normPaths, "FEIGN_CLIENT");
+            // Find all Feign client entry points for the service
+            List<EntryPointNode> feignEntries = entryPointRepository.findByProjectPathAndEntryType(normPath, "FEIGN_CLIENT");
             return feignEntries.stream()
                     .filter(ep -> serviceName.equals(ep.getServiceName()))
                     .map(ep -> new Bridge(ep.getMethodNodeId(), "FEIGN", ep.getEntryKey()))
@@ -380,15 +353,10 @@ public class DirectKgClient implements KgMcpClient {
 
     @Override
     public List<Bridge> mqChain(String topic, String projectPath) {
-        return mqChain(topic, List.of(PathUtils.normalize(projectPath)));
-    }
-
-    @Override
-    public List<Bridge> mqChain(String topic, List<String> projectPaths) {
-        List<String> normPaths = normalizePaths(projectPaths);
-        if (normPaths.isEmpty()) return Collections.emptyList();
+        String normPath = PathUtils.normalize(projectPath);
         try {
-            List<EntryPointNode> mqEntries = entryPointRepository.findByProjectPathsAndEntryType(normPaths, "MQ_CONSUMER");
+            // Find MQ consumer entry points matching the topic
+            List<EntryPointNode> mqEntries = entryPointRepository.findByProjectPathAndEntryType(normPath, "MQ_CONSUMER");
             return mqEntries.stream()
                     .filter(ep -> ep.getEntryKey() != null && ep.getEntryKey().contains(topic))
                     .map(ep -> new Bridge(ep.getMethodNodeId(), "MQ", ep.getEntryKey()))
@@ -401,13 +369,8 @@ public class DirectKgClient implements KgMcpClient {
 
     @Override
     public List<Bridge> bridges(String nodeId, String projectPath) {
-        return bridges(nodeId, List.of(PathUtils.normalize(projectPath)));
-    }
-
-    @Override
-    public List<Bridge> bridges(String nodeId, List<String> projectPaths) {
-        // nodeId-based query is project-agnostic
         try {
+            // Collect Feign bridges
             List<Bridge> result = new ArrayList<>();
             try {
                 List<Neo4jMethodNodeRepository.FeignBridgeTarget> feignTargets =
@@ -436,19 +399,13 @@ public class DirectKgClient implements KgMcpClient {
 
     @Override
     public List<SqlMapping> mybatisSql(String mapperInterface, String projectPath) {
-        return mybatisSql(mapperInterface, List.of(PathUtils.normalize(projectPath)));
-    }
-
-    @Override
-    public List<SqlMapping> mybatisSql(String mapperInterface, List<String> projectPaths) {
-        List<String> normPaths = normalizePaths(projectPaths);
-        if (normPaths.isEmpty()) return Collections.emptyList();
+        String normPath = PathUtils.normalize(projectPath);
         try {
             List<SqlNode> sqlNodes;
             if (mapperInterface != null && !mapperInterface.isBlank()) {
-                sqlNodes = sqlNodeRepository.findByMapperInterfaceAndProjectPaths(normPaths, mapperInterface);
+                sqlNodes = sqlNodeRepository.findByMapperInterfaceAndProjectPath(mapperInterface, normPath);
             } else {
-                sqlNodes = sqlNodeRepository.findByProjectPaths(normPaths);
+                sqlNodes = sqlNodeRepository.findByProjectPath(normPath);
             }
             return sqlNodes.stream()
                     .map(s -> new SqlMapping(
@@ -464,12 +421,9 @@ public class DirectKgClient implements KgMcpClient {
 
     @Override
     public List<MethodBodyInfo> loadMethodBodies(List<String> nodeIds, String projectPath) {
-        return loadMethodBodies(nodeIds, projectPath != null ? List.of(PathUtils.normalize(projectPath)) : List.of());
-    }
-
-    @Override
-    public List<MethodBodyInfo> loadMethodBodies(List<String> nodeIds, List<String> projectPaths) {
-        if (nodeIds == null || nodeIds.isEmpty()) return Collections.emptyList();
+        if (nodeIds == null || nodeIds.isEmpty()) {
+            return Collections.emptyList();
+        }
         try {
             List<MethodNode> nodes = methodNodeRepository.findAllByNodeIds(nodeIds);
             return nodes.stream()
@@ -490,13 +444,7 @@ public class DirectKgClient implements KgMcpClient {
     @Override
     public List<Entry> rootEntryAncestors(List<String> nodeIds, String projectPath, int maxDepth) {
         String normPath = PathUtils.normalize(projectPath);
-        return rootEntryAncestors(nodeIds, List.of(normPath), maxDepth);
-    }
-
-    @Override
-    public List<Entry> rootEntryAncestors(List<String> nodeIds, List<String> projectPaths, int maxDepth) {
-        List<String> normPaths = normalizePaths(projectPaths);
-        if (nodeIds == null || nodeIds.isEmpty() || normPaths.isEmpty()) {
+        if (nodeIds == null || nodeIds.isEmpty() || normPath == null || normPath.isBlank()) {
             return Collections.emptyList();
         }
         try {
@@ -505,26 +453,24 @@ public class DirectKgClient implements KgMcpClient {
             for (String nodeId : nodeIds) {
                 if (nodeId == null || seen.contains(nodeId)) continue;
 
-                for (String p : normPaths) {
-                    List<EntryPointNode> selfEps = entryPointRepository.findByProjectPathAndMethodNodeId(p, nodeId);
-                    for (EntryPointNode ep : selfEps) {
-                        rootEntries.add(toEntry(ep));
-                    }
+                // 1. Check if the nodeId itself is an entry point
+                List<EntryPointNode> selfEps = entryPointRepository.findByProjectPathAndMethodNodeId(normPath, nodeId);
+                for (EntryPointNode ep : selfEps) {
+                    rootEntries.add(toEntry(ep));
                 }
 
+                // 2. Trace callers upward and find entry points among them
                 List<MethodNode> callers = methodNodeRepository.findCallersUpToDepth(nodeId, maxDepth);
                 for (MethodNode caller : callers) {
                     if (seen.contains(caller.getNodeId())) continue;
                     seen.add(caller.getNodeId());
-                    for (String p : normPaths) {
-                        List<EntryPointNode> eps = entryPointRepository.findByProjectPathAndMethodNodeId(p, caller.getNodeId());
-                        for (EntryPointNode ep : eps) {
-                            rootEntries.add(toEntry(ep));
-                        }
+                    List<EntryPointNode> eps = entryPointRepository.findByProjectPathAndMethodNodeId(normPath, caller.getNodeId());
+                    for (EntryPointNode ep : eps) {
+                        rootEntries.add(toEntry(ep));
                     }
                 }
             }
-            return dedupEntries(rootEntries);
+            return rootEntries;
         } catch (Exception e) {
             log.warn("rootEntryAncestors failed for {} nodeIds: {}", nodeIds.size(), e.getMessage());
             return Collections.emptyList();
@@ -542,8 +488,10 @@ public class DirectKgClient implements KgMcpClient {
             for (String className : classNames) {
                 if (className == null || className.isBlank()) continue;
                 try {
+                    // Try full qualified name first
                     List<String> paths = methodNodeRepository.findProjectPathsByClassName(className);
                     if (paths.isEmpty() && className.contains(".")) {
+                        // Try short class name (last segment)
                         String shortName = className.substring(className.lastIndexOf('.') + 1);
                         paths = methodNodeRepository.findProjectPathsByClassName(shortName);
                     }
@@ -587,31 +535,6 @@ public class DirectKgClient implements KgMcpClient {
 
     // ─────────────────────── private helpers ───────────────────────
 
-    private List<String> normalizePaths(List<String> projectPaths) {
-        if (projectPaths == null) return List.of();
-        return projectPaths.stream()
-                .map(PathUtils::normalize)
-                .filter(p -> p != null && !p.isBlank())
-                .distinct()
-                .collect(Collectors.toList());
-    }
-
-    private List<Entry> dedupEntries(List<Entry> entries) {
-        Map<String, Entry> byNodeId = new LinkedHashMap<>();
-        for (Entry e : entries) {
-            if (e.nodeId() != null) byNodeId.putIfAbsent(e.nodeId(), e);
-        }
-        return new ArrayList<>(byNodeId.values());
-    }
-
-    private List<Entry> dedupMethodNodes(List<MethodNode> nodes) {
-        Map<String, MethodNode> byNodeId = new LinkedHashMap<>();
-        for (MethodNode m : nodes) {
-            if (m.getNodeId() != null) byNodeId.putIfAbsent(m.getNodeId(), m);
-        }
-        return byNodeId.values().stream().map(this::toEntry).collect(Collectors.toList());
-    }
-
     /** Recursively build a callees tree up to {@code maxDepth}. */
     private CallTreeNode buildCallTree(MethodNode node, int maxDepth, int currentDepth, Set<String> visited) {
         if (node == null || node.getNodeId() == null) {
@@ -632,6 +555,7 @@ public class DirectKgClient implements KgMcpClient {
 
     /** Map {@link EntryPointNode} to the KG DTO {@link Entry}. */
     private Entry toEntry(EntryPointNode ep) {
+        // Extract className/methodName from methodNodeId format: projectPath:className.methodName.signatureHash
         ClassMethod cm = extractClassMethodFromNodeId(ep.getMethodNodeId());
         return new Entry(
                 ep.getMethodNodeId(),
@@ -640,6 +564,11 @@ public class DirectKgClient implements KgMcpClient {
                 ep.getEntryType());
     }
 
+    /**
+     * Extract className and methodName from a nodeId of the format
+     * {@code projectPath:className.methodName.signatureHash}.
+     * Returns {@code null} if the format is unrecognisable.
+     */
     private static ClassMethod extractClassMethodFromNodeId(String nodeId) {
         if (nodeId == null) return null;
         int colon = nodeId.indexOf(':');
@@ -655,6 +584,7 @@ public class DirectKgClient implements KgMcpClient {
         return new ClassMethod(className, methodName);
     }
 
+    /** Simple holder for className + methodName parsed from a nodeId. */
     private record ClassMethod(String className, String methodName) {}
 
     /** Map {@link MethodNode} to the KG DTO {@link Entry}. */
@@ -667,25 +597,29 @@ public class DirectKgClient implements KgMcpClient {
     }
 
     /**
-     * Resolve a MethodNode from className + methodName across all given project paths.
+     * Resolve a MethodNode from className + methodName, with nodeId-based fallback.
+     * <p>If className looks like a nodeId (contains ':'), tries direct lookup first,
+     * then extracts className/methodName from the nodeId format.</p>
      */
-    private MethodNode resolveMethod(String className, String methodName, List<String> normPaths) {
-        // Strategy 1: nodeId direct lookup (project-agnostic)
+    private MethodNode resolveMethod(String className, String methodName, String normPath) {
+        // Strategy 1: nodeId direct lookup
         if (className != null && className.contains(":")) {
             MethodNode found = methodNodeRepository.findByNodeId(className).orElse(null);
             if (found != null) return found;
         }
-        // Strategy 2: fully-qualified className + methodName lookup across all paths
+        // Strategy 2: fully-qualified className + methodName lookup
         if (className != null && methodName != null && !methodName.isEmpty()) {
             List<MethodNode> candidates = methodNodeRepository.findByProjectPathsAndClassNameAndMethodName(
-                    normPaths, className, methodName);
+                    List.of(normPath), className, methodName);
             if (!candidates.isEmpty()) return candidates.get(0);
         }
         // Strategy 3: short className (ENDS WITH) + methodName fallback
+        // LLM often outputs short names like "RequireStatusServiceImpl" instead of
+        // the fully-qualified "com.hisilicon.rms...RequireStatusServiceImpl"
         if (className != null && methodName != null && !methodName.isEmpty()
                 && !className.contains(".")) {
             List<MethodNode> candidates = methodNodeRepository.findByProjectPathsAndShortClassNameAndMethodName(
-                    normPaths, className, methodName);
+                    List.of(normPath), className, methodName);
             if (!candidates.isEmpty()) {
                 log.info("resolveMethod: short-className fallback matched {}#{} → nodeId={}",
                         className, methodName, candidates.get(0).getNodeId());
@@ -695,11 +629,16 @@ public class DirectKgClient implements KgMcpClient {
         return null;
     }
 
+    /**
+     * Extract className from a nodeId of the format {@code projectPath:className.methodName.signatureHash}.
+     * Returns {@code null} if the format is unrecognisable.
+     */
     static String extractClassNameFromNodeId(String nodeId) {
         if (nodeId == null) return null;
         int colon = nodeId.indexOf(':');
         if (colon < 0 || colon >= nodeId.length() - 1) return null;
-        String afterColon = nodeId.substring(colon + 1);
+        String afterColon = nodeId.substring(colon + 1); // className.methodName.signatureHash
+        // Split on dots; className is everything except the last two segments (methodName.hash)
         int lastDot = afterColon.lastIndexOf('.');
         if (lastDot <= 0) return null;
         int secondLastDot = afterColon.lastIndexOf('.', lastDot - 1);

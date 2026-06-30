@@ -18,7 +18,6 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -55,7 +54,7 @@ class ImpactNodeTest {
                 new DeterministicValidator.ValidationOutcome(true, List.of());
 
         when(methodTargetResolver.resolve(any(), any(), anyString())).thenReturn(targets);
-        when(kg.rootEntryAncestors(any(), anyList(), anyInt())).thenReturn(upstream);
+        when(kg.rootEntryAncestors(any(), anyString(), anyInt())).thenReturn(upstream);
         when(affectedEntriesAnnotator.annotate(anyString(), any(), anyString(), anyString())).thenReturn(annotated);
         when(riskScorer.score(any(), any(), any())).thenReturn(risk);
         when(deterministicValidator.validate(any(), any(), any(), anyString())).thenReturn(outcome);
@@ -125,7 +124,7 @@ class ImpactNodeTest {
         when(involvedRingResolver.resolve(anyString(), any(List.class))).thenReturn(involved);
         when(scopeNarrowingService.narrow(anyString(), any(), anyString())).thenReturn(narrowedSeeds);
         when(methodTargetResolver.resolve(any(), any(), anyString())).thenReturn(targets);
-        when(kg.rootEntryAncestors(any(), anyList(), anyInt())).thenReturn(upstream);
+        when(kg.rootEntryAncestors(any(), anyString(), anyInt())).thenReturn(upstream);
         when(affectedEntriesAnnotator.annotate(anyString(), any(), anyString(), anyString())).thenReturn(annotated);
         when(riskScorer.score(any(), any(), any())).thenReturn(risk);
         when(deterministicValidator.validate(any(), any(), any(), anyString())).thenReturn(outcome);
@@ -164,9 +163,9 @@ class ImpactNodeTest {
                 "deliver", 0, List.of(targetChild));
 
         when(methodTargetResolver.resolve(any(), any(), anyString())).thenReturn(targets);
-        when(kg.rootEntryAncestors(any(), anyList(), anyInt())).thenReturn(upstream);
+        when(kg.rootEntryAncestors(any(), anyString(), anyInt())).thenReturn(upstream);
         when(affectedEntriesAnnotator.annotate(anyString(), any(), anyString(), anyString())).thenReturn(annotated);
-        when(kg.calleesTree(eq("ReqController"), eq("deliver"), anyList(), anyInt()))
+        when(kg.calleesTree(eq("ReqController"), eq("deliver"), anyString(), anyInt()))
                 .thenReturn(calleesTree);
         when(riskScorer.score(any(), any(), any())).thenReturn(risk);
         when(deterministicValidator.validate(any(), any(), any(), anyString())).thenReturn(outcome);

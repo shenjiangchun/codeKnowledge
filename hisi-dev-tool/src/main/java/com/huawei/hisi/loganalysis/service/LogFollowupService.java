@@ -22,7 +22,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -152,15 +151,12 @@ public class LogFollowupService {
         );
     }
 
-    private void executeFollowup(AgentSession session, String projectPathRaw) {
+    private void executeFollowup(AgentSession session, String projectPath) {
         String sessionId = session.getUuid();
         try {
             String systemPrompt = buildSystemPrompt(extractReportId(session.getUserId()));
             List<FollowupMessageDto> history = loadMessages(session.getId());
             List<Map<String, Object>> messages = buildMessagesArray(history);
-
-            // Parse projectPath into list (supports comma-separated multi-project)
-            List<String> projectPaths = parseProjectPaths(projectPathRaw);
 
             List<ToolDefinition> tools = new ArrayList<>();
             tools.add(reportLookupTool.buildDefinition());
@@ -168,9 +164,9 @@ public class LogFollowupService {
             Map<String, Function<Map<String, Object>, Object>> handlers = new LinkedHashMap<>();
             handlers.put("lookup_log_report", reportLookupTool.buildHandler(session.getUserId()));
 
-            if (!projectPaths.isEmpty() && kgToolRegistry.isAvailable()) {
-                tools.addAll(kgToolRegistry.buildToolDefinitions(projectPaths));
-                handlers.putAll(kgToolRegistry.buildToolHandlers(projectPaths));
+            if (projectPath != null && !projectPath.isBlank() && kgToolRegistry.isAvailable()) {
+                tools.addAll(kgToolRegistry.buildToolDefinitions(projectPath));
+                handlers.putAll(kgToolRegistry.buildToolHandlers(projectPath));
             }
 
             StreamCallbacks callbacks = new StreamCallbacks() {
@@ -337,17 +333,6 @@ public class LogFollowupService {
             return result.substring(0, 5000) + "... (truncated)";
         }
         return result;
-    }
-
-    private static List<String> parseProjectPaths(String projectPathRaw) {
-        if (projectPathRaw == null || projectPathRaw.isBlank()) return List.of();
-        if (projectPathRaw.contains(",")) {
-            return Arrays.stream(projectPathRaw.split(","))
-                    .map(String::trim)
-                    .filter(p -> !p.isEmpty())
-                    .toList();
-        }
-        return List.of(projectPathRaw.trim());
     }
 
     /**

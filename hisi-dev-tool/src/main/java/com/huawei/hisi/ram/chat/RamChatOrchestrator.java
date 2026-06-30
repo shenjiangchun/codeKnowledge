@@ -51,10 +51,6 @@ public class RamChatOrchestrator {
     });
 
     public TurnResult runTurn(long sessionId, String userText, String projectPath) {
-        return runTurn(sessionId, userText, List.of(projectPath));
-    }
-
-    public TurnResult runTurn(long sessionId, String userText, List<String> projectPaths) {
         String turnId = UUID.randomUUID().toString();
         log.info("[RamChatOrchestrator] start turnId={} sessionId={} userText.len={}",
                 turnId, sessionId, userText.length());
@@ -71,14 +67,14 @@ public class RamChatOrchestrator {
         )));
 
         try {
-            ChatContextBuilder.ChatContext ctx = contextBuilder.buildContext(sessionId, userText, projectPaths);
+            ChatContextBuilder.ChatContext ctx = contextBuilder.buildContext(sessionId, userText, projectPath);
 
-            List<ToolDefinition> tools = new ArrayList<>(kgToolRegistry.buildToolDefinitions(projectPaths));
+            List<ToolDefinition> tools = new ArrayList<>(kgToolRegistry.buildToolDefinitions(projectPath));
             tools.add(projectOverviewTool.buildDefinition());
 
             Map<String, Function<Map<String, Object>, Object>> handlers = new LinkedHashMap<>(
-                    kgToolRegistry.buildToolHandlers(projectPaths));
-            handlers.put("generate_project_overview", projectOverviewTool.buildHandler(projectPaths));
+                    kgToolRegistry.buildToolHandlers(projectPath));
+            handlers.put("generate_project_overview", projectOverviewTool.buildHandler());
 
             StreamCallbacks callbacks = new StreamCallbacks() {
                 @Override

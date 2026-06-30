@@ -116,7 +116,7 @@ public class MethodTargetResolver {
 
             String nodeId = null;
             try {
-                CallTreeNode node = kg.calleesTree(className, methodName, List.of(projectPath), 0);
+                CallTreeNode node = kg.calleesTree(className, methodName, projectPath, 0);
                 nodeId = (node != null && node.nodeId() != null) ? node.nodeId() : null;
             } catch (Exception ex) {
                 log.warn("Failed to resolve nodeId for {}#{}: {}", className, methodName, ex.getMessage());
@@ -127,7 +127,7 @@ public class MethodTargetResolver {
                 log.info("calleesTree returned null for {}#{}, trying hybridSearch fallback", className, methodName);
                 try {
                     String query = className + "#" + methodName;
-                    List<Seed> results = kg.hybridSearch(query, List.of(projectPath), 5);
+                    List<Seed> results = kg.hybridSearch(query, projectPath, 5);
                     if (!results.isEmpty()) {
                         Seed best = results.get(0);
                         nodeId = best.nodeId();

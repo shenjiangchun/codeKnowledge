@@ -34,8 +34,7 @@ class ChainSplitterTest {
             entries,
             "系统架构是怎样的？",
             "/path/to/project",
-            "parent-session-123",
-            null
+            "parent-session-123"
         );
 
         assertThat(contexts).hasSize(2);
@@ -58,8 +57,7 @@ class ChainSplitterTest {
             entries,
             "Order",
             "/path/to/project",
-            "parent-session-123",
-            null
+            "parent-session-123"
         );
 
         // Only keep entries containing "Order"
@@ -81,8 +79,7 @@ class ChainSplitterTest {
             List.of(controller, mqListener, feignClient, scheduled, unknown),
             "",
             "/path",
-            "session",
-            null
+            "session"
         );
 
         assertThat(contexts.get(0).chainName()).isEqualTo("OrderController 控制器链路");
@@ -103,8 +100,7 @@ class ChainSplitterTest {
             List.of(mqEntry, feignEntry, controllerEntry),
             "分析一下",
             "/path",
-            "session",
-            null
+            "session"
         );
 
         assertThat(contexts.get(0).complexity()).isEqualTo(ChainComplexity.CROSS_SERVICE);
@@ -121,8 +117,7 @@ class ChainSplitterTest {
             List.of(entry),
             "请验证订单创建逻辑",
             "/path",
-            "session",
-            null
+            "session"
         );
 
         assertThat(contexts.get(0).complexity()).isEqualTo(ChainComplexity.VERIFICATION);
@@ -138,8 +133,7 @@ class ChainSplitterTest {
             List.of(simpleEntry, crossServiceEntry),
             "分析",
             "/path",
-            "session",
-            null
+            "session"
         );
 
         // SIMPLE complexity: base tools only
@@ -164,8 +158,7 @@ class ChainSplitterTest {
             entries,
             "订单",  // Chinese keyword, no match in English class names
             "/path/to/project",
-            "parent-session-123",
-            null
+            "parent-session-123"
         );
 
         // Fallback: return all entries when keywords don't match
@@ -179,8 +172,7 @@ class ChainSplitterTest {
             List.of(),
             "订单",
             "/path/to/project",
-            "parent-session-123",
-            null
+            "parent-session-123"
         );
 
         assertThat(contexts).isEmpty();
@@ -198,8 +190,7 @@ class ChainSplitterTest {
             entries,
             "",
             "/path",
-            "session",
-            null
+            "session"
         );
 
         assertThat(contexts).hasSize(2);
@@ -216,8 +207,7 @@ class ChainSplitterTest {
             List.of(entry),
             "Order create flow",
             "/projects/myapp",
-            "session-abc",
-            null
+            "session-abc"
         );
 
         assertThat(contexts).hasSize(1);
@@ -243,8 +233,7 @@ class ChainSplitterTest {
             List.of(entryWithNulls),
             "",
             "/path",
-            "session",
-            null
+            "session"
         );
 
         assertThat(contexts).hasSize(1);
@@ -262,8 +251,7 @@ class ChainSplitterTest {
             List.of(entry),
             "x Order",  // "x" is single char (filtered), "Order" matches
             "/path",
-            "session",
-            null
+            "session"
         );
 
         // "Order" matches OrderController

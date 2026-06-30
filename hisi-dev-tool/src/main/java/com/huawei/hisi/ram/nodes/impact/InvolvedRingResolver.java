@@ -64,23 +64,27 @@ public class InvolvedRingResolver {
 
         // 2. Entry points — search across all project paths
         List<Entry> entries = new ArrayList<>();
-        try {
-            List<Entry> pathEntries = kg.entryPoints(projectPaths, "ALL");
-            if (pathEntries != null) entries.addAll(pathEntries);
-        } catch (Exception e) {
-            log.debug("[InvolvedRingResolver] entryPoints failed: {}", e.getMessage());
+        for (String path : projectPaths) {
+            try {
+                List<Entry> pathEntries = kg.entryPoints(path, "ALL");
+                if (pathEntries != null) entries.addAll(pathEntries);
+            } catch (Exception e) {
+                log.debug("[InvolvedRingResolver] entryPoints failed for path={}: {}", path, e.getMessage());
+            }
         }
 
         // 3. Interface implementations for each seed
         List<Impl> allImpls = new ArrayList<>();
         for (Seed seed : seeds) {
             if (seed == null || seed.nodeId() == null) continue;
-            try {
-                List<Impl> impls = kg.implementations(seed.nodeId(), projectPaths);
-                if (impls != null) allImpls.addAll(impls);
-            } catch (Exception e) {
-                log.debug("[InvolvedRingResolver] implementations failed for nodeId={}: {}",
-                        seed.nodeId(), e.getMessage());
+            for (String path : projectPaths) {
+                try {
+                    List<Impl> impls = kg.implementations(seed.nodeId(), path);
+                    if (impls != null) allImpls.addAll(impls);
+                } catch (Exception e) {
+                    log.debug("[InvolvedRingResolver] implementations failed for nodeId={}, path={}: {}",
+                            seed.nodeId(), path, e.getMessage());
+                }
             }
         }
         return new InvolvedRing(seeds, entries, allImpls);

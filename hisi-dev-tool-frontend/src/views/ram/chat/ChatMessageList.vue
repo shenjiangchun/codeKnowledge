@@ -29,23 +29,19 @@ const turns = computed<Turn[]>(() => {
   for (const ev of store.events) {
     let payload: Record<string, unknown> = {}
     try { payload = JSON.parse(ev.payload) } catch { continue }
-    // 跳过没有 turnId 的控制消息（如 WS "connected"），避免产生幽灵 "思考中" turn
-    const tid = payload.turnId as string | undefined
-    if (!tid) continue
+    const tid = (payload.turnId as string) || 'unknown'
     if (!turnMap.has(tid)) {
       turnMap.set(tid, { turnId: tid, userText: '', toolSteps: [], assistantText: '', status: 'streaming' })
     }
     const turn = turnMap.get(tid)!
-    // 归一化 type 大小写：WS 推送是小写 snake_case，DB EventType.name() 是大写；统一转小写匹配
-    const t = (ev.type || '').toLowerCase()
-    switch (t) {
-      case 'user_msg':
+    switch (ev.type) {
+      case 'USER_MSG':
         turn.userText = (payload.text as string) || ''
         break
-      case 'assistant_delta':
+      case 'ASSISTANT_DELTA':
         turn.assistantText += (payload.delta as string) || ''
         break
-      case 'tool_use_start':           // 后端 WS 推送的就是 tool_use_start（不是 tool_use）
+      case 'TOOL_USE':
         turn.toolSteps.push({
           toolName: (payload.toolName as string) || '',
           input: JSON.stringify(payload.input || {}),
@@ -53,7 +49,7 @@ const turns = computed<Turn[]>(() => {
           status: 'done'
         })
         break
-      case 'tool_result':
+      case 'TOOL_RESULT':
         if (turn.toolSteps.length > 0) {
           const last = turn.toolSteps[turn.toolSteps.length - 1]
           if (last.toolName === payload.toolName) {
@@ -61,11 +57,11 @@ const turns = computed<Turn[]>(() => {
           }
         }
         break
-      case 'checkpoint':
+      case 'CHECKPOINT':
         turn.status = 'done'
         if (payload.finalText) turn.assistantText = payload.finalText as string
         break
-      case 'error':
+      case 'ERROR':
         turn.status = 'error'
         turn.errorMessage = (payload.error as string) || 'Unknown error'
         break

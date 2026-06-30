@@ -12,7 +12,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -29,7 +29,7 @@ class DeterministicValidatorTest {
 
         // rootEntryAncestors returns entries reachable via caller chain
         // EntryA and EntryB are reachable (they are entry points), EntryX is not
-        when(kg.rootEntryAncestors(any(List.class), anyList(), anyInt()))
+        when(kg.rootEntryAncestors(any(List.class), anyString(), anyInt()))
                 .thenReturn(List.of(
                         new Entry("EntryA", "ClsA", "ma", "CONTROLLER"),
                         new Entry("EntryB", "ClsB", "mb", "CONTROLLER")));
@@ -52,7 +52,7 @@ class DeterministicValidatorTest {
         Entry entryB = new Entry("EntryB", "ClsB", "mb", "SCHEDULED");
 
         // Both entries are themselves root entry points
-        when(kg.rootEntryAncestors(any(List.class), anyList(), anyInt()))
+        when(kg.rootEntryAncestors(any(List.class), anyString(), anyInt()))
                 .thenReturn(List.of(
                         new Entry("EntryA", "ClsA", "ma", "CONTROLLER"),
                         new Entry("EntryB", "ClsB", "mb", "SCHEDULED")));

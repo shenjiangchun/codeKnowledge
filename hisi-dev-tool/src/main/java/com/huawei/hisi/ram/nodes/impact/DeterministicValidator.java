@@ -51,7 +51,7 @@ public class DeterministicValidator {
         }
         if (!claimedEntryIds.isEmpty()) {
             List<Entry> rootAncestors = kg.rootEntryAncestors(
-                    new ArrayList<>(claimedEntryIds), List.of(projectPath), 10);
+                    new ArrayList<>(claimedEntryIds), projectPath, 10);
             Set<String> reachableEntryIds = new LinkedHashSet<>();
             for (Entry r : rootAncestors) {
                 if (r != null && r.nodeId() != null) reachableEntryIds.add(r.nodeId());
@@ -82,7 +82,7 @@ public class DeterministicValidator {
             }
         }
         for (String mapper : mappers) {
-            List<SqlMapping> mappings = kg.mybatisSql(mapper, List.of(projectPath));
+            List<SqlMapping> mappings = kg.mybatisSql(mapper, projectPath);
             // TODO: requires LLM-claimed field set to cross-check tableFields ⊇ claimed.
             if (mappings == null) {
                 violations.add("SQL mapping lookup failed for mapper: " + mapper);
