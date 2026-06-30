@@ -263,17 +263,7 @@ public class LogAnalysisController {
             }
 
             // 构建详细报告响应
-            // v2: 从 rootCause Map 中提取深度分析字段
-            Map<String, Object> rootCauseMap = report.getRootCause();
-            List<Map<String, Object>> causalChain = null;
-            Map<String, Object> multiFactorAnalysis = null;
-            List<Map<String, Object>> timeline = null;
-            if (rootCauseMap != null) {
-                causalChain = (List<Map<String, Object>>) rootCauseMap.get("causalChain");
-                multiFactorAnalysis = (Map<String, Object>) rootCauseMap.get("multiFactorAnalysis");
-                timeline = (List<Map<String, Object>>) rootCauseMap.get("timeline");
-            }
-
+            // v3: rootCause 已含 markdown 字段，无需单独提取 causalChain/multiFactorAnalysis/timeline
             DetailedAnalysisReport response = DetailedAnalysisReport.builder()
                     .reportId(report.getReportId())
                     .status(report.getStatus())
@@ -281,9 +271,6 @@ public class LogAnalysisController {
                     .rootCause(report.getRootCause())
                     .fixSuggestions(report.getFixSuggestions())
                     .codeSnippets(report.getCodeSnippets())
-                    .causalChain(causalChain)
-                    .multiFactorAnalysis(multiFactorAnalysis)
-                    .timeline(timeline)
                     .createdAt(report.getCreatedAt())
                     .updatedAt(report.getUpdatedAt())
                     .occurrenceCount(report.getOccurrenceCount())

@@ -17,9 +17,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * @deprecated 由 {@link com.huawei.hisi.ram.chat.RamChatOrchestrator} 的工具循环替代。
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@Deprecated
 public class ClaudeChainAnalysisAgent implements ChainAnalysisAgent {
 
     private final KgMcpClient kgClient;

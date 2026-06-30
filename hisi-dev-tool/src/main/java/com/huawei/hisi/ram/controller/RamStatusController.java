@@ -35,9 +35,13 @@ import java.util.concurrent.TimeUnit;
  *   <li>{@code POST /start} – starts a project status analysis session.</li>
  *   <li>{@code GET /{sid}/report} – returns the latest project_overview checkpoint output.</li>
  * </ul>
+ *
+ * @deprecated 由 {@link com.huawei.hisi.ram.chat.RamChatController} 替代。
+ *     新架构采用多轮对话样式（/api/ram/chat/*），取代 Phase1+Phase2 两阶段 REST 端点。
  */
 @RestController
 @RequestMapping("/api/ram/status")
+@Deprecated
 public class RamStatusController {
 
     private static final Logger log = LoggerFactory.getLogger(RamStatusController.class);

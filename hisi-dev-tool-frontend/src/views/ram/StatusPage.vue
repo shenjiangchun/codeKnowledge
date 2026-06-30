@@ -1,6 +1,10 @@
+<!-- DEPRECATED: 由 RamChatView.vue 替代 (多轮对话样式) -->
 <script setup lang="ts">
 /**
  * StatusPage — project status analysis report display.
+ *
+ * DEPRECATED: 由 RamChatView.vue (路径: /ram/chat) 替代。
+ * 保留此页面用于已创建的旧会话查看，新功能请使用 /ram/chat。
  *
  * Uses REST-first + SSE incremental pattern:
  * 1. Load report from REST API (authoritative source)

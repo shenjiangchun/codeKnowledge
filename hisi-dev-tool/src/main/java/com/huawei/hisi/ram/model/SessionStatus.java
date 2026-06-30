@@ -10,5 +10,6 @@ public enum SessionStatus {
     PAUSED,
     DONE,
     FAILED,
-    ABORTED
+    ABORTED,
+    ARCHIVED
 }

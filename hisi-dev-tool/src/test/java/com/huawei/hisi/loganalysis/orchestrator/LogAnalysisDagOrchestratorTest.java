@@ -50,7 +50,7 @@ class LogAnalysisDagOrchestratorTest {
         parseNode = new ParseNode();
         kgSearchNode = new KgSearchNode(kgMcpClient);
         codeContextNode = new CodeContextNode(kgMcpClient);
-        claudeAnalyzeNode = new ClaudeAnalyzeNode(claudeClient);
+        claudeAnalyzeNode = new ClaudeAnalyzeNode(claudeClient, new RoundPromptBuilder());
         reportNode = new ReportNode();
 
         orchestrator = new LogAnalysisDagOrchestrator(

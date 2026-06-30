@@ -20,10 +20,14 @@ import java.util.stream.Collectors;
 
 /**
  * Phase2 V2 多 Agent 协作编排器。
+ *
+ * @deprecated 由 {@link com.huawei.hisi.ram.chat.RamChatOrchestrator} 替代。
+ *     新架构采用多轮对话 + 工具循环，取代 Phase1/Phase2 两阶段流水线。
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@Deprecated
 public class Phase2V2Orchestrator {
 
     private final KgMcpClient kgClient;

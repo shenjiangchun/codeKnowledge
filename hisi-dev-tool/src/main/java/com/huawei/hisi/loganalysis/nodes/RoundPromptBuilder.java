@@ -80,6 +80,8 @@ public class RoundPromptBuilder {
     /**
      * Round 2 的 system prompt 根据 Round 1 的 patternType 动态调整，
      * 对已知模式给出领域因果模型提示，对未知模式走通用推理。
+     *
+     * <p>输出格式为 markdown 文本（非 JSON），便于前端直接渲染。
      */
     public String buildRound2SystemPrompt(String patternType) {
         String domainHint = getDomainHint(patternType);
@@ -96,38 +98,56 @@ public class RoundPromptBuilder {
 
 """ + domainHint + """
 
-## 输出格式（严格遵循）
+## 输出格式（严格遵循，输出 markdown，不要输出 JSON）
 
-返回 JSON:
-{
-  "causalChain": [
-    {
-      "step": 1,
-      "event": "描述这一步发生了什么",
-      "mechanism": "为什么这一步导致了下一步",
-      "evidence": "引用具体堆栈帧或代码行号"
-    }
-  ],
-  "multiFactorAnalysis": {
-    "primaryFactor": "主要因素描述",
-    "contributingFactors": [
-      { "factor": "辅助因素描述", "interaction": "与主因素如何叠加" }
-    ],
-    "cascadeEffect": "因素叠加后的级联效应"
-  },
-  "timeline": [
-    { "phase": "T1", "event": "阶段关键事件", "duration": "持续时间", "evidence": "佐证依据" }
-  ],
-  "rootCause": "一句话描述根本原因",
-  "rootCauseDetail": "详细分析，包含推理过程和证据引用",
-  "confidence": "high/medium/low",
-  "confidenceReason": "为什么给出该置信度"
-}
+请按以下结构输出 markdown 文本：
+
+## 根因
+
+（一句话描述根本原因）
+
+## 详细分析
+
+（详细分析，包含推理过程和证据引用）
+
+## 因果链
+
+（至少 3 步，每步包含事件、机制、证据，使用有序列表）
+
+1. **事件描述**
+   - 机制: 为什么这一步导致了下一步
+   - 证据: 引用具体堆栈帧或代码行号
+
+2. 下一个事件描述
+   - 机制: ...
+   - 证据: ...
+
+（如非多因素叠加问题，"辅助因素"小节可省略；如非并发/时序问题，时序表可只含 1-2 个阶段）
+
+## 多因素叠加分析
+
+- 主要因素: （主要因素描述）
+- 级联效应: （因素叠加后的级联效应）
+- 辅助因素:
+  - （辅助因素） — 交互: （与主因素如何叠加）
+
+## 时序重建
+
+| 阶段 | 事件 | 持续时间 | 佐证依据 |
+|------|------|---------|---------|
+| T1 | 阶段关键事件 | 持续时间 | 佐证依据 |
+| T2 | ... | ... | ... |
+
+## 置信度
+
+- 等级: high / medium / low
+- 理由: （为什么给出该置信度）
 
 注意:
-- causalChain 至少 3 步
-- 如果不是并发/时序问题，timeline 可以只含 1-2 个阶段
-- 如果不是多因素叠加，contributingFactors 可为空数组
+- 不要输出 JSON、不要使用 ``` 代码块包裹整个输出
+- 因果链至少 3 步
+- 如果不是并发/时序问题，时序表可以只含 1-2 个阶段
+- 如果不是多因素叠加，辅助因素小节可省略
 """;
     }
 
@@ -223,54 +243,6 @@ public class RoundPromptBuilder {
         return sb.toString();
     }
 
-    // ========== Fallback: 单轮综合分析 ==========
-
-    /**
-     * Round 1 失败时的专用 fallback prompt。
-     * 合并因果链 + 修复建议为一套输出格式，避免 Round1/Round2 格式矛盾。
-     */
-    public String buildFallbackSystemPrompt() {
-        return """
-你是资深运维与代码根因分析专家。对以下错误日志和代码上下文进行一次性综合分析。
-
-## 推理方法（必须遵循）
-
-1. 因果链推理: 从异常表象逐步追溯至根因，形成 A→B→C→D 的因果链路。每一步必须说明机制（为什么 A 导致了 B）。
-2. 多因素叠加分析: 识别是否有多个因素共同作用。分析各因素之间的交互和叠加效应。
-3. 证据交叉引用: 每个推断步骤必须引用具体的堆栈帧（类名#方法名:行号）或代码片段作为依据。
-4. 时序重建: 对并发/时序问题，重建事件演进时间线（T1→T2→T3），标注关键事件和持续时间。
-
-## 输出格式（严格遵循）
-
-返回 JSON:
-{
-  "causalChain": [
-    { "step": 1, "event": "描述", "mechanism": "机制", "evidence": "证据" }
-  ],
-  "multiFactorAnalysis": {
-    "primaryFactor": "主要因素",
-    "contributingFactors": [{ "factor": "辅助因素", "interaction": "交互" }],
-    "cascadeEffect": "级联效应"
-  },
-  "timeline": [
-    { "phase": "T1", "event": "事件", "duration": "持续时间", "evidence": "佐证" }
-  ],
-  "rootCause": "一句话根因",
-  "rootCauseDetail": "详细分析",
-  "confidence": "high/medium/low",
-  "confidenceReason": "置信度理由",
-  "fixSuggestions": [
-    { "suggestion": "修复描述", "priority": "P0/P1/P2", "affectedCode": "代码位置", "expectedEffect": "预期效果" }
-  ]
-}
-
-注意:
-- causalChain 至少 3 步
-- fixSuggestions 至少 2 条，必须包含至少 1 条 P0 和 1 条 P1
-- priority 使用 P0/P1/P2，不要用 high/medium/low
-""";
-    }
-
     // ========== Round 3: 修复方案 ==========
 
     public String buildRound3SystemPrompt() {
@@ -308,65 +280,14 @@ public class RoundPromptBuilder {
 """;
     }
 
-    @SuppressWarnings("unchecked")
-    public String buildRound3UserPrompt(Map<String, Object> round2Result) {
+    public String buildRound3UserPrompt(String round2Markdown) {
         StringBuilder sb = new StringBuilder();
 
         sb.append("## Round 2 因果推理结果\n\n");
-
-        sb.append("根因: ").append(round2Result.getOrDefault("rootCause", "未确定")).append("\n");
-        sb.append("详细分析: ").append(round2Result.getOrDefault("rootCauseDetail", "无详细分析")).append("\n");
-        sb.append("置信度: ").append(round2Result.getOrDefault("confidence", "unknown")).append("\n");
-        sb.append("置信度理由: ").append(round2Result.getOrDefault("confidenceReason", "无")).append("\n\n");
-
-        // causalChain
-        Object chainObj = round2Result.get("causalChain");
-        if (chainObj instanceof List<?> chain && !chain.isEmpty()) {
-            sb.append("因果链:\n");
-            for (Object item : chain) {
-                if (item instanceof Map<?, ?> step) {
-                    sb.append("  Step ").append(strOr(step.get("step"), "?")).append(": ");
-                    sb.append(strOr(step.get("event"), "?")).append("\n");
-                    sb.append("    机制: ").append(strOr(step.get("mechanism"), "?")).append("\n");
-                    sb.append("    证据: ").append(strOr(step.get("evidence"), "?")).append("\n");
-                }
-            }
-            sb.append("\n");
-        }
-
-        // multiFactorAnalysis
-        Object mfaObj = round2Result.get("multiFactorAnalysis");
-        if (mfaObj instanceof Map<?, ?> mfa && !mfa.isEmpty()) {
-            sb.append("多因素叠加:\n");
-            sb.append("  主要因素: ").append(strOr(mfa.get("primaryFactor"), "?")).append("\n");
-            sb.append("  级联效应: ").append(strOr(mfa.get("cascadeEffect"), "?")).append("\n");
-            Object cfObj = mfa.get("contributingFactors");
-            if (cfObj instanceof List<?> cfs) {
-                for (Object cf : cfs) {
-                    if (cf instanceof Map<?, ?> m) {
-                        sb.append("  辅助因素: ").append(strOr(m.get("factor"), "?"));
-                        sb.append(" — 交互: ").append(strOr(m.get("interaction"), "?")).append("\n");
-                    }
-                }
-            }
-            sb.append("\n");
-        }
-
-        // timeline
-        Object tlObj = round2Result.get("timeline");
-        if (tlObj instanceof List<?> tl && !tl.isEmpty()) {
-            sb.append("时序重建:\n");
-            for (Object item : tl) {
-                if (item instanceof Map<?, ?> phase) {
-                    sb.append("  ").append(strOr(phase.get("phase"), "?")).append(": ");
-                    sb.append(strOr(phase.get("event"), "?")).append("\n");
-                    sb.append("    持续: ").append(strOr(phase.get("duration"), "?")).append("\n");
-                }
-            }
-            sb.append("\n");
-        }
-
-        sb.append("请基于以上因果推理结果，设计分优先级的修复方案，输出 JSON。\n");
+        sb.append(round2Markdown != null && !round2Markdown.isBlank()
+                ? round2Markdown
+                : "（Round 2 未生成有效分析结果）");
+        sb.append("\n\n请基于以上因果推理结果，设计分优先级的修复方案，输出 JSON。\n");
 
         return sb.toString();
     }
@@ -443,10 +364,6 @@ NPE 级联的典型因果链:
     }
 
     // ========== 截断工具 ==========
-
-    private static String strOr(Object value, String fallback) {
-        return value != null ? String.valueOf(value) : fallback;
-    }
 
     private String truncateCode(String code, int maxLen) {
         if (code == null) return "";

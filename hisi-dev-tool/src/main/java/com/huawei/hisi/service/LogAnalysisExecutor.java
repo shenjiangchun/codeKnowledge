@@ -217,23 +217,13 @@ public class LogAnalysisExecutor {
             errorSummary = new LinkedHashMap<>();
         }
 
-        // Build root cause from analysis (v2: 含因果链/多因素/时序)
+        // Build root cause (v3: markdown 字段)
         Map<String, Object> rootCauseSection = (Map<String, Object>) finalReport.get("rootCauseAnalysis");
         Map<String, Object> rootCause = new LinkedHashMap<>();
         if (rootCauseSection != null) {
             rootCause.put("rootCauseType", errorSummary.get("rootCauseException"));
-            rootCause.put("description", rootCauseSection.get("summary"));
+            rootCause.put("markdown", rootCauseSection.get("markdown"));
             rootCause.put("confidence", rootCauseSection.get("confidence"));
-            // v2: 新增深度分析字段
-            if (rootCauseSection.get("causalChain") != null) {
-                rootCause.put("causalChain", rootCauseSection.get("causalChain"));
-            }
-            if (rootCauseSection.get("multiFactorAnalysis") != null) {
-                rootCause.put("multiFactorAnalysis", rootCauseSection.get("multiFactorAnalysis"));
-            }
-            if (rootCauseSection.get("timeline") != null) {
-                rootCause.put("timeline", rootCauseSection.get("timeline"));
-            }
         }
 
         // Build fix suggestions

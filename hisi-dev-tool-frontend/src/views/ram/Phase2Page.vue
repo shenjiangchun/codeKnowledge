@@ -1,6 +1,9 @@
+<!-- DEPRECATED: 由 RamChatView.vue 替代 (多轮对话样式) -->
 <script setup lang="ts">
 /**
  * Phase2Page — V2 multi-agent orchestration report display.
+ *
+ * DEPRECATED: 由 RamChatView.vue (路径: /ram/chat) 替代。
  *
  * Pure REST polling pattern (V2 has its own status/report endpoints):
  * 1. Load report from V2 REST API (authoritative source)

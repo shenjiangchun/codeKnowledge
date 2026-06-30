@@ -164,6 +164,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'RAM 影响图谱' }
   },
   {
+    path: '/ram/chat',
+    name: 'RamChat',
+    component: () => import('@/views/ram/RamChatView.vue'),
+    meta: { title: 'RAM 对话' }
+  },
+  {
+    path: '/ram/chat/:sid',
+    name: 'RamChatSession',
+    component: () => import('@/views/ram/RamChatView.vue'),
+    meta: { title: 'RAM 对话' }
+  },
+  {
     path: '/merge-analysis',
     name: 'MergeAnalysisSessions',
     component: () => import('@/views/merge-analysis/SessionListPage.vue'),

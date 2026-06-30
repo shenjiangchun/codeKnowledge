@@ -13,7 +13,7 @@ import java.util.*;
  * Formats the analysis results into a structured report and prepares
  * for persistence to database.
  *
- * Input: { parsedError, rootCauseAnalysis, fixSuggestions, analysisConfidence }
+ * Input: { parsedError, rootCauseAnalysis (markdown), fixSuggestions, analysisConfidence }
  * Output: { finalReport }
  */
 @Slf4j
@@ -37,11 +37,6 @@ public class ReportNode implements LogAnalysisDagNode {
         List<?> entryPoints = (List<?>) input.get("entryPoints");
         String errorFingerprint = (String) input.get("errorFingerprint");
         Object rawAnalysis = input.get("rawAnalysis");
-
-        // v2: 深度分析结果
-        List<Map<String, Object>> causalChain = (List<Map<String, Object>>) input.get("causalChain");
-        Map<String, Object> multiFactorAnalysis = (Map<String, Object>) input.get("multiFactorAnalysis");
-        List<Map<String, Object>> timeline = (List<Map<String, Object>>) input.get("timeline");
 
         Map<String, Object> output = new LinkedHashMap<>(input);
 
@@ -87,25 +82,11 @@ public class ReportNode implements LogAnalysisDagNode {
             report.put("keyStackFrames", framesForReport);
         }
 
-        // Root cause analysis
+        // Root cause analysis (markdown)
         Map<String, Object> rootCauseSection = new LinkedHashMap<>();
-        rootCauseSection.put("summary", rootCauseAnalysis);
+        rootCauseSection.put("markdown", rootCauseAnalysis != null ? rootCauseAnalysis : "");
         rootCauseSection.put("confidence", confidence != null ? confidence : "unknown");
         rootCauseSection.put("entryPointsCount", entryPoints != null ? entryPoints.size() : 0);
-
-        // v2: 因果链
-        if (causalChain != null && !causalChain.isEmpty()) {
-            rootCauseSection.put("causalChain", causalChain);
-        }
-        // v2: 多因素叠加分析
-        if (multiFactorAnalysis != null && !multiFactorAnalysis.isEmpty()) {
-            rootCauseSection.put("multiFactorAnalysis", multiFactorAnalysis);
-        }
-        // v2: 时序重建
-        if (timeline != null && !timeline.isEmpty()) {
-            rootCauseSection.put("timeline", timeline);
-        }
-
         report.put("rootCauseAnalysis", rootCauseSection);
 
         // Fix suggestions
@@ -130,10 +111,10 @@ public class ReportNode implements LogAnalysisDagNode {
             report.put("detailedAnalysis", rawAnalysis);
         }
 
-        log.info("[ReportNode] 报告生成完成: suggestions={}, frames={}, causalChain={}, pattern={}, confidence={}",
+        log.info("[ReportNode] 报告生成完成: suggestions={}, frames={}, markdownLen={}, pattern={}, confidence={}",
                 suggestions.size(),
                 keyFrames != null ? keyFrames.size() : 0,
-                causalChain != null ? causalChain.size() : 0,
+                rootCauseAnalysis != null ? rootCauseAnalysis.length() : 0,
                 patternType,
                 confidence);
 

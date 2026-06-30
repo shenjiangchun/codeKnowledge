@@ -2,6 +2,7 @@ package com.huawei.hisi.config;
 
 import com.huawei.hisi.apm.handler.ApmWebSocketHandler;
 import com.huawei.hisi.handler.TerminalWebSocketHandler;
+import com.huawei.hisi.ram.chat.RamChatWebSocketHandler;
 import com.huawei.hisi.agent.event.AgentEventPublisher;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
@@ -31,6 +32,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
     private final TerminalWebSocketHandler terminalWebSocketHandler;
     private final AgentEventPublisher agentEventPublisher;
     private final ApmWebSocketHandler apmWebSocketHandler;
+    private final RamChatWebSocketHandler ramChatWebSocketHandler;
 
     // 默认允许的源（开发环境）- 与 CorsConfig 保持一致
     private static final String DEFAULT_ALLOWED_ORIGINS =
@@ -56,6 +58,11 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
         // 注册 APM WebSocket 处理器
         registry.addHandler(apmWebSocketHandler, "/ws/apm")
+                .setAllowedOrigins(allowedOrigins)
+                .addInterceptors(new HttpSessionHandshakeInterceptor());
+
+        // 注册 RAM Chat WebSocket 处理器
+        registry.addHandler(ramChatWebSocketHandler, "/ws/ram-chat")
                 .setAllowedOrigins(allowedOrigins)
                 .addInterceptors(new HttpSessionHandshakeInterceptor());
 

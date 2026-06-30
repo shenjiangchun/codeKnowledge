@@ -8,13 +8,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * ClaudeAnalyzeNode - Fourth node in log analysis DAG.
  *
  * v3: Three-round progressive analysis.
  *   Round 1 — 模式识别 (2000 tokens): 快速判断事故类型
- *   Round 2 — 因果推理 (8000 tokens): 基于模式 + 代码上下文深度分析
+ *   Round 2 — 因果推理 (8000 tokens): 基于模式 + 代码上下文深度分析（输出 markdown）
  *   Round 3 — 修复方案 (4000 tokens): 基于因果链设计分优先级修复方案
  *
  * 降级策略:
@@ -23,7 +24,7 @@ import java.util.*;
  *   Round3 失败 → 保留 Round1+Round2 结果 + 默认 P2 建议
  *
  * Input: { parsedError, codeBodies, callChains, entryPoints, entryPointsWithLayers }
- * Output: { rootCauseAnalysis, fixSuggestions, causalChain, multiFactorAnalysis, timeline, analysisVersion, patternType, ... }
+ * Output: { rootCauseAnalysis (markdown), fixSuggestions, analysisConfidence, analysisVersion, patternType, ... }
  */
 @Slf4j
 @Component
@@ -79,23 +80,22 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
             return singleRoundFallback(input, parsedError, codeBodies, callChains, entryPoints, entryPointsWithLayers);
         }
 
-        // ── Round 2: 因果推理 ──
-        Map<String, Object> round2Result = null;
+        // ── Round 2: 因果推理（输出 markdown） ──
+        String round2Markdown = null;
         try {
             String patternType = String.valueOf(round1Result.getOrDefault("patternType", "UNKNOWN"));
             log.info("[ClaudeAnalyzeNode] Round 2: 因果推理 (pattern={})", patternType);
             String r2Sys = promptBuilder.buildRound2SystemPrompt(patternType);
             String r2User = promptBuilder.buildRound2UserPrompt(round1Result, codeBodies, callChains, entryPoints, entryPointsWithLayers);
             SendOptions r2Opts = new SendOptions(claudeClient.defaultModel(), 8000, 0.3, null);
-            round2Result = claudeClient.callJson(r2Sys, r2User, r2Opts);
-            log.info("[ClaudeAnalyzeNode] Round 2 完成: rootCause={}, confidence={}",
-                    round2Result.get("rootCause"), round2Result.get("confidence"));
+            round2Markdown = claudeClient.callText(r2Sys, r2User, r2Opts);
+            log.info("[ClaudeAnalyzeNode] Round 2 完成: markdown 长度={}", round2Markdown.length());
         } catch (Exception e) {
             log.warn("[ClaudeAnalyzeNode] Round 2 失败，使用 Round1 假设: {}", e.getMessage());
         }
 
         // ── Round 2 失败 → 使用 Round1 假设 ──
-        if (round2Result == null || round2Result.isEmpty()) {
+        if (round2Markdown == null || round2Markdown.isBlank()) {
             return round2FailedFallback(output, round1Result);
         }
 
@@ -104,7 +104,7 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
         try {
             log.info("[ClaudeAnalyzeNode] Round 3: 修复方案");
             String r3Sys = promptBuilder.buildRound3SystemPrompt();
-            String r3User = promptBuilder.buildRound3UserPrompt(round2Result);
+            String r3User = promptBuilder.buildRound3UserPrompt(round2Markdown);
             SendOptions r3Opts = new SendOptions(claudeClient.defaultModel(), 4000, 0.3, null);
             round3Result = claudeClient.callJson(r3Sys, r3User, r3Opts);
             log.info("[ClaudeAnalyzeNode] Round 3 完成: suggestions={}",
@@ -114,12 +114,12 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
         }
 
         // ── 合并三轮结果 ──
-        return mergeResults(output, round1Result, round2Result, round3Result);
+        return mergeResults(output, round1Result, round2Markdown, round3Result);
     }
 
     // ========== 降级策略 ==========
 
-    /**
+    /*
      * Round 1 失败时的单轮回退：合并 Round1+Round2 的 system prompt，走 Phase A 方案。
      */
     private Map<String, Object> singleRoundFallback(Map<String, Object> input,
@@ -132,37 +132,23 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
         Map<String, Object> output = new LinkedHashMap<>(input);
 
         try {
-            // 使用专用 fallback prompt（统一输出格式，避免 Round1/Round2 格式矛盾）
-            String systemPrompt = promptBuilder.buildFallbackSystemPrompt();
-            // 复用 buildRound2UserPrompt 构建完整用户上下文
-            Map<String, Object> syntheticRound1 = Map.of(
-                    "patternType", "UNKNOWN",
-                    "patternConfidence", "low",
-                    "initialHypothesis", "模式识别失败，进行通用分析",
-                    "suggestedDepth", "medium");
-            String userPrompt = promptBuilder.buildRound2UserPrompt(
-                    syntheticRound1, codeBodies, callChains, entryPoints, entryPointsWithLayers)
-                    + "\n请严格按照系统提示中的输出格式进行综合分析。\n";
+            // 合并 Round1+Round2 的 system prompt 作为回退 prompt
+            String systemPrompt = promptBuilder.buildRound1SystemPrompt() + "\n\n" + promptBuilder.buildRound2SystemPrompt("UNKNOWN");
+            String userPrompt = promptBuilder.buildRound1UserPrompt(parsedError) + "\n\n"
+                    + "## 代码上下文与调用链\n\n"
+                    + buildCodeContextSection(codeBodies, callChains, entryPoints, entryPointsWithLayers)
+                    + "\n请直接进行完整的根因分析，按 Round 2 的 markdown 格式输出（根因、详细分析、因果链、多因素叠加、时序、置信度）。\n";
 
             SendOptions opts = new SendOptions(claudeClient.defaultModel(), 8000, 0.3, null);
-            Map<String, Object> analysis = claudeClient.callJson(systemPrompt, userPrompt, opts);
+            String markdown = claudeClient.callText(systemPrompt, userPrompt, opts);
 
-            output.put("rootCauseAnalysis", extractRootCause(analysis));
-            output.put("fixSuggestions", extractFixSuggestions(analysis));
-            output.put("analysisConfidence", extractConfidence(analysis));
-            output.put("causalChain", extractCausalChain(analysis));
-            output.put("multiFactorAnalysis", extractMultiFactorAnalysis(analysis));
-            output.put("timeline", extractTimeline(analysis));
+            output.put("rootCauseAnalysis", markdown);
+            output.put("analysisConfidence", "unknown");
             output.put("analysisVersion", "2.0-fallback");
-            output.put("rawAnalysis", analysis);
             log.info("[ClaudeAnalyzeNode] 单轮回退完成");
         } catch (Exception e) {
             log.error("[ClaudeAnalyzeNode] 单轮回退也失败: {}", e.getMessage());
             output.put("rootCauseAnalysis", "分析失败: " + e.getMessage());
-            output.put("fixSuggestions", Collections.emptyList());
-            output.put("causalChain", Collections.emptyList());
-            output.put("multiFactorAnalysis", Map.of());
-            output.put("timeline", Collections.emptyList());
             output.put("analysisVersion", "error");
             output.put("analysisError", e.getMessage());
         }
@@ -177,12 +163,10 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
         String hypothesis = String.valueOf(round1Result.getOrDefault("initialHypothesis", "无法确定根因"));
         String patternType = String.valueOf(round1Result.getOrDefault("patternType", "UNKNOWN"));
 
-        output.put("rootCauseAnalysis", hypothesis);
+        output.put("rootCauseAnalysis", "## 根因\n\n" + hypothesis
+                + "\n\n## 详细分析\n\nRound 2 深度分析失败，仅基于 Round 1 模式识别 [" + patternType + "] 给出初步假设。");
         output.put("analysisConfidence", round1Result.getOrDefault("patternConfidence", "low"));
         output.put("patternType", patternType);
-        output.put("causalChain", Collections.emptyList());
-        output.put("multiFactorAnalysis", Map.of());
-        output.put("timeline", Collections.emptyList());
         output.put("fixSuggestions", Collections.singletonList(Map.of(
                 "suggestion", "基于初步模式识别 [" + patternType + "]，建议: " + hypothesis,
                 "priority", "P2",
@@ -227,12 +211,12 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
     // ========== 结果合并 ==========
 
     /**
-     * 合并三轮分析结果到输出 map。
+     * 合并三轮分析结果到输出 map。Round 2 输出 markdown 字符串。
      */
     @SuppressWarnings("unchecked")
     private Map<String, Object> mergeResults(Map<String, Object> output,
                                               Map<String, Object> round1Result,
-                                              Map<String, Object> round2Result,
+                                              String round2Markdown,
                                               Map<String, Object> round3Result) {
         // Round 1: 模式识别
         output.put("patternType", round1Result.getOrDefault("patternType", "UNKNOWN"));
@@ -240,13 +224,9 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
         output.put("initialHypothesis", round1Result.getOrDefault("initialHypothesis", ""));
         output.put("suggestedDepth", round1Result.getOrDefault("suggestedDepth", "medium"));
 
-        // Round 2: 因果推理
-        output.put("rootCauseAnalysis", extractRootCause(round2Result));
-        output.put("analysisConfidence", extractConfidence(round2Result));
-        output.put("causalChain", extractCausalChain(round2Result));
-        output.put("multiFactorAnalysis", extractMultiFactorAnalysis(round2Result));
-        output.put("timeline", extractTimeline(round2Result));
-        output.put("confidenceReason", round2Result.getOrDefault("confidenceReason", ""));
+        // Round 2: 因果推理（markdown）
+        output.put("rootCauseAnalysis", round2Markdown);
+        output.put("analysisConfidence", round1Result.getOrDefault("patternConfidence", "low"));
 
         // Round 3: 修复方案
         if (round3Result != null && !round3Result.isEmpty()) {
@@ -263,7 +243,7 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
         output.put("analysisVersion", "3.0");
         output.put("rawAnalysis", Map.of(
                 "round1", round1Result,
-                "round2", round2Result,
+                "round2Markdown", round2Markdown,
                 "round3", round3Result != null ? round3Result : Map.of()));
 
         log.info("[ClaudeAnalyzeNode] 三轮分析合并完成: pattern={}, version=3.0",
@@ -272,6 +252,50 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
     }
 
     // ========== 辅助方法 ==========
+
+    /**
+     * 构建代码上下文文本段（用于单轮回退的 user prompt）。
+     */
+    private String buildCodeContextSection(List<MethodBodyInfo> codeBodies,
+                                           List<Map<String, Object>> callChains,
+                                           List<?> entryPoints,
+                                           List<Map<String, Object>> entryPointsWithLayers) {
+        StringBuilder sb = new StringBuilder();
+
+        if (codeBodies != null && !codeBodies.isEmpty()) {
+            sb.append("找到 ").append(codeBodies.size()).append(" 个相关方法:\n\n");
+            for (MethodBodyInfo info : codeBodies.stream().limit(30).collect(Collectors.toList())) {
+                sb.append("### ").append(info.className()).append("#").append(info.methodName()).append("\n");
+                sb.append("文件: ").append(info.filePath()).append("\n");
+                if (info.description() != null && !info.description().isBlank()) {
+                    sb.append("描述: ").append(info.description()).append("\n");
+                }
+                if (info.methodBody() != null && !info.methodBody().isBlank()) {
+                    sb.append("\n代码:\n```java\n").append(truncateCode(info.methodBody(), 2000)).append("\n```\n");
+                }
+                sb.append("\n");
+            }
+        } else {
+            sb.append("未找到相关代码上下文。\n");
+        }
+
+        if (callChains != null && !callChains.isEmpty()) {
+            sb.append("\n## 调用链\n\n");
+            for (Map<String, Object> chain : callChains.stream().limit(8).collect(Collectors.toList())) {
+                sb.append("- ").append(chain.get("className")).append("#").append(chain.get("methodName")).append("\n");
+            }
+        }
+
+        if (entryPointsWithLayers != null && !entryPointsWithLayers.isEmpty()) {
+            sb.append("\n## 入口点\n\n");
+            for (Map<String, Object> ep : entryPointsWithLayers.stream().limit(10).collect(Collectors.toList())) {
+                sb.append("- ").append(ep.get("className")).append("#").append(ep.get("methodName"))
+                        .append(" [").append(ep.get("entryType") != null ? ep.get("entryType") : ep.get("type")).append("]\n");
+            }
+        }
+
+        return sb.toString();
+    }
 
     private List<Map<String, Object>> defaultPSuggestions() {
         return Collections.singletonList(Map.of(
@@ -316,12 +340,6 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
 
     // ========== 结果提取 ==========
 
-    private String extractRootCause(Map<String, Object> analysis) {
-        Object rc = analysis.get("rootCause");
-        if (rc == null) rc = analysis.get("rootCauseDetail");
-        return rc != null ? String.valueOf(rc) : "未分析出根因";
-    }
-
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> extractFixSuggestions(Map<String, Object> analysis) {
         Object fixes = analysis.get("fixSuggestions");
@@ -332,56 +350,6 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
                     Map<String, Object> suggestion = new LinkedHashMap<>();
                     map.forEach((k, v) -> suggestion.put(String.valueOf(k), v));
                     result.add(suggestion);
-                }
-            }
-            return result;
-        }
-        return Collections.emptyList();
-    }
-
-    private String extractConfidence(Map<String, Object> analysis) {
-        Object conf = analysis.get("confidence");
-        return conf != null ? String.valueOf(conf) : "unknown";
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> extractCausalChain(Map<String, Object> analysis) {
-        Object chain = analysis.get("causalChain");
-        if (chain instanceof List<?> list) {
-            List<Map<String, Object>> result = new ArrayList<>();
-            for (Object item : list) {
-                if (item instanceof Map<?, ?> map) {
-                    Map<String, Object> step = new LinkedHashMap<>();
-                    map.forEach((k, v) -> step.put(String.valueOf(k), v));
-                    result.add(step);
-                }
-            }
-            return result;
-        }
-        return Collections.emptyList();
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> extractMultiFactorAnalysis(Map<String, Object> analysis) {
-        Object mfa = analysis.get("multiFactorAnalysis");
-        if (mfa instanceof Map<?, ?> map) {
-            Map<String, Object> result = new LinkedHashMap<>();
-            map.forEach((k, v) -> result.put(String.valueOf(k), v));
-            return result;
-        }
-        return Map.of();
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> extractTimeline(Map<String, Object> analysis) {
-        Object timeline = analysis.get("timeline");
-        if (timeline instanceof List<?> list) {
-            List<Map<String, Object>> result = new ArrayList<>();
-            for (Object item : list) {
-                if (item instanceof Map<?, ?> map) {
-                    Map<String, Object> phase = new LinkedHashMap<>();
-                    map.forEach((k, v) -> phase.put(String.valueOf(k), v));
-                    result.add(phase);
                 }
             }
             return result;

@@ -48,21 +48,6 @@ public class DetailedAnalysisReport {
     private List<Map<String, Object>> codeSnippets;
 
     /**
-     * v2: 因果链
-     */
-    private List<Map<String, Object>> causalChain;
-
-    /**
-     * v2: 多因素叠加分析
-     */
-    private Map<String, Object> multiFactorAnalysis;
-
-    /**
-     * v2: 时序重建
-     */
-    private List<Map<String, Object>> timeline;
-
-    /**
      * 创建时间
      */
     private LocalDateTime createdAt;

@@ -65,27 +65,25 @@ public class RamClaudeJsonClient {
     }
 
     /**
-     * Send a single-turn system + user message and parse the assistant
-     * response as a JSON {@code Map<String, Object>}.
+     * Send a single-turn system + user message and return the assistant
+     * response as raw text (no JSON parsing). Use this when the prompt
+     * instructs the model to output markdown or other non-JSON formats.
      *
      * <p>The {@link SendOptions#systemPrompt()} field is ignored;
      * {@code systemPrompt} and {@code userPrompt} are wired into the
      * request body explicitly.
      *
-     * @throws IllegalStateException if the API call fails or the response
-     *                               cannot be parsed as JSON
+     * @throws IllegalStateException if the API call fails or the response is empty
      */
-    @SuppressWarnings("unchecked")
-    public Map<String, Object> callJson(String systemPrompt,
-                                        String userPrompt,
-                                        SendOptions opts) {
+    public String callText(String systemPrompt,
+                           String userPrompt,
+                           SendOptions opts) {
         SendOptions effective = new SendOptions(
                 opts.model(), opts.maxTokens(), opts.temperature(), systemPrompt);
 
         List<Map<String, Object>> messages = List.of(
                 Map.of("role", "user", "content", userPrompt));
 
-        // Collect the full streamed response into a single string.
         StringBuilder sb = new StringBuilder();
         http.stream(messages, List.of(), effective)
                 .doOnNext(line -> {
@@ -106,14 +104,34 @@ public class RamClaudeJsonClient {
                 .blockLast();
 
         String raw = sb.toString().trim();
-
         log.debug("[RamClaudeJsonClient] raw response length={}", raw.length());
 
         if (raw.isEmpty()) {
-            log.error("[RamClaudeJsonClient] Empty response from Claude — returning empty map");
+            log.error("[RamClaudeJsonClient] Empty response from Claude — returning empty string");
+            return "";
+        }
+        return raw;
+    }
+
+    /**
+     * Send a single-turn system + user message and parse the assistant
+     * response as a JSON {@code Map<String, Object>}.
+     *
+     * <p>The {@link SendOptions#systemPrompt()} field is ignored;
+     * {@code systemPrompt} and {@code userPrompt} are wired into the
+     * request body explicitly.
+     *
+     * @throws IllegalStateException if the API call fails or the response
+     *                               cannot be parsed as JSON
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> callJson(String systemPrompt,
+                                        String userPrompt,
+                                        SendOptions opts) {
+        String raw = callText(systemPrompt, userPrompt, opts);
+        if (raw.isEmpty()) {
             return Map.of();
         }
-
         return parseJsonResponse(raw);
     }
 
@@ -254,6 +272,197 @@ public class RamClaudeJsonClient {
             throw new IllegalStateException("Claude response is not valid JSON");
         }
         return new JsonCallResult(parseJsonResponse(finalText), List.copyOf(reasoningSteps));
+    }
+
+    // ──────────────── Streaming variant with callbacks ────────────────
+
+    /**
+     * Same as {@link #callJsonWithToolsAndReasoning} but invokes
+     * {@link StreamCallbacks} during streaming so callers can push
+     * real-time deltas / tool events to the frontend.
+     */
+    public JsonCallResult callJsonWithToolsAndStreaming(
+            String systemPrompt,
+            String userPrompt,
+            List<ToolDefinition> tools,
+            Map<String, Function<Map<String, Object>, Object>> handlers,
+            SendOptions opts,
+            StreamCallbacks callbacks) {
+        if (tools == null || tools.isEmpty()) {
+            Map<String, Object> json = callJson(systemPrompt, userPrompt, opts);
+            callbacks.onRoundComplete(0, "end_turn");
+            return new JsonCallResult(json, List.of("单轮调用，无工具使用"));
+        }
+
+        SendOptions effective = new SendOptions(
+                opts.model(), opts.maxTokens(), opts.temperature(), systemPrompt);
+
+        List<Map<String, Object>> messages = new ArrayList<>();
+        messages.add(Map.of("role", "user", "content", userPrompt));
+
+        List<String> reasoningSteps = new ArrayList<>();
+        reasoningSteps.add("初始查询: " + truncateForReasoning(userPrompt));
+
+        for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
+            if (round == MAX_TOOL_ROUNDS - 2) {
+                messages.add(Map.of("role", "user", "content",
+                        "[SYSTEM] You have used most of your tool budget. " +
+                        "You MUST output your final JSON response in the next turn. " +
+                        "Stop calling tools and produce the complete JSON output now."));
+            }
+
+            StreamResult result = streamAndCollectWithCallbacks(messages, tools, effective, callbacks);
+
+            log.info("[RamClaudeJsonClient] streaming round={} stop_reason={} text.len={} tool_use_blocks={}",
+                    round, result.stopReason, result.textContent.length(), result.toolUseBlocks.size());
+
+            if (!"tool_use".equals(result.stopReason) || result.toolUseBlocks.isEmpty()) {
+                reasoningSteps.add("LLM返回最终结果");
+                callbacks.onRoundComplete(round, result.stopReason);
+                return new JsonCallResult(parseJsonResponse(result.textContent.toString()), List.copyOf(reasoningSteps));
+            }
+
+            List<Map<String, Object>> assistantContent = new ArrayList<>();
+            if (!result.textContent.isEmpty()) {
+                assistantContent.add(Map.of("type", "text", "text", result.textContent.toString()));
+            }
+
+            List<Map<String, Object>> toolResults = new ArrayList<>();
+            for (ToolUseBlock block : result.toolUseBlocks) {
+                assistantContent.add(Map.of(
+                        "type", "tool_use",
+                        "id", block.id,
+                        "name", block.name,
+                        "input", block.input
+                ));
+
+                callbacks.onToolUseStart(block.name, block.input);
+
+                String toolResultContent = executeToolHandler(handlers, block);
+                reasoningSteps.add(String.format("Round %d: %s(%s) -> %s",
+                        round, block.name, summarizeInput(block.name, block.input),
+                        truncateForReasoning(toolResultContent)));
+
+                callbacks.onToolResult(block.name, toolResultContent);
+
+                toolResults.add(Map.of(
+                        "type", "tool_result",
+                        "tool_use_id", block.id,
+                        "content", toolResultContent
+                ));
+            }
+
+            messages.add(Map.of("role", "assistant", "content", assistantContent));
+            messages.add(Map.of("role", "user", "content", toolResults));
+            callbacks.onRoundComplete(round, result.stopReason);
+        }
+
+        log.warn("[RamClaudeJsonClient] Streaming exceeded {} tool rounds — forcing termination", MAX_TOOL_ROUNDS);
+        reasoningSteps.add("超过最大工具轮次，强制终止");
+        messages.add(Map.of("role", "user", "content",
+                "[SYSTEM] Tool budget exhausted. You MUST now output your final answer " +
+                "as a single valid JSON object. Do NOT call any more tools. " +
+                "Do NOT include any prose before or after the JSON. " +
+                "Output ONLY the JSON object starting with { and ending with }."));
+        StreamResult finalResult = streamAndCollectWithCallbacks(messages, List.of(), effective, callbacks);
+        String finalText = finalResult.textContent.toString().trim();
+        if (finalText.isEmpty()) {
+            log.error("[RamClaudeJsonClient] Final forced streaming response is empty");
+            throw new IllegalStateException("Claude response is not valid JSON");
+        }
+        callbacks.onRoundComplete(MAX_TOOL_ROUNDS, finalResult.stopReason);
+        return new JsonCallResult(parseJsonResponse(finalText), List.copyOf(reasoningSteps));
+    }
+
+    /**
+     * Variant of {@link #streamAndCollect} that also fires
+     * {@link StreamCallbacks} for text deltas.
+     */
+    private StreamResult streamAndCollectWithCallbacks(List<Map<String, Object>> messages,
+                                                        List<ToolDefinition> tools,
+                                                        SendOptions opts,
+                                                        StreamCallbacks callbacks) {
+        StreamResult result = new StreamResult();
+        Map<Integer, String> blockTypes = new LinkedHashMap<>();
+        Map<Integer, ToolUseBlock> pendingToolBlocks = new LinkedHashMap<>();
+
+        http.stream(messages, tools, opts)
+                .doOnNext(line -> {
+                    try {
+                        Map<String, Object> event = MAPPER.readValue(line, new TypeReference<>() {});
+                        String type = String.valueOf(event.get("type"));
+
+                        switch (type) {
+                            case "content_block_start" -> {
+                                int index = getIntField(event, "index");
+                                Object cb = event.get("content_block");
+                                if (cb instanceof Map<?, ?> block) {
+                                    String blockType = String.valueOf(block.get("type"));
+                                    blockTypes.put(index, blockType);
+                                    if ("tool_use".equals(blockType)) {
+                                        ToolUseBlock tb = new ToolUseBlock();
+                                        Object idVal = block.get("id");
+                                        Object nameVal = block.get("name");
+                                        tb.id = idVal != null ? String.valueOf(idVal) : "";
+                                        tb.name = nameVal != null ? String.valueOf(nameVal) : "";
+                                        pendingToolBlocks.put(index, tb);
+                                    }
+                                }
+                            }
+                            case "content_block_delta" -> {
+                                int index = getIntField(event, "index");
+                                Object delta = event.get("delta");
+                                if (delta instanceof Map<?, ?> d) {
+                                    String deltaType = String.valueOf(d.get("type"));
+                                    if ("text_delta".equals(deltaType)) {
+                                        Object text = d.get("text");
+                                        if (text != null) {
+                                            String textStr = String.valueOf(text);
+                                            result.textContent.append(textStr);
+                                            callbacks.onAssistantDelta(textStr);
+                                        }
+                                    } else if ("input_json_delta".equals(deltaType)) {
+                                        Object partial = d.get("partial_json");
+                                        ToolUseBlock tb = pendingToolBlocks.get(index);
+                                        if (tb != null && partial != null) {
+                                            tb.inputJson.append(partial);
+                                        }
+                                    }
+                                }
+                            }
+                            case "content_block_stop" -> {
+                                int index = getIntField(event, "index");
+                                ToolUseBlock tb = pendingToolBlocks.remove(index);
+                                if (tb != null) {
+                                    String inputStr = tb.inputJson.toString().trim();
+                                    if (!inputStr.isEmpty()) {
+                                        try {
+                                            tb.input = MAPPER.readValue(inputStr, new TypeReference<>() {});
+                                        } catch (Exception e) {
+                                            log.warn("[RamClaudeJsonClient] Failed to parse tool input JSON: {}",
+                                                    inputStr.length() > 200 ? inputStr.substring(0, 200) : inputStr);
+                                            tb.input = Map.of();
+                                        }
+                                    }
+                                    result.toolUseBlocks.add(tb);
+                                }
+                            }
+                            case "message_delta" -> {
+                                Object d = event.get("delta");
+                                if (d instanceof Map<?, ?> delta) {
+                                    Object sr = delta.get("stop_reason");
+                                    if (sr instanceof String s) {
+                                        result.stopReason = s;
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception ignored) {
+                    }
+                })
+                .blockLast();
+
+        return result;
     }
 
     // ──────────────── SSE stream parsing with tool_use support ────────────────

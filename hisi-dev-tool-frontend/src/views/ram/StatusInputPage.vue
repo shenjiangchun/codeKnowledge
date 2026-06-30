@@ -1,6 +1,10 @@
+<!-- DEPRECATED: 由 RamChatView.vue 内嵌 ProjectPickerDialog.vue 替代 -->
 <script setup lang="ts">
 /**
  * StatusInputPage — 项目现状分析输入页面.
+ *
+ * DEPRECATED: 由 RamChatView.vue (路径: /ram/chat) 内嵌的 ProjectPickerDialog 替代。
+ *
  * 用户选择目标项目，可选输入分析问题，生成项目现状分析报告.
  *
  * Note: This page only calls the REST API to create the session. The SSE
