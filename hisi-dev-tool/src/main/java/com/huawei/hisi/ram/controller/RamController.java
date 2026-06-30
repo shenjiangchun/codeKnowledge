@@ -245,7 +245,17 @@ public class RamController {
         if (!allPaths.isEmpty()) {
             try { seeded.setProjectPaths(objectMapper.writeValueAsString(allPaths)); } catch (Exception ignored) {}
         }
-        sessionRepository.update(seeded);
+        sessionRepository.update(seeded).ifPresentOrElse(
+                updated -> {},
+                () -> {
+                    log.error("[RAM][POST /sessions] Optimistic lock failure for seeded session backendId={}, retrying", seeded.getId());
+                    sessionRepository.findById(seeded.getId()).ifPresent(fresh -> {
+                        fresh.setUuid(handle);
+                        fresh.setIntent(seeded.getIntent());
+                        fresh.setProjectPaths(seeded.getProjectPaths());
+                        sessionRepository.update(fresh);
+                    });
+                });
         sessionMappingService.register(handle, backendId);
         log.info("[RAM][POST /sessions] seeded session handle={} backendId={} userId={} projectPath={}",
                 handle, backendId, userId, request.projectPath());

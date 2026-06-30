@@ -96,7 +96,17 @@ public class RamStatusController {
         try {
             seeded.setProjectPaths(objectMapper.writeValueAsString(List.of(request.projectPath())));
         } catch (Exception ignored) {}
-        sessionRepository.update(seeded);
+        sessionRepository.update(seeded).ifPresentOrElse(
+                updated -> {},
+                () -> {
+                    log.error("[RAM][POST /status/start] Optimistic lock failure for seeded session backendId={}, retrying", backendId);
+                    sessionRepository.findById(backendId).ifPresent(fresh -> {
+                        fresh.setUuid(handle);
+                        fresh.setIntent(seeded.getIntent());
+                        fresh.setProjectPaths(seeded.getProjectPaths());
+                        sessionRepository.update(fresh);
+                    });
+                });
         sessionMappingService.register(handle, backendId);
 
         log.info("[RAM][POST /status/start] seeded session handle={} backendId={} projectPath={} mode={}",

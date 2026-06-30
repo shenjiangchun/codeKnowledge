@@ -33,7 +33,8 @@ public class CorsConfig implements WebMvcConfigurer {
                 .addPathPatterns("/**")
                 .excludePathPatterns("/api/auth/**",
                         "/api/search/**",
-                        "/api/vector-search/**");
+                        "/api/vector-search/**",
+                        "/api/ram/**");
     }
 
     @Bean
