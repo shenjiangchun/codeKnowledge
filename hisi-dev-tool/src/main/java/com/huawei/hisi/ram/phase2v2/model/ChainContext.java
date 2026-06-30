@@ -45,6 +45,8 @@ public record ChainContext(
         long totalBridges,
         long feignCount,
         long mqCount,
-        List<String> coreMethodNodeIds
+        List<String> coreMethodNodeIds,
+        /** Phase1 markdown_report 前 200 字，用于增强追问 prompt */
+        String phase1Summary
     ) {}
 }

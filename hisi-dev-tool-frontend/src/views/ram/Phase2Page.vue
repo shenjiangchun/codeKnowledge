@@ -23,7 +23,7 @@ const loading = ref<boolean>(true)
 const error = ref<string | null>(null)
 const pollTimer = ref<number | null>(null)
 
-// V2 report status: DONE / FAILED / RUNNING
+// V2 report status: DONE / FAILED / RUNNING / PENDING
 const status = computed(() => {
   if (report.value?.status) {
     return report.value.status as string
@@ -32,6 +32,7 @@ const status = computed(() => {
 })
 
 const isRunning = computed(() => loading.value || status.value === 'RUNNING')
+const isPending = computed(() => status.value === 'PENDING')
 const isSuccess = computed(() => status.value === 'DONE')
 const isFailed = computed(() => status.value === 'FAILED')
 
@@ -81,7 +82,7 @@ async function pollV2(): Promise<void> {
       report.value = resp as unknown as Record<string, unknown>
     }
 
-    if (resp.status === 'DONE' || resp.status === 'FAILED') {
+    if (resp.status === 'DONE' || resp.status === 'FAILED' || resp.status === 'PENDING') {
       stopPolling()
       loading.value = false
     }
@@ -89,6 +90,10 @@ async function pollV2(): Promise<void> {
     if (resp.status === 'FAILED') {
       error.value = '精确分析执行失败'
       ElMessage.error('精确分析失败，请查看错误信息')
+    }
+
+    if (resp.status === 'PENDING') {
+      // 拆分完成，等待后续分析执行
     }
   } catch (e) {
     // If report not yet available, try status endpoint
@@ -140,7 +145,7 @@ async function initSession(id: string): Promise<void> {
     if (resp.summaryLayer || resp.detailLayer) {
       report.value = resp as unknown as Record<string, unknown>
     }
-    if (resp.status === 'DONE' || resp.status === 'FAILED') {
+    if (resp.status === 'DONE' || resp.status === 'FAILED' || resp.status === 'PENDING') {
       loading.value = false
       if (resp.status === 'FAILED') {
         error.value = '精确分析执行失败'
@@ -183,8 +188,8 @@ function goBack(): void {
         <div class="card-header">
           <span>Phase2 V2 多Agent协作分析报告</span>
           <div class="header-actions">
-            <el-tag :type="isSuccess ? 'success' : isFailed ? 'danger' : 'warning'">
-              {{ isSuccess ? '已完成' : isFailed ? '失败' : '运行中' }}
+            <el-tag :type="isSuccess ? 'success' : isFailed ? 'danger' : isPending ? 'warning' : 'warning'">
+              {{ isSuccess ? '已完成' : isFailed ? '失败' : isPending ? '拆分完成' : '运行中' }}
             </el-tag>
             <el-button size="small" @click="goBack">返回</el-button>
           </div>
@@ -290,6 +295,34 @@ function goBack(): void {
             </el-collapse>
           </div>
           <div v-else class="empty-hint">暂无链路分析数据</div>
+        </el-card>
+      </div>
+
+      <!-- Pending: chains split but analysis not executed -->
+      <div v-else-if="isPending && report" class="report-container">
+        <el-card shadow="never" class="layer-card">
+          <template #header>
+            <div class="detail-header">
+              <span class="layer-title">链路拆分完成</span>
+              <div class="detail-stats">
+                <el-tag type="warning" size="small">已拆分 {{ chainCount }} 条链路，等待后续分析</el-tag>
+              </div>
+            </div>
+          </template>
+
+          <div v-if="chains.length > 0">
+            <el-collapse>
+              <el-collapse-item
+                v-for="chain in chains"
+                :key="chain.chainId"
+                :title="chain.chainName || chain.chainId"
+                :name="chain.chainId"
+              >
+                <div class="chain-summary">{{ chain.summary || '等待分析' }}</div>
+              </el-collapse-item>
+            </el-collapse>
+          </div>
+          <div v-else class="empty-hint">暂无链路数据</div>
         </el-card>
       </div>
 

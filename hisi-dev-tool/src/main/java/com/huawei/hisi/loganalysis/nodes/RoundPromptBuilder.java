@@ -223,6 +223,54 @@ public class RoundPromptBuilder {
         return sb.toString();
     }
 
+    // ========== Fallback: 单轮综合分析 ==========
+
+    /**
+     * Round 1 失败时的专用 fallback prompt。
+     * 合并因果链 + 修复建议为一套输出格式，避免 Round1/Round2 格式矛盾。
+     */
+    public String buildFallbackSystemPrompt() {
+        return """
+你是资深运维与代码根因分析专家。对以下错误日志和代码上下文进行一次性综合分析。
+
+## 推理方法（必须遵循）
+
+1. 因果链推理: 从异常表象逐步追溯至根因，形成 A→B→C→D 的因果链路。每一步必须说明机制（为什么 A 导致了 B）。
+2. 多因素叠加分析: 识别是否有多个因素共同作用。分析各因素之间的交互和叠加效应。
+3. 证据交叉引用: 每个推断步骤必须引用具体的堆栈帧（类名#方法名:行号）或代码片段作为依据。
+4. 时序重建: 对并发/时序问题，重建事件演进时间线（T1→T2→T3），标注关键事件和持续时间。
+
+## 输出格式（严格遵循）
+
+返回 JSON:
+{
+  "causalChain": [
+    { "step": 1, "event": "描述", "mechanism": "机制", "evidence": "证据" }
+  ],
+  "multiFactorAnalysis": {
+    "primaryFactor": "主要因素",
+    "contributingFactors": [{ "factor": "辅助因素", "interaction": "交互" }],
+    "cascadeEffect": "级联效应"
+  },
+  "timeline": [
+    { "phase": "T1", "event": "事件", "duration": "持续时间", "evidence": "佐证" }
+  ],
+  "rootCause": "一句话根因",
+  "rootCauseDetail": "详细分析",
+  "confidence": "high/medium/low",
+  "confidenceReason": "置信度理由",
+  "fixSuggestions": [
+    { "suggestion": "修复描述", "priority": "P0/P1/P2", "affectedCode": "代码位置", "expectedEffect": "预期效果" }
+  ]
+}
+
+注意:
+- causalChain 至少 3 步
+- fixSuggestions 至少 2 条，必须包含至少 1 条 P0 和 1 条 P1
+- priority 使用 P0/P1/P2，不要用 high/medium/low
+""";
+    }
+
     // ========== Round 3: 修复方案 ==========
 
     public String buildRound3SystemPrompt() {

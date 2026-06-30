@@ -131,19 +131,27 @@ public class RamPhase2V2Controller {
                 Phase2V2Report report = orchestrator.orchestrate(
                         request.sessionId(), request.question(), projectPath);
 
-                // Check if orchestrator produced real data or empty skeleton
-                boolean hasData = report.detailLayer() != null
-                        && report.detailLayer().chainCount() > 0;
-                String finalStatus = hasData ? "DONE" : "FAILED";
+                // 四态判定: FAILED(拆分失败) / PENDING(拆分成功待分析) / DONE(分析完成)
+                String finalStatus;
+                if (report.detailLayer() == null || report.detailLayer().chainCount() == 0) {
+                    finalStatus = "FAILED";   // 拆分失败
+                } else if (report.detailLayer().totalMethodsAnalyzed() == 0) {
+                    finalStatus = "PENDING";  // 拆分成功但分析未执行
+                } else {
+                    finalStatus = "DONE";     // 分析完成
+                }
 
                 Phase2V2Report finalReport = new Phase2V2Report(
                     report.summaryLayer(), report.detailLayer(), finalStatus, report.question());
                 reportStore.put(v2SessionId, finalReport);
-                stateStore.put(v2SessionId, new V2ExecutionState(
-                    finalStatus, 3, hasData ? 3 : 0, "done", System.currentTimeMillis()));
 
-                log.info("[Phase2V2] Completed for v2SessionId={}, hasData={}, finalStatus={}",
-                        v2SessionId, hasData, finalStatus);
+                int chainCount = report.detailLayer() != null ? report.detailLayer().chainCount() : 0;
+                stateStore.put(v2SessionId, new V2ExecutionState(
+                    finalStatus, chainCount, "DONE".equals(finalStatus) ? chainCount : 0,
+                    "done", System.currentTimeMillis()));
+
+                log.info("[Phase2V2] Completed for v2SessionId={}, chainCount={}, finalStatus={}",
+                        v2SessionId, chainCount, finalStatus);
             } catch (Exception e) {
                 log.error("[Phase2V2] Failed for v2SessionId={}: {}",
                         v2SessionId, e.getMessage(), e);

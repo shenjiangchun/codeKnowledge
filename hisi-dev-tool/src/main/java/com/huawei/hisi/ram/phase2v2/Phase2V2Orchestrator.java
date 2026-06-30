@@ -15,8 +15,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Phase2 V2 多 Agent 协作编排器。
@@ -43,7 +43,7 @@ public class Phase2V2Orchestrator {
         log.info("[Phase2V2] Starting orchestration for parentSession={} question={}",
                 parentSessionId, question);
 
-        // Step 1: 继承 Phase1 数据 (骨架: 返回 null)
+        // Step 1: 继承 Phase1 数据
         ChainContext.Phase1InheritedData inheritedData = loadPhase1Checkpoint(parentSessionId);
 
         // Step 2: KG entryPoints 匹配
@@ -55,19 +55,55 @@ public class Phase2V2Orchestrator {
                 inheritedData != null ? "Phase1 checkpoint" : "KG fallback",
                 entryPoints.size());
 
-        // Step 3: 拆分链路
+        // Step 3: 增强追问问题
+        String effectiveQuestion = question;
+        if (chainSplitter.isFollowUpQuestion(question) && inheritedData != null) {
+            effectiveQuestion = buildEnhancedQuestion(question, inheritedData.phase1Summary());
+            log.info("[Phase2V2] Enhanced follow-up question (length={})", effectiveQuestion.length());
+        }
+
+        // Step 4: 拆分链路
         List<ChainContext> chainContexts = chainSplitter.split(
-                entryPoints, question, projectPath, parentSessionId);
+                entryPoints, effectiveQuestion, projectPath, parentSessionId, inheritedData);
 
         log.info("[Phase2V2] Split into {} chains", chainContexts.size());
 
-        // Step 4-5: 骨架返回空报告
+        // Step 5: 构建反映中间态的骨架报告（chainCount 和 chainSummaries 真实）
+        List<DetailLayer.ChainSummary> chainSummaries = chainContexts.stream()
+                .map(ctx -> new DetailLayer.ChainSummary(
+                        ctx.chainId(),
+                        ctx.chainName(),
+                        "等待分析",
+                        true,
+                        "/api/ram/status/phase2/v2/" + parentSessionId + "/chain/" + ctx.chainId() + "/report"
+                ))
+                .collect(Collectors.toList());
+
+        DetailLayer detailLayer = new DetailLayer(
+                chainSummaries,
+                chainContexts.size(),   // 真实 chainCount（而非 0）
+                0,                      // totalMethodsAnalyzed = 0（未执行）
+                0                       // totalCodeSnippets = 0（未执行）
+        );
+
         return new Phase2V2Report(
                 new SummaryLayer("", "", List.of(), List.of(), List.of()),
-                new DetailLayer(List.of(), 0, 0, 0),
-                "RUNNING",
+                detailLayer,
+                "PENDING",
                 question
         );
+    }
+
+    /**
+     * 构建增强的追问问题，包含 Phase1 概览上下文。
+     */
+    private String buildEnhancedQuestion(String question, String phase1Summary) {
+        String summary = (phase1Summary != null && !phase1Summary.isBlank())
+                ? phase1Summary
+                : "（无摘要）";
+        return String.format(
+                "用户在看到以下项目概览后追问「%s」。\n\nPhase1 概览摘要：%s\n\n请对概览中提及的核心链路进行深入分析。",
+                question, summary);
     }
 
     /**
@@ -76,7 +112,6 @@ public class Phase2V2Orchestrator {
     @SuppressWarnings("unchecked")
     private ChainContext.Phase1InheritedData loadPhase1Checkpoint(String sessionId) {
         try {
-            // 解析 backend ID
             Long backendId = sessionRepository.findByUuid(sessionId)
                     .map(s -> s.getId())
                     .orElse(null);
@@ -98,22 +133,25 @@ public class Phase2V2Orchestrator {
                 Map<String, Object> output = (Map<String, Object>) payload.get("output");
                 if (output == null) continue;
 
-                // 提取 entryPoints (raw Entry list stored by Phase1)
+                // 提取 entryPoints
                 List<Entry> entryPoints = extractEntryPoints(output.get("entry_points"));
                 if (entryPoints.isEmpty()) {
-                    // Fallback: try entry_points_summary (LLM text, may not parse)
                     entryPoints = extractEntryPoints(output.get("entry_points_summary"));
                 }
 
                 // 提取 coreMethods nodeIds
                 List<String> coreMethodNodeIds = extractCoreMethodNodeIds(output.get("core_call_chains"));
 
+                // 提取 phase1Summary（markdown_report 前 200 字）
+                String phase1Summary = extractPhase1Summary(output.get("markdown_report"));
+
                 return new ChainContext.Phase1InheritedData(
                         entryPoints,
                         0,  // totalBridges (待后续实现)
                         0,  // feignCount
                         0,  // mqCount
-                        coreMethodNodeIds
+                        coreMethodNodeIds,
+                        phase1Summary
                 );
             }
 
@@ -122,6 +160,16 @@ public class Phase2V2Orchestrator {
             log.warn("[Phase2V2] Failed to load Phase1 checkpoint: {}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 从 markdown_report 字段截取前 200 字作为摘要。
+     */
+    private String extractPhase1Summary(Object obj) {
+        if (obj instanceof String s && !s.isBlank()) {
+            return s.length() <= 200 ? s : s.substring(0, 200) + "...";
+        }
+        return null;
     }
 
     private Map<String, Object> parsePayload(String json) {
@@ -147,7 +195,7 @@ public class Phase2V2Orchestrator {
                                 (String) m.getOrDefault("type", "")
                         );
                     })
-                    .toList();
+                    .collect(Collectors.toList());
         }
         return List.of();
     }
@@ -163,7 +211,7 @@ public class Phase2V2Orchestrator {
                         return nodeId != null ? nodeId.toString() : "";
                     })
                     .filter(id -> !id.isBlank())
-                    .toList();
+                    .collect(Collectors.toList());
         }
         return List.of();
     }

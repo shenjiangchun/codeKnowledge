@@ -8,7 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * ClaudeAnalyzeNode - Fourth node in log analysis DAG.
@@ -133,12 +132,17 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
         Map<String, Object> output = new LinkedHashMap<>(input);
 
         try {
-            // 合并 Round1+Round2 的 system prompt 作为回退 prompt
-            String systemPrompt = promptBuilder.buildRound1SystemPrompt() + "\n\n" + promptBuilder.buildRound2SystemPrompt("UNKNOWN");
-            String userPrompt = promptBuilder.buildRound1UserPrompt(parsedError) + "\n\n"
-                    + "## 代码上下文与调用链\n\n"
-                    + buildCodeContextSection(codeBodies, callChains, entryPoints, entryPointsWithLayers)
-                    + "\n请直接进行完整的根因分析并输出 JSON（包含 rootCause、causalChain、fixSuggestions 等字段）。\n";
+            // 使用专用 fallback prompt（统一输出格式，避免 Round1/Round2 格式矛盾）
+            String systemPrompt = promptBuilder.buildFallbackSystemPrompt();
+            // 复用 buildRound2UserPrompt 构建完整用户上下文
+            Map<String, Object> syntheticRound1 = Map.of(
+                    "patternType", "UNKNOWN",
+                    "patternConfidence", "low",
+                    "initialHypothesis", "模式识别失败，进行通用分析",
+                    "suggestedDepth", "medium");
+            String userPrompt = promptBuilder.buildRound2UserPrompt(
+                    syntheticRound1, codeBodies, callChains, entryPoints, entryPointsWithLayers)
+                    + "\n请严格按照系统提示中的输出格式进行综合分析。\n";
 
             SendOptions opts = new SendOptions(claudeClient.defaultModel(), 8000, 0.3, null);
             Map<String, Object> analysis = claudeClient.callJson(systemPrompt, userPrompt, opts);
@@ -268,50 +272,6 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
     }
 
     // ========== 辅助方法 ==========
-
-    /**
-     * 构建代码上下文文本段（用于单轮回退的 user prompt）。
-     */
-    private String buildCodeContextSection(List<MethodBodyInfo> codeBodies,
-                                           List<Map<String, Object>> callChains,
-                                           List<?> entryPoints,
-                                           List<Map<String, Object>> entryPointsWithLayers) {
-        StringBuilder sb = new StringBuilder();
-
-        if (codeBodies != null && !codeBodies.isEmpty()) {
-            sb.append("找到 ").append(codeBodies.size()).append(" 个相关方法:\n\n");
-            for (MethodBodyInfo info : codeBodies.stream().limit(30).collect(Collectors.toList())) {
-                sb.append("### ").append(info.className()).append("#").append(info.methodName()).append("\n");
-                sb.append("文件: ").append(info.filePath()).append("\n");
-                if (info.description() != null && !info.description().isBlank()) {
-                    sb.append("描述: ").append(info.description()).append("\n");
-                }
-                if (info.methodBody() != null && !info.methodBody().isBlank()) {
-                    sb.append("\n代码:\n```java\n").append(truncateCode(info.methodBody(), 2000)).append("\n```\n");
-                }
-                sb.append("\n");
-            }
-        } else {
-            sb.append("未找到相关代码上下文。\n");
-        }
-
-        if (callChains != null && !callChains.isEmpty()) {
-            sb.append("\n## 调用链\n\n");
-            for (Map<String, Object> chain : callChains.stream().limit(8).collect(Collectors.toList())) {
-                sb.append("- ").append(chain.get("className")).append("#").append(chain.get("methodName")).append("\n");
-            }
-        }
-
-        if (entryPointsWithLayers != null && !entryPointsWithLayers.isEmpty()) {
-            sb.append("\n## 入口点\n\n");
-            for (Map<String, Object> ep : entryPointsWithLayers.stream().limit(10).collect(Collectors.toList())) {
-                sb.append("- ").append(ep.get("className")).append("#").append(ep.get("methodName"))
-                        .append(" [").append(ep.get("entryType") != null ? ep.get("entryType") : ep.get("type")).append("]\n");
-            }
-        }
-
-        return sb.toString();
-    }
 
     private List<Map<String, Object>> defaultPSuggestions() {
         return Collections.singletonList(Map.of(
