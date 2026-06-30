@@ -912,7 +912,7 @@ public class RamController {
             @RequestParam(value = "sessionType", required = false) String sessionType) {
         List<AgentSession> sessions;
         if (sessionType != null && !sessionType.isBlank()) {
-            sessions = sessionRepository.listRecentBySessionType(sessionType, Math.min(limit, 200));
+            sessions = sessionRepository.listRecentBySessionTypeExcludingUserId(sessionType, "merge-analysis", Math.min(limit, 200));
         } else {
             sessions = sessionRepository.listRecentExcludingUserId("merge-analysis", Math.min(limit, 200));
         }

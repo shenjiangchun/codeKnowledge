@@ -80,6 +80,14 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
             FROM agent_session WHERE session_type = ? ORDER BY updated_at DESC LIMIT ?
             """;
 
+    private static final String LIST_RECENT_BY_SESSION_TYPE_EXCLUDING_USER_SQL = """
+            SELECT id, user_id, plan_id, status, current_node, step_count,
+                   last_checkpoint_event_id, cache_key, uuid, intent, project_paths, rerun_from_node,
+                   source_branch, target_branch, session_type,
+                   version, created_at, updated_at
+            FROM agent_session WHERE session_type = ? AND user_id != ? ORDER BY updated_at DESC LIMIT ?
+            """;
+
     private final JdbcTemplate jdbc;
 
     public JdbcAgentSessionRepository(JdbcTemplate jdbc) {
@@ -231,6 +239,11 @@ public class JdbcAgentSessionRepository implements AgentSessionRepository {
     @Override
     public List<AgentSession> listRecentBySessionType(String sessionType, int limit) {
         return jdbc.query(LIST_RECENT_BY_SESSION_TYPE_SQL, mapper, sessionType, limit);
+    }
+
+    @Override
+    public List<AgentSession> listRecentBySessionTypeExcludingUserId(String sessionType, String excludeUserId, int limit) {
+        return jdbc.query(LIST_RECENT_BY_SESSION_TYPE_EXCLUDING_USER_SQL, mapper, sessionType, excludeUserId, limit);
     }
 
     private static SessionType parseSessionType(String value) {

@@ -82,43 +82,11 @@ export interface DetailedAnalysisReport {
   createdAt: string
   updatedAt: string
   occurrenceCount?: number  // 出现次数（同类错误合并计数）
-  // v2 深度分析字段
-  causalChain?: CausalChainStep[]
-  multiFactorAnalysis?: MultiFactorAnalysis
-  timeline?: TimelinePhase[]
 }
 
 export interface LogQueryResponse {
   logs: LogEntry[]
   total: number
-}
-
-// v2: 深度分析类型
-
-/** 因果链步骤 */
-export interface CausalChainStep {
-  step: number
-  event: string
-  mechanism: string
-  evidence: string
-}
-
-/** 多因素叠加分析 */
-export interface MultiFactorAnalysis {
-  primaryFactor: string
-  contributingFactors: Array<{
-    factor: string
-    interaction: string
-  }>
-  cascadeEffect: string
-}
-
-/** 时序重建阶段 */
-export interface TimelinePhase {
-  phase: string
-  event: string
-  duration: string
-  evidence: string
 }
 
 // ========== 日志分析实时节点事件 (WebSocket) ==========
