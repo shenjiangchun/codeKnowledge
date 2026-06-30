@@ -11,78 +11,81 @@ import com.huawei.hisi.ram.kg.dto.SqlMapping;
 
 import java.util.List;
 
-/**
- * Thin client for the hisi-mcp-server {@code kg_*} tool set.
- *
- * <p>Each method maps 1:1 to a tool exposed by the MCP server. Implementations
- * must translate calls to the server's JSON-RPC style {@code tools/call} endpoint
- * and parse the response into the matching DTO list / tree.</p>
- */
 public interface KgMcpClient {
 
-    /** Get bridge statistics for a project (Feign/MQ/Mapper/JPA/etc). */
     BridgeStats bridgeStats(String projectPath);
 
-    /** Multi-project overload for bridge stats. */
-    default BridgeStats bridgeStats(List<String> projectPaths) {
-        if (projectPaths == null || projectPaths.isEmpty()) return BridgeStats.builder().build();
-        return bridgeStats(projectPaths.get(0));
-    }
+    BridgeStats bridgeStats(List<String> projectPaths);
 
     List<Seed> hybridSearch(String query, String projectPath, int limit);
 
-    /** Multi-project-path overload: searches across all given project directories. */
-    default List<Seed> hybridSearch(String query, List<String> projectPaths, int limit) {
-        // Default: use first path (backward compat)
-        if (projectPaths == null || projectPaths.isEmpty()) return List.of();
-        return hybridSearch(query, projectPaths.get(0), limit);
-    }
+    List<Seed> hybridSearch(String query, List<String> projectPaths, int limit);
 
     List<Entry> entryPoints(String projectPath, String entryType);
 
+    /** Multi-project overload: entry points across all given project paths. */
+    List<Entry> entryPoints(List<String> projectPaths, String entryType);
+
     List<Impl> implementations(String interfaceName, String projectPath);
+
+    /** Multi-project overload: implementations across all given project paths. */
+    List<Impl> implementations(String interfaceName, List<String> projectPaths);
 
     CallTreeNode calleesTree(String className, String methodName, String projectPath, int maxDepth);
 
+    /** Multi-project overload: callees tree resolved against all given project paths. */
+    CallTreeNode calleesTree(String className, String methodName, List<String> projectPaths, int maxDepth);
+
     List<Entry> rootEntries(String className, String methodName, String projectPath);
+
+    /** Multi-project overload: root entries across all given project paths. */
+    List<Entry> rootEntries(String className, String methodName, List<String> projectPaths);
 
     List<Entry> affecting(String className, String methodName, String projectPath, int maxDepth);
 
+    /** Multi-project overload: upstream callers across all given project paths. */
+    List<Entry> affecting(String className, String methodName, List<String> projectPaths, int maxDepth);
+
     List<Entry> downstream(String nodeId, String projectPath, int maxDepth);
+
+    /** Multi-project overload: downstream callees across all given project paths. */
+    List<Entry> downstream(String nodeId, List<String> projectPaths, int maxDepth);
 
     List<Bridge> feignChain(String serviceName, String projectPath);
 
+    /** Multi-project overload: Feign bridges across all given project paths. */
+    List<Bridge> feignChain(String serviceName, List<String> projectPaths);
+
     List<Bridge> mqChain(String topic, String projectPath);
+
+    /** Multi-project overload: MQ bridges across all given project paths. */
+    List<Bridge> mqChain(String topic, List<String> projectPaths);
 
     List<Bridge> bridges(String nodeId, String projectPath);
 
+    /** Multi-project overload: bridges reachable from nodeId across all given project paths. */
+    List<Bridge> bridges(String nodeId, List<String> projectPaths);
+
     List<SqlMapping> mybatisSql(String mapperInterface, String projectPath);
 
-    /** Batch-load method bodies and metadata for AI relevance analysis. */
+    /** Multi-project overload: MyBatis SQL mappings across all given project paths. */
+    List<SqlMapping> mybatisSql(String mapperInterface, List<String> projectPaths);
+
     List<MethodBodyInfo> loadMethodBodies(List<String> nodeIds, String projectPath);
 
-    /**
-     * Given a set of method nodeIds, trace the caller chain upward and return
-     * the {@link Entry entry points} (Controller, Scheduled, MQ consumer, etc.)
-     * that can reach them — i.e. the root entries, not intermediate callers.
-     *
-     * @param nodeIds     method nodeIds to trace upward from
-     * @param projectPath Neo4j projectPath
-     * @param maxDepth    maximum caller traversal depth
-     * @return root entry-point nodes reachable via callers of the given nodeIds
-     */
+    /** Multi-project overload: load method bodies, scoping to any of the given project paths. */
+    List<MethodBodyInfo> loadMethodBodies(List<String> nodeIds, List<String> projectPaths);
+
     List<Entry> rootEntryAncestors(List<String> nodeIds, String projectPath, int maxDepth);
+
+    /** Multi-project overload: trace root entry ancestors across all given project paths. */
+    List<Entry> rootEntryAncestors(List<String> nodeIds, List<String> projectPaths, int maxDepth);
 
     /**
      * Resolve LLM-provided path hints (file paths or class names) into actual
      * Neo4j projectPaths. Returns the set of unique projectPaths found.
-     *
-     * @param pathHints  file paths, class names, or partial paths from clarify LLM
-     * @param classNames fully-qualified class names from target_modules
-     * @return resolved projectPaths that exist in Neo4j
      */
     default List<String> resolveProjectPaths(List<String> pathHints, List<String> classNames) {
-        // Default: return pathHints as-is (backward compat)
         return pathHints;
     }
 }

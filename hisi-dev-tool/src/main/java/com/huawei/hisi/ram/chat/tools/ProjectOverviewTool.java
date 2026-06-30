@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
@@ -43,10 +44,15 @@ public class ProjectOverviewTool {
                 schema);
     }
 
-    public Function<Map<String, Object>, Object> buildHandler() {
+    public Function<Map<String, Object>, Object> buildHandler(List<String> projectPaths) {
+        String primaryPath = (projectPaths == null || projectPaths.isEmpty()) ? "" : projectPaths.get(0);
         return input -> {
             String projectPath = (String) input.get("projectPath");
             String question = (String) input.getOrDefault("question", "");
+            // Allow LLM to override with its own projectPath; fallback to primary
+            if (projectPath == null || projectPath.isBlank()) {
+                projectPath = primaryPath;
+            }
             if (projectPath == null || projectPath.isBlank()) {
                 return Map.of("error", "projectPath is required");
             }

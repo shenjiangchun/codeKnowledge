@@ -85,7 +85,7 @@ public class ClaudeChainAnalysisAgent implements ChainAnalysisAgent {
 
     private ChainReport.KgRawData collectKgData(ChainContext context) {
         Entry entry = context.entryPoint();
-        String projectPath = context.projectPath();
+        List<String> projectPaths = List.of(context.projectPath());
 
         String className = entry.className();
         String methodName = entry.methodName();
@@ -97,7 +97,7 @@ public class ClaudeChainAnalysisAgent implements ChainAnalysisAgent {
 
         List<Map<String, Object>> upstreamChains = new ArrayList<>();
         try {
-            List<Entry> affecting = kgClient.affecting(className, methodName, projectPath, 5);
+            List<Entry> affecting = kgClient.affecting(className, methodName, projectPaths, 5);
             for (Entry e : affecting) {
                 upstreamChains.add(entryToMap(e));
             }
@@ -108,7 +108,7 @@ public class ClaudeChainAnalysisAgent implements ChainAnalysisAgent {
 
         List<Map<String, Object>> downstreamChains = new ArrayList<>();
         try {
-            CallTreeNode tree = kgClient.calleesTree(className, methodName, projectPath, 5);
+            CallTreeNode tree = kgClient.calleesTree(className, methodName, projectPaths, 5);
             if (tree != null) {
                 downstreamChains.add(callTreeNodeToMap(tree));
             }
@@ -119,7 +119,7 @@ public class ClaudeChainAnalysisAgent implements ChainAnalysisAgent {
         }
 
         try {
-            List<Entry> roots = kgClient.rootEntries(className, methodName, projectPath);
+            List<Entry> roots = kgClient.rootEntries(className, methodName, projectPaths);
             for (Entry e : roots) {
                 upstreamChains.add(entryToMap(e));
             }
@@ -132,7 +132,7 @@ public class ClaudeChainAnalysisAgent implements ChainAnalysisAgent {
         if (!nodeIds.isEmpty()) {
             try {
                 List<MethodBodyInfo> bodies = kgClient.loadMethodBodies(
-                        nodeIds.stream().limit(20).toList(), projectPath);
+                        nodeIds.stream().limit(20).toList(), projectPaths);
                 for (MethodBodyInfo body : bodies) {
                     methodBodies.add(methodBodyToMap(body));
                 }
@@ -144,7 +144,7 @@ public class ClaudeChainAnalysisAgent implements ChainAnalysisAgent {
 
         List<Map<String, Object>> bridgePoints = new ArrayList<>();
         try {
-            List<Bridge> bridges = kgClient.bridges(entry.nodeId(), projectPath);
+            List<Bridge> bridges = kgClient.bridges(entry.nodeId(), projectPaths);
             for (Bridge b : bridges) {
                 bridgePoints.add(bridgeToMap(b));
             }

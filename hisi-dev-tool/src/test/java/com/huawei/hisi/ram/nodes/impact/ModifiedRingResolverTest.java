@@ -12,6 +12,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -29,8 +30,8 @@ class ModifiedRingResolverTest {
         CallTreeNode child = new CallTreeNode("child", "C", "m", 1, List.of());
         CallTreeNode rootA = new CallTreeNode("a", "A", "ma", 0, List.of(child));
         CallTreeNode rootB = new CallTreeNode("b", "B", "mb", 0, List.of());
-        when(kg.calleesTree(eq("a"), anyString(), anyString(), anyInt())).thenReturn(rootA);
-        when(kg.calleesTree(eq("b"), anyString(), anyString(), anyInt())).thenReturn(rootB);
+        when(kg.calleesTree(eq("a"), anyString(), anyList(), anyInt())).thenReturn(rootA);
+        when(kg.calleesTree(eq("b"), anyString(), anyList(), anyInt())).thenReturn(rootB);
 
         InvolvedRing involved = new InvolvedRing(List.of(s1, s2), List.of(), List.of());
         ModifiedRing modified = new ModifiedRingResolver(kg).resolve(involved, "/p", 2);

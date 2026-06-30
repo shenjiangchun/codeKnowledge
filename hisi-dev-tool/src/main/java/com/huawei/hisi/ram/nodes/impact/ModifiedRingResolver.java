@@ -26,7 +26,7 @@ public class ModifiedRingResolver {
         for (Seed seed : involved.seeds()) {
             if (seed == null || seed.nodeId() == null) continue;
             // Note: className/methodName not parsed from nodeId here — placeholder for later refinement.
-            CallTreeNode tree = kg.calleesTree(seed.nodeId(), "", projectPath, depth);
+            CallTreeNode tree = kg.calleesTree(seed.nodeId(), "", List.of(projectPath), depth);
             if (tree != null) roots.add(tree);
         }
         return new ModifiedRing(roots);

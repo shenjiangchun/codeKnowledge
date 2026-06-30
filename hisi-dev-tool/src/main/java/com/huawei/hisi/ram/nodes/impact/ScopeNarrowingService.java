@@ -91,7 +91,7 @@ public class ScopeNarrowingService {
             List<String> nodeIds = candidates.stream()
                     .map(Seed::nodeId)
                     .toList();
-            List<MethodBodyInfo> bodies = kg.loadMethodBodies(nodeIds, projectPath);
+            List<MethodBodyInfo> bodies = kg.loadMethodBodies(nodeIds, List.of(projectPath));
             Map<String, MethodBodyInfo> bodyMap = bodies.stream()
                     .collect(Collectors.toMap(
                             MethodBodyInfo::nodeId, b -> b, (a, b) -> a));

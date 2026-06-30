@@ -54,9 +54,13 @@ public class ImpactAnalysisService {
             log.info("[ImpactAnalysis] File={} → className={}", filePath, className);
 
             try {
-                List<Entry> rootEntries = kgClient.rootEntries(className, "*", projectPath);
-                log.info("[ImpactAnalysis] rootEntries(className={}, projectPath={}) → {} results",
-                        className, projectPath, rootEntries.size());
+                List<String> projectPaths = (projectPath == null || projectPath.isBlank())
+                        ? List.of()
+                        : List.of(projectPath);
+
+                List<Entry> rootEntries = kgClient.rootEntries(className, "*", projectPaths);
+                log.info("[ImpactAnalysis] rootEntries(className={}, projectPaths={}) → {} results",
+                        className, projectPaths, rootEntries.size());
                 for (Entry entry : rootEntries) {
                     log.debug("[ImpactAnalysis]   entry: nodeId={} type={}.{} entryType={}",
                             entry.nodeId(), entry.className(), entry.methodName(), entry.type());
@@ -70,9 +74,9 @@ public class ImpactAnalysisService {
                     }
                 }
 
-                List<Entry> upstreamCallers = kgClient.affecting(className, "*", projectPath, 3);
-                log.info("[ImpactAnalysis] affecting(className={}, projectPath={}, depth=3) → {} upstream callers",
-                        className, projectPath, upstreamCallers.size());
+                List<Entry> upstreamCallers = kgClient.affecting(className, "*", projectPaths, 3);
+                log.info("[ImpactAnalysis] affecting(className={}, projectPaths={}, depth=3) → {} upstream callers",
+                        className, projectPaths, upstreamCallers.size());
                 for (Entry caller : upstreamCallers) {
                     allEdges.add(ImpactResult.CallChainEdge.builder()
                             .callerId(caller.nodeId())

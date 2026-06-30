@@ -22,8 +22,8 @@ export const useRamChatStore = defineStore('ramChat', () => {
     }
   }
 
-  async function createSession(projectPath: string, projectName: string) {
-    const data = await ramChatApi.createSession({ projectPath, projectName })
+  async function createSession(projectPaths: string[], projectName: string) {
+    const data = await ramChatApi.createSession({ projectPaths, projectName })
     const result = data as unknown as CreateSessionResponse
     await fetchSessions()
     currentSessionId.value = result.sessionId
