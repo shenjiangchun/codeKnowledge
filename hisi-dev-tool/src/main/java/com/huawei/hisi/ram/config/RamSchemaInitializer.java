@@ -65,6 +65,9 @@ public class RamSchemaInitializer {
         // Create indexes on new columns AFTER migration ensures they exist
         addIndexIfNotExists("idx_agent_session_uuid", "agent_session(uuid)");
 
+        // B5: Historical data migration — fix merge-analysis sessions misclassified as DEMAND
+        migrateMergeAnalysisSessionType();
+
         jdbcTemplate.execute("""
             CREATE TABLE IF NOT EXISTS agent_event (
                 id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -119,6 +122,24 @@ public class RamSchemaInitializer {
             }
         } catch (Exception e) {
             log.warn("[RAM-SQLite] Index {} failed: {}", indexName, e.getMessage());
+        }
+    }
+
+    /**
+     * B5: One-time migration — fix merge-analysis sessions that were incorrectly stored
+     * as DEMAND because MergeAnalysisService.createSession() didn't set sessionType.
+     * Identified by user_id = 'merge-analysis'.
+     */
+    private void migrateMergeAnalysisSessionType() {
+        try {
+            int rows = jdbcTemplate.update(
+                    "UPDATE agent_session SET session_type = 'MERGE_ANALYSIS' "
+                    + "WHERE user_id = 'merge-analysis' AND session_type = 'DEMAND'");
+            if (rows > 0) {
+                log.info("[RAM-SQLite] Migrated {} merge-analysis sessions from DEMAND to MERGE_ANALYSIS", rows);
+            }
+        } catch (Exception e) {
+            log.warn("[RAM-SQLite] Merge-analysis session_type migration failed: {}", e.getMessage());
         }
     }
 }

@@ -29,6 +29,9 @@
 
         <el-divider />
 
+        <!-- DAG 实时进度条 (processing 状态) -->
+        <NodeTimeline v-if="isProcessing" :events="nodeEvents" />
+
         <!-- 模式识别标签 (v3) -->
         <div v-if="report.patternType && report.patternType !== 'UNKNOWN'" class="pattern-tag-bar">
           <el-tag :type="getPatternTagType(report.patternType)" effect="dark" size="large">
@@ -127,6 +130,9 @@
         </div>
 
         <el-empty v-if="!report.errorSummary && !report.rootCause && !report.fixSuggestions" description="暂无分析结果" />
+
+        <!-- 追问对话面板 (completed 状态) -->
+        <FollowupPanel v-if="isCompleted" :report-id="reportId" />
       </div>
 
       <el-empty v-else description="报告不存在" />
@@ -142,6 +148,9 @@ import { logAnalysisApi } from '@/api/logAnalysis'
 import type { DetailedAnalysisReport } from '@/types/log'
 import { renderMarkdown } from '@/utils/markdown'
 import { downloadBlob } from '@/utils/download'
+import { useLogAnalysisWebSocket } from '@/composables/useLogAnalysisWebSocket'
+import NodeTimeline from '@/components/log-analysis/NodeTimeline.vue'
+import FollowupPanel from '@/components/log-analysis/FollowupPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -150,6 +159,14 @@ const loading = ref(false)
 const reanalyzing = ref(false)
 const exporting = ref(false)
 const report = ref<DetailedAnalysisReport | null>(null)
+
+// Real-time DAG progress via WebSocket
+const { events: nodeEvents, connect: connectWs } = useLogAnalysisWebSocket(reportId)
+const isProcessing = computed(() => {
+  const s = report.value?.status?.toLowerCase()
+  return s === 'processing' || s === 'pending'
+})
+const isCompleted = computed(() => report.value?.status?.toLowerCase() === 'completed')
 
 const getStatusType = (status: string) => {
   const types: Record<string, string> = {
@@ -212,9 +229,14 @@ const loadReport = async () => {
   loading.value = true
   try {
     const res = await logAnalysisApi.getReport(reportId.value)
-    report.value = res
-  } catch (error: any) {
-    if (error.response?.status === 400 || error.message?.includes('尚未完成')) {
+    report.value = res as DetailedAnalysisReport
+    // Connect WebSocket for real-time DAG progress if report is still processing
+    if (res.status?.toLowerCase() === 'processing' || res.status?.toLowerCase() === 'pending') {
+      connectWs()
+    }
+  } catch (error: unknown) {
+    const err = error as { response?: { status?: number }; message?: string }
+    if (err.response?.status === 400 || err.message?.includes('尚未完成')) {
       ElMessage.warning('报告正在处理中，请稍后再试')
     } else {
       ElMessage.error('加载报告失败')

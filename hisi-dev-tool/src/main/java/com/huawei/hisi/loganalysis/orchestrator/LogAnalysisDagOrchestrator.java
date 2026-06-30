@@ -1,7 +1,10 @@
 package com.huawei.hisi.loganalysis.orchestrator;
 
+import com.huawei.hisi.loganalysis.event.LogAnalysisEventEmitter;
+import com.huawei.hisi.loganalysis.event.LogNodeEvent;
 import com.huawei.hisi.loganalysis.nodes.*;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -29,6 +32,9 @@ public class LogAnalysisDagOrchestrator {
     // Ordered list of nodes
     private final List<LogAnalysisDagNode> nodes;
 
+    @Autowired(required = false)
+    private LogAnalysisEventEmitter eventEmitter;
+
     public LogAnalysisDagOrchestrator(ParseNode parseNode,
                                        KgSearchNode kgSearchNode,
                                        CodeContextNode codeContextNode,
@@ -50,13 +56,32 @@ public class LogAnalysisDagOrchestrator {
      * @return Final output containing finalReport
      */
     public Map<String, Object> run(Map<String, Object> initialInput) {
+        return run(initialInput, -1);
+    }
+
+    /**
+     * Run the full DAG with optional real-time event emission.
+     *
+     * @param initialInput Input containing: message, stackTrace, projectPath, etc.
+     * @param reportId Report ID for event emission (-1 to skip events)
+     * @return Final output containing finalReport
+     */
+    public Map<String, Object> run(Map<String, Object> initialInput, long reportId) {
         log.info("[LogAnalysisDagOrchestrator] 开始执行 DAG 流程");
 
         List<String> executed = new ArrayList<>();
         Map<String, Object> currentOutput = initialInput == null ? Map.of() : initialInput;
+        long dagStart = System.currentTimeMillis();
 
         for (LogAnalysisDagNode node : nodes) {
             log.info("[LogAnalysisDagOrchestrator] 执行节点: {}", node.name());
+
+            // Emit NODE_START event
+            if (reportId > 0 && eventEmitter != null) {
+                eventEmitter.emit(LogNodeEvent.nodeStart(reportId, node.name()));
+            }
+
+            long nodeStart = System.currentTimeMillis();
 
             try {
                 Map<String, Object> input = currentOutput;
@@ -69,12 +94,25 @@ public class LogAnalysisDagOrchestrator {
                 executed.add(node.name());
                 currentOutput = output;
 
-                log.info("[LogAnalysisDagOrchestrator] 节点 {} 完成, output.keys={}",
-                        node.name(), currentOutput.keySet());
+                long nodeDuration = System.currentTimeMillis() - nodeStart;
+                log.info("[LogAnalysisDagOrchestrator] 节点 {} 完成 ({}ms), output.keys={}",
+                        node.name(), nodeDuration, currentOutput.keySet());
+
+                // Emit NODE_COMPLETE event
+                if (reportId > 0 && eventEmitter != null) {
+                    eventEmitter.emit(LogNodeEvent.nodeComplete(reportId, node.name(), nodeDuration,
+                            currentOutput.keySet().stream().limit(10).toList()));
+                }
 
             } catch (Exception e) {
                 log.error("[LogAnalysisDagOrchestrator] 节点 {} 执行失败: {}",
                         node.name(), e.getMessage(), e);
+
+                // Emit NODE_ERROR event
+                if (reportId > 0 && eventEmitter != null) {
+                    eventEmitter.emit(LogNodeEvent.nodeError(reportId, node.name(), e.getMessage()));
+                }
+
                 // Record error and continue with partial output
                 Map<String, Object> errorOutput = new LinkedHashMap<>(currentOutput);
                 errorOutput.put("errorNode", node.name());
@@ -85,8 +123,14 @@ public class LogAnalysisDagOrchestrator {
             }
         }
 
-        log.info("[LogAnalysisDagOrchestrator] DAG 流程完成: executed={}, hasError={}",
-                executed, currentOutput.containsKey("errorNode"));
+        long totalDuration = System.currentTimeMillis() - dagStart;
+        log.info("[LogAnalysisDagOrchestrator] DAG 流程完成: executed={}, hasError={}, duration={}ms",
+                executed, currentOutput.containsKey("errorNode"), totalDuration);
+
+        // Emit DAG_COMPLETE event
+        if (reportId > 0 && eventEmitter != null) {
+            eventEmitter.emit(LogNodeEvent.dagComplete(reportId, totalDuration));
+        }
 
         return currentOutput;
     }
@@ -136,6 +180,27 @@ public class LogAnalysisDagOrchestrator {
         input.put("projectPackagePrefixes", projectPackagePrefixes);
 
         return run(input);
+    }
+
+    /**
+     * Run DAG with real-time event emission for a specific report.
+     */
+    public Map<String, Object> analyzeLog(String message,
+                                          String stackTrace,
+                                          String projectPath,
+                                          String serviceName,
+                                          String traceId,
+                                          List<String> projectPackagePrefixes,
+                                          long reportId) {
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("message", message);
+        input.put("stackTrace", stackTrace);
+        input.put("projectPath", projectPath);
+        input.put("serviceName", serviceName);
+        input.put("traceId", traceId);
+        input.put("projectPackagePrefixes", projectPackagePrefixes);
+
+        return run(input, reportId);
     }
 
     /**

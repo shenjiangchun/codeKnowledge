@@ -1,6 +1,10 @@
 package com.huawei.hisi.controller;
 
 import com.huawei.hisi.model.*;
+import com.huawei.hisi.loganalysis.dto.LogFollowupRequest;
+import com.huawei.hisi.loganalysis.dto.LogFollowupResponse;
+import com.huawei.hisi.loganalysis.dto.FollowupSessionDto;
+import com.huawei.hisi.loganalysis.service.LogFollowupService;
 import com.huawei.hisi.repository.LogAnalysisRepository;
 import com.huawei.hisi.repository.LogAnalysisRepository.LogAnalysisReportEntity;
 import com.huawei.hisi.service.LogAnalysisExecutor;
@@ -40,6 +44,9 @@ public class LogAnalysisController {
     private final LogAnalysisRepository repository;
     private final LogAnalysisExecutor logAnalysisExecutor;
     private final ReportExportService reportExportService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private LogFollowupService logFollowupService;
 
     // 默认用户 ID
     private static final String DEFAULT_USER_ID = "sys_admin";
@@ -471,5 +478,78 @@ public class LogAnalysisController {
             log.error("批量导出报告失败", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    // ==================== 追问 (Follow-up Q&A) ====================
+
+    /**
+     * 发起追问对话
+     * POST /api/log/report/{id}/followup
+     */
+    @PostMapping("/report/{id}/followup")
+    public ApiResponse<LogFollowupResponse> startFollowup(
+            @PathVariable("id") Long reportId,
+            @RequestBody LogFollowupRequest request) {
+        if (logFollowupService == null) {
+            return ApiResponse.error(503, "追问服务未启用（需要配置 Claude API Key）");
+        }
+        try {
+            LogAnalysisReportEntity report = repository.findById(reportId);
+            if (report == null) {
+                return ApiResponse.error(404, "报告不存在");
+            }
+
+            String projectPath = null;
+            if (report.getQueryParams() != null) {
+                Object pp = report.getQueryParams().get("projectPath");
+                if (pp instanceof String s && !s.isBlank()) {
+                    projectPath = s;
+                }
+            }
+
+            String sessionId = logFollowupService.startFollowup(reportId, request.message(), projectPath);
+            return ApiResponse.success(new LogFollowupResponse(sessionId, "processing"));
+        } catch (Exception e) {
+            log.error("发起追问失败 (reportId={})", reportId, e);
+            return ApiResponse.error("发起追问失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 继续追问对话
+     * POST /api/log/followup/{sessionId}/message
+     */
+    @PostMapping("/followup/{sessionId}/message")
+    public ApiResponse<String> continueFollowup(
+            @PathVariable("sessionId") String sessionId,
+            @RequestBody LogFollowupRequest request) {
+        if (logFollowupService == null) {
+            return ApiResponse.error(503, "追问服务未启用");
+        }
+        try {
+            logFollowupService.continueFollowup(sessionId, request.message());
+            return ApiResponse.success("processing");
+        } catch (IllegalArgumentException e) {
+            return ApiResponse.error(404, e.getMessage());
+        } catch (Exception e) {
+            log.error("继续追问失败 (sessionId={})", sessionId, e);
+            return ApiResponse.error("继续追问失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取追问会话状态
+     * GET /api/log/followup/{sessionId}
+     */
+    @GetMapping("/followup/{sessionId}")
+    public ApiResponse<FollowupSessionDto> getFollowupSession(@PathVariable("sessionId") String sessionId) {
+        if (logFollowupService == null) {
+            return ApiResponse.error(503, "追问服务未启用");
+        }
+        FollowupSessionDto session = logFollowupService.getSession(sessionId);
+        if (session == null) {
+            return ApiResponse.error(404, "追问会话不存在");
+        }
+        return ApiResponse.success(session);
     }
 }

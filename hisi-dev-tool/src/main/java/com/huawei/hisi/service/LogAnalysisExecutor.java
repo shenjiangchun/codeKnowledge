@@ -199,7 +199,8 @@ public class LogAnalysisExecutor {
                 projectPath,
                 report.getServiceName(),
                 report.getTraceId(),
-                projectPackagePrefixes
+                projectPackagePrefixes,
+                report.getReportId()
         );
 
         // Extract results from DAG output

@@ -10,5 +10,7 @@ public enum SessionType {
     /** Status analysis - project overview/status analysis */
     STATUS,
     /** Phase2 analysis - precise location analysis */
-    PHASE2
+    PHASE2,
+    /** Merge analysis - branch merge conflict/impact analysis */
+    MERGE_ANALYSIS
 }

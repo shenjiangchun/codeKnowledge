@@ -120,3 +120,43 @@ export interface TimelinePhase {
   duration: string
   evidence: string
 }
+
+// ========== 日志分析实时节点事件 (WebSocket) ==========
+
+/** DAG 节点实时事件 */
+export interface LogNodeEvent {
+  reportId: number
+  type: 'NODE_START' | 'NODE_COMPLETE' | 'NODE_ERROR' | 'DAG_COMPLETE'
+  nodeName: string
+  timestamp: number
+  payload?: {
+    durationMs?: number
+    summary?: unknown
+    error?: string
+    totalDurationMs?: number
+  }
+}
+
+// ========== 追问 Follow-up ==========
+
+/** 追问启动响应 */
+export interface FollowupStartResponse {
+  sessionId: string
+  status: string
+}
+
+/** 追问消息发送响应 */
+export interface FollowupContinueResponse {
+  sessionId: string
+  status: string
+}
+
+/** 追问会话详情 */
+export interface FollowupSessionDetail {
+  sessionId: string
+  reportId: string
+  messages: Array<{ role: string; content: string; createdAt: string }>
+  status: string
+  createdAt: string
+  updatedAt: string
+}

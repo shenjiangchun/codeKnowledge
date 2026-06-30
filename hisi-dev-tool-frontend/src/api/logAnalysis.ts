@@ -1,5 +1,9 @@
 import request from '@/utils/request'
-import type { LogQueryDto, LogAnalyzeRequest, AnalyzeTaskResponse, DetailedAnalysisReport, ReportListResponse } from '@/types/log'
+import type {
+  LogQueryDto, LogAnalyzeRequest, AnalyzeTaskResponse,
+  DetailedAnalysisReport, ReportListResponse,
+  FollowupStartResponse, FollowupContinueResponse
+} from '@/types/log'
 
 export interface AppLogConfig {
   id?: number
@@ -102,5 +106,17 @@ export const logAnalysisApi = {
       params: { startTime, endTime },
       responseType: 'blob'
     })
+  },
+
+  // ========== 追问 Follow-up ==========
+
+  // 启动追问会话
+  startFollowup(reportId: string, message: string): Promise<FollowupStartResponse> {
+    return request.post(`/log/report/${reportId}/followup`, { message }) as Promise<FollowupStartResponse>
+  },
+
+  // 继续追问
+  continueFollowup(sessionId: string, message: string): Promise<FollowupContinueResponse> {
+    return request.post(`/log/followup/${sessionId}/message`, { message }) as Promise<FollowupContinueResponse>
   }
 }
