@@ -14,6 +14,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -36,10 +37,10 @@ class ImpactRingResolverTest {
         Bridge feignChainBridge = new Bridge("br-feign-chain", "FEIGN", "order-service");
 
         // Upstream now uses rootEntryAncestors (returns root entry points, not intermediate callers)
-        when(kg.rootEntryAncestors(any(List.class), anyString(), anyInt())).thenReturn(List.of(up));
-        when(kg.downstream(eq("com.foo.Bar#method"), anyString(), anyInt())).thenReturn(List.of(down));
-        when(kg.bridges(eq("com.foo.Bar#method"), anyString())).thenReturn(List.of(feignBridge));
-        when(kg.feignChain(eq("order-service"), anyString())).thenReturn(List.of(feignChainBridge));
+        when(kg.rootEntryAncestors(any(List.class), anyList(), anyInt())).thenReturn(List.of(up));
+        when(kg.downstream(eq("com.foo.Bar#method"), anyList(), anyInt())).thenReturn(List.of(down));
+        when(kg.bridges(eq("com.foo.Bar#method"), anyList())).thenReturn(List.of(feignBridge));
+        when(kg.feignChain(eq("order-service"), anyList())).thenReturn(List.of(feignChainBridge));
 
         ImpactRing impact = new ImpactRingResolver(kg).resolve(modified, "/p");
 

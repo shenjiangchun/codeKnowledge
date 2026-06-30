@@ -29,28 +29,29 @@ public class RamChatController {
 
     @PostMapping("/sessions")
     public ApiResponse<CreateSessionResponse> createSession(@RequestBody CreateSessionRequest request) {
-        if (request == null || request.projectPath() == null || request.projectPath().isBlank()) {
-            return ApiResponse.error(400, "projectPath is required");
+        if (request == null || request.projectPaths() == null || request.projectPaths().isEmpty()) {
+            return ApiResponse.error(400, "projectPaths is required");
         }
 
         AgentSession session = AgentSession.newRunning("ram-chat", SessionType.STATUS);
-        session.setIntent("RAM 对话: " + (request.projectName() != null ? request.projectName() : request.projectPath()));
+        String displayPath = request.projectPaths().get(0);
+        session.setIntent("RAM 对话: " + (request.projectName() != null ? request.projectName() : displayPath));
         try {
-            session.setProjectPaths(objectMapper.writeValueAsString(List.of(request.projectPath())));
+            session.setProjectPaths(objectMapper.writeValueAsString(request.projectPaths()));
         } catch (Exception ignored) {}
 
         AgentSession saved = sessionRepository.save(session);
-        log.info("[RamChatController] created sessionId={} projectPath={}",
-                saved.getId(), request.projectPath());
+        log.info("[RamChatController] created sessionId={} projectPaths={}",
+                saved.getId(), request.projectPaths());
 
         // If initialQuestion provided, run first turn
         if (request.initialQuestion() != null && !request.initialQuestion().isBlank()) {
-            orchestrator.runTurn(saved.getId(), request.initialQuestion(), request.projectPath());
+            orchestrator.runTurn(saved.getId(), request.initialQuestion(), request.projectPaths());
         }
 
         return ApiResponse.success(new CreateSessionResponse(
                 String.valueOf(saved.getId()),
-                request.projectPath(),
+                displayPath,
                 request.projectName()
         ));
     }
@@ -68,12 +69,12 @@ public class RamChatController {
             return ApiResponse.error(404, "session not found: " + sid);
         }
 
-        String projectPath = extractFirstProjectPath(session);
-        if (projectPath == null) {
+        List<String> projectPaths = extractProjectPaths(session);
+        if (projectPaths.isEmpty()) {
             return ApiResponse.error(400, "session has no projectPath");
         }
 
-        TurnResult result = orchestrator.runTurn(sid, request.text(), projectPath);
+        TurnResult result = orchestrator.runTurn(sid, request.text(), projectPaths);
         return ApiResponse.success(new SendMessageResponse(
                 result.turnId(),
                 result.status(),
@@ -103,7 +104,7 @@ public class RamChatController {
                 .map(s -> new SessionSummaryDto(
                         String.valueOf(s.getId()),
                         extractProjectName(s),
-                        extractFirstProjectPath(s),
+                        extractProjectPaths(s).stream().findFirst().orElse(""),
                         s.getIntent(),
                         s.getStatus() != null ? s.getStatus().name() : "UNKNOWN",
                         s.getCreatedAt(),
@@ -132,13 +133,13 @@ public class RamChatController {
         return ApiResponse.success(null);
     }
 
-    private String extractFirstProjectPath(AgentSession session) {
-        if (session.getProjectPaths() == null) return null;
+    @SuppressWarnings("unchecked")
+    private List<String> extractProjectPaths(AgentSession session) {
+        if (session.getProjectPaths() == null) return List.of();
         try {
-            List<String> paths = objectMapper.readValue(session.getProjectPaths(), List.class);
-            return paths.isEmpty() ? null : paths.get(0);
+            return objectMapper.readValue(session.getProjectPaths(), List.class);
         } catch (Exception e) {
-            return null;
+            return List.of();
         }
     }
 

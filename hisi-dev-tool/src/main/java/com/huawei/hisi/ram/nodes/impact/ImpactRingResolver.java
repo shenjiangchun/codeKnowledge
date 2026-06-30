@@ -64,18 +64,18 @@ public class ImpactRingResolver {
         // Return the top-level entry points (Controller, Scheduled, MQ consumer, etc.)
         // that can reach these nodes via the caller chain, NOT intermediate callers.
         List<Entry> rootEntries = kg.rootEntryAncestors(
-                allNodeIds.stream().filter(n -> n != null).toList(), projectPath, UPSTREAM_DEPTH);
+                allNodeIds.stream().filter(n -> n != null).toList(), List.of(projectPath), UPSTREAM_DEPTH);
         if (rootEntries != null) upstream.addAll(rootEntries);
 
         for (String nodeId : allNodeIds) {
             if (nodeId == null) continue;
 
             // ── Downstream ──
-            List<Entry> down = kg.downstream(nodeId, projectPath, DOWNSTREAM_DEPTH);
+            List<Entry> down = kg.downstream(nodeId, List.of(projectPath), DOWNSTREAM_DEPTH);
             if (down != null) downstream.addAll(down);
 
             // ── Bridges (Feign / MQ) ──
-            List<Bridge> br = kg.bridges(nodeId, projectPath);
+            List<Bridge> br = kg.bridges(nodeId, List.of(projectPath));
             if (br != null) bridges.addAll(br);
         }
 
@@ -93,11 +93,11 @@ public class ImpactRingResolver {
         }
         List<Bridge> crossService = new ArrayList<>();
         for (String svc : feignTargets) {
-            List<Bridge> chain = kg.feignChain(svc, projectPath);
+            List<Bridge> chain = kg.feignChain(svc, List.of(projectPath));
             if (chain != null) crossService.addAll(chain);
         }
         for (String topic : mqTopics) {
-            List<Bridge> chain = kg.mqChain(topic, projectPath);
+            List<Bridge> chain = kg.mqChain(topic, List.of(projectPath));
             if (chain != null) crossService.addAll(chain);
         }
         return new ImpactRing(upstream, downstream, crossService, bridges);

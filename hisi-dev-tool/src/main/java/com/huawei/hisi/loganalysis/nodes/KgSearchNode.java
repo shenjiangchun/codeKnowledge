@@ -82,9 +82,6 @@ public class KgSearchNode implements LogAnalysisDagNode {
 
         Map<String, Object> output = new LinkedHashMap<>(input);
 
-        // Use first path for single-path API calls, and the list for multi-path search
-        String firstPath = projectPaths.isEmpty() ? "" : projectPaths.get(0);
-
         // 1. Hybrid search for each search term (use multi-path overload)
         // 改进：递进搜索机制 - 第一批空时继续搜索后续帧
         List<Seed> matchedMethods = new ArrayList<>();
@@ -153,17 +150,17 @@ public class KgSearchNode implements LogAnalysisDagNode {
 
         // 2. Find root entry points for business frames (per roundtable conclusion)
         // Default: call kg_root_entries for top 3 business frames
-        List<Entry> businessEntryPoints = findEntryPoints(businessFrames, firstPath, 3);
+        List<Entry> businessEntryPoints = findEntryPoints(businessFrames, projectPaths, 3);
         log.info("[KgSearchNode] 业务帧入口点: {} 个", businessEntryPoints.size());
 
         // Deep mode: also find entry points for root cause frames
         List<Entry> rootCauseEntryPoints = new ArrayList<>();
         if (deepMode && rootCauseFrames != null && !rootCauseFrames.isEmpty()) {
-            rootCauseEntryPoints = findEntryPoints(rootCauseFrames, firstPath, 5);
+            rootCauseEntryPoints = findEntryPoints(rootCauseFrames, projectPaths, 5);
             log.info("[KgSearchNode] 根因帧入口点: {} 个", rootCauseEntryPoints.size());
         }
 
-        // 3. Build call chains for key stack frames (use firstPath for single-path calls)
+        // 3. Build call chains for key stack frames (use projectPaths for multi-project callees tree)
         List<Map<String, Object>> callChains = new ArrayList<>();
         if (keyFrames != null) {
             for (Map<String, Object> frame : keyFrames) {
@@ -172,7 +169,7 @@ public class KgSearchNode implements LogAnalysisDagNode {
                 if (className == null || methodName == null) continue;
 
                 // Downstream callees tree
-                CallTreeNode callees = kgMcpClient.calleesTree(className, methodName, firstPath, 3);
+                CallTreeNode callees = kgMcpClient.calleesTree(className, methodName, projectPaths, 3);
                 if (callees != null && callees.nodeId() != null) {
                     Map<String, Object> chainInfo = new LinkedHashMap<>();
                     chainInfo.put("className", className);
@@ -228,7 +225,7 @@ public class KgSearchNode implements LogAnalysisDagNode {
      * Find root entry points for a list of frames (with limit).
      * Implements降级策略: returns empty list gracefully on KG failure.
      */
-    private List<Entry> findEntryPoints(List<Map<String, Object>> frames, String projectPath, int limit) {
+    private List<Entry> findEntryPoints(List<Map<String, Object>> frames, List<String> projectPaths, int limit) {
         List<Entry> entries = new ArrayList<>();
         if (frames == null || frames.isEmpty()) {
             return entries;
@@ -243,7 +240,7 @@ public class KgSearchNode implements LogAnalysisDagNode {
             if (className == null || methodName == null) continue;
 
             try {
-                List<Entry> frameEntries = kgMcpClient.rootEntries(className, methodName, projectPath);
+                List<Entry> frameEntries = kgMcpClient.rootEntries(className, methodName, projectPaths);
                 if (frameEntries != null && !frameEntries.isEmpty()) {
                     entries.addAll(frameEntries);
                     count++;

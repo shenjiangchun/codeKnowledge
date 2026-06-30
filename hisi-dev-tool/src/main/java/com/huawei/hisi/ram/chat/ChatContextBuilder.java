@@ -26,9 +26,9 @@ public class ChatContextBuilder {
 
     public record ChatContext(String systemPrompt, String userPrompt) {}
 
-    public ChatContext buildContext(long sessionId, String currentQuestion, String projectPath) {
+    public ChatContext buildContext(long sessionId, String currentQuestion, List<String> projectPaths) {
         String recentSummary = buildRecentSummaries(sessionId);
-        String systemPrompt = buildSystemPrompt(projectPath);
+        String systemPrompt = buildSystemPrompt(projectPaths);
         String userPrompt = buildUserPrompt(recentSummary, currentQuestion);
         return new ChatContext(systemPrompt, userPrompt);
     }
@@ -76,7 +76,10 @@ public class ChatContextBuilder {
         }
     }
 
-    private String buildSystemPrompt(String projectPath) {
+    private String buildSystemPrompt(List<String> projectPaths) {
+        String pathsBlock = projectPaths == null || projectPaths.isEmpty()
+                ? "(未指定)"
+                : String.join(", ", projectPaths);
         return """
                 你是项目现状分析助手，帮助开发者快速理解代码库结构、核心调用链、技术栈。
 
@@ -104,7 +107,7 @@ public class ChatContextBuilder {
                 - summary 字段：本 turn 的简短摘要（≤200 字），用于注入下一轮的历史上下文
                 - key_findings 字段：关键发现列表
                 - recommendations 字段：建议列表
-                """.formatted(projectPath);
+                """.formatted(pathsBlock);
     }
 
     private String buildUserPrompt(String recentSummary, String currentQuestion) {

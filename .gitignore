@@ -46,3 +46,16 @@ ai-sessions/
 **/application-local.yml
 /.codeai/
 /ai-sessions/
+
+# Personal / HR files — NEVER commit
+*.docx
+*.pdf
+gen_*.py
+*简历*
+*面试*
+*自评*
+*宣讲*
+*获奖*
+*沈江春*
+*审视*
+*用户手册*

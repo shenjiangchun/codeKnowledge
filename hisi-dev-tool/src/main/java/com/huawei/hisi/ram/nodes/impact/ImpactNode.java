@@ -120,7 +120,7 @@ public class ImpactNode implements DagNode {
                 .map(MethodTarget::nodeId)
                 .filter(n -> n != null)
                 .toList();
-        List<Entry> upstream = kg.rootEntryAncestors(targetNodeIds, primaryPath, 10);
+        List<Entry> upstream = kg.rootEntryAncestors(targetNodeIds, List.of(primaryPath), 10);
         reasoningSteps.add("向上追溯调用链发现" + upstream.size() + "个上游根入口");
 
         // ── Step 3: AI-annotate entries as DIRECT/INDIRECT ──
@@ -215,7 +215,7 @@ public class ImpactNode implements DagNode {
                 || ae.methodName() == null || ae.methodName().isBlank()) return ae;
 
         try {
-            CallTreeNode tree = kg.calleesTree(ae.className(), ae.methodName(), projectPath, 3);
+            CallTreeNode tree = kg.calleesTree(ae.className(), ae.methodName(), List.of(projectPath), 3);
             if (tree == null) return ae;
             String path = findPathToTarget(tree, targetNodeIds);
             if (path == null || path.isBlank()) return ae;

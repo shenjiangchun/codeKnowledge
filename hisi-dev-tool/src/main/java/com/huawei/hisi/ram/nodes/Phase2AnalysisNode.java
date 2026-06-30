@@ -73,6 +73,7 @@ public class Phase2AnalysisNode implements DagNode {
             validateInput(input);
 
             String projectPath = (String) input.get("projectPath");
+            List<String> projectPaths = List.of(projectPath);
             String question = (String) input.get("question");
 
             log.info("[RAM][Phase2AnalysisNode] execute projectPath={} question={}", projectPath, question);
@@ -87,7 +88,7 @@ public class Phase2AnalysisNode implements DagNode {
                     domainHint.analysisType(), domainHint.primaryTools(), domainHint.treeDirection());
 
             // Step 3: Multi-keyword hybrid search
-            List<Seed> coreMethods = multiKeywordSearch(keywords, projectPath);
+            List<Seed> coreMethods = multiKeywordSearch(keywords, projectPaths);
             log.info("[RAM][Phase2AnalysisNode] Step 3: found {} unique core methods", coreMethods.size());
 
             // Build Phase2Context
@@ -97,7 +98,7 @@ public class Phase2AnalysisNode implements DagNode {
                     .coreMethods(coreMethods);
 
             // Step 4-8: Deep KG data collection based on domainHint
-            collectDeepKgData(builder, coreMethods, projectPath, domainHint);
+            collectDeepKgData(builder, coreMethods, projectPaths, domainHint);
 
             Phase2Context context = builder.build();
 
@@ -159,13 +160,13 @@ public class Phase2AnalysisNode implements DagNode {
     /**
      * Step 3: Multi-keyword hybrid search with deduplication.
      */
-    private List<Seed> multiKeywordSearch(List<String> keywords, String projectPath) {
+    private List<Seed> multiKeywordSearch(List<String> keywords, List<String> projectPaths) {
         Set<String> seenNodeIds = new HashSet<>();
         List<Seed> allMethods = new ArrayList<>();
 
         for (String keyword : keywords) {
             try {
-                List<Seed> found = kgClient.hybridSearch(keyword, projectPath, MAX_SEARCH_LIMIT);
+                List<Seed> found = kgClient.hybridSearch(keyword, projectPaths, MAX_SEARCH_LIMIT);
                 for (Seed seed : found) {
                     if (seed.nodeId() != null && !seenNodeIds.contains(seed.nodeId())) {
                         seenNodeIds.add(seed.nodeId());
@@ -192,7 +193,7 @@ public class Phase2AnalysisNode implements DagNode {
      * Steps 4-8: Collect deep KG data based on domain hint.
      */
     private void collectDeepKgData(Phase2Context.Builder builder, List<Seed> coreMethods,
-                                    String projectPath, DomainHint domainHint) {
+                                    List<String> projectPaths, DomainHint domainHint) {
         List<Entry> upstreamChains = new ArrayList<>();
         List<CallTreeNode> downstreamChains = new ArrayList<>();
         List<Entry> rootEntries = new ArrayList<>();
@@ -208,7 +209,7 @@ public class Phase2AnalysisNode implements DagNode {
                 ClassMethodParts parts = parseNodeId(seed.nodeId());
                 if (parts != null) {
                     try {
-                        List<Entry> affecting = kgClient.affecting(parts.className, parts.methodName, projectPath, MAX_CHAIN_DEPTH);
+                        List<Entry> affecting = kgClient.affecting(parts.className, parts.methodName, projectPaths, MAX_CHAIN_DEPTH);
                         if (affecting != null && !affecting.isEmpty()) {
                             upstreamChains.addAll(affecting);  // affecting returns List<Entry> (upstream callers)
                             // Collect nodeIds for method bodies
@@ -231,7 +232,7 @@ public class Phase2AnalysisNode implements DagNode {
                 ClassMethodParts parts = parseNodeId(seed.nodeId());
                 if (parts != null) {
                     try {
-                        CallTreeNode tree = kgClient.calleesTree(parts.className, parts.methodName, projectPath, MAX_CHAIN_DEPTH);
+                        CallTreeNode tree = kgClient.calleesTree(parts.className, parts.methodName, projectPaths, MAX_CHAIN_DEPTH);
                         if (tree != null) {
                             downstreamChains.add(tree);
                             // Collect child nodeIds for method bodies
@@ -251,7 +252,7 @@ public class Phase2AnalysisNode implements DagNode {
             ClassMethodParts parts = parseNodeId(seed.nodeId());
             if (parts != null) {
                 try {
-                    List<Entry> roots = kgClient.rootEntries(parts.className, parts.methodName, projectPath);
+                    List<Entry> roots = kgClient.rootEntries(parts.className, parts.methodName, projectPaths);
                     if (roots != null && !roots.isEmpty()) {
                         rootEntries.addAll(roots);
                         roots.stream()
@@ -276,7 +277,7 @@ public class Phase2AnalysisNode implements DagNode {
         List<String> uniqueNodeIds = nodeIdsForBodies.stream().distinct().limit(MAX_METHOD_BODIES).toList();
         if (!uniqueNodeIds.isEmpty()) {
             try {
-                methodBodies = kgClient.loadMethodBodies(uniqueNodeIds, projectPath);
+                methodBodies = kgClient.loadMethodBodies(uniqueNodeIds, projectPaths);
                 log.info("[RAM][Phase2AnalysisNode] Step 7: loaded {} method bodies", methodBodies.size());
             } catch (Exception e) {
                 log.warn("[RAM][Phase2AnalysisNode] loadMethodBodies failed: {}", e.getMessage());
@@ -287,7 +288,7 @@ public class Phase2AnalysisNode implements DagNode {
         if (domainHint.focusOnBridges()) {
             for (Seed seed : coreMethods.stream().limit(MAX_CHAINS_PER_METHOD).toList()) {
                 try {
-                    List<Bridge> bridges = kgClient.bridges(seed.nodeId(), projectPath);
+                    List<Bridge> bridges = kgClient.bridges(seed.nodeId(), projectPaths);
                     if (bridges != null && !bridges.isEmpty()) {
                         bridgePoints.addAll(bridges);
                     }

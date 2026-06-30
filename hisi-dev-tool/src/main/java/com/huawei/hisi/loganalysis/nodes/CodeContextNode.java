@@ -39,7 +39,8 @@ public class CodeContextNode implements LogAnalysisDagNode {
     public Map<String, Object> execute(Map<String, Object> input) {
         log.info("[CodeContextNode] 开始加载代码上下文");
 
-        String projectPath = (String) input.get("projectPath");
+        String projectPathRaw = (String) input.get("projectPath");
+        List<String> projectPaths = parseProjectPaths(projectPathRaw);
         List<Seed> matchedMethods = (List<Seed>) input.get("matchedMethods");
         List<Entry> entryPoints = (List<Entry>) input.get("entryPoints");
         List<Map<String, Object>> callChains = (List<Map<String, Object>>) input.get("callChains");
@@ -92,8 +93,8 @@ public class CodeContextNode implements LogAnalysisDagNode {
 
         // Load method bodies
         List<MethodBodyInfo> codeBodies = new ArrayList<>();
-        if (!limitedNodeIds.isEmpty() && projectPath != null) {
-            codeBodies = kgMcpClient.loadMethodBodies(limitedNodeIds, projectPath);
+        if (!limitedNodeIds.isEmpty() && !projectPaths.isEmpty()) {
+            codeBodies = kgMcpClient.loadMethodBodies(limitedNodeIds, projectPaths);
         }
 
         log.info("[CodeContextNode] 加载了 {} 个方法体", codeBodies.size());
@@ -116,5 +117,18 @@ public class CodeContextNode implements LogAnalysisDagNode {
         output.put("loadedNodeIds", limitedNodeIds);
 
         return output;
+    }
+
+    private List<String> parseProjectPaths(String projectPathRaw) {
+        if (projectPathRaw == null || projectPathRaw.isBlank()) {
+            return Collections.emptyList();
+        }
+        if (projectPathRaw.contains(",")) {
+            return Arrays.stream(projectPathRaw.split(","))
+                    .map(String::trim)
+                    .filter(p -> !p.isEmpty())
+                    .collect(Collectors.toList());
+        }
+        return Collections.singletonList(projectPathRaw.trim());
     }
 }

@@ -224,8 +224,9 @@ public class Phase2V2Orchestrator {
      * 直接获取 KG entryPoints (兜底)。
      */
     private List<Entry> fetchEntryPoints(String projectPath) {
+        if (projectPath == null || projectPath.isBlank()) return List.of();
         try {
-            return kgClient.entryPoints(projectPath, "ALL");
+            return kgClient.entryPoints(List.of(projectPath), "ALL");
         } catch (Exception e) {
             log.warn("[Phase2V2] Failed to fetch entryPoints: {}", e.getMessage());
             return List.of();
