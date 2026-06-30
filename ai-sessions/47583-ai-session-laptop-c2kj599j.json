@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "mimo-v2.5-pro-cc",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-06-30T07:29:27.078Z",
+  "lastUpdated": "2026-06-30T11:04:45.396Z",
   "stats": {
     "totalOperations": 1627,
     "totalFilesEdited": 732,
-    "totalAiLines": 48304,
-    "totalAiLinesDeleted": 6502,
-    "totalCommits": 129
+    "totalAiLines": 48380,
+    "totalAiLinesDeleted": 8620,
+    "totalCommits": 130
   },
   "pendingFiles": [
     {
@@ -741,20 +741,6 @@
       "lastModified": "2026-05-22T03:41:32.331Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-fastapi/.gitignore",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-05-22T04:51:12.728Z",
-      "lastModified": "2026-05-22T04:51:12.728Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/demo-django/.gitignore",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-05-22T04:51:27.349Z",
-      "lastModified": "2026-05-22T04:51:27.349Z"
-    },
-    {
       "path": "C:/Users/47583/projects/hisi_dev_tool v4.0/docs/PYTHON-KG-GAP.md",
       "tool": "Write",
       "operations": 1,
@@ -868,20 +854,6 @@
       "operations": 1,
       "timestamp": "2026-05-23T12:37:09.993Z",
       "lastModified": "2026-05-23T12:37:09.993Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/nodes/impact/ModifiedRingResolver.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-05-23T12:37:26.313Z",
-      "lastModified": "2026-05-23T12:37:26.313Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/test/java/com/huawei/hisi/ram/nodes/impact/ModifiedRingResolverTest.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-05-23T12:37:42.567Z",
-      "lastModified": "2026-05-23T12:37:42.567Z"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/test/java/com/huawei/hisi/ram/kg/NodeIdParserTest.java",
@@ -1068,44 +1040,6 @@
       "lastModified": "2026-05-31T12:51:02.832Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/gen_part1.py",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-05-31T13:30:51.191Z",
-      "lastModified": "2026-05-31T13:30:51.191Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/gen_part2.py",
-      "tool": "Write",
-      "operations": 4,
-      "timestamp": "2026-05-31T13:36:14.971Z",
-      "lastModified": "2026-05-31T13:38:12.511Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/gen_part3.py",
-      "tool": "Write",
-      "operations": 2,
-      "timestamp": "2026-05-31T13:43:06.463Z",
-      "lastModified": "2026-05-31T13:46:19.074Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/gen_part4.py",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-05-31T13:50:45.114Z",
-      "lastModified": "2026-05-31T13:50:45.114Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/gen_resume.py",
-      "tool": "Write",
-      "operations": 11,
-      "timestamp": "2026-05-31T14:22:37.964Z",
-      "lastModified": "2026-05-31T14:31:59.755Z",
-      "lastTool": "Edit"
-    },
-    {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/neo4j/repository/Neo4jMethodNodeRepository.java",
       "tool": "Edit",
       "aiTool": "claude-code",
@@ -1152,14 +1086,6 @@
       "lastModified": "2026-06-30T07:14:46.953Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/loganalysis/service/LogFollowupService.java",
-      "tool": "Write",
-      "operations": 4,
-      "timestamp": "2026-06-30T07:15:53.475Z",
-      "lastModified": "2026-06-30T07:20:44.517Z",
-      "lastTool": "Edit"
-    },
-    {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/loganalysis/tool/LogReportLookupTool.java",
       "tool": "Edit",
       "operations": 1,
@@ -1174,42 +1100,11 @@
       "lastModified": "2026-06-30T07:19:51.615Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/ram/chat/ProjectPickerDialog.vue",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-06-30T07:26:45.513Z",
-      "lastModified": "2026-06-30T07:27:18.908Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/ram/chat/ChatMessageList.vue",
-      "tool": "Edit",
-      "operations": 3,
-      "timestamp": "2026-06-30T07:26:46.265Z",
-      "lastModified": "2026-06-30T07:27:20.579Z",
-      "lastTool": "Edit"
-    },
-    {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/components/layout/AppSidebar.vue",
       "tool": "Edit",
       "operations": 2,
       "timestamp": "2026-06-30T07:26:47.035Z",
       "lastModified": "2026-06-30T07:27:21.354Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/.gitignore",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-06-30T07:26:47.866Z",
-      "lastModified": "2026-06-30T07:26:47.866Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/chat/RamChatOrchestrator.java",
-      "tool": "Edit",
-      "operations": 7,
-      "timestamp": "2026-06-30T07:28:06.318Z",
-      "lastModified": "2026-06-30T07:29:17.671Z",
       "lastTool": "Edit"
     },
     {
