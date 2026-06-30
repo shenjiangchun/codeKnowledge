@@ -12,5 +12,7 @@ public enum SessionType {
     /** Phase2 analysis - precise location analysis */
     PHASE2,
     /** Merge analysis - branch merge conflict/impact analysis */
-    MERGE_ANALYSIS
+    MERGE_ANALYSIS,
+    /** Log analysis follow-up Q&A session */
+    LOG_FOLLOWUP
 }

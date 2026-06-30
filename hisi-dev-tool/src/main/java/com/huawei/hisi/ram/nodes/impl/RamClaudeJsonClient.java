@@ -375,6 +375,124 @@ public class RamClaudeJsonClient {
     }
 
     /**
+     * Multi-turn variant of {@link #callJsonWithToolsAndStreaming}.
+     *
+     * <p>Accepts a pre-built messages array (e.g. conversation history)
+     * instead of a single userPrompt. Each message must have
+     * {@code "role"} ("user" / "assistant") and {@code "content"} (String).
+     *
+     * <p>The tool-use loop is identical to the single-turn variant:
+     * up to {@link #MAX_TOOL_ROUNDS} rounds of tool calls, then forced termination.
+     */
+    public JsonCallResult callJsonWithToolsAndStreamingMultiTurn(
+            String systemPrompt,
+            List<Map<String, Object>> messages,
+            List<ToolDefinition> tools,
+            Map<String, Function<Map<String, Object>, Object>> handlers,
+            SendOptions opts,
+            StreamCallbacks callbacks) {
+
+        List<Map<String, Object>> workingMessages = new ArrayList<>(messages);
+
+        if (tools == null || tools.isEmpty()) {
+            Map<String, Object> json = callJson(systemPrompt, extractLastUser(workingMessages), opts);
+            callbacks.onRoundComplete(0, "end_turn");
+            return new JsonCallResult(json, List.of("单轮调用，无工具使用"));
+        }
+
+        SendOptions effective = new SendOptions(
+                opts.model(), opts.maxTokens(), opts.temperature(), systemPrompt);
+
+        List<String> reasoningSteps = new ArrayList<>();
+        reasoningSteps.add("多轮对话，消息数=" + workingMessages.size());
+
+        for (int round = 0; round < MAX_TOOL_ROUNDS; round++) {
+            if (round == MAX_TOOL_ROUNDS - 2) {
+                workingMessages.add(Map.of("role", "user", "content",
+                        "[SYSTEM] You have used most of your tool budget. " +
+                        "You MUST output your final response in the next turn. " +
+                        "Stop calling tools and produce the complete response now."));
+            }
+
+            StreamResult result = streamAndCollectWithCallbacks(workingMessages, tools, effective, callbacks);
+
+            log.info("[RamClaudeJsonClient] multi-turn streaming round={} stop_reason={} text.len={} tool_use_blocks={}",
+                    round, result.stopReason, result.textContent.length(), result.toolUseBlocks.size());
+
+            if (!"tool_use".equals(result.stopReason) || result.toolUseBlocks.isEmpty()) {
+                reasoningSteps.add("LLM返回最终结果");
+                callbacks.onRoundComplete(round, result.stopReason);
+                // Return the raw text as-is (follow-up expects natural language, not JSON)
+                Map<String, Object> resultMap = new LinkedHashMap<>();
+                resultMap.put("text", result.textContent.toString());
+                return new JsonCallResult(resultMap, List.copyOf(reasoningSteps));
+            }
+
+            List<Map<String, Object>> assistantContent = new ArrayList<>();
+            if (!result.textContent.isEmpty()) {
+                assistantContent.add(Map.of("type", "text", "text", result.textContent.toString()));
+            }
+
+            List<Map<String, Object>> toolResults = new ArrayList<>();
+            for (ToolUseBlock block : result.toolUseBlocks) {
+                assistantContent.add(Map.of(
+                        "type", "tool_use",
+                        "id", block.id,
+                        "name", block.name,
+                        "input", block.input
+                ));
+
+                callbacks.onToolUseStart(block.name, block.input);
+
+                String toolResultContent = executeToolHandler(handlers, block);
+                reasoningSteps.add(String.format("Round %d: %s(%s) -> %s",
+                        round, block.name, summarizeInput(block.name, block.input),
+                        truncateForReasoning(toolResultContent)));
+
+                callbacks.onToolResult(block.name, toolResultContent);
+
+                toolResults.add(Map.of(
+                        "type", "tool_result",
+                        "tool_use_id", block.id,
+                        "content", toolResultContent
+                ));
+            }
+
+            workingMessages.add(Map.of("role", "assistant", "content", assistantContent));
+            workingMessages.add(Map.of("role", "user", "content", toolResults));
+            callbacks.onRoundComplete(round, result.stopReason);
+        }
+
+        log.warn("[RamClaudeJsonClient] Multi-turn streaming exceeded {} tool rounds — forcing termination", MAX_TOOL_ROUNDS);
+        reasoningSteps.add("超过最大工具轮次，强制终止");
+        workingMessages.add(Map.of("role", "user", "content",
+                "[SYSTEM] Tool budget exhausted. You MUST now output your final answer. " +
+                "Do NOT call any more tools."));
+        StreamResult finalResult = streamAndCollectWithCallbacks(workingMessages, List.of(), effective, callbacks);
+        String finalText = finalResult.textContent.toString().trim();
+        if (finalText.isEmpty()) {
+            log.error("[RamClaudeJsonClient] Final forced multi-turn response is empty");
+            throw new IllegalStateException("Claude response is empty after tool budget exhausted");
+        }
+        callbacks.onRoundComplete(MAX_TOOL_ROUNDS, finalResult.stopReason);
+        Map<String, Object> resultMap = new LinkedHashMap<>();
+        resultMap.put("text", finalText);
+        return new JsonCallResult(resultMap, List.copyOf(reasoningSteps));
+    }
+
+    /** Extract the last user message content from a messages array. */
+    private static String extractLastUser(List<Map<String, Object>> messages) {
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Object role = messages.get(i).get("role");
+            if ("user".equals(role)) {
+                Object content = messages.get(i).get("content");
+                return content != null ? String.valueOf(content) : "";
+            }
+        }
+        return "";
+    }
+
+    /**
      * Variant of {@link #streamAndCollect} that also fires
      * {@link StreamCallbacks} for text deltas.
      */

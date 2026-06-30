@@ -1,15 +1,22 @@
 package com.huawei.hisi.loganalysis.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hisi.loganalysis.dto.FollowupMessageDto;
 import com.huawei.hisi.loganalysis.dto.FollowupSessionDto;
 import com.huawei.hisi.loganalysis.tool.LogReportLookupTool;
 import com.huawei.hisi.loganalysis.websocket.LogFollowupWebSocketHandler;
+import com.huawei.hisi.ram.model.AgentEvent;
+import com.huawei.hisi.ram.model.AgentSession;
+import com.huawei.hisi.ram.model.EventType;
+import com.huawei.hisi.ram.model.SessionStatus;
+import com.huawei.hisi.ram.model.SessionType;
 import com.huawei.hisi.ram.nodes.impl.KgToolRegistry;
 import com.huawei.hisi.ram.nodes.impl.RamClaudeJsonClient;
 import com.huawei.hisi.ram.nodes.impl.StreamCallbacks;
+import com.huawei.hisi.ram.repository.AgentEventRepository;
+import com.huawei.hisi.ram.repository.AgentSessionRepository;
 import com.huawei.hisi.ram.sdk.SendOptions;
 import com.huawei.hisi.ram.sdk.ToolDefinition;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -20,7 +27,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -29,13 +35,10 @@ import java.util.function.Function;
 /**
  * Manages follow-up Q&A sessions for log analysis reports.
  *
- * <p>Architecture:
- * <ol>
- *   <li>User sends a question about a completed log report</li>
- *   <li>Service creates a follow-up session (in-memory, keyed by sessionId)</li>
- *   <li>Claude is called with tool-use loop: lookup_log_report + KG tools</li>
- *   <li>Responses are streamed via WebSocket to the frontend</li>
- * </ol>
+ * <p>Persistence: each session is one row in {@code agent_session} with
+ * {@code session_type=LOG_FOLLOWUP}; each user/assistant message is appended
+ * to {@code agent_event} with {@code type=MESSAGE} and payload
+ * {@code {"role":"user|assistant","content":"...","createdAt":...}}.
  */
 @Slf4j
 @Service
@@ -45,11 +48,12 @@ public class LogFollowupService {
     private final KgToolRegistry kgToolRegistry;
     private final LogReportLookupTool reportLookupTool;
     private final LogFollowupWebSocketHandler wsHandler;
+    private final AgentSessionRepository sessionRepository;
+    private final AgentEventRepository eventRepository;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${log.followup.timeout-seconds:120}")
     private long timeoutSeconds;
-
-    private final Map<String, FollowupSession> sessions = new ConcurrentHashMap<>();
 
     private final ExecutorService asyncExecutor = Executors.newFixedThreadPool(2, r -> {
         Thread t = new Thread(r, "log-followup");
@@ -60,11 +64,15 @@ public class LogFollowupService {
     public LogFollowupService(RamClaudeJsonClient claudeClient,
                               KgToolRegistry kgToolRegistry,
                               LogReportLookupTool reportLookupTool,
-                              LogFollowupWebSocketHandler wsHandler) {
+                              LogFollowupWebSocketHandler wsHandler,
+                              AgentSessionRepository sessionRepository,
+                              AgentEventRepository eventRepository) {
         this.claudeClient = claudeClient;
         this.kgToolRegistry = kgToolRegistry;
         this.reportLookupTool = reportLookupTool;
         this.wsHandler = wsHandler;
+        this.sessionRepository = sessionRepository;
+        this.eventRepository = eventRepository;
     }
 
     /**
@@ -73,22 +81,33 @@ public class LogFollowupService {
      */
     public String startFollowup(long reportId, String message, String projectPath) {
         String sessionId = UUID.randomUUID().toString();
+        long now = System.currentTimeMillis();
+        long nowEpoch = now / 1000L;
 
-        List<FollowupMessageDto> messages = new ArrayList<>();
-        messages.add(new FollowupMessageDto("user", message, System.currentTimeMillis()));
+        AgentSession session = AgentSession.builder()
+                .userId("log-followup-" + reportId)
+                .status(SessionStatus.RUNNING)
+                .currentNode("followup")
+                .stepCount(0)
+                .uuid(sessionId)
+                .intent("log-followup")
+                .projectPaths(projectPath)
+                .sessionType(SessionType.LOG_FOLLOWUP)
+                .version(0)
+                .createdAt(nowEpoch)
+                .updatedAt(nowEpoch)
+                .build();
+        AgentSession saved = sessionRepository.save(session);
 
-        FollowupSession session = new FollowupSession(sessionId, reportId, projectPath, messages);
-        sessions.put(sessionId, session);
+        appendMessage(saved.getId(), "user", message, now);
 
-        // Emit user message to WS
         wsHandler.pushEvent(sessionId, Map.of(
                 "type", "user_msg",
                 "sessionId", sessionId,
                 "text", message
         ));
 
-        // Execute async
-        CompletableFuture.runAsync(() -> executeFollowup(session), asyncExecutor);
+        CompletableFuture.runAsync(() -> executeFollowup(saved, projectPath), asyncExecutor);
 
         return sessionId;
     }
@@ -97,12 +116,11 @@ public class LogFollowupService {
      * Continue an existing follow-up session with a new message.
      */
     public void continueFollowup(String sessionId, String message) {
-        FollowupSession session = sessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Follow-up session not found: " + sessionId);
-        }
+        AgentSession session = sessionRepository.findByUuid(sessionId)
+                .orElseThrow(() -> new IllegalArgumentException("Follow-up session not found: " + sessionId));
 
-        session.messages.add(new FollowupMessageDto("user", message, System.currentTimeMillis()));
+        long now = System.currentTimeMillis();
+        appendMessage(session.getId(), "user", message, now);
 
         wsHandler.pushEvent(sessionId, Map.of(
                 "type", "user_msg",
@@ -110,50 +128,47 @@ public class LogFollowupService {
                 "text", message
         ));
 
-        CompletableFuture.runAsync(() -> executeFollowup(session), asyncExecutor);
+        CompletableFuture.runAsync(() -> executeFollowup(session, session.getProjectPaths()), asyncExecutor);
     }
 
     /**
      * Get the current state of a follow-up session for reconnection.
      */
     public FollowupSessionDto getSession(String sessionId) {
-        FollowupSession session = sessions.get(sessionId);
+        AgentSession session = sessionRepository.findByUuid(sessionId).orElse(null);
         if (session == null) return null;
 
+        List<FollowupMessageDto> messages = loadMessages(session.getId());
+        String status = mapStatus(session.getStatus());
+
         return new FollowupSessionDto(
-                session.sessionId,
-                session.reportId,
-                List.copyOf(session.messages),
-                session.status,
-                session.createdAt,
-                System.currentTimeMillis()
+                session.getUuid(),
+                extractReportId(session.getUserId()),
+                List.copyOf(messages),
+                status,
+                session.getCreatedAt() * 1000L,
+                session.getUpdatedAt() * 1000L
         );
     }
 
-    private void executeFollowup(FollowupSession session) {
-        session.status = "processing";
-        String sessionId = session.sessionId;
-
+    private void executeFollowup(AgentSession session, String projectPath) {
+        String sessionId = session.getUuid();
         try {
-            // Build system prompt
-            String systemPrompt = buildSystemPrompt(session.reportId);
+            String systemPrompt = buildSystemPrompt(extractReportId(session.getUserId()));
+            List<FollowupMessageDto> history = loadMessages(session.getId());
+            List<Map<String, Object>> messages = buildMessagesArray(history);
 
-            // Build single user prompt from conversation history
-            String userPrompt = buildConversationPrompt(session.messages);
-
-            // Build tools: report lookup + KG tools (if projectPath available)
             List<ToolDefinition> tools = new ArrayList<>();
             tools.add(reportLookupTool.buildDefinition());
 
             Map<String, Function<Map<String, Object>, Object>> handlers = new LinkedHashMap<>();
-            handlers.put("lookup_log_report", reportLookupTool.buildHandler());
+            handlers.put("lookup_log_report", reportLookupTool.buildHandler(session.getUserId()));
 
-            if (session.projectPath != null && !session.projectPath.isBlank() && kgToolRegistry.isAvailable()) {
-                tools.addAll(kgToolRegistry.buildToolDefinitions(session.projectPath));
-                handlers.putAll(kgToolRegistry.buildToolHandlers(session.projectPath));
+            if (projectPath != null && !projectPath.isBlank() && kgToolRegistry.isAvailable()) {
+                tools.addAll(kgToolRegistry.buildToolDefinitions(projectPath));
+                handlers.putAll(kgToolRegistry.buildToolHandlers(projectPath));
             }
 
-            // Stream callbacks
             StreamCallbacks callbacks = new StreamCallbacks() {
                 @Override
                 public void onAssistantDelta(String deltaText) {
@@ -186,15 +201,14 @@ public class LogFollowupService {
 
                 @Override
                 public void onRoundComplete(int round, String assistantText) {
-                    // No-op for follow-up; we track via delta
+                    // No-op for follow-up
                 }
             };
 
-            // Call Claude with tool loop (single user prompt with conversation context)
             CompletableFuture<RamClaudeJsonClient.JsonCallResult> future = CompletableFuture.supplyAsync(() ->
-                    claudeClient.callJsonWithToolsAndStreaming(
+                    claudeClient.callJsonWithToolsAndStreamingMultiTurn(
                             systemPrompt,
-                            userPrompt,
+                            messages,
                             tools,
                             handlers,
                             SendOptions.defaults(),
@@ -207,12 +221,11 @@ public class LogFollowupService {
 
             String finalText = extractFinalText(result.json());
 
-            // Store assistant response
-            session.messages.add(new FollowupMessageDto("assistant",
+            appendMessage(session.getId(), "assistant",
                     finalText != null ? finalText : "(no response)",
-                    System.currentTimeMillis()));
+                    System.currentTimeMillis());
 
-            session.status = "completed";
+            sessionRepository.updateStatus(session.getId(), SessionStatus.DONE);
 
             wsHandler.pushEvent(sessionId, Map.of(
                     "type", "turn_complete",
@@ -222,7 +235,7 @@ public class LogFollowupService {
 
         } catch (Exception e) {
             log.error("[LogFollowup] session={} failed: {}", sessionId, e.getMessage(), e);
-            session.status = "error";
+            sessionRepository.updateStatus(session.getId(), SessionStatus.FAILED);
 
             wsHandler.pushEvent(sessionId, Map.of(
                     "type", "error",
@@ -230,6 +243,71 @@ public class LogFollowupService {
                     "error", e.getMessage()
             ));
         }
+    }
+
+    private void appendMessage(long sessionId, String role, String content, long createdAt) {
+        try {
+            String payload = objectMapper.writeValueAsString(Map.of(
+                    "role", role,
+                    "content", content,
+                    "createdAt", createdAt
+            ));
+            long seq = eventRepository.findMaxSeq(sessionId) + 1;
+            AgentEvent event = AgentEvent.builder()
+                    .sessionId(sessionId)
+                    .seq(seq)
+                    .type(EventType.MESSAGE)
+                    .payload(payload)
+                    .idempotencyKey("followup-" + sessionId + "-" + seq)
+                    .cumulativeTokens(0L)
+                    .retryCount(0)
+                    .createdAt(createdAt / 1000L)
+                    .build();
+            eventRepository.append(event);
+        } catch (Exception e) {
+            log.error("[LogFollowup] appendMessage failed session={} role={}: {}", sessionId, role, e.getMessage());
+        }
+    }
+
+    private List<FollowupMessageDto> loadMessages(long sessionId) {
+        List<AgentEvent> events = eventRepository.findBySessionId(sessionId);
+        List<FollowupMessageDto> messages = new ArrayList<>();
+        for (AgentEvent e : events) {
+            if (e.getType() != EventType.MESSAGE) continue;
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> payload = objectMapper.readValue(e.getPayload(), Map.class);
+                String role = String.valueOf(payload.get("role"));
+                String content = String.valueOf(payload.get("content"));
+                long createdAt = payload.get("createdAt") instanceof Number n ? n.longValue() : e.getCreatedAt() * 1000L;
+                messages.add(new FollowupMessageDto(role, content, createdAt));
+            } catch (Exception ex) {
+                log.warn("[LogFollowup] Failed to parse event payload event={}: {}", e.getId(), ex.getMessage());
+            }
+        }
+        return messages;
+    }
+
+    private static long extractReportId(String userId) {
+        // userId format: "log-followup-{reportId}"
+        if (userId == null) return 0L;
+        int idx = userId.lastIndexOf('-');
+        if (idx < 0) return 0L;
+        try {
+            return Long.parseLong(userId.substring(idx + 1));
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
+    }
+
+    private static String mapStatus(SessionStatus status) {
+        if (status == null) return "unknown";
+        return switch (status) {
+            case RUNNING -> "processing";
+            case DONE -> "completed";
+            case FAILED -> "error";
+            default -> status.name().toLowerCase();
+        };
     }
 
     private String buildSystemPrompt(long reportId) {
@@ -258,23 +336,16 @@ public class LogFollowupService {
     }
 
     /**
-     * Build a single user prompt from conversation history.
-     * The Claude API takes (systemPrompt, userPrompt) pairs, so we embed
-     * multi-turn history as context within the user prompt.
+     * Build a multi-turn messages array from conversation history.
+     * Each message is a Map with "role" and "content" keys,
+     * suitable for the Claude Messages API.
      */
-    private static String buildConversationPrompt(List<FollowupMessageDto> messages) {
-        if (messages.size() == 1) {
-            return messages.get(0).content();
-        }
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("以下是对话历史：\n\n");
+    private static List<Map<String, Object>> buildMessagesArray(List<FollowupMessageDto> messages) {
+        List<Map<String, Object>> result = new ArrayList<>(messages.size());
         for (FollowupMessageDto msg : messages) {
-            String role = "user".equals(msg.role()) ? "用户" : "助手";
-            sb.append("[").append(role).append("] ").append(msg.content()).append("\n\n");
+            result.add(Map.of("role", msg.role(), "content", msg.content()));
         }
-        sb.append("请基于以上对话历史，回答用户的最新问题。");
-        return sb.toString();
+        return result;
     }
 
     @SuppressWarnings("unchecked")
@@ -282,28 +353,10 @@ public class LogFollowupService {
         if (json == null) return null;
         Object text = json.get("text");
         if (text instanceof String s && !s.isBlank()) return s;
-        // Try nested fields
         Object summary = json.get("summary");
         if (summary instanceof String s && !s.isBlank()) return s;
         Object content = json.get("content");
         if (content instanceof String s && !s.isBlank()) return s;
         return json.toString();
-    }
-
-    /** In-memory follow-up session state. */
-    private static class FollowupSession {
-        final String sessionId;
-        final long reportId;
-        final String projectPath;
-        final List<FollowupMessageDto> messages;
-        volatile String status = "processing";
-        final long createdAt = System.currentTimeMillis();
-
-        FollowupSession(String sessionId, long reportId, String projectPath, List<FollowupMessageDto> messages) {
-            this.sessionId = sessionId;
-            this.reportId = reportId;
-            this.projectPath = projectPath;
-            this.messages = messages;
-        }
     }
 }

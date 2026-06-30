@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRamChatStore } from '@/stores/ramChatStore'
 import StepCard from './StepCard.vue'
 import { Document, Loading } from '@element-plus/icons-vue'
+import { renderMarkdown as renderMarkdownSafe } from '@/utils/markdown'
 
 const store = useRamChatStore()
 const scrollRef = ref<HTMLElement | null>(null)
@@ -21,21 +22,6 @@ interface Turn {
   assistantText: string
   status: 'streaming' | 'done' | 'error'
   errorMessage?: string
-}
-
-function renderMarkdown(text: string): string {
-  if (!text) return ''
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/`(.+?)`/g, '<code>$1</code>')
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/\n/g, '<br>')
 }
 
 const turns = computed<Turn[]>(() => {
@@ -115,7 +101,7 @@ watch(turns, async () => {
             <el-icon class="is-loading"><Loading /></el-icon>
             <span>思考中...</span>
           </div>
-          <div v-else class="markdown-content" v-html="renderMarkdown(turn.assistantText)"></div>
+          <div v-else class="markdown-content" v-html="renderMarkdownSafe(turn.assistantText)"></div>
         </div>
       </div>
 

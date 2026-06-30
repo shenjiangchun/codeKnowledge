@@ -43,7 +43,25 @@ public class LogReportLookupTool {
         return new ToolDefinition(TOOL_NAME, TOOL_DESC, INPUT_SCHEMA);
     }
 
+    /**
+     * Build a handler WITHOUT ownership restriction (legacy / admin use).
+     */
     public Function<Map<String, Object>, Object> buildHandler() {
+        return buildHandler(null);
+    }
+
+    /**
+     * Build a handler restricted to the report owned by the given userId.
+     *
+     * <p>The userId follows the format {@code "log-followup-{reportId}"};
+     * if the LLM attempts to look up a different reportId, the request is
+     * rejected with an error message.
+     *
+     * @param userId session userId (null = no restriction)
+     */
+    public Function<Map<String, Object>, Object> buildHandler(String userId) {
+        long allowedReportId = extractReportId(userId);
+
         return input -> {
             Object reportIdObj = input.get("reportId");
             long reportId;
@@ -51,6 +69,12 @@ public class LogReportLookupTool {
                 reportId = n.longValue();
             } else {
                 reportId = Long.parseLong(String.valueOf(reportIdObj));
+            }
+
+            if (allowedReportId > 0 && reportId != allowedReportId) {
+                log.warn("[LogReportLookupTool] Access denied: userId={} requested reportId={}, allowed={}",
+                        userId, reportId, allowedReportId);
+                return Map.of("error", "You can only access report " + allowedReportId + " in this session.");
             }
 
             log.info("[LogReportLookupTool] Looking up reportId={}", reportId);
@@ -72,6 +96,21 @@ public class LogReportLookupTool {
             result.put("occurrenceCount", report.getOccurrenceCount());
             return result;
         };
+    }
+
+    /**
+     * Extract reportId from userId format "log-followup-{reportId}".
+     * Returns 0 if userId is null or doesn't match the expected format.
+     */
+    private static long extractReportId(String userId) {
+        if (userId == null) return 0L;
+        int idx = userId.lastIndexOf('-');
+        if (idx < 0) return 0L;
+        try {
+            return Long.parseLong(userId.substring(idx + 1));
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
     }
 
     private static String truncate(String text, int maxChars) {

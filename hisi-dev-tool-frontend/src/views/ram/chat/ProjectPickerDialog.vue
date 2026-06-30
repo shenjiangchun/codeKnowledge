@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useRamChatStore } from '@/stores/ramChatStore'
-import request from '@/utils/request'
+import { projectApi } from '@/api/project'
+import { listRemoteProjects } from '@/api/remote-project'
+import type { RemoteProject } from '@/types/remote-project'
+import type { GitRepositoryInfo } from '@/types/callchain'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps<{ modelValue: boolean }>()
@@ -28,14 +31,27 @@ watch(visible, (val) => {
 
 async function loadProjects() {
   try {
-    // axios 拦截器已解包，response 直接是数据对象
-    const data = await request.get('/projects') as unknown as Array<Record<string, unknown>>
-    if (Array.isArray(data)) {
-      projects.value = data.map((p) => ({
-        path: (p.projectPath || p.path || '') as string,
-        name: (p.projectName || p.name || '') as string
-      }))
-    }
+    const [localResult, remoteResult] = await Promise.allSettled([
+      projectApi.scanGitRepos() as Promise<unknown>,
+      listRemoteProjects() as Promise<unknown>
+    ])
+
+    const local = localResult.status === 'fulfilled' && Array.isArray(localResult.value)
+      ? localResult.value as GitRepositoryInfo[]
+      : []
+
+    const cloned = remoteResult.status === 'fulfilled' && Array.isArray(remoteResult.value)
+      ? (remoteResult.value as RemoteProject[])
+          .filter(r => r.cloneStatus === 'CLONED')
+          .map(r => ({ name: r.name, path: r.fullPath || r.localPath }))
+      : []
+
+    const clonedNames = new Set(cloned.map(p => p.name))
+    const dedupedLocal = local
+      .filter(p => !clonedNames.has(p.name))
+      .map(p => ({ path: p.path, name: p.name }))
+
+    projects.value = [...cloned, ...dedupedLocal]
   } catch (e) {
     console.error('[ProjectPicker] load projects failed', e)
   }

@@ -66,12 +66,12 @@ export function useRamChatWebSocket() {
 
   function handleMessage(msg: Record<string, unknown>) {
     store.appendEvent({
-      id: Date.now(),
-      sessionId: Number(store.currentSessionId),
-      seq: store.events.length + 1,
+      id: (msg.eventId as number) ?? Date.now(),
+      sessionId: (msg.sessionId as number) ?? Number(store.currentSessionId),
+      seq: (msg.seq as number) ?? (store.events.length + 1),
       type: msg.type as string,
       payload: JSON.stringify(msg),
-      createdAt: Date.now()
+      createdAt: (msg.createdAt as number) ?? Date.now()
     })
   }
 
