@@ -44,8 +44,8 @@ public class HybridEncryptor {
                            new GCMParameterSpec(TAG_LEN_BITS, iv));
             byte[] ct = aesCipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
 
-            // 3. RSA-OAEP 加密 DEK
-            Cipher rsaCipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
+            // 3. RSA-OAEP 加密 DEK（显式指定 BouncyCastle provider，避免 MGF1 hash 不一致）
+            Cipher rsaCipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding", "BC");
             rsaCipher.init(Cipher.ENCRYPT_MODE, keyLoader.loadPublicKey());
             byte[] wrappedDek = rsaCipher.doFinal(dek);
             if (wrappedDek.length != RSA_WRAPPED_LEN) {

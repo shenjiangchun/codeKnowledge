@@ -13,14 +13,14 @@ public interface FixSessionRepository {
     /** Insert a new session, returning a copy with the generated id populated. */
     FixSession save(FixSession session);
 
-    Optional<FixSession> findById(long id);
+    Optional<FixSession> findById(String id);
 
-    List<FixSession> findByReportId(long reportId);
+    List<FixSession> findByReportId(String reportId);
 
-    Optional<FixSession> findByChatSessionId(long chatSessionId);
+    Optional<FixSession> findByChatSessionId(String chatSessionId);
 
     /** Update all mutable fields (status, worktree, branch, commit, error, etc.). */
     int update(FixSession session);
 
-    int updateStatus(long id, String status);
+    int updateStatus(String id, String status);
 }

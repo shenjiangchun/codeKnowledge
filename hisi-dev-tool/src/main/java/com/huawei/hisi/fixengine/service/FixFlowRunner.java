@@ -1,5 +1,7 @@
 package com.huawei.hisi.fixengine.service;
 
+import com.huawei.hisi.fixengine.executor.MavenExecutor;
+import com.huawei.hisi.fixengine.executor.TestRunResult;
 import com.huawei.hisi.fixengine.model.FixSession;
 import com.huawei.hisi.fixengine.model.TestGenInput;
 import com.huawei.hisi.fixengine.repository.FixSessionRepository;
@@ -8,6 +10,8 @@ import com.huawei.hisi.ram.chat.RamChatWebSocketHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +33,7 @@ public class FixFlowRunner {
     private final TestGenService testGenService;
     private final ReproService reproService;
     private final FixService fixService;
+    private final MavenExecutor mavenExecutor;
     private final FixSessionRepository fixSessionRepository;
     private final RamChatWebSocketHandler wsHandler;
 
@@ -37,6 +42,7 @@ public class FixFlowRunner {
                          TestGenService testGenService,
                          ReproService reproService,
                          FixService fixService,
+                         MavenExecutor mavenExecutor,
                          FixSessionRepository fixSessionRepository,
                          RamChatWebSocketHandler wsHandler) {
         this.logAnalysisOrchestrator = logAnalysisOrchestrator;
@@ -44,6 +50,7 @@ public class FixFlowRunner {
         this.testGenService = testGenService;
         this.reproService = reproService;
         this.fixService = fixService;
+        this.mavenExecutor = mavenExecutor;
         this.fixSessionRepository = fixSessionRepository;
         this.wsHandler = wsHandler;
     }
@@ -54,7 +61,11 @@ public class FixFlowRunner {
      * @param session the fix session (must already be persisted)
      */
     public void run(FixSession session) {
-        long sid = session.getChatSessionId() != null ? session.getChatSessionId() : 0L;
+        // chatSessionId 现为 String，需解析为 long 给 pushWs 使用
+        long sid = 0L;
+        if (session.getChatSessionId() != null) {
+            try { sid = Long.parseLong(session.getChatSessionId()); } catch (NumberFormatException ignored) {}
+        }
 
         try {
             // ---- Step 1: Log recognition ----
@@ -78,12 +89,19 @@ public class FixFlowRunner {
             fixSessionRepository.update(session);
             log.info("[FixFlowRunner] step3 done: worktree={}", worktreePath);
 
-            // ---- Step 4: AI generate test ----
+            // ---- Step 4: AI generate test（带编译检查，最多 3 轮修复） ----
             pushWs(sid, "generate_test", "Generating reproduction test...");
             TestGenInput testInput = buildTestGenInput(analysisResult, throwPointSig, exceptionType);
-            String testCode = testGenService.generate(testInput);
             String testClassName = extractTestClassName(testInput);
             String testPackage = extractTestPackage(testInput);
+            String testFqn = testPackage + "." + testClassName;
+
+            // 使用 compileCheck 重载：生成 → 写文件 → 编译 → 失败则 AI 修复 → 重试
+            String testCode = testGenService.generate(testInput, code -> {
+                worktreeService.writeTestFile(worktreePath, testPackage, testClassName, code);
+                TestRunResult result = mavenExecutor.runTest(worktreePath, testFqn, null);
+                return result.isPassed() ? null : result.output();
+            });
             worktreeService.writeTestFile(worktreePath, testPackage, testClassName, testCode);
             log.info("[FixFlowRunner] step4 done: testClass={}", testClassName);
 
@@ -248,11 +266,66 @@ public class FixFlowRunner {
 
     /**
      * Read the source of the method to be fixed.
-     * TODO: implement using KG or file scanning based on throwPointSig
+     * 从 worktree 中读取源文件并提取目标方法体。
      */
     private String readMethodSource(String worktreePath, String throwPointSig) {
-        log.warn("[FixFlowRunner] readMethodSource not yet implemented for {}", throwPointSig);
-        return "// TODO: source code for " + throwPointSig;
+        if (throwPointSig == null || throwPointSig.isBlank()) {
+            return "// empty throwPointSig";
+        }
+        String filePath = sigToFilePath(throwPointSig);
+        Path sourcePath = Path.of(worktreePath, filePath);
+        if (!Files.exists(sourcePath)) {
+            log.warn("[FixFlowRunner] source file not found: {}", sourcePath);
+            return "// source file not found: " + filePath;
+        }
+        try {
+            String source = Files.readString(sourcePath);
+            // 提取方法体：从方法签名到对应的右花括号
+            String methodName = throwPointSig.substring(throwPointSig.lastIndexOf('.') + 1);
+            return extractMethodBody(source, methodName);
+        } catch (Exception e) {
+            log.warn("[FixFlowRunner] failed to read source: {}", e.getMessage());
+            return "// failed to read: " + e.getMessage();
+        }
+    }
+
+    /**
+     * 从源代码中提取指定方法的完整方法体。
+     */
+    private static String extractMethodBody(String source, String methodName) {
+        // 查找方法签名行（支持 public/protected/private + 返回类型 + 方法名）
+        String[] lines = source.split("\n");
+        int startLine = -1;
+        int braceCount = 0;
+        boolean inMethod = false;
+        StringBuilder sb = new StringBuilder();
+
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            if (!inMethod) {
+                // 查找包含方法名的行（排除注释和字符串）
+                String trimmed = line.trim();
+                if (trimmed.contains(methodName + "(") &&
+                    (trimmed.contains("public ") || trimmed.contains("private ") ||
+                     trimmed.contains("protected ") || trimmed.contains("static "))) {
+                    startLine = i;
+                    inMethod = true;
+                }
+            }
+            if (inMethod) {
+                sb.append(line).append("\n");
+                for (char c : line.toCharArray()) {
+                    if (c == '{') braceCount++;
+                    if (c == '}') braceCount--;
+                }
+                if (braceCount == 0 && startLine != i) {
+                    break;
+                }
+            }
+        }
+
+        String result = sb.toString().trim();
+        return result.isEmpty() ? "// method not found: " + methodName : result;
     }
 
     /**

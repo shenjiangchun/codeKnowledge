@@ -9,6 +9,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.SchedulingConfigurer;
 import org.springframework.scheduling.config.ScheduledTaskRegistrar;
 
+import java.lang.reflect.Method;
+
 @Configuration
 @EnableScheduling
 public class CaptureScheduledAutoConfiguration implements SchedulingConfigurer {
@@ -21,13 +23,17 @@ public class CaptureScheduledAutoConfiguration implements SchedulingConfigurer {
         return new ScheduledCaptureBeanPostProcessor();
     }
 
-    @Bean
-    public CaptureScheduledErrorHandler captureScheduledErrorHandler() {
-        return new CaptureScheduledErrorHandler();
-    }
-
     @Override
     public void configureTasks(ScheduledTaskRegistrar taskRegistrar) {
-        taskRegistrar.setErrorHandler(errorHandler);
+        // setErrorHandler 仅在 Spring 6.0+ 可用（SB 3.x），Spring 5.3 无此方法
+        try {
+            Method setter = ScheduledTaskRegistrar.class.getMethod("setErrorHandler",
+                    org.springframework.util.ErrorHandler.class);
+            setter.invoke(taskRegistrar, errorHandler);
+        } catch (NoSuchMethodException e) {
+            // Spring 5.x — 不支持 setErrorHandler，定时任务异常走默认 uncaughtExceptionHandler
+        } catch (Exception e) {
+            // 反射调用失败，降级
+        }
     }
 }

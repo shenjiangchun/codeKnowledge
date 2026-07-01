@@ -81,6 +81,28 @@
 
         <!-- 追问对话面板 (completed 状态) -->
         <FollowupPanel v-if="isCompleted" :report-id="reportId" />
+
+        <!-- 历史修复会话列表 -->
+        <div v-if="fixSessions.length > 0" class="report-section">
+          <h3 class="section-title">修复历史</h3>
+          <el-table :data="fixSessions" stripe size="small">
+            <el-table-column prop="id" label="会话ID" width="120" />
+            <el-table-column prop="status" label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag :type="getFixStatusType(row.status)" size="small">{{ row.status }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="branchName" label="分支" min-width="150" />
+            <el-table-column prop="throwPointSig" label="异常位置" min-width="200" show-overflow-tooltip />
+            <el-table-column label="操作" width="100">
+              <template #default="{ row }">
+                <el-button type="primary" link size="small" @click="openFixSession(row.id)">
+                  查看
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
       </div>
 
       <el-empty v-else description="报告不存在" />
@@ -93,6 +115,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { logAnalysisApi } from '@/api/logAnalysis'
+import { fixApi } from '@/api/fix'
+import type { FixSession } from '@/api/fix'
 import { SetUp } from '@element-plus/icons-vue'
 import type { DetailedAnalysisReport } from '@/types/log'
 import { renderMarkdown } from '@/utils/markdown'
@@ -108,6 +132,7 @@ const loading = ref(false)
 const reanalyzing = ref(false)
 const exporting = ref(false)
 const report = ref<DetailedAnalysisReport | null>(null)
+const fixSessions = ref<FixSession[]>([])
 
 // Real-time DAG progress via WebSocket
 const { events: nodeEvents, connect: connectWs } = useLogAnalysisWebSocket(reportId)
@@ -147,6 +172,31 @@ const goBack = () => {
 
 const handleAutoFix = () => {
   router.push(`/fix/chat?reportId=${reportId.value}`)
+}
+
+const loadFixSessions = async () => {
+  try {
+    const sessions = await fixApi.listByReport(Number(reportId.value))
+    fixSessions.value = sessions
+  } catch {
+    // 静默失败：报告可能没有修复历史
+  }
+}
+
+const openFixSession = (sid: string) => {
+  router.push(`/fix/chat/${sid}`)
+}
+
+const getFixStatusType = (status: string): string => {
+  const map: Record<string, string> = {
+    RUNNING: 'warning',
+    SUCCESS: 'success',
+    FAILED: 'danger',
+    REPRO_FAILED: 'danger',
+    TEST_NOT_PASSED: 'danger',
+    ERROR: 'danger'
+  }
+  return map[status] || 'info'
 }
 
 const getPatternLabel = (pattern: string): string => {
@@ -236,7 +286,10 @@ const handleExportMd = async () => {
   }
 }
 
-onMounted(loadReport)
+onMounted(() => {
+  loadReport()
+  loadFixSessions()
+})
 </script>
 
 <style scoped>

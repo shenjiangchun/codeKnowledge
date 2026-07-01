@@ -29,11 +29,9 @@ public class CaptureAspect {
     public Object captureSpan(ProceedingJoinPoint pjp) throws Throwable {
         CaptureContext ctx = CaptureContextHolder.get();
         if (ctx == null || ctx.getEntry() == null) {
-            // 入口没装采集器（如 main 方法直调），降级
             return pjp.proceed();
         }
         if (ctx.getSpanStack().size() >= 50) {
-            // 栈深保护
             return pjp.proceed();
         }
 
@@ -41,22 +39,21 @@ public class CaptureAspect {
         span.setArgs(sizeLimiter.limitArgs(pjp.getArgs()));
         ctx.pushSpan(span);
 
-        boolean escaped = false;
         try {
             Object ret = pjp.proceed();
             span.setRetVal(sizeLimiter.limitRetVal(ret));
             return ret;
         } catch (Throwable e) {
             span.setException(e);
-            escaped = true;
+            // 修复：在 catch 块中检测 silent_catch，因为 finally 中 escaped 始终为 true
+            // 异常已被 AOP 捕获并记录在 span 中，即使重新抛出，上游仍可能静默吞掉
+            if (silentCatchDetector != null) {
+                silentCatchDetector.detectAndEnrich(span, ctx);
+            }
             throw e;
         } finally {
             span.setEndMillis(System.currentTimeMillis());
             ctx.popSpan();
-            // 兜底 3：silent_catch 检测
-            if (span.getException() != null && !escaped && silentCatchDetector != null) {
-                silentCatchDetector.detectAndEnrich(span, ctx);
-            }
         }
     }
 }

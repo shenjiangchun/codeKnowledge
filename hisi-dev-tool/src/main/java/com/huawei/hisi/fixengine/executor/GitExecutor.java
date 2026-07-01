@@ -36,13 +36,29 @@ public class GitExecutor {
     }
 
     /**
-     * Stage all changes and commit with the given message.
+     * Stage specific paths and commit with the given message.
+     * 使用选择性 add 而非 git add -A，避免提交无关文件。
      */
-    public void commitAll(String worktreePath, String message) {
+    public void commitAll(String worktreePath, String message, String... paths) {
         log.info("[GitExecutor] committing in {}", worktreePath);
-        exec(worktreePath, "git", "add", "-A");
+        if (paths != null && paths.length > 0) {
+            for (String path : paths) {
+                exec(worktreePath, "git", "add", path);
+            }
+        } else {
+            // 默认只 add 变更的跟踪文件 + 新增的 src/ 下文件
+            exec(worktreePath, "git", "add", "-u");
+            exec(worktreePath, "git", "add", "src/");
+        }
         exec(worktreePath, "git", "commit", "-m", message, "--allow-empty");
         log.info("[GitExecutor] commit done");
+    }
+
+    /**
+     * Backward-compatible overload: stage tracked changes + src/ directory.
+     */
+    public void commitAll(String worktreePath, String message) {
+        commitAll(worktreePath, message, (String[]) null);
     }
 
     /**

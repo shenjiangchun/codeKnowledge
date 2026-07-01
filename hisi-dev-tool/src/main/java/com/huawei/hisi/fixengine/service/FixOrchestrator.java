@@ -53,9 +53,12 @@ public class FixOrchestrator {
         agentSession.setIntent("Auto-fix for report " + reportId);
         AgentSession savedAgent = agentSessionRepository.save(agentSession);
 
-        // 2. Create FixSession
+        // 2. Create FixSession（reportId 和 chatSessionId 转为 String）
         String branchName = "fix/" + reportId + "-" + UUID.randomUUID().toString().substring(0, 8);
-        FixSession fixSession = FixSession.newRunning(reportId, savedAgent.getId(), branchName);
+        FixSession fixSession = FixSession.newRunning(
+                String.valueOf(reportId),
+                String.valueOf(savedAgent.getId()),
+                branchName);
         FixSession saved = fixSessionRepository.save(fixSession);
 
         log.info("[FixOrchestrator] created fixSession={} agentSession={} branch={}",

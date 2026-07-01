@@ -3,7 +3,6 @@ package com.hisi.capture.util;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import javax.servlet.http.HttpServletRequest;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
@@ -29,10 +28,13 @@ public class SizeLimiter {
         return truncate(ret, maxArgSize);
     }
 
-    public String limitBody(HttpServletRequest req) {
-        // 读取 body（缓存以便后续 Controller 用），截断到 maxBodySize
+    /**
+     * 从 InputStream 读取并截断到 maxBodySize。
+     * 不再依赖 HttpServletRequest，由 Filter 层传入 InputStream。
+     */
+    public String limitBody(InputStream is) {
+        if (is == null) return null;
         try {
-            InputStream is = req.getInputStream();
             byte[] buf = new byte[maxBodySize];
             int totalRead = 0;
             int bytesRead;

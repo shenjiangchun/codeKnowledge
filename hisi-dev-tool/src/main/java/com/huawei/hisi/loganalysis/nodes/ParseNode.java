@@ -65,18 +65,21 @@ public class ParseNode implements LogAnalysisDagNode {
 
         Map<String, Object> output = new LinkedHashMap<>(input);
 
-        // --- HISI_CAPTURE detection (new) ---
-        CapturePayload capturePayload = null;
+        // --- HISI_CAPTURE detection（支持多个 HISI_CAPTURE 块） ---
+        List<CapturePayload> capturePayloads = new ArrayList<>();
         Matcher captureMatcher = CAPTURE_PATTERN.matcher(fullContent);
-        if (captureMatcher.find() && captureDecoder != null) {
+        while (captureMatcher.find() && captureDecoder != null) {
             String captureJson = captureMatcher.group(1);
-            capturePayload = captureDecoder.decode(captureJson);
-            if (capturePayload != null) {
+            CapturePayload payload = captureDecoder.decode(captureJson);
+            if (payload != null) {
                 log.info("[ParseNode] Detected HISI_CAPTURE: tag={}, uri={}",
-                        capturePayload.getEntryTag(), capturePayload.getUri());
+                        payload.getEntryTag(), payload.getUri());
+                capturePayloads.add(payload);
             }
         }
-        output.put("capturePayload", capturePayload);
+        // 向后兼容：第一个 payload 放入 "capturePayload"，全部放入 "capturePayloads"
+        output.put("capturePayload", capturePayloads.isEmpty() ? null : capturePayloads.get(0));
+        output.put("capturePayloads", capturePayloads);
 
         // Extract project package prefixes from input (if provided)
         List<String> projectPackagePrefixes = extractProjectPackagePrefixes(input);

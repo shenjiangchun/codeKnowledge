@@ -28,18 +28,27 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- TTL：跨线程池上下文传播 -->
+        <!-- TTL：跨线程池上下文传播（业务方提供运行时依赖） -->
         <dependency>
             <groupId>com.alibaba</groupId>
             <artifactId>transmittable-thread-local</artifactId>
             <version>${transmittable-thread-local.version}</version>
+            <scope>provided</scope>
         </dependency>
 
-        <!-- Servlet API（HTTP Filter 用，provided） -->
+        <!-- Servlet API — javax（SB 2.x） -->
         <dependency>
             <groupId>javax.servlet</groupId>
             <artifactId>javax.servlet-api</artifactId>
             <version>4.0.1</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Servlet API — jakarta（SB 3.x） -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <version>6.0.0</version>
             <scope>provided</scope>
         </dependency>
 
@@ -82,11 +91,12 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- 加密 -->
+        <!-- 加密（业务方提供运行时依赖） -->
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
             <version>1.78.1</version>
+            <scope>provided</scope>
         </dependency>
 
         <!-- Jackson（JSON 序列化） -->

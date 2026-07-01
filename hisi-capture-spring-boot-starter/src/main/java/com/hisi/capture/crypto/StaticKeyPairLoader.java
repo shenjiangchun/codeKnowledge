@@ -1,28 +1,33 @@
 package com.hisi.capture.crypto;
 
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import com.hisi.capture.config.CaptureCryptoProperties;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
 import java.security.*;
+import java.security.interfaces.RSAPublicKey;
 import java.security.spec.X509EncodedKeySpec;
 
-@Component
+/**
+ * 由 CaptureCryptoAutoConfiguration 创建（非 @Component）。
+ */
 public class StaticKeyPairLoader {
 
-    static {
-        Security.addProvider(new BouncyCastleProvider());
+    private final CaptureCryptoProperties cryptoProperties;
+
+    public StaticKeyPairLoader(CaptureCryptoProperties cryptoProperties) {
+        this.cryptoProperties = cryptoProperties;
     }
 
     /**
-     * 加载内置公钥（META-INF/capture-public-key.pem）。
+     * 加载内置公钥（classpath 路径由 hisi.capture.crypto.public-key-path 配置）。
      * 私钥不发布到业务方，仅在 codeknowledge 内部。
      */
     public PublicKey loadPublicKey() {
         InputStream is = null;
         try {
-            is = new ClassPathResource("META-INF/capture-public-key.pem").getInputStream();
+            String keyPath = cryptoProperties.getPublicKeyPath();
+            is = new ClassPathResource(keyPath).getInputStream();
             byte[] allBytes = readAllBytes(is);
             String pem = new String(allBytes, java.nio.charset.StandardCharsets.UTF_8)
                 .replace("-----BEGIN PUBLIC KEY-----", "")
@@ -30,7 +35,18 @@ public class StaticKeyPairLoader {
                 .replaceAll("\\s", "");
             byte[] der = java.util.Base64.getDecoder().decode(pem);
             X509EncodedKeySpec spec = new X509EncodedKeySpec(der);
-            return KeyFactory.getInstance("RSA").generatePublic(spec);
+            PublicKey pub = KeyFactory.getInstance("RSA").generatePublic(spec);
+
+            // 校验密钥长度必须 >= 2048 位
+            if (pub instanceof RSAPublicKey) {
+                int keySize = ((RSAPublicKey) pub).getModulus().bitLength();
+                if (keySize < 2048) {
+                    throw new IllegalStateException(
+                        "Capture public key too short: " + keySize + " bits (minimum 2048 required)");
+                }
+            }
+
+            return pub;
         } catch (Exception e) {
             throw new IllegalStateException("Failed to load capture public key", e);
         } finally {

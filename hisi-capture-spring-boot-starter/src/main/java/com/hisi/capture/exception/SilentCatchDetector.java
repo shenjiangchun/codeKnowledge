@@ -24,7 +24,7 @@ public class SilentCatchDetector {
         String key = ctx.getEntry().getEntryTag() + ":" +
                      span.getException().getClass().getName() + ":" +
                      hashStack(span.getException());
-        Long last = DEDUP.getIfPresent(key);
+        Long last = DEDUP.get(key);
         if (last != null) {
             // 检查是否过期
             if (System.currentTimeMillis() - last < DEDUP_TTL_MS) {

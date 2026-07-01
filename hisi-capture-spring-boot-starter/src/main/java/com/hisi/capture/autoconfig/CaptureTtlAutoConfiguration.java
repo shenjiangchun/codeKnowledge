@@ -1,5 +1,6 @@
 package com.hisi.capture.autoconfig;
 
+import com.hisi.capture.config.CaptureTtlProperties;
 import com.hisi.capture.ttl.CaptureTtlBeanPostProcessor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -10,7 +11,7 @@ import org.springframework.context.annotation.Configuration;
 public class CaptureTtlAutoConfiguration {
 
     @Bean
-    public CaptureTtlBeanPostProcessor captureTtlBeanPostProcessor() {
-        return new CaptureTtlBeanPostProcessor();
+    public CaptureTtlBeanPostProcessor captureTtlBeanPostProcessor(CaptureTtlProperties ttlProperties) {
+        return new CaptureTtlBeanPostProcessor(ttlProperties);
     }
 }

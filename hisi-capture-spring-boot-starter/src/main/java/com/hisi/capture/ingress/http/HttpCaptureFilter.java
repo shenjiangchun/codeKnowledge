@@ -9,10 +9,13 @@ import java.io.IOException;
 import java.util.*;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-@Component
+/**
+ * Servlet API (javax) 版本 HTTP 采集过滤器。
+ * 适用于 Spring Boot 2.x（javax.servlet）。
+ * 由 CaptureWebAutoConfiguration 通过 @ConditionalOnClass 注册，不使用 @Component。
+ */
 public class HttpCaptureFilter extends OncePerRequestFilter {
 
     @Autowired
@@ -26,13 +29,12 @@ public class HttpCaptureFilter extends OncePerRequestFilter {
             return;
         }
 
-        // 构造入口上下文
         String entryTag = UUID.randomUUID().toString();
         Map<String, Object> params = new HashMap<String, Object>();
         params.put("uri", req.getRequestURI());
         params.put("method", req.getMethod());
         params.put("headers", sanitizeHeaders(req));
-        params.put("body", sizeLimiter.limitBody(req));
+        params.put("body", sizeLimiter.limitBody(req.getInputStream()));
 
         EntryContext entry = new EntryContext(
             entryTag, EntryType.HTTP, req.getRequestURI(), params, System.currentTimeMillis());
@@ -49,7 +51,6 @@ public class HttpCaptureFilter extends OncePerRequestFilter {
     }
 
     private boolean shouldCapture(HttpServletRequest req) {
-        // URI 白名单 + 采样率判断（详见 §8 配置）
         return true;
     }
 
@@ -59,7 +60,6 @@ public class HttpCaptureFilter extends OncePerRequestFilter {
         while (names.hasMoreElements()) {
             String name = names.nextElement();
             String value = req.getHeader(name);
-            // 脱敏：Authorization / Cookie / X-Token 等
             if (name.toLowerCase().matches("authorization|cookie|x-token|x-auth")) {
                 value = "***REDACTED***";
             }

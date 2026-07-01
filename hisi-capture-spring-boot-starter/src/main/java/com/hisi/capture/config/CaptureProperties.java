@@ -20,6 +20,12 @@ public class CaptureProperties {
     /** silent_catch 检测开关 */
     private boolean silentCatchEnabled = true;
 
+    /** 最大 Span 栈深度保护（超过则跳过采集，防止栈溢出） */
+    private int maxSpanDepth = 50;
+
+    /** 返回值最大序列化字节数（超过则截断） */
+    private int maxRetSize = 4096;
+
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
     public int getMaxArgSize() { return maxArgSize; }
@@ -28,4 +34,8 @@ public class CaptureProperties {
     public void setMaxBodySize(int maxBodySize) { this.maxBodySize = maxBodySize; }
     public boolean isSilentCatchEnabled() { return silentCatchEnabled; }
     public void setSilentCatchEnabled(boolean silentCatchEnabled) { this.silentCatchEnabled = silentCatchEnabled; }
+    public int getMaxSpanDepth() { return maxSpanDepth; }
+    public void setMaxSpanDepth(int maxSpanDepth) { this.maxSpanDepth = maxSpanDepth; }
+    public int getMaxRetSize() { return maxRetSize; }
+    public void setMaxRetSize(int maxRetSize) { this.maxRetSize = maxRetSize; }
 }

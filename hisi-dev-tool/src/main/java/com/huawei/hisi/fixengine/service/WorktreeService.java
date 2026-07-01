@@ -2,6 +2,7 @@ package com.huawei.hisi.fixengine.service;
 
 import com.huawei.hisi.fixengine.executor.GitExecutor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -16,13 +17,17 @@ import java.nio.file.Path;
 public class WorktreeService {
 
     private final GitExecutor gitExecutor;
+    private final String worktreeBaseDir;
 
-    public WorktreeService(GitExecutor gitExecutor) {
+    public WorktreeService(GitExecutor gitExecutor,
+                           @Value("${hisi.fix.worktree-base-dir:${user.home}/.hisi-devtool/worktrees}") String worktreeBaseDir) {
         this.gitExecutor = gitExecutor;
+        this.worktreeBaseDir = worktreeBaseDir;
     }
 
     /**
      * Create a new git worktree for the fix branch.
+     * Worktree path uses external base-dir（不在主仓库内部）。
      *
      * @param branchName   name of the new branch
      * @param repoPath     absolute path to the main repository
@@ -30,7 +35,8 @@ public class WorktreeService {
      * @return absolute path to the new worktree directory
      */
     public String createWorktree(String branchName, String repoPath, String targetBranch) {
-        String worktreePath = repoPath + "/.worktrees/" + branchName;
+        // 使用外部基础目录，不在主仓库内部创建 worktree
+        String worktreePath = worktreeBaseDir + "/" + branchName;
         log.info("[WorktreeService] creating worktree {} -> {}", branchName, worktreePath);
         gitExecutor.createWorktree(repoPath, worktreePath, branchName, targetBranch);
         return worktreePath;
@@ -38,11 +44,6 @@ public class WorktreeService {
 
     /**
      * Write a test source file into the worktree.
-     *
-     * @param worktreePath root of the worktree
-     * @param packageName  Java package (e.g. "com.example.service")
-     * @param className    simple class name (e.g. "FooTest")
-     * @param testCode     full Java source
      */
     public void writeTestFile(String worktreePath, String packageName,
                               String className, String testCode) {
@@ -60,10 +61,6 @@ public class WorktreeService {
 
     /**
      * Replace the source of a file in the worktree (apply AI-generated fix).
-     *
-     * @param worktreePath root of the worktree
-     * @param filePath     path relative to worktree root (e.g. "src/main/java/com/foo/Bar.java")
-     * @param fixedSource  new file content
      */
     public void applyFix(String worktreePath, String filePath, String fixedSource) {
         Path target = Path.of(worktreePath, filePath);

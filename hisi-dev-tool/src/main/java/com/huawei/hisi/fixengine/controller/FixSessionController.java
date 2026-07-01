@@ -37,7 +37,7 @@ public class FixSessionController {
      * Start a new fix session for the given log-analysis report.
      */
     @PostMapping("/sessions")
-    public ApiResponse<Long> startSession(@RequestParam Long reportId) {
+    public ApiResponse<String> startSession(@RequestParam Long reportId) {
         log.info("[FixController] startSession reportId={}", reportId);
         FixSession session = fixOrchestrator.startSession(reportId);
         return ApiResponse.success(session.getId());
@@ -45,13 +45,11 @@ public class FixSessionController {
 
     /**
      * Send a follow-up message to a running fix session.
-     * (Currently logs the message; future: resume or steer the flow.)
      */
     @PostMapping("/sessions/{sessionId}/follow-up")
-    public ApiResponse<Void> followUp(@PathVariable Long sessionId,
+    public ApiResponse<Void> followUp(@PathVariable String sessionId,
                                       @RequestBody String userMessage) {
         log.info("[FixController] followUp sessionId={} msg.len={}", sessionId, userMessage.length());
-        // TODO: integrate follow-up into the fix flow (e.g. user clarification)
         return ApiResponse.success(null);
     }
 
@@ -59,13 +57,20 @@ public class FixSessionController {
      * Get the chat history (AgentEvents) for a fix session.
      */
     @GetMapping("/sessions/{sessionId}/history")
-    public ApiResponse<List<Map<String, Object>>> getHistory(@PathVariable Long sessionId) {
+    public ApiResponse<List<Map<String, Object>>> getHistory(@PathVariable String sessionId) {
         FixSession session = fixSessionRepository.findById(sessionId).orElse(null);
         if (session == null || session.getChatSessionId() == null) {
             return ApiResponse.success(List.of());
         }
 
-        List<AgentEvent> events = agentEventRepository.findBySessionId(session.getChatSessionId());
+        long chatSessionId;
+        try {
+            chatSessionId = Long.parseLong(session.getChatSessionId());
+        } catch (NumberFormatException e) {
+            return ApiResponse.success(List.of());
+        }
+
+        List<AgentEvent> events = agentEventRepository.findBySessionId(chatSessionId);
         List<Map<String, Object>> history = events.stream().map(e -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", e.getId());
@@ -84,7 +89,7 @@ public class FixSessionController {
      */
     @GetMapping("/sessions")
     public ApiResponse<List<FixSession>> listByReport(@RequestParam Long reportId) {
-        List<FixSession> sessions = fixSessionRepository.findByReportId(reportId);
+        List<FixSession> sessions = fixSessionRepository.findByReportId(String.valueOf(reportId));
         return ApiResponse.success(sessions);
     }
 
@@ -92,7 +97,7 @@ public class FixSessionController {
      * Get a single fix session by ID.
      */
     @GetMapping("/sessions/{sessionId}")
-    public ApiResponse<FixSession> getSession(@PathVariable Long sessionId) {
+    public ApiResponse<FixSession> getSession(@PathVariable String sessionId) {
         return fixSessionRepository.findById(sessionId)
                 .map(ApiResponse::success)
                 .orElse(ApiResponse.error(404, "Session not found: " + sessionId));

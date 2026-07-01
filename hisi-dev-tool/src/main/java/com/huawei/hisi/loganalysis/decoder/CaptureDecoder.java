@@ -179,11 +179,17 @@ public class CaptureDecoder {
                 return null;
             }
 
-            // 1. Unwrap DEK with RSA-OAEP
+            // 1. Unwrap DEK with RSA-OAEP（显式指定 BouncyCastle provider，避免 MGF1 hash 不一致）
             byte[] wrappedDek = new byte[RSA_WRAPPED_LEN];
             System.arraycopy(blob, 0, wrappedDek, 0, RSA_WRAPPED_LEN);
 
-            Cipher rsaCipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
+            Cipher rsaCipher;
+            try {
+                rsaCipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding", "BC");
+            } catch (Exception ignored) {
+                // BouncyCastle 不可用时降级到 JDK 默认 provider
+                rsaCipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
+            }
             rsaCipher.init(Cipher.DECRYPT_MODE, privateKey);
             byte[] dek = rsaCipher.doFinal(wrappedDek);
 

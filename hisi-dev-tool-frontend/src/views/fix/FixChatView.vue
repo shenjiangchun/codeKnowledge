@@ -175,7 +175,7 @@ function appendMessage(msg: FixChatMessage) {
   scrollToBottom()
 }
 
-async function loadHistory(sid: number) {
+async function loadHistory(sid: string) {
   try {
     const history = await fixApi.getHistory(sid)
     messages.value = history
@@ -185,7 +185,7 @@ async function loadHistory(sid: number) {
   }
 }
 
-async function loadSession(sid: number) {
+async function loadSession(sid: string) {
   try {
     session.value = await fixApi.getSession(sid)
   } catch {
@@ -193,7 +193,7 @@ async function loadSession(sid: number) {
   }
 }
 
-function connectWebSocket(sid: number) {
+function connectWebSocket(sid: string) {
   disconnectWs()
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const host = window.location.host
@@ -306,11 +306,11 @@ async function initByReportId(reportId: number) {
   loading.value = true
   try {
     const sid = await fixApi.startSession(reportId)
-    session.value = await fixApi.getSession(sid)
-    await loadHistory(sid)
-    connectWebSocket(sid)
+    session.value = await fixApi.getSession(String(sid))
+    await loadHistory(String(sid))
+    connectWebSocket(String(sid))
     // Update URL to include sessionId for refresh resilience
-    router.replace({ query: { sessionId: String(sid) } })
+    router.replace({ name: 'fix-chat', params: { sid: String(sid) } })
   } catch {
     ElMessage.error('启动修复会话失败')
   } finally {
@@ -318,7 +318,7 @@ async function initByReportId(reportId: number) {
   }
 }
 
-async function initBySessionId(sid: number) {
+async function initBySessionId(sid: string) {
   loading.value = true
   try {
     await loadSession(sid)
@@ -332,13 +332,17 @@ async function initBySessionId(sid: number) {
 }
 
 onMounted(() => {
+  // 优先从 route.params.sid 获取（/fix/chat/:sid）
+  const paramSid = route.params.sid as string | undefined
   const reportIdParam = route.query.reportId
   const sessionIdParam = route.query.sessionId
 
-  if (reportIdParam) {
+  if (paramSid) {
+    initBySessionId(paramSid)
+  } else if (reportIdParam) {
     initByReportId(Number(reportIdParam))
   } else if (sessionIdParam) {
-    initBySessionId(Number(sessionIdParam))
+    initBySessionId(String(sessionIdParam))
   } else {
     ElMessage.warning('缺少 reportId 或 sessionId 参数')
   }
