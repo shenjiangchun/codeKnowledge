@@ -3,16 +3,16 @@ package com.hisi.capture.autoconfig;
 import com.hisi.capture.exception.CaptureScheduledErrorHandler;
 import com.hisi.capture.ingress.scheduled.ScheduledCaptureBeanPostProcessor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.SchedulingConfigurer;
 import org.springframework.scheduling.config.ScheduledTaskRegistrar;
 
 import java.lang.reflect.Method;
 
-@Configuration
-@EnableScheduling
+@AutoConfiguration
+@ConditionalOnClass(name = "org.springframework.scheduling.annotation.Scheduled")
 public class CaptureScheduledAutoConfiguration implements SchedulingConfigurer {
 
     @Autowired

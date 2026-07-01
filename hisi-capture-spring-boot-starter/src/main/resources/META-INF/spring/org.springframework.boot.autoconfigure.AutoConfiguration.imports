@@ -1,1 +1,9 @@
 com.hisi.capture.autoconfig.CaptureAutoConfiguration
+com.hisi.capture.autoconfig.CaptureWebAutoConfiguration
+com.hisi.capture.autoconfig.CaptureAsyncAutoConfiguration
+com.hisi.capture.autoconfig.CaptureScheduledAutoConfiguration
+com.hisi.capture.autoconfig.CaptureFeignAutoConfiguration
+com.hisi.capture.autoconfig.CaptureAopAutoConfiguration
+com.hisi.capture.autoconfig.CaptureExceptionAutoConfiguration
+com.hisi.capture.autoconfig.CaptureCryptoAutoConfiguration
+com.hisi.capture.autoconfig.CaptureTtlAutoConfiguration

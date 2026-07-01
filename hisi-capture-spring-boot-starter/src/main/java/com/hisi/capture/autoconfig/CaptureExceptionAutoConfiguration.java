@@ -1,11 +1,11 @@
 package com.hisi.capture.autoconfig;
 
 import com.hisi.capture.exception.*;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 
-@Configuration
+@AutoConfiguration
 public class CaptureExceptionAutoConfiguration {
 
     @Bean

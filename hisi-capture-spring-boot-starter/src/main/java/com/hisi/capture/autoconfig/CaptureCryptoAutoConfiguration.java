@@ -4,10 +4,10 @@ import com.hisi.capture.config.CaptureCryptoProperties;
 import com.hisi.capture.crypto.CaptureCrypto;
 import com.hisi.capture.crypto.HybridEncryptor;
 import com.hisi.capture.crypto.StaticKeyPairLoader;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 
-@Configuration
+@AutoConfiguration
 public class CaptureCryptoAutoConfiguration {
 
     @Bean

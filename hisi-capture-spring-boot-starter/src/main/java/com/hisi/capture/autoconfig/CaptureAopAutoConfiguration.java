@@ -2,12 +2,10 @@ package com.hisi.capture.autoconfig;
 
 import com.hisi.capture.aop.CaptureAspect;
 import com.hisi.capture.aop.CaptureLogAspect;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.EnableAspectJAutoProxy;
 
-@Configuration
-@EnableAspectJAutoProxy
+@AutoConfiguration
 public class CaptureAopAutoConfiguration {
 
     @Bean

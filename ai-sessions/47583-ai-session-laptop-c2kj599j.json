@@ -1,15 +1,15 @@
 {
   "developer": "47583",
   "hostname": "laptop-c2kj599j",
-  "model": "mimo-v2.5-pro-cc",
+  "model": "ByteDance-glm-5.2-1",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-07-01T06:39:01.271Z",
+  "lastUpdated": "2026-07-01T09:15:25.048Z",
   "stats": {
-    "totalOperations": 1764,
-    "totalFilesEdited": 848,
-    "totalAiLines": 57096,
-    "totalAiLinesDeleted": 8623,
-    "totalCommits": 131
+    "totalOperations": 1778,
+    "totalFilesEdited": 861,
+    "totalAiLines": 57531,
+    "totalAiLinesDeleted": 8814,
+    "totalCommits": 132
   },
   "pendingFiles": [
     {
@@ -1108,54 +1108,11 @@
       "lastModified": "2026-06-30T07:29:27.078Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/exception/SilentCatchDetector.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-07-01T06:13:44.460Z",
-      "lastModified": "2026-07-01T06:13:44.460Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/ttl/TtlWrappedTaskExecutor.java",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-07-01T06:14:07.258Z",
-      "lastModified": "2026-07-01T06:14:07.258Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/util/SizeLimiter.java",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-07-01T06:14:36.940Z",
-      "lastModified": "2026-07-01T06:14:36.940Z"
-    },
-    {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/ingress/http/JavaxHttpCaptureFilter.java",
       "tool": "Write",
       "operations": 1,
       "timestamp": "2026-07-01T06:14:59.611Z",
       "lastModified": "2026-07-01T06:14:59.611Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/ingress/http/HttpCaptureFilter.java",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-07-01T06:16:22.009Z",
-      "lastModified": "2026-07-01T06:16:22.009Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/autoconfig/CaptureWebAutoConfiguration.java",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-07-01T06:17:09.187Z",
-      "lastModified": "2026-07-01T06:17:09.187Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/pom.xml",
-      "tool": "Edit",
-      "operations": 3,
-      "timestamp": "2026-07-01T06:17:22.817Z",
-      "lastModified": "2026-07-01T06:19:16.569Z",
-      "lastTool": "Edit"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/ingress/http/jakarta/JakartaHttpCaptureFilter.java",
@@ -1174,158 +1131,101 @@
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/autoconfig/CaptureAutoConfiguration.java",
       "tool": "Edit",
-      "operations": 1,
+      "operations": 2,
       "timestamp": "2026-07-01T06:18:35.888Z",
-      "lastModified": "2026-07-01T06:18:35.888Z"
+      "lastModified": "2026-07-01T09:12:36.836Z",
+      "lastTool": "Write"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/crypto/HybridEncryptor.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-07-01T06:20:22.109Z",
-      "lastModified": "2026-07-01T06:20:22.109Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/loganalysis/decoder/CaptureDecoder.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-07-01T06:20:44.044Z",
-      "lastModified": "2026-07-01T06:20:44.044Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/ttl/CaptureTtlBeanPostProcessor.java",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/ingress/http/HttpCaptureFilterJavax.java",
       "tool": "Write",
       "operations": 1,
-      "timestamp": "2026-07-01T06:21:01.438Z",
-      "lastModified": "2026-07-01T06:21:01.438Z"
+      "timestamp": "2026-07-01T09:10:55.572Z",
+      "lastModified": "2026-07-01T09:10:55.572Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/crypto/StaticKeyPairLoader.java",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/ingress/http/HttpCaptureFilterJakarta.java",
       "tool": "Write",
       "operations": 1,
-      "timestamp": "2026-07-01T06:21:21.739Z",
-      "lastModified": "2026-07-01T06:21:21.739Z"
+      "timestamp": "2026-07-01T09:11:08.848Z",
+      "lastModified": "2026-07-01T09:11:08.848Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/resources/META-INF/capture-public-key.pem",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/autoconfig/CaptureWebAutoConfiguration.java",
       "tool": "Write",
       "operations": 1,
-      "timestamp": "2026-07-01T06:21:52.141Z",
-      "lastModified": "2026-07-01T06:21:52.141Z"
+      "timestamp": "2026-07-01T09:11:52.466Z",
+      "lastModified": "2026-07-01T09:11:52.466Z"
     },
     {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/aop/CaptureAspect.java",
       "tool": "Write",
       "operations": 1,
-      "timestamp": "2026-07-01T06:22:15.286Z",
-      "lastModified": "2026-07-01T06:22:15.286Z"
+      "timestamp": "2026-07-01T09:12:11.585Z",
+      "lastModified": "2026-07-01T09:12:11.585Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/fixengine/service/WorktreeService.java",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/resources/META-INF/spring.factories",
       "tool": "Write",
       "operations": 1,
-      "timestamp": "2026-07-01T06:23:15.914Z",
-      "lastModified": "2026-07-01T06:23:15.914Z"
+      "timestamp": "2026-07-01T09:13:16.587Z",
+      "lastModified": "2026-07-01T09:13:16.587Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/fixengine/service/FixFlowRunner.java",
-      "tool": "Edit",
-      "operations": 5,
-      "timestamp": "2026-07-01T06:23:49.627Z",
-      "lastModified": "2026-07-01T06:25:23.111Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/fixengine/model/FixSession.java",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports",
       "tool": "Write",
       "operations": 1,
-      "timestamp": "2026-07-01T06:26:37.438Z",
-      "lastModified": "2026-07-01T06:26:37.438Z"
+      "timestamp": "2026-07-01T09:13:18.583Z",
+      "lastModified": "2026-07-01T09:13:18.583Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/fixengine/repository/FixSessionRepository.java",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-07-01T06:27:02.754Z",
-      "lastModified": "2026-07-01T06:27:02.754Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/fixengine/repository/impl/JdbcFixSessionRepository.java",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-07-01T06:28:07.909Z",
-      "lastModified": "2026-07-01T06:28:07.909Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/fixengine/config/FixSchemaInitializer.java",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-07-01T06:28:42.269Z",
-      "lastModified": "2026-07-01T06:28:42.269Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/fixengine/service/FixOrchestrator.java",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/autoconfig/CaptureAsyncAutoConfiguration.java",
       "tool": "Edit",
       "operations": 1,
-      "timestamp": "2026-07-01T06:29:07.417Z",
-      "lastModified": "2026-07-01T06:29:07.417Z"
+      "timestamp": "2026-07-01T09:13:42.418Z",
+      "lastModified": "2026-07-01T09:13:42.418Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/fixengine/controller/FixSessionController.java",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/autoconfig/CaptureFeignAutoConfiguration.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-07-01T09:13:43.380Z",
+      "lastModified": "2026-07-01T09:13:43.380Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/autoconfig/CaptureExceptionAutoConfiguration.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-07-01T09:13:44.306Z",
+      "lastModified": "2026-07-01T09:13:44.306Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/autoconfig/CaptureCryptoAutoConfiguration.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-07-01T09:13:45.297Z",
+      "lastModified": "2026-07-01T09:13:45.297Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/autoconfig/CaptureTtlAutoConfiguration.java",
+      "tool": "Edit",
+      "operations": 1,
+      "timestamp": "2026-07-01T09:13:46.208Z",
+      "lastModified": "2026-07-01T09:13:46.208Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/autoconfig/CaptureAopAutoConfiguration.java",
       "tool": "Write",
       "operations": 1,
-      "timestamp": "2026-07-01T06:29:31.755Z",
-      "lastModified": "2026-07-01T06:29:31.755Z"
+      "timestamp": "2026-07-01T09:15:09.658Z",
+      "lastModified": "2026-07-01T09:15:09.658Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/api/fix.ts",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/autoconfig/CaptureScheduledAutoConfiguration.java",
       "tool": "Write",
       "operations": 1,
-      "timestamp": "2026-07-01T06:30:59.986Z",
-      "lastModified": "2026-07-01T06:30:59.986Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/loganalysis/nodes/ParseNode.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-07-01T06:32:07.548Z",
-      "lastModified": "2026-07-01T06:32:07.548Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/fixengine/executor/GitExecutor.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-07-01T06:32:22.079Z",
-      "lastModified": "2026-07-01T06:32:22.079Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/fixengine/executor/TestRunResult.java",
-      "tool": "Write",
-      "operations": 1,
-      "timestamp": "2026-07-01T06:32:49.192Z",
-      "lastModified": "2026-07-01T06:32:49.192Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/fix/FixChatView.vue",
-      "tool": "Edit",
-      "operations": 2,
-      "timestamp": "2026-07-01T06:33:49.315Z",
-      "lastModified": "2026-07-01T06:34:19.696Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/log-analysis/ReportDetail.vue",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-07-01T06:38:29.809Z",
-      "lastModified": "2026-07-01T06:38:29.809Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-capture-spring-boot-starter/src/main/java/com/hisi/capture/config/CaptureProperties.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-07-01T06:39:01.271Z",
-      "lastModified": "2026-07-01T06:39:01.271Z"
+      "timestamp": "2026-07-01T09:15:25.048Z",
+      "lastModified": "2026-07-01T09:15:25.048Z"
     }
   ]
 }

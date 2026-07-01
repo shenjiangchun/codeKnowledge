@@ -1,7 +1,6 @@
 package com.hisi.capture.aop;
 
 import com.hisi.capture.context.*;
-import com.hisi.capture.exception.SilentCatchDetector;
 import com.hisi.capture.util.SizeLimiter;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.*;
@@ -15,17 +14,18 @@ public class CaptureAspect {
     @Autowired
     private SizeLimiter sizeLimiter;
 
-    @Autowired(required = false)
-    private SilentCatchDetector silentCatchDetector;
-
     /**
      * 切所有 Service/Component/Repository 的 public 方法。
      *
+     * 排除 com.hisi.capture..* 自身，避免采集器内部方法（如 SizeLimiter、SilentCatchDetector 等）
+     * 被 AOP 递归采集导致栈溢出与死循环。
+     *
      * 注意 Spring AOP 代理局限：self-invocation（this.xxx()）不走代理，无法采集。
      */
-    @Around("@within(org.springframework.stereotype.Service) " +
+    @Around("(@within(org.springframework.stereotype.Service) " +
             "|| @within(org.springframework.stereotype.Component) " +
-            "|| @within(org.springframework.stereotype.Repository)")
+            "|| @within(org.springframework.stereotype.Repository)) " +
+            "&& !within(com.hisi.capture..*)")
     public Object captureSpan(ProceedingJoinPoint pjp) throws Throwable {
         CaptureContext ctx = CaptureContextHolder.get();
         if (ctx == null || ctx.getEntry() == null) {
@@ -45,11 +45,8 @@ public class CaptureAspect {
             return ret;
         } catch (Throwable e) {
             span.setException(e);
-            // 修复：在 catch 块中检测 silent_catch，因为 finally 中 escaped 始终为 true
-            // 异常已被 AOP 捕获并记录在 span 中，即使重新抛出，上游仍可能静默吞掉
-            if (silentCatchDetector != null) {
-                silentCatchDetector.detectAndEnrich(span, ctx);
-            }
+            // silent_catch 检测已迁移至 CaptureControllerAdvice / CaptureUncaughtExceptionHandler
+            // 与业务侧手动 API，避免在 AOP 切面中对全部方法做重复扫描。
             throw e;
         } finally {
             span.setEndMillis(System.currentTimeMillis());
