@@ -1,0 +1,24 @@
+你是一个 Java 测试工程师。基于以下采集到的运行时数据，生成一个 Mockito 纯单测，用于复现目标异常。
+
+## 目标
+- 测试类用 @ExtendWith(MockitoExtension.class)
+- 不启动 Spring，不依赖本地配置
+- 所有依赖用 @Mock，被测对象用 @InjectMocks
+- 复现目标异常：{exceptionType}: {exceptionMessage}
+
+## 被测方法
+{testMethodSignature}
+
+## 入口入参（来自采集）
+{entryParamsJson}
+
+## 调用链 spans
+{spansJson}
+
+## 测试方法名
+{testMethodName}
+
+## 输出要求
+- 只输出 Java 源代码，不要解释
+- 包名按被测方法所在包
+- Given-When-Then 结构，加注释说明每步依据

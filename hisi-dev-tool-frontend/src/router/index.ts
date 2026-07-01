@@ -200,6 +200,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '影响分析结果' }
   },
   {
+    path: '/fix/chat',
+    name: 'FixChat',
+    component: () => import('@/views/fix/FixChatView.vue'),
+    meta: { title: '异常修复' }
+  },
+  {
+    path: '/fix/chat/:sid',
+    name: 'FixChatSession',
+    component: () => import('@/views/fix/FixChatView.vue'),
+    meta: { title: '异常修复' }
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: () => import('@/views/settings/SettingsView.vue'),

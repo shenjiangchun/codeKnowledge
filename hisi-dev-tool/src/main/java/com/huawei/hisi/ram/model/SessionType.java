@@ -14,5 +14,7 @@ public enum SessionType {
     /** Merge analysis - branch merge conflict/impact analysis */
     MERGE_ANALYSIS,
     /** Log analysis follow-up Q&A session */
-    LOG_FOLLOWUP
+    LOG_FOLLOWUP,
+    /** Exception auto-fix session */
+    FIX
 }

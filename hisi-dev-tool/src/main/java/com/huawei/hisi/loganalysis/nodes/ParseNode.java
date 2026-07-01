@@ -1,5 +1,7 @@
 package com.huawei.hisi.loganalysis.nodes;
 
+import com.huawei.hisi.loganalysis.decoder.CaptureDecoder;
+import com.huawei.hisi.loganalysis.entity.CapturePayload;
 import com.huawei.hisi.loganalysis.orchestrator.LogAnalysisDagNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -38,6 +40,16 @@ public class ParseNode implements LogAnalysisDagNode {
     private static final Pattern GENERATED_METHOD_PATTERN =
         Pattern.compile("$$\\w+\\$$|<generated>|FastClassBySpringCGLIB");
 
+    // HISI_CAPTURE envelope pattern (from hisi-capture-spring-boot-starter)
+    private static final Pattern CAPTURE_PATTERN =
+        Pattern.compile("HISI_CAPTURE_BEGIN(\\{.*?\\})HISI_CAPTURE_END", Pattern.DOTALL);
+
+    private final CaptureDecoder captureDecoder;
+
+    public ParseNode(CaptureDecoder captureDecoder) {
+        this.captureDecoder = captureDecoder;
+    }
+
     @Override
     public String name() {
         return "ParseNode";
@@ -50,6 +62,21 @@ public class ParseNode implements LogAnalysisDagNode {
         String message = (String) input.get("message");
         String stackTrace = (String) input.get("stackTrace");
         String fullContent = buildFullContent(message, stackTrace);
+
+        Map<String, Object> output = new LinkedHashMap<>(input);
+
+        // --- HISI_CAPTURE detection (new) ---
+        CapturePayload capturePayload = null;
+        Matcher captureMatcher = CAPTURE_PATTERN.matcher(fullContent);
+        if (captureMatcher.find() && captureDecoder != null) {
+            String captureJson = captureMatcher.group(1);
+            capturePayload = captureDecoder.decode(captureJson);
+            if (capturePayload != null) {
+                log.info("[ParseNode] Detected HISI_CAPTURE: tag={}, uri={}",
+                        capturePayload.getEntryTag(), capturePayload.getUri());
+            }
+        }
+        output.put("capturePayload", capturePayload);
 
         // Extract project package prefixes from input (if provided)
         List<String> projectPackagePrefixes = extractProjectPackagePrefixes(input);
@@ -64,8 +91,6 @@ public class ParseNode implements LogAnalysisDagNode {
                 fullContent.length(),
                 projectPackagePrefixes,
                 deepMode);
-
-        Map<String, Object> output = new LinkedHashMap<>(input);
 
         // Extract error info
         String errorType = extractErrorType(fullContent);

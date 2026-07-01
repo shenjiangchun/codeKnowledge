@@ -8,6 +8,14 @@
             <el-button type="success" :loading="exporting" @click="handleExportMd">
               导出 MD
             </el-button>
+            <el-button
+              v-if="canAutoFix"
+              type="warning"
+              @click="handleAutoFix"
+            >
+              <el-icon style="margin-right: 4px"><SetUp /></el-icon>
+              自动修复
+            </el-button>
             <el-button type="primary" :loading="reanalyzing" @click="handleReanalyze">重新分析</el-button>
             <el-button @click="goBack">返回</el-button>
           </div>
@@ -85,6 +93,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { logAnalysisApi } from '@/api/logAnalysis'
+import { SetUp } from '@element-plus/icons-vue'
 import type { DetailedAnalysisReport } from '@/types/log'
 import { renderMarkdown } from '@/utils/markdown'
 import { downloadBlob } from '@/utils/download'
@@ -108,6 +117,11 @@ const isProcessing = computed(() => {
 })
 const isCompleted = computed(() => report.value?.status?.toLowerCase() === 'completed')
 
+const canAutoFix = computed(() => {
+  const s = report.value?.status?.toLowerCase()
+  return s === 'completed' || s === 'error'
+})
+
 const getStatusType = (status: string) => {
   const types: Record<string, string> = {
     completed: 'success',
@@ -129,6 +143,10 @@ const formatTime = (time: string | undefined) => {
 
 const goBack = () => {
   router.push('/log-analysis')
+}
+
+const handleAutoFix = () => {
+  router.push(`/fix/chat?reportId=${reportId.value}`)
 }
 
 const getPatternLabel = (pattern: string): string => {
