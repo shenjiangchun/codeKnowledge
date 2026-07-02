@@ -80,9 +80,11 @@ public class RamChatOrchestrator {
                     kgToolRegistry.buildToolHandlers(projectPaths));
             handlers.put("generate_project_overview", projectOverviewTool.buildHandler(projectPaths));
 
+            StringBuilder partialTextBuf = new StringBuilder();
             StreamCallbacks callbacks = new StreamCallbacks() {
                 @Override
                 public void onAssistantDelta(String deltaText) {
+                    partialTextBuf.append(deltaText);
                     AgentEvent deltaEv = appendEvent(sessionId, EventType.ASSISTANT_DELTA, Map.of(
                             "turnId", turnId,
                             "delta", deltaText
@@ -145,13 +147,12 @@ public class RamChatOrchestrator {
                     .orTimeout(timeoutSeconds, TimeUnit.SECONDS)
                     .join();
 
-            String finalText = extractFinalText(result.json());
-            String summary = extractSummary(result.json());
+            String finalText = partialTextBuf.toString();
+            String summary = "";
 
             AgentEvent ckptEv = appendEvent(sessionId, EventType.CHECKPOINT, Map.of(
                     "turnId", turnId,
                     "summary", summary,
-                    "finalJson", result.json(),
                     "finalText", finalText,
                     "reasoningSteps", result.reasoning()
             ), "ckpt-" + turnId);
@@ -181,26 +182,6 @@ public class RamChatOrchestrator {
             )));
             return new TurnResult(turnId, "FAILED", null, List.of(), e.getMessage());
         }
-    }
-
-    @SuppressWarnings("unchecked")
-    private String extractFinalText(Map<String, Object> json) {
-        if (json == null) return "";
-        Object answer = json.get("answer");
-        if (answer instanceof String s) return s;
-        try {
-            return objectMapper.writeValueAsString(json);
-        } catch (JsonProcessingException e) {
-            return json.toString();
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private String extractSummary(Map<String, Object> json) {
-        if (json == null) return "";
-        Object summary = json.get("summary");
-        if (summary instanceof String s) return s;
-        return "";
     }
 
     private AgentEvent appendEvent(long sessionId, EventType type, Map<String, Object> payload, String idempotencyKey) {
