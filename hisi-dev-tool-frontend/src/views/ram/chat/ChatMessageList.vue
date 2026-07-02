@@ -2,8 +2,35 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRamChatStore } from '@/stores/ramChatStore'
 import StepCard from './StepCard.vue'
+import MermaidBlock from './MermaidBlock.vue'
 import { Document, Loading } from '@element-plus/icons-vue'
 import { renderMarkdown as renderMarkdownSafe } from '@/utils/markdown'
+
+type AssistantSegment =
+  | { kind: 'markdown'; content: string }
+  | { kind: 'mermaid'; content: string }
+
+// Matches ```mermaid ... ``` fenced code blocks (case-insensitive language tag).
+const MERMAID_FENCE = /```[ \t]*mermaid[ \t]*\r?\n([\s\S]*?)```/gi
+
+function splitAssistantText(text: string): AssistantSegment[] {
+  if (!text) return []
+  const segments: AssistantSegment[] = []
+  let cursor = 0
+  MERMAID_FENCE.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = MERMAID_FENCE.exec(text)) !== null) {
+    if (match.index > cursor) {
+      segments.push({ kind: 'markdown', content: text.slice(cursor, match.index) })
+    }
+    segments.push({ kind: 'mermaid', content: match[1] })
+    cursor = match.index + match[0].length
+  }
+  if (cursor < text.length) {
+    segments.push({ kind: 'markdown', content: text.slice(cursor) })
+  }
+  return segments
+}
 
 const store = useRamChatStore()
 const scrollRef = ref<HTMLElement | null>(null)
@@ -105,7 +132,12 @@ watch(turns, async () => {
             <el-icon class="is-loading"><Loading /></el-icon>
             <span>思考中...</span>
           </div>
-          <div v-else class="markdown-content" v-html="renderMarkdownSafe(turn.assistantText)"></div>
+          <template v-else>
+            <template v-for="(seg, idx) in splitAssistantText(turn.assistantText)" :key="idx">
+              <MermaidBlock v-if="seg.kind === 'mermaid'" :source="seg.content" />
+              <div v-else class="markdown-content" v-html="renderMarkdownSafe(seg.content)"></div>
+            </template>
+          </template>
         </div>
       </div>
 
