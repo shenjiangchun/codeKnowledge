@@ -145,7 +145,8 @@ public class RamChatOrchestrator {
                             tools,
                             handlers,
                             SendOptions.forScenario(chatProps, DEFAULT_MODEL_ID, CHAT_SCENARIO),
-                            callbacks
+                            callbacks,
+                            d -> {}
             ), asyncExecutor);
 
             RamClaudeJsonClient.JsonCallResult result = future

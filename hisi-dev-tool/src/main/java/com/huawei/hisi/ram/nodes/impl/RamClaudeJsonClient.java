@@ -9,11 +9,15 @@ import com.huawei.hisi.ram.sdk.impl.AnthropicHttpClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import reactor.core.Disposable;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
@@ -288,6 +292,28 @@ public class RamClaudeJsonClient {
             Map<String, Function<Map<String, Object>, Object>> handlers,
             SendOptions opts,
             StreamCallbacks callbacks) {
+        return callJsonWithToolsAndStreaming(systemPrompt, userPrompt, tools, handlers, opts, callbacks, d -> {});
+    }
+
+    /**
+     * Overload of {@link #callJsonWithToolsAndStreaming} that exposes the
+     * per-round reactive {@link Disposable} via {@code disposableSink}, so
+     * callers (e.g. a turn registry) can cancel the ongoing SSE stream from
+     * another thread mid-turn.
+     *
+     * <p>The sink is invoked once per streamed round with the {@code Disposable}
+     * of that round's subscription. Disposing it aborts the current round's
+     * SSE consumption; the caller should treat any partially-parsed JSON as
+     * best-effort and expect {@link IllegalStateException} on malformed output.
+     */
+    public JsonCallResult callJsonWithToolsAndStreaming(
+            String systemPrompt,
+            String userPrompt,
+            List<ToolDefinition> tools,
+            Map<String, Function<Map<String, Object>, Object>> handlers,
+            SendOptions opts,
+            StreamCallbacks callbacks,
+            Consumer<Disposable> disposableSink) {
         if (tools == null || tools.isEmpty()) {
             Map<String, Object> json = callJson(systemPrompt, userPrompt, opts);
             callbacks.onRoundComplete(0, "end_turn");
@@ -311,7 +337,7 @@ public class RamClaudeJsonClient {
                         "Stop calling tools and produce the complete JSON output now."));
             }
 
-            StreamResult result = streamAndCollectWithCallbacks(messages, tools, effective, callbacks);
+            StreamResult result = streamAndCollectWithCallbacks(messages, tools, effective, callbacks, disposableSink);
 
             log.info("[RamClaudeJsonClient] streaming round={} stop_reason={} text.len={} tool_use_blocks={}",
                     round, result.stopReason, result.textContent.length(), result.toolUseBlocks.size());
@@ -364,7 +390,7 @@ public class RamClaudeJsonClient {
                 "as a single valid JSON object. Do NOT call any more tools. " +
                 "Do NOT include any prose before or after the JSON. " +
                 "Output ONLY the JSON object starting with { and ending with }."));
-        StreamResult finalResult = streamAndCollectWithCallbacks(messages, List.of(), effective, callbacks);
+        StreamResult finalResult = streamAndCollectWithCallbacks(messages, List.of(), effective, callbacks, disposableSink);
         String finalText = finalResult.textContent.toString().trim();
         if (finalText.isEmpty()) {
             log.error("[RamClaudeJsonClient] Final forced streaming response is empty");
@@ -391,6 +417,23 @@ public class RamClaudeJsonClient {
             Map<String, Function<Map<String, Object>, Object>> handlers,
             SendOptions opts,
             StreamCallbacks callbacks) {
+        return callJsonWithToolsAndStreamingMultiTurn(
+                systemPrompt, messages, tools, handlers, opts, callbacks, d -> {});
+    }
+
+    /**
+     * Overload of {@link #callJsonWithToolsAndStreamingMultiTurn} that exposes the
+     * per-round reactive {@link Disposable} via {@code disposableSink}, so callers
+     * (e.g. a turn registry) can cancel the ongoing SSE stream mid-turn.
+     */
+    public JsonCallResult callJsonWithToolsAndStreamingMultiTurn(
+            String systemPrompt,
+            List<Map<String, Object>> messages,
+            List<ToolDefinition> tools,
+            Map<String, Function<Map<String, Object>, Object>> handlers,
+            SendOptions opts,
+            StreamCallbacks callbacks,
+            Consumer<Disposable> disposableSink) {
 
         List<Map<String, Object>> workingMessages = new ArrayList<>(messages);
 
@@ -414,7 +457,7 @@ public class RamClaudeJsonClient {
                         "Stop calling tools and produce the complete response now."));
             }
 
-            StreamResult result = streamAndCollectWithCallbacks(workingMessages, tools, effective, callbacks);
+            StreamResult result = streamAndCollectWithCallbacks(workingMessages, tools, effective, callbacks, disposableSink);
 
             log.info("[RamClaudeJsonClient] multi-turn streaming round={} stop_reason={} text.len={} tool_use_blocks={}",
                     round, result.stopReason, result.textContent.length(), result.toolUseBlocks.size());
@@ -468,7 +511,7 @@ public class RamClaudeJsonClient {
         workingMessages.add(Map.of("role", "user", "content",
                 "[SYSTEM] Tool budget exhausted. You MUST now output your final answer. " +
                 "Do NOT call any more tools."));
-        StreamResult finalResult = streamAndCollectWithCallbacks(workingMessages, List.of(), effective, callbacks);
+        StreamResult finalResult = streamAndCollectWithCallbacks(workingMessages, List.of(), effective, callbacks, disposableSink);
         String finalText = finalResult.textContent.toString().trim();
         if (finalText.isEmpty()) {
             log.error("[RamClaudeJsonClient] Final forced multi-turn response is empty");
@@ -495,16 +538,26 @@ public class RamClaudeJsonClient {
     /**
      * Variant of {@link #streamAndCollect} that also fires
      * {@link StreamCallbacks} for text deltas.
+     *
+     * <p>Uses a subscribe-based pattern instead of {@code .blockLast()} so
+     * the reactive {@link Disposable} of the current subscription can be
+     * exposed via {@code disposableSink}. Disposing that handle cancels the
+     * in-flight SSE consumption, allowing callers (e.g. a turn registry) to
+     * abort a running LLM turn from another thread.
      */
     private StreamResult streamAndCollectWithCallbacks(List<Map<String, Object>> messages,
                                                         List<ToolDefinition> tools,
                                                         SendOptions opts,
-                                                        StreamCallbacks callbacks) {
+                                                        StreamCallbacks callbacks,
+                                                        Consumer<Disposable> disposableSink) {
         StreamResult result = new StreamResult();
         Map<Integer, String> blockTypes = new LinkedHashMap<>();
         Map<Integer, ToolUseBlock> pendingToolBlocks = new LinkedHashMap<>();
 
-        http.stream(messages, tools, opts)
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<Throwable> errorRef = new AtomicReference<>();
+
+        Disposable disposable = http.stream(messages, tools, opts)
                 .doOnNext(line -> {
                     try {
                         Map<String, Object> event = MAPPER.readValue(line, new TypeReference<>() {});
@@ -578,7 +631,31 @@ public class RamClaudeJsonClient {
                     } catch (Exception ignored) {
                     }
                 })
-                .blockLast();
+                .subscribe(
+                        line -> { /* handled in doOnNext */ },
+                        err -> {
+                            errorRef.set(err);
+                            latch.countDown();
+                        },
+                        latch::countDown);
+
+        if (disposableSink != null) {
+            disposableSink.accept(disposable);
+        }
+
+        try {
+            latch.await();
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            disposable.dispose();
+            throw new IllegalStateException("Interrupted while streaming Claude response", ie);
+        }
+
+        Throwable err = errorRef.get();
+        if (err != null) {
+            if (err instanceof RuntimeException re) throw re;
+            throw new IllegalStateException("SSE stream failed", err);
+        }
 
         return result;
     }

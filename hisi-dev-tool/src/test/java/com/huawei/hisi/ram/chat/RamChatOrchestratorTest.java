@@ -90,7 +90,7 @@ class RamChatOrchestratorTest {
         // a JsonCallResult whose `json` map contains an `answer` field that
         // MUST NOT leak into the CHECKPOINT payload.
         when(claudeClient.callJsonWithToolsAndStreaming(
-                anyString(), anyString(), any(), anyMap(), any(), any(StreamCallbacks.class)))
+                anyString(), anyString(), any(), anyMap(), any(), any(StreamCallbacks.class), any()))
                 .thenAnswer(inv -> {
                     StreamCallbacks cb = inv.getArgument(5);
                     cb.onAssistantDelta("段1");
