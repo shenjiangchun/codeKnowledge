@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hisi.ram.chat.dto.TurnResult;
 import com.huawei.hisi.ram.chat.tools.ProjectOverviewTool;
+import com.huawei.hisi.ram.config.ChatModelProperties;
 import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.nodes.impl.KgToolRegistry;
@@ -40,6 +41,9 @@ public class RamChatOrchestrator {
     private final ChatContextBuilder contextBuilder;
     private final RamChatWebSocketHandler wsHandler;
     private final ObjectMapper objectMapper;
+    private final ChatModelProperties chatProps;
+
+    private static final String DEFAULT_MODEL_ID = "glm-5.1";
 
     @Value("${ram.chat.timeout-seconds:300}")
     private long timeoutSeconds;
@@ -139,7 +143,7 @@ public class RamChatOrchestrator {
                             ctx.userPrompt(),
                             tools,
                             handlers,
-                            SendOptions.defaults(),
+                            SendOptions.forScenario(chatProps, DEFAULT_MODEL_ID, "chat"),
                             callbacks
             ), asyncExecutor);
 
