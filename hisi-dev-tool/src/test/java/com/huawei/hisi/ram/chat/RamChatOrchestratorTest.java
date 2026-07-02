@@ -3,6 +3,7 @@ package com.huawei.hisi.ram.chat;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hisi.ram.chat.tools.ProjectOverviewTool;
+import com.huawei.hisi.ram.config.ChatModelProperties;
 import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.nodes.impl.KgToolRegistry;
@@ -48,6 +49,11 @@ class RamChatOrchestratorTest {
 
     @BeforeEach
     void setUp() {
+        ChatModelProperties chatProps = new ChatModelProperties();
+        ChatModelProperties.ModelSpec spec = new ChatModelProperties.ModelSpec();
+        spec.setScenarioMaxTokens(Map.of("chat", 4096));
+        chatProps.setModels(Map.of("glm-5.1", spec));
+
         orchestrator = new RamChatOrchestrator(
                 eventRepository,
                 claudeClient,
@@ -55,7 +61,8 @@ class RamChatOrchestratorTest {
                 projectOverviewTool,
                 contextBuilder,
                 wsHandler,
-                objectMapper
+                objectMapper,
+                chatProps
         );
         ReflectionTestUtils.setField(orchestrator, "timeoutSeconds", 10L);
 
