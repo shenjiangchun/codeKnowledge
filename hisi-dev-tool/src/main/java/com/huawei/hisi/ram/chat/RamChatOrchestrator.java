@@ -72,29 +72,35 @@ public class RamChatOrchestrator {
      * asynchronously.
      */
     public void injectAndContinue(long sessionId, String userContent, List<String> projectPaths) {
+        log.info("[RamChatOrchestrator] inject sessionId={} contentLen={}", sessionId, userContent == null ? 0 : userContent.length());
         var interrupted = turnRegistry.interrupt(sessionId);
-        interrupted.ifPresent(r -> {
+        if (interrupted.isPresent()) {
+            TurnRegistry.InterruptResult r = interrupted.get();
+            String payload;
             try {
-                String payload = objectMapper.writeValueAsString(Map.of(
+                payload = objectMapper.writeValueAsString(Map.of(
                         "turnId", r.turnId(),
                         "partialText", r.partialText(),
                         "reason", "user_interrupt"));
-                AgentEvent ev = eventRepository.append(AgentEvent.turnInterrupted(
-                        sessionId, 0L, payload, "interrupt-" + r.turnId()));
-                Map<String, Object> wsPayload = new LinkedHashMap<>();
-                wsPayload.put("type", "turn_interrupted");
-                wsPayload.put("turnId", r.turnId());
-                wsPayload.put("partialText", r.partialText());
-                wsPayload.put("sessionId", sessionId);
-                wsPayload.put("eventId", ev != null ? ev.getId() : null);
-                wsPayload.put("seq", ev != null ? ev.getSeq() : null);
-                wsPayload.put("createdAt", ev != null ? ev.getCreatedAt() : System.currentTimeMillis() / 1000L);
-                wsHandler.pushEvent(sessionId, wsPayload);
             } catch (JsonProcessingException e) {
                 log.error("[RamChatOrchestrator.injectAndContinue] failed to serialize turn_interrupted payload sessionId={} turnId={}: {}",
                         sessionId, r.turnId(), e.getMessage());
+                // Do not submit the new turn; caller can retry /inject. TurnRegistry
+                // interrupt is idempotent so the original turn stays interrupted.
+                throw new IllegalStateException("failed to serialize turn_interrupted payload", e);
             }
-        });
+            AgentEvent ev = eventRepository.append(AgentEvent.turnInterrupted(
+                    sessionId, 0L, payload, "interrupt-" + r.turnId()));
+            Map<String, Object> wsPayload = new LinkedHashMap<>();
+            wsPayload.put("type", "turn_interrupted");
+            wsPayload.put("turnId", r.turnId());
+            wsPayload.put("partialText", r.partialText());
+            wsPayload.put("sessionId", sessionId);
+            wsPayload.put("eventId", ev.getId());
+            wsPayload.put("seq", ev.getSeq());
+            wsPayload.put("createdAt", ev.getCreatedAt());
+            wsHandler.pushEvent(sessionId, wsPayload);
+        }
         asyncExecutor.submit(() -> runTurn(sessionId, userContent, projectPaths));
     }
 

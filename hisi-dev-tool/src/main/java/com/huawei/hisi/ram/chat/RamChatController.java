@@ -138,6 +138,14 @@ public class RamChatController {
         return ApiResponse.success(null);
     }
 
+    /**
+     * Inject a user message mid-turn. If a turn is currently streaming, interrupts it,
+     * persists a {@code TURN_INTERRUPTED} event with the partial text, pushes it over
+     * the WebSocket, then starts a new turn with the injected content.
+     *
+     * <p>Returns 202 on success, 400 for validation errors, 404 if session is missing,
+     * and 500 if serializing the interrupt payload fails.
+     */
     @PostMapping("/{sid}/inject")
     public ResponseEntity<?> inject(@PathVariable Long sid, @RequestBody InjectRequest request) {
         if (request == null || request.content() == null || request.content().isBlank()) {
@@ -154,7 +162,12 @@ public class RamChatController {
             return ResponseEntity.badRequest().body(Map.of("error", "session has no projectPath"));
         }
 
-        orchestrator.injectAndContinue(sid, request.content(), projectPaths);
+        try {
+            orchestrator.injectAndContinue(sid, request.content(), projectPaths);
+        } catch (IllegalStateException e) {
+            log.error("Failed to inject for session {}: {}", sid, e.getMessage());
+            return ResponseEntity.status(500).body(Map.of("error", "internal_error"));
+        }
         return ResponseEntity.accepted().build();
     }
 
