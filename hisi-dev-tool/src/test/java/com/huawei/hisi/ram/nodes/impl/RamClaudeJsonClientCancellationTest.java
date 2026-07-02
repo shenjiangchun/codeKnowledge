@@ -87,8 +87,59 @@ class RamClaudeJsonClientCancellationTest {
 
         caller.join(2000);
 
+        assertThat(caller.isAlive())
+                .as("caller thread must return after dispose(), not leak")
+                .isFalse();
+
         assertThat(deltaCount.get())
                 .as("after dispose(), no further deltas should be delivered (expect 1-2)")
                 .isLessThan(5);
+    }
+
+    @Test
+    void sinkProvided_streamCompletes_allDeltasDelivered() {
+        AnthropicHttpClient http = mock(AnthropicHttpClient.class);
+        Flux<String> streamed = Flux.just(
+                delta("a"), delta("b"), delta("c"), delta("d"), delta("e"));
+        when(http.stream(any(), any(), any())).thenReturn(streamed);
+
+        RamClaudeJsonClient client = new RamClaudeJsonClient(http, "test-key", "test-model");
+
+        AtomicInteger deltaCount = new AtomicInteger();
+        StringBuilder buffer = new StringBuilder();
+        StreamCallbacks callbacks = new StreamCallbacks() {
+            @Override public void onAssistantDelta(String d) {
+                deltaCount.incrementAndGet();
+                buffer.append(d);
+            }
+            @Override public void onToolUseStart(String n, Map<String, Object> i) {}
+            @Override public void onToolResult(String n, String r) {}
+            @Override public void onRoundComplete(int r, String s) {}
+        };
+
+        AtomicReference<Disposable> disposableRef = new AtomicReference<>();
+        Consumer<Disposable> sink = disposableRef::set;
+
+        List<ToolDefinition> tools = List.of(
+                new ToolDefinition("dummy", "dummy tool", "{\"type\":\"object\"}"));
+
+        SendOptions opts = new SendOptions("test-model", 100, 0.7, "sys");
+
+        try {
+            client.callJsonWithToolsAndStreaming(
+                    "sys", "hi", tools, Map.of(), opts, callbacks, sink);
+        } catch (Throwable ignored) {
+            // parseJsonResponse on non-JSON concatenation may throw — irrelevant here.
+        }
+
+        assertThat(deltaCount.get())
+                .as("all five deltas must be delivered when stream completes normally")
+                .isEqualTo(5);
+        assertThat(buffer.toString())
+                .as("delivered deltas must concatenate to the emitted text")
+                .isEqualTo("abcde");
+        assertThat(disposableRef.get())
+                .as("disposableSink must be invoked even on happy path")
+                .isNotNull();
     }
 }

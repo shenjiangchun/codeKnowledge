@@ -631,13 +631,11 @@ public class RamClaudeJsonClient {
                     } catch (Exception ignored) {
                     }
                 })
+                .doFinally(sig -> latch.countDown())
                 .subscribe(
                         line -> { /* handled in doOnNext */ },
-                        err -> {
-                            errorRef.set(err);
-                            latch.countDown();
-                        },
-                        latch::countDown);
+                        err -> errorRef.set(err),
+                        () -> { /* no-op */ });
 
         if (disposableSink != null) {
             disposableSink.accept(disposable);
