@@ -136,51 +136,62 @@ class RamChatInTurnInjectionIT {
         });
 
         // Wait until (a) stub emitted its delta AND (b) it was persisted by the orchestrator.
-        assertThat(firstDeltaEmitted.await(30, TimeUnit.SECONDS)).isTrue();
-        await().atMost(30, TimeUnit.SECONDS).until(() ->
-                eventRepository.countBySessionIdAndType(sid, EventType.ASSISTANT_DELTA) >= 1);
+        // Wrap the remainder of the test in try/finally so a failure between the delta-wait and
+        // the /inject POST cannot leave the stub thread blocked on releaseFirstTurn.await, which
+        // would orphan firstTurnFuture for 30s and mask the real assertion error.
+        // abortedTurnId is captured inside the try but referenced by later assertions, so declare
+        // it outside the block.
+        String abortedTurnId;
+        try {
+            assertThat(firstDeltaEmitted.await(30, TimeUnit.SECONDS)).isTrue();
+            await().atMost(30, TimeUnit.SECONDS).until(() ->
+                    eventRepository.countBySessionIdAndType(sid, EventType.ASSISTANT_DELTA) >= 1);
 
-        // Capture the aborted turnId before /inject fires (from the first USER_MSG event).
-        String abortedTurnId = objectMapper.readValue(
-                        eventRepository.findBySessionId(sid).stream()
-                                .filter(e -> e.getType() == EventType.USER_MSG)
-                                .findFirst().orElseThrow().getPayload(),
-                        new TypeReference<Map<String, Object>>() {})
-                .get("turnId").toString();
+            // Capture the aborted turnId before /inject fires (from the first USER_MSG event).
+            abortedTurnId = objectMapper.readValue(
+                            eventRepository.findBySessionId(sid).stream()
+                                    .filter(e -> e.getType() == EventType.USER_MSG)
+                                    .findFirst().orElseThrow().getPayload(),
+                            new TypeReference<Map<String, Object>>() {})
+                    .get("turnId").toString();
 
-        // 3. Reset the stub so the SECOND (injected) turn returns immediately.
-        reset(claudeClient);
-        when(claudeClient.callJsonWithToolsAndStreaming(
-                anyString(), anyString(), anyList(), anyMap(),
-                any(SendOptions.class), any(StreamCallbacks.class), any()))
-                .thenAnswer(inv -> {
-                    StreamCallbacks cb = inv.getArgument(5, StreamCallbacks.class);
-                    Consumer<Disposable> sink = inv.getArgument(6, Consumer.class);
-                    sink.accept(new Disposable() {
-                        private volatile boolean disposed = false;
-                        @Override public void dispose() { disposed = true; }
-                        @Override public boolean isDisposed() { return disposed; }
+            // 3. Reset the stub so the SECOND (injected) turn returns immediately.
+            reset(claudeClient);
+            when(claudeClient.callJsonWithToolsAndStreaming(
+                    anyString(), anyString(), anyList(), anyMap(),
+                    any(SendOptions.class), any(StreamCallbacks.class), any()))
+                    .thenAnswer(inv -> {
+                        StreamCallbacks cb = inv.getArgument(5, StreamCallbacks.class);
+                        Consumer<Disposable> sink = inv.getArgument(6, Consumer.class);
+                        sink.accept(new Disposable() {
+                            private volatile boolean disposed = false;
+                            @Override public void dispose() { disposed = true; }
+                            @Override public boolean isDisposed() { return disposed; }
+                        });
+                        cb.onAssistantDelta("second-turn reply");
+                        cb.onRoundComplete(0, "end_turn");
+                        return new RamClaudeJsonClient.JsonCallResult(Map.of(), List.of());
                     });
-                    cb.onAssistantDelta("second-turn reply");
-                    cb.onRoundComplete(0, "end_turn");
-                    return new RamClaudeJsonClient.JsonCallResult(Map.of(), List.of());
-                });
 
-        // 4. POST /{sid}/inject → 202 accepted.
-        mockMvc.perform(post("/api/ram/chat/{sid}/inject", sid)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new InjectRequest("new message"))))
-                .andExpect(status().isAccepted());
+            // 4. POST /{sid}/inject → 202 accepted.
+            mockMvc.perform(post("/api/ram/chat/{sid}/inject", sid)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(new InjectRequest("new message"))))
+                    .andExpect(status().isAccepted());
 
-        // Release the first turn (its Disposable was proxied — dispose() from turnRegistry.interrupt
-        // sets the proxy's disposed flag; since we blocked the stub, we now unblock it here to let
-        // the orchestrator finish its CHECKPOINT/complete path).
-        releaseFirstTurn.countDown();
-        firstTurnFuture.get(30, TimeUnit.SECONDS);
-
-        // 5. Wait for the SECOND turn to fully persist (USER_MSG "new message" + CHECKPOINT).
-        await().atMost(30, TimeUnit.SECONDS).until(() ->
-                eventRepository.countBySessionIdAndType(sid, EventType.CHECKPOINT) >= 2);
+            // 5. Wait for the SECOND turn to fully persist (USER_MSG "new message" + CHECKPOINT).
+            //    The finally block below unblocks the first-turn stub and joins the background
+            //    thread; extra countdowns past zero are safe on CountDownLatch.
+            await().atMost(30, TimeUnit.SECONDS).until(() ->
+                    eventRepository.countBySessionIdAndType(sid, EventType.CHECKPOINT) >= 2);
+        } finally {
+            // Guarantee the stub thread is released and the background future is not orphaned,
+            // regardless of whether any assertion above threw. Both operations are idempotent:
+            // extra countDown() calls on a zeroed latch are no-ops, and cancel(true) on an
+            // already-completed future is also a no-op.
+            releaseFirstTurn.countDown();
+            firstTurnFuture.cancel(true);
+        }
 
         // ---- Assertions on persisted event log ----
         List<AgentEvent> events = eventRepository.findBySessionId(sid);
