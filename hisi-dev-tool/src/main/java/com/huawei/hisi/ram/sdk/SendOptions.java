@@ -2,8 +2,6 @@ package com.huawei.hisi.ram.sdk;
 
 import com.huawei.hisi.ram.config.ChatModelProperties;
 
-import java.util.Objects;
-
 /**
  * Per-call options for {@link ClaudeSessionService#sendUserMessage}.
  *
@@ -16,15 +14,21 @@ public record SendOptions(
         String systemPrompt
 ) {
 
+    private static final double DEFAULT_TEMPERATURE = 0.7;
+
     public static SendOptions defaults() {
-        return new SendOptions(null, 4096, 0.7, null);
+        return new SendOptions(null, 4096, DEFAULT_TEMPERATURE, null);
     }
 
     public static SendOptions forScenario(ChatModelProperties props, String modelId, String scenario) {
-        var spec = Objects.requireNonNull(props.getModels().get(modelId),
-            () -> "unknown model: " + modelId);
-        int max = Objects.requireNonNull(spec.getScenarioMaxTokens().get(scenario),
-            () -> "unknown scenario: " + scenario);
-        return new SendOptions(modelId, max, 0.7, null);
+        var spec = props.getModels().get(modelId);
+        if (spec == null) {
+            throw new IllegalArgumentException("unknown model: " + modelId);
+        }
+        Integer max = spec.getScenarioMaxTokens().get(scenario);
+        if (max == null) {
+            throw new IllegalArgumentException("unknown scenario: " + scenario);
+        }
+        return new SendOptions(modelId, max, DEFAULT_TEMPERATURE, null);
     }
 }

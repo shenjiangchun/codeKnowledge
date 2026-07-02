@@ -38,7 +38,7 @@ class SendOptionsTest {
         ChatModelProperties props = propsWithGlm51Chat4096();
 
         assertThatThrownBy(() -> SendOptions.forScenario(props, "does-not-exist", "chat"))
-                .isInstanceOf(NullPointerException.class)
+                .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("unknown model");
     }
 
@@ -48,7 +48,7 @@ class SendOptionsTest {
         ChatModelProperties props = propsWithGlm51Chat4096();
 
         assertThatThrownBy(() -> SendOptions.forScenario(props, "glm-5.1", "no-such-scenario"))
-                .isInstanceOf(NullPointerException.class)
+                .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("unknown scenario");
     }
 }

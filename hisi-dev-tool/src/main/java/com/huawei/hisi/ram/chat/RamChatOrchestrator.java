@@ -44,6 +44,7 @@ public class RamChatOrchestrator {
     private final ChatModelProperties chatProps;
 
     private static final String DEFAULT_MODEL_ID = "glm-5.1";
+    private static final String CHAT_SCENARIO = "chat";
 
     @Value("${ram.chat.timeout-seconds:300}")
     private long timeoutSeconds;
@@ -143,7 +144,7 @@ public class RamChatOrchestrator {
                             ctx.userPrompt(),
                             tools,
                             handlers,
-                            SendOptions.forScenario(chatProps, DEFAULT_MODEL_ID, "chat"),
+                            SendOptions.forScenario(chatProps, DEFAULT_MODEL_ID, CHAT_SCENARIO),
                             callbacks
             ), asyncExecutor);
 
