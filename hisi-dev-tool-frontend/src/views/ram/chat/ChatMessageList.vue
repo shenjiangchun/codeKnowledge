@@ -70,6 +70,11 @@ const turns = computed<Turn[]>(() => {
         turn.userText = (payload.text as string) || ''
         break
       case 'assistant_delta':
+        // T4: guard against late deltas arriving after checkpoint/turn_interrupted.
+        // Once status flips to 'done' (or 'error'), any subsequent delta from a
+        // stale Reactor pipeline must be discarded to avoid corrupting the pinned
+        // final/partial text.
+        if (turn.status !== 'streaming') break
         turn.assistantText += (payload.delta as string) || ''
         break
       case 'tool_use_start':           // 后端 WS 推送的就是 tool_use_start（不是 tool_use）
