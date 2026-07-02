@@ -8,6 +8,7 @@ export const useRamChatStore = defineStore('ramChat', () => {
   const events = ref<ChatEvent[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const isStreaming = ref(false)
 
   async function fetchSessions() {
     loading.value = true
@@ -43,7 +44,25 @@ export const useRamChatStore = defineStore('ramChat', () => {
   }
 
   function appendEvent(event: ChatEvent) {
+    switch (event.type) {
+      case 'ASSISTANT_DELTA':
+        isStreaming.value = true
+        break
+      case 'CHECKPOINT':
+      case 'TURN_INTERRUPTED':
+        isStreaming.value = false
+        break
+    }
     events.value.push(event)
+  }
+
+  async function interrupt() {
+    if (!currentSessionId.value) return
+    try {
+      await ramChatApi.interruptTurn(currentSessionId.value)
+    } catch (e: unknown) {
+      console.error('[ramChatStore] interrupt failed', e)
+    }
   }
 
   async function renameSession(sid: string, title: string) {
@@ -66,11 +85,13 @@ export const useRamChatStore = defineStore('ramChat', () => {
     events,
     loading,
     error,
+    isStreaming,
     fetchSessions,
     createSession,
     selectSession,
     sendMessage,
     appendEvent,
+    interrupt,
     renameSession,
     deleteSession
   }

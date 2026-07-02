@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "ByteDance-glm-5.2-1",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-07-02T05:47:06.966Z",
+  "lastUpdated": "2026-07-02T06:10:43.063Z",
   "stats": {
-    "totalOperations": 1847,
-    "totalFilesEdited": 894,
-    "totalAiLines": 59637,
-    "totalAiLinesDeleted": 8936,
-    "totalCommits": 145
+    "totalOperations": 1854,
+    "totalFilesEdited": 898,
+    "totalAiLines": 59698,
+    "totalAiLinesDeleted": 8953,
+    "totalCommits": 146
   },
   "pendingFiles": [
     {
@@ -1115,34 +1115,42 @@
       "lastModified": "2026-07-01T06:18:12.492Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/chat/TurnRegistry.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-07-02T05:41:08.284Z",
-      "lastModified": "2026-07-02T05:41:08.284Z"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/chat/RamChatOrchestrator.java",
-      "tool": "Edit",
-      "operations": 4,
-      "timestamp": "2026-07-02T05:41:27.290Z",
-      "lastModified": "2026-07-02T05:42:16.125Z",
-      "lastTool": "Edit"
-    },
-    {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/chat/RamChatController.java",
-      "tool": "Edit",
-      "operations": 1,
-      "timestamp": "2026-07-02T05:42:36.459Z",
-      "lastModified": "2026-07-02T05:42:36.459Z"
-    },
-    {
       "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/test/java/com/huawei/hisi/ram/chat/RamChatControllerInterruptTest.java",
       "tool": "Edit",
       "operations": 4,
       "timestamp": "2026-07-02T05:43:58.841Z",
       "lastModified": "2026-07-02T05:47:06.966Z",
       "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/stores/__tests__/ramChatStore.spec.ts",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-07-02T06:08:53.590Z",
+      "lastModified": "2026-07-02T06:08:53.590Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/api/ramChat.ts",
+      "tool": "Edit",
+      "operations": 2,
+      "timestamp": "2026-07-02T06:09:27.540Z",
+      "lastModified": "2026-07-02T06:09:35.000Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/stores/ramChatStore.ts",
+      "tool": "Edit",
+      "operations": 3,
+      "timestamp": "2026-07-02T06:09:48.851Z",
+      "lastModified": "2026-07-02T06:10:05.645Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool-frontend/src/views/ram/chat/ChatInputBox.vue",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-07-02T06:10:43.063Z",
+      "lastModified": "2026-07-02T06:10:43.063Z"
     }
   ]
 }

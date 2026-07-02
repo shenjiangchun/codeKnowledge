@@ -27,6 +27,12 @@ export interface ChatEvent {
   createdAt: number
 }
 
+export interface InterruptResponse {
+  interrupted: boolean
+  turnId?: string
+  partialText?: string
+}
+
 export interface SessionSummary {
   sessionId: string
   projectName: string
@@ -56,5 +62,8 @@ export const ramChatApi = {
   },
   deleteSession(sid: string) {
     return request.delete<void>(`/ram/chat/${sid}`)
+  },
+  interruptTurn(sid: string) {
+    return request.post<InterruptResponse>(`/ram/chat/${sid}/interrupt`)
   }
 }

@@ -10,10 +10,10 @@ const sending = ref(false)
 async function send() {
   const trimmed = text.value.trim()
   if (!trimmed || sending.value) return
+  text.value = ''
   sending.value = true
   try {
     await store.sendMessage(trimmed)
-    text.value = ''
   } catch (e: unknown) {
     console.error('[ChatInput] send failed', e)
   } finally {
@@ -21,11 +21,8 @@ async function send() {
   }
 }
 
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault()
-    send()
-  }
+function onEnter() {
+  send()
 }
 </script>
 
@@ -37,9 +34,12 @@ function onKeydown(e: KeyboardEvent) {
       :rows="2"
       placeholder="输入问题，回车发送（Shift+Enter 换行）"
       resize="none"
-      @keydown="onKeydown"
+      @keydown.enter.exact.prevent="onEnter"
     />
     <div class="input-actions">
+      <el-button v-if="store.isStreaming" type="danger" @click="store.interrupt()">
+        停止
+      </el-button>
       <el-button type="primary" :icon="Promotion" :loading="sending" @click="send">
         发送
       </el-button>
