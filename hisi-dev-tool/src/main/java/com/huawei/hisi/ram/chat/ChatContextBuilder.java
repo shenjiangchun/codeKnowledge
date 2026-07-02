@@ -76,7 +76,7 @@ public class ChatContextBuilder {
         }
     }
 
-    private String buildSystemPrompt(List<String> projectPaths) {
+    String buildSystemPrompt(List<String> projectPaths) {
         String pathsBlock = projectPaths == null || projectPaths.isEmpty()
                 ? "(未指定)"
                 : String.join(", ", projectPaths);
@@ -99,14 +99,13 @@ public class ChatContextBuilder {
                    - read_file: 读取文件内容
                    - list_files: 列出目录文件
                 3. 工具调用上限 10 轮，超过将强制结束
-                4. 最终输出必须是单一 JSON 对象，字段：{answer: string, summary: string, key_findings: string[], recommendations: string[]}
-                5. 如果用户问题是追问，参考 [历史会话上下文] 中的前文，不要重复调用已调用过的工具
+                4. 如果用户问题是追问，参考 [历史会话上下文] 中的前文，不要重复调用已调用过的工具
 
                 [输出约束 / Output Constraints]
-                - answer 字段：面向用户的最终回答，支持 markdown
-                - summary 字段：本 turn 的简短摘要（≤200 字），用于注入下一轮的历史上下文
-                - key_findings 字段：关键发现列表
-                - recommendations 字段：建议列表
+                1. 使用 Markdown 输出：正文可以包含标题、代码块（```lang）、有序/无序列表、表格。
+                2. 优先在正文顶部用一句话点明核心结论，然后再展开细节，方便前端做摘要与滚动。
+                3. 若引用到具体代码位置，使用 `path:line` 形式，便于用户跳转。
+                4. 图表（如序列图、类关系）使用 mermaid 代码块。
                 """.formatted(pathsBlock);
     }
 
