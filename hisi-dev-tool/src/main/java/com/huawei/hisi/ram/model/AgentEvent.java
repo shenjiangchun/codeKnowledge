@@ -86,4 +86,10 @@ public class AgentEvent {
                 .clarifyRoundNo(roundNo)
                 .build();
     }
+
+    public static AgentEvent turnInterrupted(long sessionId, long seq, String payload, String idemKey) {
+        return base(sessionId, seq, EventType.TURN_INTERRUPTED, idemKey)
+                .payload(payload)
+                .build();
+    }
 }

@@ -15,5 +15,6 @@ public enum EventType {
     HITL_RES,
     NODES_CLEARED,
     ERROR,
+    TURN_INTERRUPTED,
     MESSAGE
 }
