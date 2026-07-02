@@ -92,6 +92,17 @@ const turns = computed<Turn[]>(() => {
         turn.status = 'done'
         if (payload.finalText) turn.assistantText = payload.finalText as string
         break
+      case 'turn_interrupted': {
+        // Turn was aborted mid-stream (user pressed 停止). Pin partial buffer
+        // as the final assistantText and mark done so subsequent late deltas
+        // (T4 guard) are ignored.
+        const partial = payload.partialText as string | undefined
+        if (typeof partial === 'string') {
+          turn.assistantText = partial
+        }
+        turn.status = 'done'
+        break
+      }
       case 'error':
         turn.status = 'error'
         turn.errorMessage = (payload.error as string) || 'Unknown error'
