@@ -201,7 +201,7 @@ class RamChatInTurnInjectionIT {
         AgentEvent interrupt = interrupts.get(0);
         assertThat(interrupt.isInterrupted()).isTrue();
         assertThat(interrupt.getTurnId()).isEqualTo(abortedTurnId);
-        assertThat(interrupt.getIdempotencyKey()).startsWith("interrupt-");
+        assertThat(interrupt.getIdempotencyKey()).isEqualTo("interrupt-" + abortedTurnId);
         Map<String, Object> interruptPayload = objectMapper.readValue(
                 interrupt.getPayload(), new TypeReference<Map<String, Object>>() {});
         assertThat(interruptPayload)
