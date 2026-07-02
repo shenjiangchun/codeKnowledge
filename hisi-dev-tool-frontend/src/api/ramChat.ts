@@ -51,6 +51,9 @@ export const ramChatApi = {
   sendMessage(sid: string, text: string) {
     return request.post<SendMessageResponse>(`/ram/chat/${sid}/messages`, { text })
   },
+  injectMessage(sid: string, content: string) {
+    return request.post<void>(`/ram/chat/${sid}/inject`, { content })
+  },
   getEvents(sid: string) {
     return request.get<ChatEvent[]>(`/ram/chat/${sid}/events`)
   },

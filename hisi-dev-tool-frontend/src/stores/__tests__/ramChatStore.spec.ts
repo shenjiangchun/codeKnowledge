@@ -6,6 +6,7 @@ vi.mock('@/api/ramChat', () => {
     ramChatApi: {
       createSession: vi.fn(),
       sendMessage: vi.fn(),
+      injectMessage: vi.fn(),
       getEvents: vi.fn(),
       listSessions: vi.fn(),
       renameSession: vi.fn(),
@@ -41,6 +42,19 @@ describe('useRamChatStore — in-turn injection wiring', () => {
     await store.sendMessage('hi')
     expect(ramChatApi.sendMessage).toHaveBeenCalledTimes(1)
     expect(ramChatApi.sendMessage).toHaveBeenCalledWith('sid-1', 'hi')
+  })
+
+  it('sendMessage routes to ramChatApi.injectMessage when isStreaming is true', async () => {
+    const store = useRamChatStore()
+    store.currentSessionId = 'sid-9'
+    store.appendEvent(makeEvent('ASSISTANT_DELTA', 1))
+    expect(store.isStreaming).toBe(true)
+
+    await store.sendMessage('hello during stream')
+
+    expect(ramChatApi.injectMessage).toHaveBeenCalledTimes(1)
+    expect(ramChatApi.injectMessage).toHaveBeenCalledWith('sid-9', 'hello during stream')
+    expect(ramChatApi.sendMessage).not.toHaveBeenCalled()
   })
 
   it('interrupt() calls ramChatApi.interruptTurn with the current sid', async () => {

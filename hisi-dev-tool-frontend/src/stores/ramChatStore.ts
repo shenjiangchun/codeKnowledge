@@ -40,7 +40,11 @@ export const useRamChatStore = defineStore('ramChat', () => {
 
   async function sendMessage(text: string) {
     if (!currentSessionId.value) return
-    await ramChatApi.sendMessage(currentSessionId.value, text)
+    if (isStreaming.value) {
+      await ramChatApi.injectMessage(currentSessionId.value, text)
+    } else {
+      await ramChatApi.sendMessage(currentSessionId.value, text)
+    }
   }
 
   function appendEvent(event: ChatEvent) {
