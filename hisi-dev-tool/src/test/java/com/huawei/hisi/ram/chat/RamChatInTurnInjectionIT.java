@@ -257,7 +257,7 @@ class RamChatInTurnInjectionIT {
         assertThat(secondUserMsgIdx).as("second USER_MSG after TURN_INTERRUPTED").isGreaterThan(interruptIdx);
         assertThat(secondTurnId).as("second turnId").isNotNull().isNotEqualTo(abortedTurnId);
 
-        // ---- Late-write guard: no CHECKPOINT/ASSISTANT_DELTA/TOOL_USE_START events after
+        // ---- Late-write guard: no CHECKPOINT/ASSISTANT_DELTA/TOOL_USE events after
         //      the interrupt may carry the aborted turnId. The T1 isActive-guard drops
         //      such writes on the Reactor thread; verify they never landed in the log.
         for (int i = interruptIdx + 1; i < events.size(); i++) {
@@ -265,7 +265,7 @@ class RamChatInTurnInjectionIT {
             EventType t = e.getType();
             if (t != EventType.CHECKPOINT
                     && t != EventType.ASSISTANT_DELTA
-                    && t != EventType.TOOL_USE_START) {
+                    && t != EventType.TOOL_USE) {
                 continue;
             }
             Map<String, Object> payload = objectMapper.readValue(
