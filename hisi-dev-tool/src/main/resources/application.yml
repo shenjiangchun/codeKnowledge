@@ -14,6 +14,12 @@ spring:
   # 允许循环依赖（临时解决方案）
   main:
     allow-circular-references: true
+  # 双层配置：chat-models.yml（能力元数据，纳入版本控制）
+  # + application-local.yml（endpoint/apiKey 本地覆盖，.gitignore 排除）
+  config:
+    import:
+      - classpath:chat-models.yml
+      - optional:classpath:application-local.yml
 
 server:
   port: 8080

@@ -1,0 +1,16 @@
+chat:
+  models:
+    "[glm-5.1]":
+      provider: zhipu
+      max-context: 202752
+      scenario-max-tokens:
+        chat: 4096
+        summary: 2048
+        long-form: 8192
+    "[claude-sonnet-4-5]":
+      provider: anthropic
+      max-context: 200000
+      scenario-max-tokens:
+        chat: 4096
+        summary: 2048
+        long-form: 8192
