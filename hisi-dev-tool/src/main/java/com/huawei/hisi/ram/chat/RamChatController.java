@@ -8,11 +8,14 @@ import com.huawei.hisi.ram.model.SessionStatus;
 import com.huawei.hisi.ram.model.SessionType;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -26,6 +29,8 @@ public class RamChatController {
     private final AgentEventRepository eventRepository;
     private final RamChatOrchestrator orchestrator;
     private final ObjectMapper objectMapper;
+    private final TurnRegistry turnRegistry;
+    private final RamChatWebSocketHandler wsHandler;
 
     @PostMapping("/sessions")
     public ApiResponse<CreateSessionResponse> createSession(@RequestBody CreateSessionRequest request) {
@@ -131,6 +136,38 @@ public class RamChatController {
     public ApiResponse<Void> deleteSession(@PathVariable Long sid) {
         sessionRepository.updateStatus(sid, SessionStatus.ARCHIVED);
         return ApiResponse.success(null);
+    }
+
+    @PostMapping("/{sid}/interrupt")
+    public ResponseEntity<?> interrupt(@PathVariable Long sid) throws JsonProcessingException {
+        var maybe = turnRegistry.interrupt(sid);
+        if (maybe.isEmpty()) {
+            return ResponseEntity.ok(Map.of("interrupted", false));
+        }
+        TurnRegistry.InterruptResult res = maybe.get();
+        String payload = objectMapper.writeValueAsString(Map.of(
+                "turnId", res.turnId(),
+                "partialText", res.partialText(),
+                "reason", "user_interrupt"
+        ));
+        AgentEvent ev = eventRepository.append(AgentEvent.turnInterrupted(
+                sid, 0L, payload, "interrupt-" + res.turnId()));
+
+        Map<String, Object> wsPayload = new LinkedHashMap<>();
+        wsPayload.put("type", "turn_interrupted");
+        wsPayload.put("turnId", res.turnId());
+        wsPayload.put("partialText", res.partialText());
+        wsPayload.put("sessionId", sid);
+        wsPayload.put("eventId", ev != null ? ev.getId() : null);
+        wsPayload.put("seq", ev != null ? ev.getSeq() : null);
+        wsPayload.put("createdAt", ev != null ? ev.getCreatedAt() : System.currentTimeMillis() / 1000L);
+        wsHandler.pushEvent(sid, wsPayload);
+
+        return ResponseEntity.accepted().body(Map.of(
+                "interrupted", true,
+                "turnId", res.turnId(),
+                "partialText", res.partialText()
+        ));
     }
 
     @SuppressWarnings("unchecked")

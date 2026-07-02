@@ -17,7 +17,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import reactor.core.Disposable;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -42,6 +44,7 @@ public class RamChatOrchestrator {
     private final RamChatWebSocketHandler wsHandler;
     private final ObjectMapper objectMapper;
     private final ChatModelProperties chatProps;
+    private final TurnRegistry turnRegistry;
 
     private static final String DEFAULT_MODEL_ID = "glm-5.1";
     private static final String CHAT_SCENARIO = "chat";
@@ -146,7 +149,8 @@ public class RamChatOrchestrator {
                             handlers,
                             SendOptions.forScenario(chatProps, DEFAULT_MODEL_ID, CHAT_SCENARIO),
                             callbacks,
-                            d -> {}
+                            d -> turnRegistry.register(sessionId, new TurnRegistry.ActiveTurn(
+                                    turnId, sessionId, d, partialTextBuf, Instant.now(), DEFAULT_MODEL_ID))
             ), asyncExecutor);
 
             RamClaudeJsonClient.JsonCallResult result = future
@@ -173,9 +177,17 @@ public class RamChatOrchestrator {
             log.info("[RamChatOrchestrator] done turnId={} finalText.len={}",
                     turnId, finalText.length());
 
+            turnRegistry.complete(sessionId, turnId);
+
             return new TurnResult(turnId, "DONE", finalText, result.reasoning(), null);
         } catch (Exception e) {
             log.error("[RamChatOrchestrator] failed turnId={}: {}", turnId, e.getMessage(), e);
+            try {
+                turnRegistry.complete(sessionId, turnId);
+            } catch (Exception ce) {
+                log.warn("[RamChatOrchestrator] turnRegistry.complete failed sessionId={} turnId={}: {}",
+                        sessionId, turnId, ce.getMessage());
+            }
             AgentEvent errEv = appendEvent(sessionId, EventType.ERROR, Map.of(
                     "turnId", turnId,
                     "error", e.getMessage(),

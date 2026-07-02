@@ -3,13 +3,13 @@
   "hostname": "laptop-c2kj599j",
   "model": "ByteDance-glm-5.2-1",
   "firstSeen": "2026-05-08T09:47:42.281Z",
-  "lastUpdated": "2026-07-02T04:54:37.137Z",
+  "lastUpdated": "2026-07-02T05:25:04.153Z",
   "stats": {
-    "totalOperations": 1821,
-    "totalFilesEdited": 884,
-    "totalAiLines": 59231,
-    "totalAiLinesDeleted": 8929,
-    "totalCommits": 143
+    "totalOperations": 1837,
+    "totalFilesEdited": 890,
+    "totalAiLines": 59285,
+    "totalAiLinesDeleted": 8934,
+    "totalCommits": 144
   },
   "pendingFiles": [
     {
@@ -1115,18 +1115,49 @@
       "lastModified": "2026-07-01T06:18:12.492Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/nodes/impl/RamClaudeJsonClient.java",
-      "tool": "Edit",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/test/java/com/huawei/hisi/ram/chat/TurnRegistryTest.java",
+      "tool": "Write",
       "operations": 1,
-      "timestamp": "2026-07-02T04:53:20.799Z",
-      "lastModified": "2026-07-02T04:53:20.799Z"
+      "timestamp": "2026-07-02T05:13:31.219Z",
+      "lastModified": "2026-07-02T05:13:31.219Z"
     },
     {
-      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/test/java/com/huawei/hisi/ram/nodes/impl/RamClaudeJsonClientCancellationTest.java",
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/chat/TurnRegistry.java",
+      "tool": "Write",
+      "operations": 1,
+      "timestamp": "2026-07-02T05:13:47.691Z",
+      "lastModified": "2026-07-02T05:13:47.691Z"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/test/java/com/huawei/hisi/ram/chat/RamChatControllerInterruptTest.java",
+      "tool": "Write",
+      "operations": 5,
+      "timestamp": "2026-07-02T05:14:35.309Z",
+      "lastModified": "2026-07-02T05:25:04.153Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/chat/RamChatController.java",
+      "tool": "Edit",
+      "operations": 3,
+      "timestamp": "2026-07-02T05:14:45.878Z",
+      "lastModified": "2026-07-02T05:15:05.125Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/main/java/com/huawei/hisi/ram/chat/RamChatOrchestrator.java",
+      "tool": "Edit",
+      "operations": 4,
+      "timestamp": "2026-07-02T05:15:16.861Z",
+      "lastModified": "2026-07-02T05:16:57.143Z",
+      "lastTool": "Edit"
+    },
+    {
+      "path": "C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-dev-tool/src/test/java/com/huawei/hisi/ram/chat/RamChatOrchestratorTest.java",
       "tool": "Edit",
       "operations": 2,
-      "timestamp": "2026-07-02T04:53:29.484Z",
-      "lastModified": "2026-07-02T04:54:37.137Z",
+      "timestamp": "2026-07-02T05:17:27.128Z",
+      "lastModified": "2026-07-02T05:17:35.063Z",
       "lastTool": "Edit"
     }
   ]

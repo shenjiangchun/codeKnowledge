@@ -43,6 +43,7 @@ class RamChatOrchestratorTest {
     @Mock private ProjectOverviewTool projectOverviewTool;
     @Mock private ChatContextBuilder contextBuilder;
     @Mock private RamChatWebSocketHandler wsHandler;
+    @Mock private TurnRegistry turnRegistry;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private RamChatOrchestrator orchestrator;
@@ -62,7 +63,8 @@ class RamChatOrchestratorTest {
                 contextBuilder,
                 wsHandler,
                 objectMapper,
-                chatProps
+                chatProps,
+                turnRegistry
         );
         ReflectionTestUtils.setField(orchestrator, "timeoutSeconds", 10L);
 
