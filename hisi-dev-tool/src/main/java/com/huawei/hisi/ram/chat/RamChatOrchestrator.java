@@ -95,6 +95,7 @@ public class RamChatOrchestrator {
             wsPayload.put("type", "turn_interrupted");
             wsPayload.put("turnId", r.turnId());
             wsPayload.put("partialText", r.partialText());
+            wsPayload.put("reason", "user_interrupt");
             wsPayload.put("sessionId", sessionId);
             wsPayload.put("eventId", ev.getId());
             wsPayload.put("seq", ev.getSeq());
@@ -134,6 +135,10 @@ public class RamChatOrchestrator {
             StreamCallbacks callbacks = new StreamCallbacks() {
                 @Override
                 public void onAssistantDelta(String deltaText) {
+                    if (!isActive(sessionId, turnId)) {
+                        log.debug("[RamChatOrchestrator] dropping late assistant_delta for aborted turnId={}", turnId);
+                        return;
+                    }
                     synchronized (partialTextBuf) {
                         partialTextBuf.append(deltaText);
                     }
@@ -150,6 +155,10 @@ public class RamChatOrchestrator {
 
                 @Override
                 public void onToolUseStart(String toolName, Map<String, Object> input) {
+                    if (!isActive(sessionId, turnId)) {
+                        log.debug("[RamChatOrchestrator] dropping late tool_use_start for aborted turnId={}", turnId);
+                        return;
+                    }
                     AgentEvent toolEv = appendEvent(sessionId, EventType.TOOL_USE, Map.of(
                             "turnId", turnId,
                             "toolName", toolName,
@@ -165,6 +174,10 @@ public class RamChatOrchestrator {
 
                 @Override
                 public void onToolResult(String toolName, String resultContent) {
+                    if (!isActive(sessionId, turnId)) {
+                        log.debug("[RamChatOrchestrator] dropping late tool_result for aborted turnId={}", turnId);
+                        return;
+                    }
                     AgentEvent resultEv = appendEvent(sessionId, EventType.TOOL_RESULT, Map.of(
                             "turnId", turnId,
                             "toolName", toolName,
@@ -236,22 +249,27 @@ public class RamChatOrchestrator {
             String finalText = partialTextBuf.toString();
             String summary = "";
 
-            AgentEvent ckptEv = appendEvent(sessionId, EventType.CHECKPOINT, Map.of(
-                    "turnId", turnId,
-                    "summary", summary,
-                    "finalText", finalText,
-                    "reasoningSteps", result.reasoning()
-            ), "ckpt-" + turnId);
+            if (isActive(sessionId, turnId)) {
+                AgentEvent ckptEv = appendEvent(sessionId, EventType.CHECKPOINT, Map.of(
+                        "turnId", turnId,
+                        "summary", summary,
+                        "finalText", finalText,
+                        "reasoningSteps", result.reasoning()
+                ), "ckpt-" + turnId);
 
-            wsHandler.pushEvent(sessionId, wsEvent(ckptEv, sessionId, Map.of(
-                    "type", "checkpoint",
-                    "turnId", turnId,
-                    "summary", summary,
-                    "finalText", finalText
-            )));
+                wsHandler.pushEvent(sessionId, wsEvent(ckptEv, sessionId, Map.of(
+                        "type", "checkpoint",
+                        "turnId", turnId,
+                        "summary", summary,
+                        "finalText", finalText
+                )));
 
-            log.info("[RamChatOrchestrator] done turnId={} finalText.len={}",
-                    turnId, finalText.length());
+                log.info("[RamChatOrchestrator] done turnId={} finalText.len={}",
+                        turnId, finalText.length());
+            } else {
+                log.info("[RamChatOrchestrator] skip checkpoint for interrupted turnId={} finalText.len={}",
+                        turnId, finalText.length());
+            }
 
             turnRegistry.complete(sessionId, turnId);
 
@@ -271,6 +289,18 @@ public class RamChatOrchestrator {
             )));
             return new TurnResult(turnId, "FAILED", null, List.of(), e.getMessage());
         }
+    }
+
+    /**
+     * True iff the currently-registered active turn for {@code sessionId} is
+     * still {@code turnId}. Late deltas / tool events / checkpoints coming
+     * from an already-interrupted Reactor sink must NOT be persisted, because
+     * the TURN_INTERRUPTED event has already sealed that turn.
+     */
+    private boolean isActive(long sessionId, String turnId) {
+        return turnRegistry.get(sessionId)
+                .map(t -> t.turnId().equals(turnId))
+                .orElse(false);
     }
 
     private AgentEvent appendEvent(long sessionId, EventType type, Map<String, Object> payload, String idempotencyKey) {

@@ -22,6 +22,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -29,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -83,6 +86,18 @@ class RamChatOrchestratorTest {
                 .thenReturn(mock(ToolDefinition.class));
         when(projectOverviewTool.buildHandler(any(List.class)))
                 .thenReturn(map -> null);
+
+        // TurnRegistry stubbing: capture the ActiveTurn passed to register(...),
+        // then serve it back via get(...) so isActive() returns true for the
+        // current turn. Without this the CHECKPOINT / delta / tool events are
+        // dropped by the late-write guards added in Phase A T1.
+        AtomicReference<TurnRegistry.ActiveTurn> activeRef = new AtomicReference<>();
+        doAnswer(inv -> {
+            activeRef.set(inv.getArgument(1));
+            return null;
+        }).when(turnRegistry).register(anyLong(), any(TurnRegistry.ActiveTurn.class));
+        when(turnRegistry.get(anyLong()))
+                .thenAnswer(inv -> Optional.ofNullable(activeRef.get()));
     }
 
     @Test
