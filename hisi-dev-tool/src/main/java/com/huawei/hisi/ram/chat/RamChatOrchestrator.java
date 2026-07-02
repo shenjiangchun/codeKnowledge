@@ -29,6 +29,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 @Slf4j
@@ -92,7 +93,9 @@ public class RamChatOrchestrator {
             StreamCallbacks callbacks = new StreamCallbacks() {
                 @Override
                 public void onAssistantDelta(String deltaText) {
-                    partialTextBuf.append(deltaText);
+                    synchronized (partialTextBuf) {
+                        partialTextBuf.append(deltaText);
+                    }
                     AgentEvent deltaEv = appendEvent(sessionId, EventType.ASSISTANT_DELTA, Map.of(
                             "turnId", turnId,
                             "delta", deltaText
@@ -141,6 +144,34 @@ public class RamChatOrchestrator {
                 }
             };
 
+            // Pre-register the active turn BEFORE scheduling the streaming call so that a
+            // POST /interrupt arriving between supplyAsync scheduling and Flux.subscribe
+            // callback firing cannot lose the race. We install a proxy Disposable that
+            // forwards dispose() to the real per-round Disposable once it becomes known;
+            // if interrupt() calls dispose() first, the disposableSink callback will
+            // observe proxyDisposable.isDisposed() and dispose the real one immediately.
+            AtomicReference<Disposable> disposableRef = new AtomicReference<>();
+            Disposable proxyDisposable = new Disposable() {
+                private volatile boolean disposed = false;
+
+                @Override
+                public void dispose() {
+                    disposed = true;
+                    Disposable real = disposableRef.get();
+                    if (real != null) {
+                        real.dispose();
+                    }
+                }
+
+                @Override
+                public boolean isDisposed() {
+                    Disposable real = disposableRef.get();
+                    return disposed || (real != null && real.isDisposed());
+                }
+            };
+            turnRegistry.register(sessionId, new TurnRegistry.ActiveTurn(
+                    turnId, sessionId, proxyDisposable, partialTextBuf, Instant.now(), DEFAULT_MODEL_ID));
+
             CompletableFuture<RamClaudeJsonClient.JsonCallResult> future = CompletableFuture.supplyAsync(() ->
                     claudeClient.callJsonWithToolsAndStreaming(
                             ctx.systemPrompt(),
@@ -149,8 +180,12 @@ public class RamChatOrchestrator {
                             handlers,
                             SendOptions.forScenario(chatProps, DEFAULT_MODEL_ID, CHAT_SCENARIO),
                             callbacks,
-                            d -> turnRegistry.register(sessionId, new TurnRegistry.ActiveTurn(
-                                    turnId, sessionId, d, partialTextBuf, Instant.now(), DEFAULT_MODEL_ID))
+                            d -> {
+                                disposableRef.set(d);
+                                if (proxyDisposable.isDisposed()) {
+                                    d.dispose();
+                                }
+                            }
             ), asyncExecutor);
 
             RamClaudeJsonClient.JsonCallResult result = future
@@ -182,12 +217,7 @@ public class RamChatOrchestrator {
             return new TurnResult(turnId, "DONE", finalText, result.reasoning(), null);
         } catch (Exception e) {
             log.error("[RamChatOrchestrator] failed turnId={}: {}", turnId, e.getMessage(), e);
-            try {
-                turnRegistry.complete(sessionId, turnId);
-            } catch (Exception ce) {
-                log.warn("[RamChatOrchestrator] turnRegistry.complete failed sessionId={} turnId={}: {}",
-                        sessionId, turnId, ce.getMessage());
-            }
+            turnRegistry.complete(sessionId, turnId);
             AgentEvent errEv = appendEvent(sessionId, EventType.ERROR, Map.of(
                     "turnId", turnId,
                     "error", e.getMessage(),

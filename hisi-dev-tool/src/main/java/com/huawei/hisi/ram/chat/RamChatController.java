@@ -139,19 +139,25 @@ public class RamChatController {
     }
 
     @PostMapping("/{sid}/interrupt")
-    public ResponseEntity<?> interrupt(@PathVariable Long sid) throws JsonProcessingException {
+    public ResponseEntity<?> interrupt(@PathVariable Long sid) {
         var maybe = turnRegistry.interrupt(sid);
         if (maybe.isEmpty()) {
             return ResponseEntity.ok(Map.of("interrupted", false));
         }
         TurnRegistry.InterruptResult res = maybe.get();
-        String payload = objectMapper.writeValueAsString(Map.of(
-                "turnId", res.turnId(),
-                "partialText", res.partialText(),
-                "reason", "user_interrupt"
-        ));
+        String payload;
+        try {
+            payload = objectMapper.writeValueAsString(Map.of(
+                    "turnId", res.turnId(),
+                    "partialText", res.partialText(),
+                    "reason", "user_interrupt"
+            ));
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize interrupt payload for session {}: {}", sid, e.getMessage());
+            return ResponseEntity.status(500).body(Map.of("error", "internal_error"));
+        }
         AgentEvent ev = eventRepository.append(AgentEvent.turnInterrupted(
-                sid, 0L, payload, "interrupt-" + res.turnId()));
+                sid, 0L, payload, "interrupt-" + res.turnId())); // seq assigned by repository on append
 
         Map<String, Object> wsPayload = new LinkedHashMap<>();
         wsPayload.put("type", "turn_interrupted");

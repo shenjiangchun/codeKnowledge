@@ -24,7 +24,15 @@ public class TurnRegistry {
 
     private final ConcurrentMap<Long, ActiveTurn> activeBySession = new ConcurrentHashMap<>();
 
-    /** Metadata + control surface for the currently streaming turn on a session. */
+    /**
+     * Metadata + control surface for the currently streaming turn on a session.
+     *
+     * <p>NOTE: {@code partialBuf} is a mutable {@link StringBuilder} shared
+     * between the streaming writer (RamChatOrchestrator.onAssistantDelta) and
+     * the interrupt reader ({@link #interrupt(long)}). Both sides MUST
+     * synchronize on the StringBuilder instance to establish happens-before on
+     * its internal char[]/count state.
+     */
     public record ActiveTurn(
             String turnId,
             long sessionId,
