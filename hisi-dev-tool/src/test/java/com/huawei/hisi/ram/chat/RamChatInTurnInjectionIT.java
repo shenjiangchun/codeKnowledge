@@ -17,10 +17,12 @@ import com.huawei.hisi.ram.sdk.SendOptions;
 import com.huawei.hisi.ram.sdk.ToolDefinition;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
@@ -41,9 +43,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -79,6 +84,7 @@ class RamChatInTurnInjectionIT {
 
     @MockBean private RamClaudeJsonClient claudeClient;
     @MockBean private KgMcpClient kgMcpClient;
+    @SpyBean private RamChatWebSocketHandler wsHandler;
 
     @Test
     @DisplayName("mid-turn /inject interrupts first turn, persists TURN_INTERRUPTED, starts new turn")
@@ -182,8 +188,13 @@ class RamChatInTurnInjectionIT {
             // 5. Wait for the SECOND turn to fully persist (USER_MSG "new message" + CHECKPOINT).
             //    The finally block below unblocks the first-turn stub and joins the background
             //    thread; extra countdowns past zero are safe on CountDownLatch.
+            //    NOTE: With the T1 isActive-guard, the ABORTED turn no longer emits its own
+            //    CHECKPOINT (late writes are dropped), so we can't wait for CHECKPOINT >= 2.
+            //    Wait instead for the second USER_MSG plus at least one CHECKPOINT (from the
+            //    second turn's completion).
             await().atMost(30, TimeUnit.SECONDS).until(() ->
-                    eventRepository.countBySessionIdAndType(sid, EventType.CHECKPOINT) >= 2);
+                    eventRepository.countBySessionIdAndType(sid, EventType.USER_MSG) >= 2
+                            && eventRepository.countBySessionIdAndType(sid, EventType.CHECKPOINT) >= 1);
         } finally {
             // Guarantee the stub thread is released and the background future is not orphaned,
             // regardless of whether any assertion above threw. Both operations are idempotent:
@@ -245,5 +256,41 @@ class RamChatInTurnInjectionIT {
         assertThat(interruptIdx).as("TURN_INTERRUPTED after ASSISTANT_DELTA").isGreaterThan(deltaIdx);
         assertThat(secondUserMsgIdx).as("second USER_MSG after TURN_INTERRUPTED").isGreaterThan(interruptIdx);
         assertThat(secondTurnId).as("second turnId").isNotNull().isNotEqualTo(abortedTurnId);
+
+        // ---- Late-write guard: no CHECKPOINT/ASSISTANT_DELTA/TOOL_USE_START events after
+        //      the interrupt may carry the aborted turnId. The T1 isActive-guard drops
+        //      such writes on the Reactor thread; verify they never landed in the log.
+        for (int i = interruptIdx + 1; i < events.size(); i++) {
+            AgentEvent e = events.get(i);
+            EventType t = e.getType();
+            if (t != EventType.CHECKPOINT
+                    && t != EventType.ASSISTANT_DELTA
+                    && t != EventType.TOOL_USE_START) {
+                continue;
+            }
+            Map<String, Object> payload = objectMapper.readValue(
+                    e.getPayload(), new TypeReference<Map<String, Object>>() {});
+            Object tid = payload.get("turnId");
+            assertThat(tid)
+                    .as("no late %s event may carry aborted turnId (event index %d)", t, i)
+                    .isNotEqualTo(abortedTurnId);
+        }
+
+        // ---- WS push assertion: the turn_interrupted event pushed to the client MUST
+        //      carry reason=user_interrupt so the frontend can render partial + status.
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<Map<String, Object>> wsCaptor =
+                (ArgumentCaptor) ArgumentCaptor.forClass(Map.class);
+        verify(wsHandler, atLeastOnce()).pushEvent(anyLong(), wsCaptor.capture());
+        List<Map<String, Object>> interruptWsPushes = wsCaptor.getAllValues().stream()
+                .filter(m -> "turn_interrupted".equals(m.get("type")))
+                .toList();
+        assertThat(interruptWsPushes)
+                .as("exactly one turn_interrupted WS push")
+                .hasSize(1);
+        assertThat(interruptWsPushes.get(0))
+                .containsEntry("reason", "user_interrupt")
+                .containsEntry("turnId", abortedTurnId)
+                .containsKey("partialText");
     }
 }
