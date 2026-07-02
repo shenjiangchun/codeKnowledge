@@ -63,6 +63,41 @@ public class RamChatOrchestrator {
         return runTurn(sessionId, userText, List.of(projectPath));
     }
 
+    /**
+     * Send a new user message DURING an active streaming turn. If a turn is
+     * currently streaming, interrupt it atomically, persist a
+     * {@code TURN_INTERRUPTED} event carrying the partial text, push a
+     * corresponding WebSocket event, then start a new turn with {@code userContent}.
+     * If no turn is active, this is equivalent to submitting {@code runTurn}
+     * asynchronously.
+     */
+    public void injectAndContinue(long sessionId, String userContent, List<String> projectPaths) {
+        var interrupted = turnRegistry.interrupt(sessionId);
+        interrupted.ifPresent(r -> {
+            try {
+                String payload = objectMapper.writeValueAsString(Map.of(
+                        "turnId", r.turnId(),
+                        "partialText", r.partialText(),
+                        "reason", "user_interrupt"));
+                AgentEvent ev = eventRepository.append(AgentEvent.turnInterrupted(
+                        sessionId, 0L, payload, "interrupt-" + r.turnId()));
+                Map<String, Object> wsPayload = new LinkedHashMap<>();
+                wsPayload.put("type", "turn_interrupted");
+                wsPayload.put("turnId", r.turnId());
+                wsPayload.put("partialText", r.partialText());
+                wsPayload.put("sessionId", sessionId);
+                wsPayload.put("eventId", ev != null ? ev.getId() : null);
+                wsPayload.put("seq", ev != null ? ev.getSeq() : null);
+                wsPayload.put("createdAt", ev != null ? ev.getCreatedAt() : System.currentTimeMillis() / 1000L);
+                wsHandler.pushEvent(sessionId, wsPayload);
+            } catch (JsonProcessingException e) {
+                log.error("[RamChatOrchestrator.injectAndContinue] failed to serialize turn_interrupted payload sessionId={} turnId={}: {}",
+                        sessionId, r.turnId(), e.getMessage());
+            }
+        });
+        asyncExecutor.submit(() -> runTurn(sessionId, userContent, projectPaths));
+    }
+
     public TurnResult runTurn(long sessionId, String userText, List<String> projectPaths) {
         String turnId = UUID.randomUUID().toString();
         log.info("[RamChatOrchestrator] start turnId={} sessionId={} userText.len={}",

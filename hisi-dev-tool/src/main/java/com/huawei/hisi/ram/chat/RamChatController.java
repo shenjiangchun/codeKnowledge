@@ -138,6 +138,26 @@ public class RamChatController {
         return ApiResponse.success(null);
     }
 
+    @PostMapping("/{sid}/inject")
+    public ResponseEntity<?> inject(@PathVariable Long sid, @RequestBody InjectRequest request) {
+        if (request == null || request.content() == null || request.content().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "content is required"));
+        }
+
+        AgentSession session = sessionRepository.findById(sid).orElse(null);
+        if (session == null) {
+            return ResponseEntity.status(404).body(Map.of("error", "session not found: " + sid));
+        }
+
+        List<String> projectPaths = extractProjectPaths(session);
+        if (projectPaths.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "session has no projectPath"));
+        }
+
+        orchestrator.injectAndContinue(sid, request.content(), projectPaths);
+        return ResponseEntity.accepted().build();
+    }
+
     @PostMapping("/{sid}/interrupt")
     public ResponseEntity<?> interrupt(@PathVariable Long sid) {
         var maybe = turnRegistry.interrupt(sid);
