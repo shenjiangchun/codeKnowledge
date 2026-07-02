@@ -34,6 +34,8 @@ public class AgentEvent {
     private String circuitState;
     private int costUsdCents;
     private String validatorStatus;
+    private boolean interrupted;
+    private String turnId;
     private long createdAt;
 
     private static long nowEpoch() {
@@ -87,9 +89,11 @@ public class AgentEvent {
                 .build();
     }
 
-    public static AgentEvent turnInterrupted(long sessionId, long seq, String payload, String idemKey) {
+    public static AgentEvent turnInterrupted(long sessionId, long seq, String turnId, String payload, String idemKey) {
         return base(sessionId, seq, EventType.TURN_INTERRUPTED, idemKey)
                 .payload(payload)
+                .interrupted(true)
+                .turnId(turnId)
                 .build();
     }
 }

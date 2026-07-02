@@ -90,7 +90,7 @@ public class RamChatOrchestrator {
                 throw new IllegalStateException("failed to serialize turn_interrupted payload", e);
             }
             AgentEvent ev = eventRepository.append(AgentEvent.turnInterrupted(
-                    sessionId, 0L, payload, "interrupt-" + r.turnId()));
+                    sessionId, 0L, r.turnId(), payload, "interrupt-" + r.turnId()));
             Map<String, Object> wsPayload = new LinkedHashMap<>();
             wsPayload.put("type", "turn_interrupted");
             wsPayload.put("turnId", r.turnId());

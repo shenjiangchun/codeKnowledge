@@ -96,6 +96,11 @@ public class RamSchemaInitializer {
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_agent_event_session_seq "
                 + "ON agent_event(session_id, seq)");
 
+        // Idempotent ALTER TABLE migrations for agent_event (in-turn injection: T11)
+        addColumnIfNotExists("agent_event", "interrupted", "INTEGER NOT NULL DEFAULT 0");
+        addColumnIfNotExists("agent_event", "turn_id", "TEXT");
+        addIndexIfNotExists("agent_event", "idx_agent_event_turn_id", "agent_event(turn_id)");
+
         log.info("[RAM-SQLite] Schema initialization complete - 2 tables ensured");
     }
 
@@ -113,8 +118,12 @@ public class RamSchemaInitializer {
     }
 
     private void addIndexIfNotExists(String indexName, String indexSpec) {
+        addIndexIfNotExists("agent_session", indexName, indexSpec);
+    }
+
+    private void addIndexIfNotExists(String table, String indexName, String indexSpec) {
         try {
-            boolean exists = jdbcTemplate.queryForList("PRAGMA index_list(agent_session)")
+            boolean exists = jdbcTemplate.queryForList("PRAGMA index_list(" + table + ")")
                     .stream().anyMatch(row -> indexName.equalsIgnoreCase((String) row.get("name")));
             if (!exists) {
                 jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS " + indexName + " ON " + indexSpec);

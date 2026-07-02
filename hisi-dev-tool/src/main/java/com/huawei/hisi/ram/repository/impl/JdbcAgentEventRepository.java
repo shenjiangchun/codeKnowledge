@@ -32,17 +32,19 @@ public class JdbcAgentEventRepository implements AgentEventRepository {
             INSERT INTO agent_event
                 (session_id, seq, type, payload, idempotency_key, tool_use_id, parent_event_id,
                  cumulative_tokens, retry_count, clarify_round_no,
-                 inputs_hash, circuit_state, cost_usd_cents, validator_status, created_at)
+                 inputs_hash, circuit_state, cost_usd_cents, validator_status,
+                 interrupted, turn_id, created_at)
             SELECT ?,
                    COALESCE((SELECT MAX(seq) FROM agent_event WHERE session_id = ?), 0) + 1,
-                   ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                   ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             WHERE NOT EXISTS (SELECT 1 FROM agent_event WHERE idempotency_key = ?)
             """;
 
     private static final String SELECT_COLS = """
             SELECT id, session_id, seq, type, payload, tool_use_id, parent_event_id,
                    idempotency_key, cumulative_tokens, retry_count, clarify_round_no,
-                   inputs_hash, circuit_state, cost_usd_cents, validator_status, created_at
+                   inputs_hash, circuit_state, cost_usd_cents, validator_status,
+                   interrupted, turn_id, created_at
             FROM agent_event
             """;
 
@@ -68,6 +70,8 @@ public class JdbcAgentEventRepository implements AgentEventRepository {
             .circuitState(rs.getString("circuit_state"))
             .costUsdCents(rs.getInt("cost_usd_cents"))
             .validatorStatus(rs.getString("validator_status"))
+            .interrupted(rs.getBoolean("interrupted"))
+            .turnId(rs.getString("turn_id"))
             .createdAt(rs.getLong("created_at"))
             .build();
 
@@ -94,6 +98,8 @@ public class JdbcAgentEventRepository implements AgentEventRepository {
                 e.getCircuitState() == null ? "OK" : e.getCircuitState(),
                 e.getCostUsdCents(),
                 e.getValidatorStatus() == null ? "OK" : e.getValidatorStatus(),
+                e.isInterrupted() ? 1 : 0,
+                e.getTurnId(),
                 e.getCreatedAt(),
                 e.getIdempotencyKey());
         return findByIdempotencyKey(e.getIdempotencyKey())

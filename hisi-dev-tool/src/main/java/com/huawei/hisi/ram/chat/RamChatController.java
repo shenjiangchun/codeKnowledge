@@ -190,7 +190,7 @@ public class RamChatController {
             return ResponseEntity.status(500).body(Map.of("error", "internal_error"));
         }
         AgentEvent ev = eventRepository.append(AgentEvent.turnInterrupted(
-                sid, 0L, payload, "interrupt-" + res.turnId())); // seq assigned by repository on append
+                sid, 0L, res.turnId(), payload, "interrupt-" + res.turnId())); // seq assigned by repository on append
 
         Map<String, Object> wsPayload = new LinkedHashMap<>();
         wsPayload.put("type", "turn_interrupted");
