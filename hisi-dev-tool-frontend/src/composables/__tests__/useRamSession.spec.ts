@@ -58,7 +58,7 @@ vi.mock('@/utils/request', () => ({
 
 // Install global EventSource stub.
 ;(globalThis as unknown as { EventSource: typeof FakeEventSource }).EventSource =
-  FakeEventSource as unknown as typeof EventSource
+  FakeEventSource as unknown as typeof FakeEventSource
 
 import { useRamSession } from '../useRamSession'
 

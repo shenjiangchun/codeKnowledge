@@ -3,9 +3,8 @@
  * 支持实时进度反馈和用户干预
  */
 
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type {
-  DialogSessionState,
   DialogServerMessage,
   DialogClientMessage,
   ConnectionStatus,
@@ -357,7 +356,7 @@ export function useDialogWebSocket() {
   function sendMessage(message: string) {
     send({
       action: 'send_message',
-      sessionId: sessionId.value,
+      sessionId: sessionId.value ?? undefined,
       message
     })
   }
@@ -379,7 +378,7 @@ export function useDialogWebSocket() {
 
     send({
       action: 'intervene',
-      sessionId: sessionId.value,
+      sessionId: sessionId.value ?? undefined,
       intervention: request
     })
 
@@ -410,7 +409,7 @@ export function useDialogWebSocket() {
   function cancel() {
     send({
       action: 'cancel',
-      sessionId: sessionId.value
+      sessionId: sessionId.value ?? undefined
     })
     isRunning.value = false
     isStreaming.value = false
@@ -421,7 +420,7 @@ export function useDialogWebSocket() {
   function closeSession() {
     send({
       action: 'close_session',
-      sessionId: sessionId.value
+      sessionId: sessionId.value ?? undefined
     })
     sessionId.value = null
   }

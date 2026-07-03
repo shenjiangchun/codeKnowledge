@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getDiff, startMergeAnalysis, type ImageContent } from '@/api/merge-analysis'
-import type { DiffResult, FileDiff } from '@/types/merge-analysis'
+import type { DiffResult } from '@/types/merge-analysis'
 
 const route = useRoute()
 const router = useRouter()

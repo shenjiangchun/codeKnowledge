@@ -272,7 +272,7 @@ function disconnectWs() {
   }
 }
 
-function scheduleReconnect(sid: number) {
+function scheduleReconnect(sid: string) {
   if (reconnectAttempts >= 5) return
   const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000)
   reconnectAttempts++

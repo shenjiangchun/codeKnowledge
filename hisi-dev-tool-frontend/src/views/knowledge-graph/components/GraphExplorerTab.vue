@@ -7,8 +7,7 @@ import {
   type EntryPoint,
   type RootEntriesResponse,
   type CallChainGraphData,
-  type GraphNode,
-  type PageResult
+  type GraphNode
 } from '@/api/knowledgeGraph'
 
 const props = defineProps<{

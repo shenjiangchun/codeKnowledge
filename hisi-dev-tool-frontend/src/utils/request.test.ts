@@ -58,10 +58,13 @@ describe('request.ts 响应拦截器', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     // 重新导入以触发拦截器注册
-    const requestModule = await import('@/utils/request')
-    const mockAxios = vi.mocked(axios)
-    successHandler = mockAxios._successHandler!
-    errorHandler = mockAxios._errorHandler!
+    await import('@/utils/request')
+    const mockAxios = vi.mocked(axios) as unknown as {
+      _successHandler: (response: AxiosResponse) => any
+      _errorHandler: (error: AxiosError) => any
+    }
+    successHandler = mockAxios._successHandler
+    errorHandler = mockAxios._errorHandler
   })
 
   afterEach(() => {

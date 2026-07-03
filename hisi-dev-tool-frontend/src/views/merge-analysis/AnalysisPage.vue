@@ -16,7 +16,7 @@ const sourceBranch = route.query.sourceBranch as string
 const targetBranch = route.query.targetBranch as string
 const sid = route.query.sid as string | undefined
 
-const { status, events, currentNode, start, rejoin, sessionId, lastSeq } = useMergeAnalysisSession()
+const { status, events, currentNode, start, rejoin, sessionId } = useMergeAnalysisSession()
 
 const diffResult = ref<DiffResult | null>(null)
 const impactResult = ref<ImpactResult | null>(null)

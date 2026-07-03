@@ -60,6 +60,7 @@ export const useAppStore = defineStore('app', () => {
     'ram-demand': true, // 需求分析大师 - 有内部项目选择器
     'ram-status': true, // 项目现状分析 - 有内部项目选择器
     'ram-chat': true, // RAM 对话 - 有内部项目选择器
+    'kg-skills-kit': true, // KG Skills Kit - independent tool
     'merge-analysis': true, // Has its own project selector inside
     'prompt-config': true,
     'settings': true,

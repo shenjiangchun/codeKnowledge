@@ -119,7 +119,7 @@ watch(() => route.query.sessionId, async (newSessionId) => {
 })
 
 // Watch for theme changes and update xterm.js theme
-watch(() => themeStore.currentTheme, (newTheme) => {
+watch(() => themeStore.currentTheme, () => {
   if (terminal.value) {
     terminal.value.options.theme = themeStore.getTerminalTheme()
   }

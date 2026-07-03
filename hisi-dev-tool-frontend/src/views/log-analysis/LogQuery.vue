@@ -1034,17 +1034,7 @@ const viewReportDetail = async (report: any) => {
   }
 }
 
-const checkReportStatus = async (report: any) => {
-  try {
-    const res = await logAnalysisApi.getStatus(report.reportId)
-    const status = res?.status || 'unknown'
-    const progress = res?.progress || 0
-    const stage = res?.stage || ''
-    ElMessage.info(`状态: ${getReportStatusText(status)}, 进度: ${progress}%, 阶段: ${stage}`)
-  } catch (e: any) {
-    ElMessage.error('获取状态失败: ' + e.message)
-  }
-}
+// checkReportStatus removed as it was never referenced in the template
 
 const handleReanalyzeReport = async (report: any) => {
   try {

@@ -45,7 +45,7 @@
           <el-tag :type="getPatternTagType(report.patternType)" effect="dark" size="large">
             {{ getPatternLabel(report.patternType) }}
           </el-tag>
-          <el-tag v-if="report.patternConfidence" :type="getConfidenceType(report.patternConfidence)" effect="plain" class="confidence-tag">
+          <el-tag v-if="report.patternConfidence" :type="getConfidenceType(String(report.patternConfidence))" effect="plain" class="confidence-tag">
             置信度: {{ report.patternConfidence }}
           </el-tag>
           <el-tag v-if="report.analysisVersion" type="info" effect="plain" class="version-tag">
@@ -135,7 +135,7 @@ const report = ref<DetailedAnalysisReport | null>(null)
 const fixSessions = ref<FixSession[]>([])
 
 // Real-time DAG progress via WebSocket
-const { events: nodeEvents, connect: connectWs } = useLogAnalysisWebSocket(reportId)
+const { events: nodeEvents, connect: connectWs } = useLogAnalysisWebSocket(() => reportId.value)
 const isProcessing = computed(() => {
   const s = report.value?.status?.toLowerCase()
   return s === 'processing' || s === 'pending'

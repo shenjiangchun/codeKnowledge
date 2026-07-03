@@ -82,6 +82,9 @@ export interface DetailedAnalysisReport {
   createdAt: string
   updatedAt: string
   occurrenceCount?: number  // 出现次数（同类错误合并计数）
+  patternType?: string
+  patternConfidence?: string | number
+  analysisVersion?: string
 }
 
 export interface LogQueryResponse {

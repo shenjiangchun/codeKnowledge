@@ -45,7 +45,7 @@ watch(
     errorMsg.value = ''
     if (!entry || !store.selectedProject) return
 
-    const parsed = parseEntryInfo(entry.entryInfo)
+    const parsed = parseEntryInfo(entry.entryInfo ?? '')
     if (!parsed) return
 
     loading.value = true

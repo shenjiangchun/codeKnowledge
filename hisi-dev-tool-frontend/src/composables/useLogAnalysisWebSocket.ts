@@ -40,8 +40,9 @@ export function useLogAnalysisWebSocket(reportId: string | (() => string)) {
 
     ws.onmessage = (msg) => {
       try {
-        const event: LogNodeEvent = JSON.parse(msg.data)
-        if (event.type === 'connected') return
+        const event = JSON.parse(msg.data) as LogNodeEvent
+        const eventType = (event as { type?: string }).type
+        if (eventType === 'connected') return
         events.value = [...events.value, event]
       } catch {
         // ignore parse errors

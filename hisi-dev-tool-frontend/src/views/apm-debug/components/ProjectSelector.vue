@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { onMounted } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import { useApmStore } from '@/stores/apmStore'
 import type { KgProject } from '@/types/apm'
 

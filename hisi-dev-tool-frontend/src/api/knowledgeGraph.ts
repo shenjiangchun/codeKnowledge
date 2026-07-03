@@ -159,6 +159,11 @@ export interface CallChainNode {
   complexity: number
   methodBody: string
   thrownExceptions: string[]
+  // Runtime fields used by EntryDetail.vue and related KG components
+  description?: string
+  isNoMatch?: boolean
+  bridgeType?: string
+  bridgeInfo?: unknown
 }
 
 export interface CallChainView {
@@ -297,6 +302,12 @@ export interface GraphNode {
   filePath?: string
   startLine?: number
   description?: string
+  // Runtime fields used by EntryDetail.vue / KG components
+  isNoMatch?: boolean
+  bridgeType?: string
+  bridgeInfo?: unknown
+  methodSignature?: string
+  methodBody?: string
 }
 
 // ============================================================

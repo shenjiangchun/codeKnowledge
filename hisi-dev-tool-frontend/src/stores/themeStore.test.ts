@@ -21,7 +21,7 @@
 
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import type { TerminalTheme, TerminalColors } from '@/themes/types'
+import type { TerminalTheme } from '@/themes/types'
 
 // Mock localStorage
 const localStorageMock = (() => {
@@ -84,6 +84,11 @@ const mockThemePresets: TerminalTheme[] = [
     accentSuccess: '#67c23a',
     accentWarning: '#e6a23c',
     accentDanger: '#f56c6c',
+    textOnAccent: '#ffffff',
+    textOnAccentSecondary: '#e0e0e0',
+    successLightBg: '#67c23a20',
+    borderHover: '#409eff80',
+    successTextOnAccent: '#67c23a',
     terminal: {
       background: '#1a1a1a',
       foreground: '#ffffff',
@@ -123,6 +128,11 @@ const mockThemePresets: TerminalTheme[] = [
     accentSuccess: '#50fa7b',
     accentWarning: '#ffb86c',
     accentDanger: '#ff5555',
+    textOnAccent: '#f8f8f2',
+    textOnAccentSecondary: '#b0b0b0',
+    successLightBg: '#50fa7b20',
+    borderHover: '#bd93f980',
+    successTextOnAccent: '#50fa7b',
     terminal: {
       background: '#282a36',
       foreground: '#f8f8f2',
@@ -162,6 +172,11 @@ const mockThemePresets: TerminalTheme[] = [
     accentSuccess: '#67c23a',
     accentWarning: '#e6a23c',
     accentDanger: '#f56c6c',
+    textOnAccent: '#ffffff',
+    textOnAccentSecondary: '#e0e0e0',
+    successLightBg: '#67c23a20',
+    borderHover: '#409eff80',
+    successTextOnAccent: '#67c23a',
     terminal: {
       background: '#ffffff',
       foreground: '#303133',

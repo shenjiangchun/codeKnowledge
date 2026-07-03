@@ -12,9 +12,7 @@ import {
   transformImpactToSankey,
   buildSankeyOption,
   RING_LABELS,
-  type SankeyData,
-  type SankeyNode,
-  type SankeyLink
+  type SankeyData
 } from '../impactSankeyTransform'
 import { RING_COLORS, riskHeatColor } from '../threeRingLayout'
 

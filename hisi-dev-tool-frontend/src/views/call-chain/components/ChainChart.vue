@@ -373,7 +373,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import TreeNode from './TreeNode.vue'
 import { ElMessage } from 'element-plus'
 import { knowledgeGraphApi, type CallerInfo, type RootEntryInfo, type CallChainGraphData } from '@/api/knowledgeGraph'
@@ -681,7 +681,7 @@ const getBridgeNodeColor = (node: ChainNode): string => {
 const getBridgeTagType = (type: BridgeType): '' | 'success' | 'warning' | 'danger' | 'info' => {
   const typeMap: Record<BridgeType, '' | 'success' | 'warning' | 'danger' | 'info'> = {
     'MAPPER': 'success',
-    'JPA': 'primary',
+    'JPA': 'info',
     'MQ': 'warning',
     'FEIGN': 'danger',
     'HTTP': 'info',
@@ -734,7 +734,7 @@ const handleFlowNodeClick = (node: FlowNode) => {
 
 const handleFlowContextMenu = (node: FlowNode, event: MouseEvent) => {
   const chainNode = flatNodes.value.find(n => n.id === node.id)
-  if (chainNode) handleContextMenu(chainNode, event)
+  if (chainNode) handleContextMenu({ event, node: chainNode })
 }
 
 const handleSelect = (node: ChainNode) => {
@@ -871,7 +871,6 @@ const doRecursiveQuery = async (type: 'upstream' | 'downstream', method: string)
       ElMessage.error('查询失败：未指定项目路径（请在项目管理中选择项目）')
       return
     }
-    const primaryPath = paths[0]
 
     // 使用知识图谱 API（已通过 request 工具自动解包 ApiResponse）
     if (type === 'upstream') {

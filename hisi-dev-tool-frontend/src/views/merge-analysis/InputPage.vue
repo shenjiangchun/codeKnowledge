@@ -3,14 +3,12 @@ import { ref, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Close } from '@element-plus/icons-vue'
-import { useAppStore } from '@/stores/app'
 import { projectApi } from '@/api/project'
 import { listRemoteProjects } from '@/api/remote-project'
 import { listBranches, type ImageContent } from '@/api/merge-analysis'
 import type { UploadFile } from 'element-plus'
 
 const router = useRouter()
-const appStore = useAppStore()
 
 interface ProjectItem {
   name: string

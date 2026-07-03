@@ -5,11 +5,8 @@ import {
   Download,
   Delete,
   RefreshRight,
-  InfoFilled,
-  FolderOpened,
   Check,
   Close,
-  Document,
   Tools,
   StarFilled
 } from '@element-plus/icons-vue'

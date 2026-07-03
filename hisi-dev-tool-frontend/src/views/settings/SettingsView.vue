@@ -76,7 +76,7 @@
             </el-form-item>
             <el-form-item label="自定义请求头">
               <div style="width: 500px">
-                <div v-for="(value, key) in form.embeddingHeaders" :key="key" class="header-row">
+                <div v-for="(_value, key) in form.embeddingHeaders" :key="key" class="header-row">
                   <el-input :model-value="String(key)" placeholder="Header Name" style="width: 180px; margin-right: 8px" disabled />
                   <el-input v-model="form.embeddingHeaders[key]" placeholder="Header Value" style="width: 200px" />
                   <el-button type="danger" icon="Delete" @click="removeEmbeddingHeader(key)" style="margin-left: 8px" />
@@ -298,7 +298,7 @@ const newHeaderName = ref('')
 const newHeaderValue = ref('')
 
 // Detect Electron environment
-const isElectron = typeof window !== 'undefined' && !!(window as Record<string, unknown>).electronAPI
+const isElectron = typeof window !== 'undefined' && !!(window as unknown as Record<string, unknown>).electronAPI
 
 const form = reactive<ConfigForm>({
   serverPort: 8080,
@@ -496,11 +496,11 @@ const loadConfig = async () => {
   loading.value = true
   try {
     if (isElectron) {
-      const api = (window as Record<string, unknown>).electronAPI as Record<string, Function>
+      const api = (window as unknown as Record<string, unknown>).electronAPI as Record<string, Function>
       rawConfig = await api.getConfig() as Record<string, unknown>
     } else {
-      const resp = await request.get('/settings/config')
-      rawConfig = resp.data ?? resp
+      const resp = await request.get('/settings/config') as { data?: Record<string, unknown> } & Record<string, unknown>
+      rawConfig = (resp.data ?? resp) as Record<string, unknown>
     }
     mapToForm(rawConfig)
     configLoaded.value = true
@@ -516,7 +516,7 @@ const saveConfig = async () => {
   try {
     const updated = formToConfig(rawConfig)
     if (isElectron) {
-      const api = (window as Record<string, unknown>).electronAPI as Record<string, Function>
+      const api = (window as unknown as Record<string, unknown>).electronAPI as Record<string, Function>
       await api.saveConfig(updated)
     } else {
       await request.post('/settings/config', updated)
@@ -534,8 +534,17 @@ const saveConfig = async () => {
 
 const loadProxy = async () => {
   try {
-    const resp = await request.get('/settings/proxy')
-    const data = resp.data ?? resp
+    const resp = await request.get('/settings/proxy') as { data?: Record<string, unknown> } & Record<string, unknown>
+    const data = (resp.data ?? resp) as Record<string, unknown> & {
+      enabled?: boolean
+      host?: string
+      port?: number
+      type?: string
+      username?: string
+      password?: string
+      nonProxyHosts?: string
+      disableSslVerification?: boolean
+    }
     proxyForm.enabled = data.enabled ?? false
     proxyForm.host = data.host ?? ''
     proxyForm.port = data.port ?? 0
@@ -573,7 +582,7 @@ const saveProxy = async () => {
 const restartBackend = async () => {
   if (!isElectron) return
   try {
-    const api = (window as Record<string, unknown>).electronAPI as Record<string, Function>
+    const api = (window as unknown as Record<string, unknown>).electronAPI as Record<string, Function>
     const result = await api.restartBackend() as { success: boolean; error?: string }
     if (result.success) {
       ElMessage.success('后端已重启')

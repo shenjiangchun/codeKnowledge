@@ -193,7 +193,6 @@ const {
   isRunning,
   isInterventionPending,
   pendingInterventionRequest: pendingRequest,
-  sessionId,
   respondToIntervention,
   sendIntervention,
   cancel
@@ -267,23 +266,19 @@ function handleAccept() {
   if (!pendingRequest.value || !canAccept.value) return
 
   let message = ''
-  let context: InterventionRequest['context'] = {}
 
   switch (pendingRequest.value.interventionType) {
     case 'adjust_focus':
       message = `调整焦点为: ${focusInput.value}`
-      context = { newFocus: focusInput.value }
       break
     case 'skip_agent':
       message = '跳过当前Agent'
-      context = pendingRequest.value.context
       break
     case 'change_strategy':
       message = `切换策略: ${selectedStrategy.value}`
       break
     case 'provide_hint':
       message = hintInput.value
-      context = { hint: hintInput.value }
       break
     case 'cancel':
       cancel()

@@ -1,8 +1,26 @@
 import axios from 'axios'
-import type { AxiosError, AxiosResponse } from 'axios'
+import type { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
 import type { ApiResponse, ValidationError } from '@/types/api'
 import { parseValidationErrors } from '@/types/api'
+
+/**
+ * 由于响应拦截器已将 ApiResponse<T> 解包为 T，
+ * 对外暴露的 request 实例的方法应返回 Promise<T>，而不是 Promise<AxiosResponse<T>>。
+ */
+export interface UnwrappedAxios {
+  defaults: AxiosInstance['defaults']
+  interceptors: AxiosInstance['interceptors']
+  getUri: AxiosInstance['getUri']
+  get<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T>
+  delete<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T>
+  head<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T>
+  options<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T>
+  post<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T>
+  put<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T>
+  patch<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T>
+  request<T = unknown>(config: AxiosRequestConfig): Promise<T>
+}
 
 const TOKEN_KEY = 'hisi-token'
 
@@ -170,4 +188,4 @@ function getHttpErrorMessage(status: number): string {
   return messages[status] || `请求失败 (${status})`
 }
 
-export default request
+export default request as unknown as UnwrappedAxios

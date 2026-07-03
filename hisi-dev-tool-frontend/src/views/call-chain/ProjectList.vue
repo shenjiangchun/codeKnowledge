@@ -49,7 +49,7 @@ onMounted(async () => {
   loading.value = true
   try {
     const res = await callChainApi.getProjects()
-    projects.value = res.data || []
+    projects.value = (res as unknown as { data?: ProjectInfo[] })?.data || (res as ProjectInfo[]) || []
   } catch (error) {
     ElMessage.error('加载项目列表失败')
     console.error('Failed to load projects:', error)

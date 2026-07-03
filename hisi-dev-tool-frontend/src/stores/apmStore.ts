@@ -5,6 +5,7 @@ import { apmApi } from '@/api/apmDebug'
 import { knowledgeGraphApi } from '@/api/knowledgeGraph'
 import { useApmWebSocket } from '@/composables/useApmWebSocket'
 import type {
+  ApmSession,
   ApmSessionStatus,
   ApmSpan,
   KgProject,
@@ -202,13 +203,13 @@ export const useApmStore = defineStore('apm', () => {
       const entries = (result?.items ?? []) as EntryPoint[]
       entryPoints.value = entries.map((e: EntryPoint) => {
         const parsed = parseEntryKey(e.entryKey)
-        const info = parseEntryInfo((e as Record<string, unknown>).entryInfo as string | null)
+        const info = parseEntryInfo((e as unknown as Record<string, unknown>).entryInfo as string | null)
         return {
           nodeId: e.nodeId,
           entryType: e.entryType,
           entryKey: e.entryKey,
-          entryInfo: (e as Record<string, unknown>).entryInfo as string | null,
-          methodNodeId: (e as Record<string, unknown>).methodNodeId as string | undefined,
+          entryInfo: (e as unknown as Record<string, unknown>).entryInfo as string | null,
+          methodNodeId: (e as unknown as Record<string, unknown>).methodNodeId as string | undefined,
           projectPath: e.projectPath,
           httpMethod: parsed?.httpMethod,
           httpPath: parsed?.httpPath,

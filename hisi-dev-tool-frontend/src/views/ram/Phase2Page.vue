@@ -21,7 +21,42 @@ const router = useRouter()
 
 const sid = computed<string>(() => String(route.params.sid ?? ''))
 
-const report = ref<Record<string, unknown> | null>(null)
+interface KeyFinding {
+  id: string
+  type: 'CRITICAL' | 'WARNING' | 'INFO'
+  description: string
+  chains?: string[]
+}
+interface CrossChainImpact {
+  fromChain: string
+  toChain: string
+  relation: string
+  description: string
+}
+interface ChainDetail {
+  chainId: string
+  chainName?: string
+  summary?: string
+  expandable?: boolean
+}
+interface Phase2Report {
+  status?: string
+  summaryLayer?: {
+    domainOverview?: string
+    overallFlowDiagramSvg?: string
+    keyFindings?: KeyFinding[]
+    crossChainImpacts?: CrossChainImpact[]
+    overallRecommendations?: string[]
+  }
+  detailLayer?: {
+    chains?: ChainDetail[]
+    chainCount?: number
+    totalMethodsAnalyzed?: number
+    totalCodeSnippets?: number
+  }
+}
+
+const report = ref<Phase2Report | null>(null)
 const loading = ref<boolean>(true)
 const error = ref<string | null>(null)
 const pollTimer = ref<number | null>(null)
@@ -82,7 +117,7 @@ async function pollV2(): Promise<void> {
     // Fetch report (includes status field)
     const resp = await getPhase2V2Report(sid.value)
     if (resp.summaryLayer || resp.detailLayer) {
-      report.value = resp as unknown as Record<string, unknown>
+      report.value = resp as unknown as Phase2Report
     }
 
     if (resp.status === 'DONE' || resp.status === 'FAILED' || resp.status === 'PENDING') {
@@ -146,7 +181,7 @@ async function initSession(id: string): Promise<void> {
   try {
     const resp = await getPhase2V2Report(id)
     if (resp.summaryLayer || resp.detailLayer) {
-      report.value = resp as unknown as Record<string, unknown>
+      report.value = resp as unknown as Phase2Report
     }
     if (resp.status === 'DONE' || resp.status === 'FAILED' || resp.status === 'PENDING') {
       loading.value = false

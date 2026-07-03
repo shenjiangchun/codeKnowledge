@@ -30,7 +30,7 @@
                     </el-icon>
                     <span class="group-name">{{ item.name }}</span>
                     <el-tag size="small" type="info">{{ item.children?.length || 0 }}</el-tag>
-                    <el-button text size="small" @click.stop="selectGroupProjects({ groupName: item.name, projectNames: item.children?.map(c => c.name) || [] })">
+                    <el-button text size="small" @click.stop="selectGroupProjects({ groupName: item.name, groupPattern: item.name, projectNames: item.children?.map(c => c.name) || [] })">
                       全选
                     </el-button>
                   </div>
@@ -634,22 +634,26 @@ const deleteGroupNameGroup = async (groupName: string) => {
 }
 
 // 计算分组后的项目树
-const groupedProjectTree = computed(() => {
+type ProjectTreeItem =
+  | { type: 'project'; name: string; path: string }
+  | { type: 'group'; name: string; children: Array<{ type: 'project'; name: string; path: string }> }
+
+const groupedProjectTree = computed<ProjectTreeItem[]>(() => {
   if (!showGroupedView.value || projectNameGroups.value.length === 0) {
     // 无分组时返回扁平列表
     return projects.value.map(p => ({
-      type: 'project',
+      type: 'project' as const,
       name: p.name,
       path: p.path
     }))
   }
 
-  const tree: Array<{ type: 'group' | 'project', name: string, path?: string, children?: any[] }> = []
+  const tree: ProjectTreeItem[] = []
   const groupedProjects = new Set<string>()
 
   // 先处理已分组的
   for (const group of projectNameGroups.value) {
-    const groupChildren: Array<{ type: 'project', name: string, path: string }> = []
+    const groupChildren: Array<{ type: 'project'; name: string; path: string }> = []
     for (const projName of group.projectNames) {
       const proj = projects.value.find(p => p.name === projName)
       if (proj) {
@@ -877,10 +881,12 @@ const startVectorPolling = () => {
   }
   vectorPollingTimer = window.setInterval(async () => {
     console.log('[KnowledgeGraph] Vector poll - current status:', vectorStatus.value?.status)
-    if (vectorStatus.value?.status === 'PENDING' || vectorStatus.value?.status === 'RUNNING') {
+    const currentStatus = vectorStatus.value?.status as string | undefined
+    if (currentStatus === 'PENDING' || currentStatus === 'RUNNING') {
       await loadVectorStatus()
       // 检查任务是否完成
-      if (vectorStatus.value?.status === 'COMPLETED' || vectorStatus.value?.status === 'FAILED') {
+      const newStatus = vectorStatus.value?.status as string | undefined
+      if (newStatus === 'COMPLETED' || newStatus === 'FAILED') {
         console.log('[KnowledgeGraph] Vector task completed, stopping polling')
         stopVectorPolling()
         loadMissingInfo()
@@ -1302,8 +1308,10 @@ const handleMigratePaths = async () => {
       migrationOldBaseDir.value.trim(),
       migrationDryRun.value
     )
-    ElMessage.success(result.data.message)
-    if (!migrationDryRun.value && result.data.totalAffected > 0) {
+    // axios 拦截器已解包，result 直接是数据对象
+    const data = result as { message?: string; totalAffected?: number }
+    ElMessage.success(data.message || '路径迁移完成')
+    if (!migrationDryRun.value && (data.totalAffected ?? 0) > 0) {
       // 迁移完成后刷新诊断结果
       await loadPathDiagnosis()
       // 清空旧目录输入

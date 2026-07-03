@@ -19,7 +19,7 @@ export default defineConfig({
         changeOrigin: true,
         selfHandleResponse: true,
         configure: (proxy) => {
-          proxy.on('proxyRes', (proxyRes, req, res) => {
+          proxy.on('proxyRes', (proxyRes, _req, res) => {
             // SSE streams: pipe directly without buffering
             if (proxyRes.headers['content-type']?.includes('text/event-stream')) {
               res.writeHead(proxyRes.statusCode!, proxyRes.headers)

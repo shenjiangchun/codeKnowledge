@@ -334,8 +334,14 @@ export function useRamSession(): UseRamSessionReturn {
       }
 
       if (allEvents && allEvents.length > 0) {
-        events.value = allEvents
-        const maxSeq = allEvents.reduce((max, e) => Math.max(max, e.seq ?? 0), 0)
+        // Coerce API shape (type: string | null) to canonical type (type: string).
+        const normalized: RamEvent[] = allEvents.map((e) => ({
+          seq: e.seq,
+          type: e.type ?? '',
+          payload: e.payload as Record<string, unknown>
+        }))
+        events.value = normalized
+        const maxSeq = normalized.reduce((max, e) => Math.max(max, e.seq ?? 0), 0)
         if (maxSeq > lastSeq.value) lastSeq.value = maxSeq
         dbg('rejoin: loaded', allEvents.length, 'historical events, maxSeq=', maxSeq)
 

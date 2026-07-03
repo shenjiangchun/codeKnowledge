@@ -9,7 +9,7 @@ import { ref, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ChatDotRound, Loading } from '@element-plus/icons-vue'
 import { logAnalysisApi } from '@/api/logAnalysis'
-import { useLogFollowupWebSocket, type FollowupEvent } from '@/composables/useLogFollowupWebSocket'
+import { useLogFollowupWebSocket } from '@/composables/useLogFollowupWebSocket'
 import { renderMarkdown } from '@/utils/markdown'
 
 const props = defineProps<{
@@ -29,7 +29,7 @@ interface ChatMessage {
 
 const messages = ref<ChatMessage[]>([])
 
-const { events, connected, assistantText, connect, disconnect, resetText } =
+const { events, connected, assistantText, connect, resetText } =
   useLogFollowupWebSocket(() => followupSessionId.value)
 
 // Process incoming WebSocket events

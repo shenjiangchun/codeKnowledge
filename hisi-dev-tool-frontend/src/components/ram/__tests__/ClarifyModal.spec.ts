@@ -85,7 +85,7 @@ describe('ClarifyModal mount', () => {
       attrs: {
         onSubmit: (a: Record<string, unknown>) => submitted.push(a)
       },
-      global: { stubs }
+      global: { stubs: stubs as unknown as Record<string, unknown> as any }
     })
 
     const vm = wrapper.vm as unknown as {

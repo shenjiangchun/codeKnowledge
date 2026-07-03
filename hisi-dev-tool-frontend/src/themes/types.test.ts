@@ -65,7 +65,12 @@ describe('types.ts - 类型定义', () => {
         accentPrimary: '#409eff',
         accentSuccess: '#67c23a',
         accentWarning: '#e6a23c',
-        accentDanger: '#f56c6c'
+        accentDanger: '#f56c6c',
+        textOnAccent: '#ffffff',
+        textOnAccentSecondary: '#e0e0e0',
+        successLightBg: '#67c23a20',
+        borderHover: '#409eff80',
+        successTextOnAccent: '#67c23a'
       }
 
       expect(colors.backgroundLevel1).toBe('#1a1a1a')
@@ -90,6 +95,11 @@ describe('types.ts - 类型定义', () => {
         accentSuccess: '#67c23a',
         accentWarning: '#e6a23c',
         accentDanger: '#f56c6c',
+        textOnAccent: '#ffffff',
+        textOnAccentSecondary: '#e0e0e0',
+        successLightBg: '#67c23a20',
+        borderHover: '#409eff80',
+        successTextOnAccent: '#67c23a',
         terminal: {
           background: '#1a1a1a',
           foreground: '#ffffff',

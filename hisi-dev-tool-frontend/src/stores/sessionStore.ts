@@ -304,7 +304,7 @@ export const useSessionStore = defineStore('session', () => {
     try {
       const response = await claudeApi.endSession(sessionId)
       // axios 拦截器已解包，response 直接是数据（字符串）
-      const claudeSessionCode = response
+      const claudeSessionCode = typeof response === 'string' ? response : null
       // 更新会话对象的 claudeSessionCode
       const session = sessions.value.find(s => s.id === sessionId)
       if (session && claudeSessionCode) {

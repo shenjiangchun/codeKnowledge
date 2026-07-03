@@ -62,9 +62,10 @@ function initChart(): void {
   chart = echarts.init(chartRef.value)
   updateChart()
 
-  chart.on('click', (params: { dataType?: string; data?: Record<string, unknown> }) => {
-    if (params.dataType === 'node' && params.data?.name) {
-      const fullName = String(params.data.name)
+  chart.on('click', (params: unknown) => {
+    const p = params as { dataType?: string; data?: Record<string, unknown> }
+    if (p.dataType === 'node' && p.data?.name) {
+      const fullName = String(p.data.name)
       const packageName = fullName.includes('::') ? fullName.split('::')[1] : fullName
       emit('nodeClick', packageName)
     }

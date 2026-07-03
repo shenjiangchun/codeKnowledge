@@ -4,7 +4,6 @@ import type {
   DialogSession,
   DialogMessage,
   IntentResult,
-  DialogContext,
   IntentType
 } from '@/types/intent'
 import { naturalLanguageApi } from '@/api/naturalLanguage'
@@ -301,7 +300,7 @@ export const useNaturalLanguageStore = defineStore('naturalLanguage', () => {
         onProgress: (progress) => {
           updateProgress(sessionId, progress)
         },
-        onDone: (status) => {
+        onDone: () => {
           // 完成助手消息
           const fullContent = streamingContentCache.value[sessionId] || ''
           const msg = messagesCache.value[sessionId]?.find(m => m.id === assistantMessageId)

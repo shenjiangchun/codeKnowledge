@@ -93,7 +93,6 @@ const router = useRouter()
 const appStore = useAppStore()
 const workspaceStore = useWorkspaceStore()
 
-const projectName = computed(() => appStore.selectedProject || '')
 const projects = ref<string[]>([])
 const selectedProject = ref(route.query.project as string || '')
 const selectedUri = ref(route.query.uri as string || '')

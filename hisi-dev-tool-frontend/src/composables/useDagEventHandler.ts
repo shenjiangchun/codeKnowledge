@@ -12,7 +12,7 @@
  */
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import { deriveDagSnapshot, type DagNodeKey } from '@/components/ram/dagModel'
-import type { RamEvent, RamStatus } from '@/types/ram'
+import type { RamEvent } from '@/types/ram'
 import type { UseRamSessionReturn } from './useRamSession'
 import { useRamStore, type ImpactPayload } from '@/stores/ram'
 
@@ -312,7 +312,7 @@ function formatVerifyOutput(output: Record<string, unknown>): string {
       if (!rec) continue
       const icon = rec['passed'] === true ? '通过' : '未通过'
       const name = rec['name'] ?? '—'
-      const label = VERIFY_CHECK_LABELS[name] ?? name
+      const label = VERIFY_CHECK_LABELS[String(name)] ?? String(name)
       lines.push(`${icon} **${label}**: ${rec['detail'] ?? '—'}`)
     }
   }

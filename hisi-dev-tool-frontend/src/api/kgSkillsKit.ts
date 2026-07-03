@@ -49,32 +49,26 @@ export interface SkillGuide {
 
 export const kgSkillsKitApi = {
   async getKitList(): Promise<KgSkillsKitListResponse> {
-    const response = await api.get('/api/kg-skills-kit/list')
-    return response.data
+    return await api.get<KgSkillsKitListResponse>('/api/kg-skills-kit/list')
   },
 
   async installSkill(skillId: string): Promise<InstallResult> {
-    const response = await api.post(`/api/kg-skills-kit/install/${skillId}`)
-    return response.data
+    return await api.post<InstallResult>(`/api/kg-skills-kit/install/${skillId}`)
   },
 
   async uninstallSkill(skillId: string): Promise<InstallResult> {
-    const response = await api.post(`/api/kg-skills-kit/uninstall/${skillId}`)
-    return response.data
+    return await api.post<InstallResult>(`/api/kg-skills-kit/uninstall/${skillId}`)
   },
 
   async installAll(): Promise<BatchInstallResult> {
-    const response = await api.post('/api/kg-skills-kit/install-all')
-    return response.data
+    return await api.post<BatchInstallResult>('/api/kg-skills-kit/install-all')
   },
 
   async uninstallAll(): Promise<BatchInstallResult> {
-    const response = await api.post('/api/kg-skills-kit/uninstall-all')
-    return response.data
+    return await api.post<BatchInstallResult>('/api/kg-skills-kit/uninstall-all')
   },
 
   async getGuide(): Promise<SkillGuide> {
-    const response = await api.get('/api/kg-skills-kit/guide')
-    return response.data
+    return await api.get<SkillGuide>('/api/kg-skills-kit/guide')
   }
 }

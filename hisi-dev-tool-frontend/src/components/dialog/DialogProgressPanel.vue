@@ -70,7 +70,7 @@
       <div class="phase-list-header">执行阶段</div>
       <div class="phase-timeline">
         <div
-          v-for="(phase, index) in phases"
+          v-for="phase in phases"
           :key="phase.phaseId"
           class="phase-timeline-item"
           :class="{ active: phase.phaseId === currentPhase?.phaseId }"
@@ -179,7 +179,6 @@ import { renderMarkdown } from '@/utils/markdown'
 // 使用 composable
 const {
   sessionId,
-  connectionStatus,
   connectionStatusText,
   connectionTagType,
   currentIntent,

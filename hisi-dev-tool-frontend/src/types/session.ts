@@ -6,7 +6,7 @@
 export type SessionStatus = 'active' | 'archived'
 
 /** 场景类型 */
-export type SceneType = 'log-analysis' | 'code-analysis' | 'trace-analysis' | 'impact-analysis' | 'free-chat'
+export type SceneType = 'log-analysis' | 'code-analysis' | 'trace-analysis' | 'impact-analysis' | 'free-chat' | 'APM_DIAGNOSIS'
 
 /** 场景名称映射 */
 export const SCENE_NAMES: Record<SceneType, string> = {
@@ -14,7 +14,8 @@ export const SCENE_NAMES: Record<SceneType, string> = {
   'code-analysis': '代码分析',
   'trace-analysis': '调用链分析',
   'impact-analysis': '影响分析',
-  'free-chat': '自由对话'
+  'free-chat': '自由对话',
+  'APM_DIAGNOSIS': 'APM 诊断'
 }
 
 /** 会话接口 */

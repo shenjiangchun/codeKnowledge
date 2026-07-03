@@ -3,24 +3,9 @@ import type {
   NaturalLanguageRequest,
   NaturalLanguageCallbacks,
   DialogContext,
+  DialogSession,
   IntentResult
 } from '@/types'
-
-// SSE版本需要的会话类型
-interface DialogSession {
-  id: string
-  title: string | null
-  status: 'active' | 'archived'
-  context?: DialogContext
-  messages: Array<{
-    id: string
-    role: 'user' | 'assistant'
-    content: string
-    createdAt: string
-  }>
-  createdAt: string
-  updatedAt: string
-}
 
 /**
  * 自然语言交互 API

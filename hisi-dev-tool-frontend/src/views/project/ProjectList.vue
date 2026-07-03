@@ -839,7 +839,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, Select, FolderOpened, FolderAdd, Document, Refresh, Loading, DataAnalysis, Collection, Setting, EditPen, View } from '@element-plus/icons-vue'
+import { Plus, Select, FolderOpened, FolderAdd, Document, Refresh, Loading, DataAnalysis, Collection, Setting, EditPen } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { projectApi } from '@/api/project'
 import { gitApi, type GitCommit, type UpdateAllResponse } from '@/api/git'
@@ -1354,12 +1354,6 @@ const getProjectKnowledgeGraphStatus = (projectPath: string) => {
   return 'not_generated'
 }
 
-// Check if knowledge graph task is running
-const isKnowledgeGraphTaskRunning = (projectPath: string) => {
-  const status = getProjectKnowledgeGraphStatus(projectPath)
-  return status === 'PENDING' || status === 'RUNNING'
-}
-
 // Check if knowledge graph button should be disabled
 const isKnowledgeGraphButtonDisabled = (projectPath: string) => {
   if (!appStore.projectDirConfigured) return true
@@ -1439,12 +1433,6 @@ const getProjectVectorProgress = (projectPath: string) => {
     }
   }
   return null
-}
-
-// Check if vector generation task is running
-const isVectorTaskRunning = (projectPath: string) => {
-  const status = getProjectVectorStatus(projectPath)
-  return status === 'PENDING' || status === 'RUNNING'
 }
 
 // Check if vector generation button should be disabled
@@ -1799,7 +1787,7 @@ const loadCommits = async () => {
   try {
     const path = getProjectPath(selectedProjectForCommit.value)
     const res = await gitApi.getCommits(path, 50)
-    commits.value = res.data || []
+    commits.value = res || []
   } catch (error) {
     ElMessage.error('加载提交列表失败')
   } finally {
@@ -1818,7 +1806,7 @@ const loadCommitsForRemote = async (localPath: string) => {
   commitsLoading.value = true
   try {
     const res = await gitApi.getCommits(localPath, 50)
-    commits.value = res.data || []
+    commits.value = res || []
   } catch {
     ElMessage.error('加载提交列表失败')
   } finally {
@@ -2494,7 +2482,7 @@ const handleRemoteSubmit = async () => {
     const payload: CreateRemoteProjectRequest = {
       name: remoteForm.value.name.trim(),
       gitUrl: remoteForm.value.gitUrl.trim(),
-      branch: remoteForm.value.branch.trim() || 'main',
+      branch: remoteForm.value.branch?.trim() || 'main',
       authType: remoteForm.value.authType,
       groupId: remoteForm.value.groupId || undefined
     }

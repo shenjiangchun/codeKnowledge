@@ -6,6 +6,15 @@ export interface CallChainNode {
   methodBody?: string
   description?: string
   children?: CallChainNode[]
+  // Runtime fields used by EntryDetail.vue / KG components
+  nodeId?: string
+  methodName?: string
+  signature?: string
+  depth?: number
+  callerId?: string
+  isNoMatch?: boolean
+  bridgeType?: string
+  bridgeInfo?: unknown
 }
 
 /**

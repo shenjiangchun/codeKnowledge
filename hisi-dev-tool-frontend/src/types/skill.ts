@@ -42,6 +42,14 @@ export interface SkillDefinition {
   files: SkillFile[]
   /** 是否为官方技能 */
   isOfficial?: boolean
+  /** 创建时间 */
+  createdAt?: string
+  /** 更新时间 */
+  updatedAt?: string
+  /** 下载次数 */
+  downloadCount?: number
+  /** 评分 */
+  rating?: number
 }
 
 /**

@@ -217,7 +217,7 @@ async function loadBridgeStats(): Promise<void> {
   loading.value = true
   try {
     const res = await knowledgeGraphApi.getBridgeStats(
-      props.projectPaths
+      props.projectPaths ?? []
     )
     const data = res as unknown as Record<string, unknown>
 
@@ -257,7 +257,7 @@ async function loadBridgeList(): Promise<void> {
     try {
       const data = await knowledgeGraphApi.getBridgesByType(
         type,
-        props.projectPaths
+        props.projectPaths ?? []
       ) as unknown as Array<{
         callerClassName: string
         callerMethodName: string

@@ -68,7 +68,7 @@ onMounted(async () => {
   try {
     const res = await callChainApi.getUris({ project: projectName })
     // axios 拦截器已解包，res 直接是数据数组
-    uris.value = res || []
+    uris.value = (res as UriInfo[]) || []
   } catch (error) {
     ElMessage.error('加载URI列表失败')
     console.error('Failed to load URIs:', error)
