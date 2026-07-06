@@ -271,7 +271,7 @@ mvn -pl hisi-dev-tool test -Dtest='RamChatInTurnInjectionIT,RamChatOrchestratorT
 cd hisi-dev-tool-frontend && npm run build
 ```
 
-All green → Phase A complete. IMPORTANT #1, IMPORTANT #2, SUGGEST #3 closed; late-delta defense added. Phase B (SUGGEST #4/#5/#6) remains deferred.
+All green → Phase A complete. IMPORTANT #1, IMPORTANT #2, SUGGEST #3 closed; late-delta defense added. ~~Phase B (SUGGEST #4/#5/#6) remains deferred.~~ → Phase B delivered 2026-07-06, see "Phase B Completion" section below.
 
 ---
 
@@ -304,4 +304,49 @@ BUILD SUCCESS
 - Frontend TS baseline repair (50 files, +231/-151) is a separate commit on top of Phase A — it fixes long-standing `AxiosResponse<T>` unwrapping / `RamEvent.type` nullability regressions so `npm run build` exits green. It does not change runtime behavior of RAM chat v2.
 - 6 pre-existing frontend unit-test failures (request.test.ts 401 assertions, FileBrowserPanel.spec.ts ring header, ThemeSelector.test.ts ×3) were verified via `git diff HEAD` to either predate the TS baseline fix (request.test.ts, FileBrowserPanel.spec.ts, ThemeSelector.test.ts — no working-tree changes) or be a direct consequence of adding required `TerminalColors` fields that the production code already consumes (themeStore.test.ts / types.test.ts mock fixtures). None are caused by Phase A T1–T5.
 
-**Phase A status: COMPLETE.** Phase B remains deferred pending explicit user go-ahead.
+**Phase A status: COMPLETE.** ~~Phase B remains deferred pending explicit user go-ahead.~~ → Phase B delivered 2026-07-06, see section below.
+
+---
+
+## ✅ Phase B Completion — verified 2026-07-06
+
+Closes the three SUGGEST follow-ups deferred at Phase A ship. Implementation plan: `docs/plans/2026-07-06-ram-chat-phase-b-suggest-items.md`. Each task went through implementer + spec compliance reviewer + code quality reviewer (subagent-driven-development workflow).
+
+**Backend tests** (`mvn test -Dtest='RamChatInTurnInjectionIT,RamChatOrchestratorTest,TurnRegistryTest,ChatModelPropertiesTest'`, run from `hisi-dev-tool/`):
+
+```
+Tests run: 2, Failures: 0, Errors: 0, Skipped: 0 — RamChatInTurnInjectionIT
+Tests run: 2, Failures: 0, Errors: 0, Skipped: 0 — RamChatOrchestratorTest
+Tests run: 7, Failures: 0, Errors: 0, Skipped: 0 — TurnRegistryTest
+Tests run: 4, Failures: 0, Errors: 0, Skipped: 0 — ChatModelPropertiesTest
+Tests run: 15, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+Note: the plan's `mvn -pl hisi-dev-tool` form does not work for this repo — `hisi-dev-tool` is a standalone POM, not a reactor submodule. Use `cd hisi-dev-tool && mvn test ...` or `mvn -f hisi-dev-tool/pom.xml test ...`. This is a forward-looking note for future plan authors copying this template.
+
+**Phase B commits**:
+
+| Sha       | Subject | Spec | Quality |
+|-----------|---------|------|---------|
+| `22606c5e` | #4: `@BeforeEach` truncate for IT per-method DB isolation | ✅ | APPROVED |
+| `395db116` | #5: source `DEFAULT_MODEL_ID` from `ChatModelProperties.defaultModelId()` | ✅ | APPROVED |
+| `69470db6` | #6: WARN log on `TurnRegistry.register` defensive overwrite branch | ✅ | APPROVED |
+
+**What the 3 commits collectively delivered**:
+
+- **SUGGEST #4 (IT DB isolation)**: `RamChatInTurnInjectionIT` now `DELETE FROM agent_event` in `@BeforeEach`. Adds a new test `dbState_isolated_perTest` to lock the contract. (`ram_chat_messages` table does not exist in `RamSchemaInitializer` — schema verified, plan adapted.)
+- **SUGGEST #5 (config externalization)**: `RamChatOrchestrator`'s hardcoded `private static final String DEFAULT_MODEL_ID = "glm-5.1"` is gone. New `ChatModelProperties.defaultModelId()` resolver: explicit `chat.default-model` → first key of `models` map → literal `"glm-5.1"` legacy fallback. Existing `RamChatOrchestratorTest` continues to pass unmodified (the "glm-5.1" map key naturally satisfies the first-key fallback). 3 new resolver unit tests + 1 new orchestrator config-driven lookup test.
+- **SUGGEST #6 (defensive branch observability)**: `TurnRegistry.register` now emits a WARN with `sessionId` / `previousTurnId` / `newTurnId` whenever `previous != null`. The dispose safety net is unchanged; the existing catch-block WARN for dispose failure is preserved. New `register_warnsOnDefensiveOverwrite` test verifies both the log and the dispose. Plan's risk caveat (could the WARN fire during normal flow?) empirically answered: independent IT re-run confirmed zero WARN emissions during normal inject — the defensive branch is genuinely defensive, so WARN level is correct (not INFO/DEBUG).
+
+**Production diff is tight**: 8 files changed, +259/-14 cumulative (`git diff 6f6c67dd..69470db6 --stat`). Production RAM code adds only ~40 lines net across 3 files (`RamChatOrchestrator`: -3/+6; `TurnRegistry`: +4; `ChatModelProperties`: +30 including Javadoc). No new dependencies, no new imports in production files (`chatProps` field reused, `@Slf4j` reused).
+
+**Deferred reviewer follow-ups (13 items, all Important-or-below, none Critical)**:
+
+These were noted by per-task code quality reviewers but not promoted to merge blockers. They form a separate triage queue, not Phase B deliverables:
+
+- **Task 1**: 3 documentation follow-ups (I1 test-ordering doc, I2 async-drain contract doc, I3 agent_session accumulation intent doc — I3 is a partial gap: `agent_session` rows accumulate across IT runs since only `agent_event` is truncated; this is intentional but currently undocumented)
+- **Task 2**: 2 Important (I-1 new orchestrator test produces intentional ERROR log noise because `defaultModel` value is not registered in `models` map; I-2 class-wide `@MockitoSettings(strictness=LENIENT)` weakens stub strictness for whole class) + 4 Minor (M-1 magic string `"glm-5.1"` literal, M-2 `defaultModel` not eagerly validated against `models` map, M-3 `Map<String,ModelSpec>` field type could be tightened to `LinkedHashMap` to lock the ordering guarantee in the type system, M-4 orchestrator test could assert on `SendOptions` ArgumentCaptor for stronger proof)
+- **Task 3**: 5 Minor (M1 WARN wording slightly accusatory "caller bug or unexpected race", M2 `anySatisfy` could be tightened to `singleElement`, M3/M4 inline comments for future maintainers, M5 pre-existing gap — catch-block dispose-failure WARN was never test-covered before this change and is still untested)
+
+**Phase B status: COMPLETE.** RAM chat v2 (Phase A + Phase B) fully delivered.
