@@ -53,6 +53,10 @@ public class TurnRegistry {
     public void register(long sessionId, ActiveTurn turn) {
         ActiveTurn previous = activeBySession.put(sessionId, turn);
         if (previous != null) {
+            log.warn("[TurnRegistry] defensive overwrite: sessionId={} previousTurnId={} newTurnId={}. " +
+                            "The previous turn did not call complete() before a new register() — " +
+                            "this indicates a caller bug or unexpected race.",
+                    sessionId, previous.turnId(), turn.turnId());
             try {
                 previous.disposable().dispose();
             } catch (Exception e) {

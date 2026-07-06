@@ -1,11 +1,16 @@
 package com.huawei.hisi.ram.chat;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
 
 import java.time.Instant;
@@ -60,6 +65,41 @@ class TurnRegistryTest {
         verify(disposable1).dispose();
         assertThat(registry.get(1L)).isPresent();
         assertThat(registry.get(1L).get().turnId()).isEqualTo("t2");
+    }
+
+    @Test
+    @DisplayName("register: defensive overwrite emits WARN log with sessionId, previousTurnId, newTurnId")
+    void register_warnsOnDefensiveOverwrite() {
+        // The previous turn's complete() was NOT called before a new register() —
+        // this is the "defensive overwrite" branch and should be observable.
+        Logger logger = (Logger) LoggerFactory.getLogger(TurnRegistry.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            TurnRegistry.ActiveTurn first = turn("turn-A", 1L, disposable1, new StringBuilder("first"));
+            TurnRegistry.ActiveTurn second = turn("turn-B", 1L, disposable2, new StringBuilder("second"));
+            registry.register(1L, first);
+
+            registry.register(1L, second);
+
+            // Assert WARN was emitted on the defensive branch with all three identifiers.
+            assertThat(appender.list).anySatisfy(event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                String msg = event.getFormattedMessage();
+                assertThat(msg).contains("defensive overwrite");
+                assertThat(msg).contains("sessionId=1");
+                assertThat(msg).contains("previousTurnId=turn-A");
+                assertThat(msg).contains("newTurnId=turn-B");
+            });
+            // The dispose safety net must still fire.
+            verify(disposable1).dispose();
+            assertThat(registry.get(1L)).isPresent();
+            assertThat(registry.get(1L).get().turnId()).isEqualTo("turn-B");
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
     }
 
     @Test
