@@ -18,6 +18,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
@@ -37,6 +39,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("RamChatOrchestrator CHECKPOINT payload")
 class RamChatOrchestratorTest {
 
@@ -145,5 +148,56 @@ class RamChatOrchestratorTest {
 
         // summary is now empty (no JSON schema to pull from).
         assertThat(payload).containsEntry("summary", "");
+    }
+
+    @Test
+    @DisplayName("orchestrator sources model id from ChatModelProperties.defaultModelId() (Phase B #5)")
+    void orchestrator_usesConfigDrivenDefaultModelId() throws Exception {
+        // Re-build chatProps with a custom default-model override.
+        ChatModelProperties customProps = new ChatModelProperties();
+        customProps.setDefaultModel("test-custom-model");
+        ChatModelProperties.ModelSpec spec = new ChatModelProperties.ModelSpec();
+        spec.setScenarioMaxTokens(Map.of("chat", 4096));
+        customProps.setModels(Map.of("glm-5.1", spec));
+
+        RamChatOrchestrator customOrchestrator = new RamChatOrchestrator(
+                eventRepository,
+                claudeClient,
+                kgToolRegistry,
+                projectOverviewTool,
+                contextBuilder,
+                wsHandler,
+                objectMapper,
+                customProps,
+                turnRegistry);
+        ReflectionTestUtils.setField(customOrchestrator, "timeoutSeconds", 10L);
+
+        // Re-stub the same context/tools/turnRegistry/captured-ActiveTurn setup used in setUp().
+        AtomicReference<TurnRegistry.ActiveTurn> activeRef = new AtomicReference<>();
+        doAnswer(inv -> {
+            activeRef.set(inv.getArgument(1));
+            return null;
+        }).when(turnRegistry).register(anyLong(), any(TurnRegistry.ActiveTurn.class));
+        when(turnRegistry.get(anyLong())).thenAnswer(inv -> Optional.ofNullable(activeRef.get()));
+        when(eventRepository.append(any(AgentEvent.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(contextBuilder.buildContext(anyLong(), anyString(), any()))
+                .thenReturn(new ChatContextBuilder.ChatContext("sys", "user"));
+        when(kgToolRegistry.buildToolDefinitions(any(List.class))).thenReturn(List.<ToolDefinition>of());
+        when(kgToolRegistry.buildToolHandlers(any(List.class))).thenReturn(Map.of());
+        when(projectOverviewTool.buildDefinition()).thenReturn(mock(ToolDefinition.class));
+        when(projectOverviewTool.buildHandler(any(List.class))).thenReturn(map -> null);
+        when(claudeClient.callJsonWithToolsAndStreaming(
+                anyString(), anyString(), any(), anyMap(), any(), any(StreamCallbacks.class), any()))
+                .thenAnswer(inv -> {
+                    StreamCallbacks cb = inv.getArgument(5);
+                    cb.onRoundComplete(0, "end_turn");
+                    return new RamClaudeJsonClient.JsonCallResult(Map.of(), List.of());
+                });
+
+        customOrchestrator.runTurn(99L, "hi", "/tmp/proj");
+
+        // The ActiveTurn registered with TurnRegistry must carry the custom model id.
+        assertThat(activeRef.get()).isNotNull();
+        assertThat(activeRef.get().modelId()).isEqualTo("test-custom-model");
     }
 }

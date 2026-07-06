@@ -47,7 +47,6 @@ public class RamChatOrchestrator {
     private final ChatModelProperties chatProps;
     private final TurnRegistry turnRegistry;
 
-    private static final String DEFAULT_MODEL_ID = "glm-5.1";
     private static final String CHAT_SCENARIO = "chat";
 
     @Value("${ram.chat.timeout-seconds:300}")
@@ -223,8 +222,12 @@ public class RamChatOrchestrator {
                     return disposed || (real != null && real.isDisposed());
                 }
             };
+            // Resolve the model id once per turn from the chat config so the
+            // ActiveTurn and SendOptions cannot disagree if config were to
+            // change between the two calls.
+            String modelId = chatProps.defaultModelId();
             turnRegistry.register(sessionId, new TurnRegistry.ActiveTurn(
-                    turnId, sessionId, proxyDisposable, partialTextBuf, Instant.now(), DEFAULT_MODEL_ID));
+                    turnId, sessionId, proxyDisposable, partialTextBuf, Instant.now(), modelId));
 
             CompletableFuture<RamClaudeJsonClient.JsonCallResult> future = CompletableFuture.supplyAsync(() ->
                     claudeClient.callJsonWithToolsAndStreaming(
@@ -232,7 +235,7 @@ public class RamChatOrchestrator {
                             ctx.userPrompt(),
                             tools,
                             handlers,
-                            SendOptions.forScenario(chatProps, DEFAULT_MODEL_ID, CHAT_SCENARIO),
+                            SendOptions.forScenario(chatProps, modelId, CHAT_SCENARIO),
                             callbacks,
                             d -> {
                                 disposableRef.set(d);
