@@ -15,6 +15,7 @@ import com.huawei.hisi.ram.nodes.impl.StreamCallbacks;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.sdk.SendOptions;
 import com.huawei.hisi.ram.sdk.ToolDefinition;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -24,6 +25,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -81,10 +83,35 @@ class RamChatInTurnInjectionIT {
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private AgentEventRepository eventRepository;
+    @Autowired private JdbcTemplate jdbcTemplate;
 
     @MockBean private RamClaudeJsonClient claudeClient;
     @MockBean private KgMcpClient kgMcpClient;
     @SpyBean private RamChatWebSocketHandler wsHandler;
+
+    // Phase B SUGGEST #4: per-method DB isolation. The file-backed SQLite DB at
+    // target/ram-inturn-injection-it.db persists across test methods and across
+    // runs, so truncate agent_event before each method to give every test a clean
+    // slate. Only agent_event is truncated because that is the only table this IT
+    // writes to; ram_chat_messages does not exist in the current schema. The FK
+    // agent_event.session_id -> agent_session.id is satisfied because we delete
+    // the child (agent_event), never the parent.
+    @BeforeEach
+    void truncateEventTables() {
+        jdbcTemplate.execute("DELETE FROM agent_event");
+    }
+
+    @Test
+    @DisplayName("DB starts empty for each test method (Phase B SUGGEST #4)")
+    void dbState_isolated_perTest() {
+        // Phase B SUGGEST #4: per-method DB isolation. The file-backed SQLite DB at
+        // target/ram-inturn-injection-it.db persists across test methods and across
+        // runs, so agent_event must be truncated before each test method to give
+        // every test a clean slate.
+        Long eventCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM agent_event", Long.class);
+        assertThat(eventCount).as("agent_event must be empty at the start of each test method").isZero();
+    }
 
     @Test
     @DisplayName("mid-turn /inject interrupts first turn, persists TURN_INTERRUPTED, starts new turn")
