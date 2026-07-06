@@ -14,7 +14,7 @@ export interface CreateSessionResponse {
 
 export interface SendMessageResponse {
   turnId: string
-  status: 'DONE' | 'FAILED'
+  status: 'STARTED' | 'DONE' | 'FAILED'
   errorMessage?: string
 }
 

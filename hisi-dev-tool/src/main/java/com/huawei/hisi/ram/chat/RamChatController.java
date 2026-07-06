@@ -79,11 +79,14 @@ public class RamChatController {
             return ApiResponse.error(400, "session has no projectPath");
         }
 
-        TurnResult result = orchestrator.runTurn(sid, request.text(), projectPaths);
+        // Async: return immediately with turnId; streaming reaches the client via WebSocket.
+        // The previous synchronous call to orchestrator.runTurn(...) blocked the HTTP thread
+        // for the full multi-tool turn, exceeding the frontend's 120s axios timeout.
+        String turnId = orchestrator.startTurnAsync(sid, request.text(), projectPaths);
         return ApiResponse.success(new SendMessageResponse(
-                result.turnId(),
-                result.status(),
-                result.errorMessage()
+                turnId,
+                "STARTED",
+                null
         ));
     }
 

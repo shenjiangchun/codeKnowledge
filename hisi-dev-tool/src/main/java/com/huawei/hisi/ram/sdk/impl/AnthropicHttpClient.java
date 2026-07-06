@@ -120,8 +120,10 @@ public class AnthropicHttpClient {
                                                  List<ToolDefinition> tools,
                                                  SendOptions opts) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("model", (opts.model() != null && !opts.model().isBlank())
-                ? opts.model() : configuredModel);
+        // Always use the model configured via anthropic.model (application-local.yml).
+        // opts.model() carries a chat-models.yml logical key (e.g. "glm-5.1"), not a
+        // real API model name — sending it upstream causes 503 from the relay server.
+        body.put("model", configuredModel);
         body.put("max_tokens", opts.maxTokens());
         body.put("temperature", opts.temperature());
         body.put("stream", true);

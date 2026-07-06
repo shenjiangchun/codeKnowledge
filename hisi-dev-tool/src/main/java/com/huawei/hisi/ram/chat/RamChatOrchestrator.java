@@ -63,6 +63,28 @@ public class RamChatOrchestrator {
     }
 
     /**
+     * Kick off a turn without blocking the caller. Used by the chat controller's
+     * {@code POST /messages} path so the HTTP request returns immediately with a
+     * {@code STARTED} status; the actual streaming reaches the client via
+     * WebSocket ({@code assistant_delta} / {@code tool_use_*} / {@code checkpoint}).
+     *
+     * @return the freshly assigned {@code turnId} (clients can use it to
+     *         correlate incoming WebSocket events)
+     */
+    public String startTurnAsync(long sessionId, String userText, List<String> projectPaths) {
+        String turnId = UUID.randomUUID().toString();
+        asyncExecutor.submit(() -> {
+            try {
+                runTurnInternal(sessionId, turnId, userText, projectPaths);
+            } catch (RuntimeException e) {
+                log.error("[RamChatOrchestrator] async runTurn failed sessionId={} turnId={}: {}",
+                        sessionId, turnId, e.getMessage(), e);
+            }
+        });
+        return turnId;
+    }
+
+    /**
      * Send a new user message DURING an active streaming turn. If a turn is
      * currently streaming, interrupt it atomically, persist a
      * {@code TURN_INTERRUPTED} event carrying the partial text, push a
@@ -105,7 +127,10 @@ public class RamChatOrchestrator {
     }
 
     public TurnResult runTurn(long sessionId, String userText, List<String> projectPaths) {
-        String turnId = UUID.randomUUID().toString();
+        return runTurnInternal(sessionId, UUID.randomUUID().toString(), userText, projectPaths);
+    }
+
+    private TurnResult runTurnInternal(long sessionId, String turnId, String userText, List<String> projectPaths) {
         log.info("[RamChatOrchestrator] start turnId={} sessionId={} userText.len={}",
                 turnId, sessionId, userText.length());
 
@@ -229,10 +254,17 @@ public class RamChatOrchestrator {
             turnRegistry.register(sessionId, new TurnRegistry.ActiveTurn(
                     turnId, sessionId, proxyDisposable, partialTextBuf, Instant.now(), modelId));
 
+            // Use the V2 multi-turn path so the assistant's Markdown output is wrapped
+            // as {"text": "..."} instead of being parsed as JSON (which throws
+            // "Claude response is not valid JSON" whenever the model follows the
+            // system prompt's "使用 Markdown 输出" instruction).
+            List<Map<String, Object>> messages = List.of(
+                    Map.of("role", "user", "content", ctx.userPrompt()));
+
             CompletableFuture<RamClaudeJsonClient.JsonCallResult> future = CompletableFuture.supplyAsync(() ->
-                    claudeClient.callJsonWithToolsAndStreaming(
+                    claudeClient.callJsonWithToolsAndStreamingMultiTurn(
                             ctx.systemPrompt(),
-                            ctx.userPrompt(),
+                            messages,
                             tools,
                             handlers,
                             SendOptions.forScenario(chatProps, modelId, CHAT_SCENARIO),
