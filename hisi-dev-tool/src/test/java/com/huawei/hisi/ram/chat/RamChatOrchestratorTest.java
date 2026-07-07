@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -109,8 +110,8 @@ class RamChatOrchestratorTest {
         // Stub the streaming Claude call: fire 3 assistant deltas, then return
         // a JsonCallResult whose `json` map contains an `answer` field that
         // MUST NOT leak into the CHECKPOINT payload.
-        when(claudeClient.callJsonWithToolsAndStreaming(
-                anyString(), anyString(), any(), anyMap(), any(), any(StreamCallbacks.class), any()))
+        when(claudeClient.callJsonWithToolsAndStreamingMultiTurn(
+                anyString(), anyList(), any(), anyMap(), any(), any(StreamCallbacks.class), any()))
                 .thenAnswer(inv -> {
                     StreamCallbacks cb = inv.getArgument(5);
                     cb.onAssistantDelta("段1");
@@ -186,8 +187,8 @@ class RamChatOrchestratorTest {
         when(kgToolRegistry.buildToolHandlers(any(List.class))).thenReturn(Map.of());
         when(projectOverviewTool.buildDefinition()).thenReturn(mock(ToolDefinition.class));
         when(projectOverviewTool.buildHandler(any(List.class))).thenReturn(map -> null);
-        when(claudeClient.callJsonWithToolsAndStreaming(
-                anyString(), anyString(), any(), anyMap(), any(), any(StreamCallbacks.class), any()))
+        when(claudeClient.callJsonWithToolsAndStreamingMultiTurn(
+                anyString(), anyList(), any(), anyMap(), any(), any(StreamCallbacks.class), any()))
                 .thenAnswer(inv -> {
                     StreamCallbacks cb = inv.getArgument(5);
                     cb.onRoundComplete(0, "end_turn");

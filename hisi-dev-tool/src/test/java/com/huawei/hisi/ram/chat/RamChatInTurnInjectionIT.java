@@ -122,8 +122,8 @@ class RamChatInTurnInjectionIT {
         AtomicReference<String> firstTurnDelta = new AtomicReference<>("first partial ");
 
         // First-turn stub: emit one ASSISTANT_DELTA, then block until released.
-        when(claudeClient.callJsonWithToolsAndStreaming(
-                anyString(), anyString(), anyList(), anyMap(),
+        when(claudeClient.callJsonWithToolsAndStreamingMultiTurn(
+                anyString(), anyList(), anyList(), anyMap(),
                 any(SendOptions.class), any(StreamCallbacks.class), any()))
                 .thenAnswer(inv -> {
                     StreamCallbacks cb = inv.getArgument(5, StreamCallbacks.class);
@@ -190,8 +190,8 @@ class RamChatInTurnInjectionIT {
 
             // 3. Reset the stub so the SECOND (injected) turn returns immediately.
             reset(claudeClient);
-            when(claudeClient.callJsonWithToolsAndStreaming(
-                    anyString(), anyString(), anyList(), anyMap(),
+            when(claudeClient.callJsonWithToolsAndStreamingMultiTurn(
+                    anyString(), anyList(), anyList(), anyMap(),
                     any(SendOptions.class), any(StreamCallbacks.class), any()))
                     .thenAnswer(inv -> {
                         StreamCallbacks cb = inv.getArgument(5, StreamCallbacks.class);
