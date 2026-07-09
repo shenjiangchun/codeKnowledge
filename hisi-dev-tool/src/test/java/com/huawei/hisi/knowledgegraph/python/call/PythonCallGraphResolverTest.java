@@ -222,7 +222,13 @@ class PythonCallGraphResolverTest {
 
         List<Map<String, Object>> edges = resolver.resolveModule(module, "/x", List.of(module));
 
-        assertThat(edges).isEmpty();
+        // Per class Javadoc: unknown callees are emitted as UNRESOLVED edges
+        // (with synthetic calleeId) so downstream tools can still see the call site.
+        assertThat(edges).hasSize(1);
+        Map<String, Object> e = edges.get(0);
+        assertThat(e.get("callType")).isEqualTo("UNRESOLVED");
+        assertThat(e.get("unresolved")).isEqualTo(true);
+        assertThat((String) e.get("calleeId")).startsWith("unresolved:");
     }
 
     @Test

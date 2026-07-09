@@ -16,7 +16,7 @@ class EntryPointTypeTest {
     @DisplayName("Test all entry point types exist")
     void testAllTypesExist() {
         EntryPointType[] types = EntryPointType.values();
-        assertEquals(11, types.length, "Should have 11 entry point types");
+        assertEquals(12, types.length, "Should have 12 entry point types");
     }
 
     @Test

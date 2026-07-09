@@ -20,13 +20,25 @@ class ProjectServiceImplTest {
     private ProjectServiceImpl projectService;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         mockRepo = mock(Neo4jMethodNodeRepository.class);
         projectService = new ProjectServiceImpl();
         ReflectionTestUtils.setField(projectService, "neo4jMethodNodeRepository", mockRepo);
         ReflectionTestUtils.setField(projectService, "appConfigService", mock(AppConfigService.class));
         ReflectionTestUtils.setField(projectService, "codeHubUser", "testUser");
         ReflectionTestUtils.setField(projectService, "codeHubPassword", "testPassword");
+        // PROJECT_DIR is a static field on DataSourceConfig injected via @Value.
+        // Without Spring context it stays as the default empty string, which makes
+        // Paths.get("", project) NPE on Windows. getStatus() does
+        // Files.exists(PROJECT_DIR + "/" + project) before consulting Neo4j —
+        // the stubs in testGetStatus_* never get hit otherwise. Point PROJECT_DIR
+        // at a real existing dir that also has a "my-project" subdirectory (the
+        // project names used by those tests) so the existence check passes.
+        java.nio.file.Path existingRoot = java.nio.file.Files.createTempDirectory("proj-root-");
+        java.nio.file.Files.createDirectory(existingRoot.resolve("my-project"));
+        ReflectionTestUtils.setField(
+                com.huawei.hisi.config.DataSourceConfig.class,
+                "PROJECT_DIR", existingRoot.toString());
     }
 
     @Test

@@ -98,7 +98,9 @@ class FlaskRouteScannerTest {
 
         List<EntryPointNode> entries = scanner.scanModule(module, PROJECT_PATH);
 
-        assertThat(entries).hasSize(3);
+        // /contact declares methods=["GET","POST"] → Flask expands into 2 routes,
+        // so the scanner correctly yields 4 entries (GET /, GET /about, GET /contact, POST /contact).
+        assertThat(entries).hasSize(4);
     }
 
     @Test

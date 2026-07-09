@@ -63,8 +63,8 @@ class PythonKnowledgeGraphBuilderTest {
         assertThat(node.getMethodName()).isEqualTo("greet");
         assertThat(node.getClassName()).isEqualTo("greet");
         assertThat(node.getLanguage()).isEqualTo("python");
-        assertThat(node.getProjectPath()).isEqualTo(dir.toString());
-        assertThat(node.getFilePath()).isEqualTo(file.toString());
+        assertThat(node.getProjectPath()).isEqualTo(dir.toString().replace('\\', '/'));
+        assertThat(node.getFilePath()).isEqualTo(file.toString().replace('\\', '/'));
         assertThat(node.getSignature()).isEqualTo("greet(name)");
     }
 

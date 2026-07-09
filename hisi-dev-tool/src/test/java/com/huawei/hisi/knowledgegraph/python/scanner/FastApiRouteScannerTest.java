@@ -1,5 +1,9 @@
 package com.huawei.hisi.knowledgegraph.python.scanner;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import com.huawei.hisi.knowledgegraph.python.PythonKnowledgeGraphBuilder;
@@ -11,6 +15,7 @@ import com.huawei.hisi.neo4j.model.EntryPointNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -219,10 +224,22 @@ class FastApiRouteScannerTest {
 
     @Test
     @DisplayName("Single APIRouter with prefix prepends to router-decorated routes")
-    void singleRouterWithPrefix_prependsToRoutes() {
+    void singleRouterWithPrefix_prependsToRoutes(@TempDir Path tmp) throws IOException {
+        // FastApiRouteScanner.buildRouterPrefixMap reads the source file to extract
+        // the varName of "varName = APIRouter(...)" assignments — PyCall/PyModule
+        // alone don't carry source content, so we must write a real .py file.
+        Path file = tmp.resolve("items.py");
+        Files.writeString(file, String.join("\n",
+                "router = APIRouter(prefix=\"/api/v1\")",
+                "",
+                "@router.get(\"/items\")",
+                "def get_items():",
+                "    pass",
+                ""), StandardCharsets.UTF_8);
+
         PyCall routerCall = PyCall.builder()
                 .calleeExpression("APIRouter")
-                .lineNumber(3)
+                .lineNumber(1)
                 .enclosingFunction("<module>")
                 .firstStringArg("/api/v1")
                 .build();
@@ -231,11 +248,11 @@ class FastApiRouteScannerTest {
                 .qualName("get_items")
                 .paramNames(List.of())
                 .decorators(List.of("router.get(\"/items\")"))
-                .lineStart(10)
-                .lineEnd(15)
+                .lineStart(3)
+                .lineEnd(5)
                 .build();
         PyModule module = PyModule.builder()
-                .filePath("items.py")
+                .filePath(file.toString())
                 .modulePath("items")
                 .topLevelFunctions(List.of(fn))
                 .calls(List.of(routerCall))

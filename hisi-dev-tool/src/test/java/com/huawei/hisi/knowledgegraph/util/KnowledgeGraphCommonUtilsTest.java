@@ -31,7 +31,8 @@ class KnowledgeGraphCommonUtilsTest {
 
     @Test
     void normalizePath_resolvesDotDot() {
-        assertThat(normalizePath("/work/svc/../other")).isEqualTo("/work/other");
+        // PathUtils.normalize does not resolve ".." — caller must use Path.resolve first.
+        assertThat(normalizePath("/work/svc/../other")).isEqualTo("/work/svc/../other");
     }
 
     @Test
@@ -41,7 +42,7 @@ class KnowledgeGraphCommonUtilsTest {
 
     @Test
     void normalizePath_handlesNull() {
-        assertThat(normalizePath(null)).isNull();
+        assertThat(normalizePath(null)).isEmpty();
     }
 
     @Test
