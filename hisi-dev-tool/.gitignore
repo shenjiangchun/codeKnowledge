@@ -19,6 +19,9 @@ logs/
 # Agent deliverables (internal)
 .agent-deliverables/
 
+# AI session logs (auto-injected by CodeAI pre-commit hook; should never be committed)
+ai-sessions/
+
 # Git worktrees
 .worktrees/
 

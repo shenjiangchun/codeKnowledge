@@ -58,13 +58,21 @@ public class DagExecutor {
         List<String> skipped = new ArrayList<>();
         Map<String, Object> previousOutput = initialInput == null ? Map.of() : initialInput;
 
-        // Load rerun-from-node flag: when set, skip cache for that node and all downstream
+        // Load rerun-from-node flag: when set, activate force-rerun once we reach
+        // that node (and stay active for downstream). Two independent bypass
+        // conditions:
+        //   1. isFirstRun — session has no prior CHECKPOINT events; bootstrap
+        //      by executing all nodes (no cache to reuse, gate would otherwise
+        //      fire before any user confirmation exists).
+        //   2. forceRerun — re-run from a specific node requested; skip cache
+        //      for the target and downstream, and skip the HITL gate (the user
+        //      has already confirmed by asking for the re-run).
         String rerunFromNode = sessionRepo.findById(sessionId)
                 .map(AgentSession::getRerunFromNode)
                 .orElse(null);
-        boolean forceRerun = (rerunFromNode == null);
-
         List<AgentEvent> sessionEvents = eventRepo.findBySessionId(sessionId);
+        boolean isFirstRun = sessionEvents.isEmpty();
+        boolean forceRerun = false;
         log.info("[DagExecutor] run start sid={} nodes={} initialInput.keys={} priorEvents={} rerunFrom={}",
                 sessionId,
                 orderedNodes.stream().map(DagNode::name).toList(),
@@ -96,8 +104,9 @@ public class DagExecutor {
 
             String inputsHash = InputsHasher.hash(input);
 
-            // Skip cache lookup when force-rerun is active
-            Map<String, Object> cached = forceRerun ? null : findCachedOutput(sessionEvents, node.name(), inputsHash);
+            // Skip cache lookup when bootstrap or force-rerun is active
+            Map<String, Object> cached = (isFirstRun || forceRerun) ? null
+                    : findCachedOutput(sessionEvents, node.name(), inputsHash);
             if (cached != null) {
                 log.info("[DagExecutor] sid={} node={} CACHE HIT inputsHash={} cachedOutput.keys={}",
                         sessionId, node.name(), inputsHash, cached.keySet());
@@ -135,9 +144,12 @@ public class DagExecutor {
             previousOutput = safeOutput;
 
             // Inter-node confirmation gate: pause after each node (except the last)
-            // to let the user review the output before proceeding.
+            // to let the user review the output before proceeding. Skipped on
+            // first-run (bootstrap) and on force-rerun (user already asked
+            // for re-execution).
             boolean isLastNode = (nodeIdx == orderedNodes.size() - 1);
-            if (!isLastNode && !forceRerun && !isNodeConfirmed(sessionEvents, node.name())) {
+            boolean skipGate = isFirstRun || forceRerun;
+            if (!isLastNode && !skipGate && !isNodeConfirmed(sessionEvents, node.name())) {
                 log.info("[DagExecutor] sid={} node={} HITL_REQ — awaiting confirmation",
                         sessionId, node.name());
                 appendHitlReq(sessionId, node.name(), safeOutput);

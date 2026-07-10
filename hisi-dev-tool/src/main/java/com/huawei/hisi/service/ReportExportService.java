@@ -170,6 +170,18 @@ public class ReportExportService {
             sb.append("暂无\n\n");
         }
 
+        // 事件历史 - 列出所有事件类型与 payload 摘要
+        sb.append("## 事件历史\n\n");
+        for (AgentEvent event : events) {
+            sb.append("- **").append(event.getType()).append("**");
+            String payload = event.getPayload();
+            if (payload != null && !payload.isBlank()) {
+                sb.append(": `").append(payload).append("`");
+            }
+            sb.append("\n");
+        }
+        sb.append("\n");
+
         // 节点结果汇总（提取 CHECKPOINT 事件）
         sb.append("## 分析结果\n\n");
         boolean hasCheckpoint = false;
@@ -610,8 +622,20 @@ public class ReportExportService {
             sb.append("暂无\n\n");
         }
 
+        // 事件历史 - 列出所有事件类型与 payload 摘要
+        sb.append("## 事件历史\n\n");
+        for (AgentEvent event : events) {
+            sb.append("- **").append(event.getType()).append("**");
+            String payload = event.getPayload();
+            if (payload != null && !payload.isBlank()) {
+                sb.append(": `").append(payload).append("`");
+            }
+            sb.append("\n");
+        }
+        sb.append("\n");
+
         // 节点结果汇总（提取 CHECKPOINT 事件）
-        sb.append("## 分析结果\n\n");
+        sb.append("## 分析过程\n\n");
         boolean hasCheckpoint = false;
         for (AgentEvent event : events) {
             if (event.getType() == EventType.CHECKPOINT && event.getPayload() != null) {

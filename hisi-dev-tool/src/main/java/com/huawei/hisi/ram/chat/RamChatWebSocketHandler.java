@@ -73,9 +73,20 @@ public class RamChatWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    private static final String WS_PATH_PREFIX = "/ws/ram-chat/";
+
     private String extractSessionId(WebSocketSession session) {
         URI uri = session.getUri();
         if (uri == null) return null;
+        // 1) Path-based: /ws/ram-chat/{sessionId} — used by FixChatView.vue
+        String path = uri.getPath();
+        if (path != null && path.startsWith(WS_PATH_PREFIX)) {
+            String tail = path.substring(WS_PATH_PREFIX.length());
+            if (!tail.isBlank() && !tail.contains("/")) {
+                return tail;
+            }
+        }
+        // 2) Query-based fallback: /ws/ram-chat?sessionId={sid} — used by useRamChatWebSocket.ts
         return UriComponentsBuilder.fromUri(uri).build().getQueryParams().getFirst("sessionId");
     }
 
