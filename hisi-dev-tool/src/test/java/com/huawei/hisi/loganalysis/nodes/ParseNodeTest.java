@@ -14,7 +14,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ParseNodeTest {
 
-    private final ParseNode parseNode = new ParseNode();
+    // captureDecoder=null is safe: ParseNode guards with captureDecoder != null (line 71)
+    // and these tests do not exercise HISI_CAPTURE content.
+    private final ParseNode parseNode = new ParseNode(null);
 
     @Test
     @DisplayName("parse basic NullPointerException")

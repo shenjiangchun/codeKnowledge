@@ -1,6 +1,8 @@
 package com.huawei.hisi.fixengine.agent;
 
 import com.huawei.hisi.apm.service.locator.LlmClient;
+import com.huawei.hisi.ram.model.AgentEvent;
+import com.huawei.hisi.ram.repository.AgentEventRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
@@ -8,6 +10,7 @@ import org.springframework.stereotype.Component;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.stream.Collectors;
 
 /**
@@ -18,10 +21,15 @@ import java.util.stream.Collectors;
 @Component
 public class FixAgent {
 
-    private final LlmClient llm;
+    /** Max recent events pulled as context for follow-up questions. */
+    private static final int FOLLOW_UP_CONTEXT_WINDOW = 10;
 
-    public FixAgent(LlmClient llm) {
+    private final LlmClient llm;
+    private final AgentEventRepository agentEventRepository;
+
+    public FixAgent(LlmClient llm, AgentEventRepository agentEventRepository) {
         this.llm = llm;
+        this.agentEventRepository = agentEventRepository;
     }
 
     /**
@@ -55,6 +63,34 @@ public class FixAgent {
         String result = llm.chat(systemPrompt, userPrompt);
         log.info("[FixAgent] generated {} chars", result.length());
         return stripCodeFences(result);
+    }
+
+    // ------------------------------------------------------------------
+
+    /**
+     * Handle a follow-up question from the user about an in-progress fix session.
+     * Pulls the most recent events as context and asks the LLM. Read-only:
+     * does not touch the fix flow's state machine.
+     */
+    public String handleFollowUp(long chatSessionId, String userMessage) {
+        List<AgentEvent> recent = agentEventRepository.findBySessionId(chatSessionId);
+        List<AgentEvent> tail = recent.size() > FOLLOW_UP_CONTEXT_WINDOW
+                ? recent.subList(recent.size() - FOLLOW_UP_CONTEXT_WINDOW, recent.size())
+                : recent;
+
+        StringBuilder ctx = new StringBuilder();
+        for (AgentEvent e : tail) {
+            ctx.append(e.getType()).append(": ").append(e.getPayload()).append('\n');
+        }
+
+        String systemPrompt = "You are assisting with an in-progress Java auto-fix. "
+                + "Use the recent events as context. Be concise. "
+                + "If the fix flow is still running, tell the user the current step.";
+        String userPrompt = "Recent events:\n" + ctx + "\n\nUser question: " + userMessage;
+
+        log.info("[FixAgent] handleFollowUp sid={} events={} msg.len={}",
+                chatSessionId, tail.size(), userMessage.length());
+        return llm.chat(systemPrompt, userPrompt);
     }
 
     // ------------------------------------------------------------------

@@ -47,7 +47,8 @@ class LogAnalysisDagOrchestratorTest {
 
     @BeforeEach
     void setUp() {
-        parseNode = new ParseNode();
+        // captureDecoder=null: ParseNode guards with captureDecoder != null; tests don't use HISI_CAPTURE
+        parseNode = new ParseNode(null);
         kgSearchNode = new KgSearchNode(kgMcpClient);
         codeContextNode = new CodeContextNode(kgMcpClient);
         claudeAnalyzeNode = new ClaudeAnalyzeNode(claudeClient, new RoundPromptBuilder());
@@ -68,16 +69,16 @@ class LogAnalysisDagOrchestratorTest {
         when(kgMcpClient.hybridSearch(anyString(), anyList(), anyInt()))
                 .thenReturn(List.of(new Seed("node-1", 0.85, "com.hisilicon.app.service.AppService.process")));
 
-        when(kgMcpClient.rootEntries(anyString(), anyString(), anyString()))
+        when(kgMcpClient.rootEntries(anyString(), anyString(), anyList()))
                 .thenReturn(List.of(
                         new Entry("entry-1", "com.hisilicon.app.controller.AppController", "handleRequest", "CONTROLLER"),
                         new Entry("entry-2", "com.hisilicon.app.listener.AppListener", "onMessage", "MQ_LISTENER")
                 ));
 
-        when(kgMcpClient.calleesTree(anyString(), anyString(), anyString(), anyInt()))
+        when(kgMcpClient.calleesTree(anyString(), anyString(), anyList(), anyInt()))
                 .thenReturn(new CallTreeNode("node-1", "com.hisilicon.app.service.AppService", "process", 0, null));
 
-        when(kgMcpClient.loadMethodBodies(anyList(), anyString()))
+        when(kgMcpClient.loadMethodBodies(anyList(), anyList()))
                 .thenReturn(List.of(new MethodBodyInfo("node-1", "com.hisilicon.app.service.AppService", "process", "Process method", "public void process() { ... }", "AppService.java")));
 
         // Input with project package prefixes (default mode)
@@ -120,16 +121,16 @@ java.lang.RuntimeException: Application error
         when(kgMcpClient.hybridSearch(anyString(), anyList(), anyInt()))
                 .thenReturn(List.of(new Seed("node-1", 0.90, "com.hisilicon.core.CoreEngine.run")));
 
-        when(kgMcpClient.rootEntries(anyString(), anyString(), anyString()))
+        when(kgMcpClient.rootEntries(anyString(), anyString(), anyList()))
                 .thenReturn(List.of(
                         new Entry("entry-1", "com.hisilicon.app.controller.AppController", "handleRequest", "CONTROLLER"),
                         new Entry("entry-2", "com.hisilicon.core.scheduler.CoreScheduler", "schedule", "SCHEDULED")
                 ));
 
-        when(kgMcpClient.calleesTree(anyString(), anyString(), anyString(), anyInt()))
+        when(kgMcpClient.calleesTree(anyString(), anyString(), anyList(), anyInt()))
                 .thenReturn(new CallTreeNode("node-1", "com.hisilicon.core.CoreEngine", "run", 0, null));
 
-        lenient().when(kgMcpClient.loadMethodBodies(anyList(), anyString()))
+        lenient().when(kgMcpClient.loadMethodBodies(anyList(), anyList()))
                 .thenReturn(List.of(new MethodBodyInfo("node-1", "com.hisilicon.core.CoreEngine", "run", "Core engine run", "public void run() { ... }", "CoreEngine.java")));
 
         // Input with nested exception and deep mode enabled
@@ -178,13 +179,13 @@ Caused by: java.lang.NullPointerException: Root cause
         lenient().when(kgMcpClient.hybridSearch(anyString(), anyList(), anyInt()))
                 .thenReturn(Collections.emptyList());
 
-        lenient().when(kgMcpClient.rootEntries(anyString(), anyString(), anyString()))
+        lenient().when(kgMcpClient.rootEntries(anyString(), anyString(), anyList()))
                 .thenReturn(Collections.emptyList()); // KG returns empty
 
-        lenient().when(kgMcpClient.calleesTree(anyString(), anyString(), anyString(), anyInt()))
+        lenient().when(kgMcpClient.calleesTree(anyString(), anyString(), anyList(), anyInt()))
                 .thenReturn(null);
 
-        lenient().when(kgMcpClient.loadMethodBodies(anyList(), anyString()))
+        lenient().when(kgMcpClient.loadMethodBodies(anyList(), anyList()))
                 .thenReturn(Collections.emptyList());
 
         // Input without KG data
@@ -222,13 +223,13 @@ java.lang.Exception: Unknown error
         when(kgMcpClient.hybridSearch(anyString(), anyList(), anyInt()))
                 .thenReturn(List.of(new Seed("node-1", 0.92, "com.hisilicon.core.ProcessEngine.execute")));
 
-        when(kgMcpClient.rootEntries(anyString(), anyString(), anyString()))
+        when(kgMcpClient.rootEntries(anyString(), anyString(), anyList()))
                 .thenReturn(List.of(new Entry("entry-1", "com.hisilicon.core.CoreScheduler", "schedule", "SCHEDULED")));
 
-        when(kgMcpClient.calleesTree(anyString(), anyString(), anyString(), anyInt()))
+        when(kgMcpClient.calleesTree(anyString(), anyString(), anyList(), anyInt()))
                 .thenReturn(new CallTreeNode("node-1", "com.hisilicon.core.ProcessEngine", "execute", 0, null));
 
-        lenient().when(kgMcpClient.loadMethodBodies(anyList(), anyString()))
+        lenient().when(kgMcpClient.loadMethodBodies(anyList(), anyList()))
                 .thenReturn(List.of(new MethodBodyInfo("node-1", "com.hisilicon.core.ProcessEngine", "execute", "Process engine execute", "public void execute() { ... }", "ProcessEngine.java")));
 
         // Build extremely deep stack trace (50+ frames before project code)
@@ -271,10 +272,10 @@ java.lang.Exception: Unknown error
         lenient().when(kgMcpClient.hybridSearch(anyString(), anyList(), anyInt()))
                 .thenReturn(Collections.emptyList());
 
-        lenient().when(kgMcpClient.rootEntries(anyString(), anyString(), anyString()))
+        lenient().when(kgMcpClient.rootEntries(anyString(), anyString(), anyList()))
                 .thenReturn(Collections.emptyList());
 
-        lenient().when(kgMcpClient.loadMethodBodies(anyList(), anyString()))
+        lenient().when(kgMcpClient.loadMethodBodies(anyList(), anyList()))
                 .thenReturn(Collections.emptyList());
 
         // Input without project package prefixes
@@ -327,13 +328,13 @@ java.lang.Exception: Error
                     return Collections.emptyList();
                 });
 
-        lenient().when(kgMcpClient.rootEntries(anyString(), anyString(), anyString()))
+        lenient().when(kgMcpClient.rootEntries(anyString(), anyString(), anyList()))
                 .thenReturn(Collections.emptyList());
 
-        lenient().when(kgMcpClient.calleesTree(anyString(), anyString(), anyString(), anyInt()))
+        lenient().when(kgMcpClient.calleesTree(anyString(), anyString(), anyList(), anyInt()))
                 .thenReturn(null);
 
-        lenient().when(kgMcpClient.loadMethodBodies(anyList(), anyString()))
+        lenient().when(kgMcpClient.loadMethodBodies(anyList(), anyList()))
                 .thenReturn(Collections.emptyList());
 
         lenient().when(claudeClient.isAvailable()).thenReturn(false);
@@ -374,13 +375,13 @@ java.lang.Exception: Error
         lenient().when(kgMcpClient.hybridSearch(anyString(), anyList(), anyInt()))
                 .thenReturn(Collections.emptyList());
 
-        lenient().when(kgMcpClient.rootEntries(anyString(), anyString(), anyString()))
+        lenient().when(kgMcpClient.rootEntries(anyString(), anyString(), anyList()))
                 .thenReturn(Collections.emptyList());
 
-        lenient().when(kgMcpClient.calleesTree(anyString(), anyString(), anyString(), anyInt()))
+        lenient().when(kgMcpClient.calleesTree(anyString(), anyString(), anyList(), anyInt()))
                 .thenReturn(null);
 
-        lenient().when(kgMcpClient.loadMethodBodies(anyList(), anyString()))
+        lenient().when(kgMcpClient.loadMethodBodies(anyList(), anyList()))
                 .thenReturn(Collections.emptyList());
 
         lenient().when(claudeClient.isAvailable()).thenReturn(false);

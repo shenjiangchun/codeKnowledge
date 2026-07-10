@@ -260,8 +260,14 @@ public class FixFlowRunner {
     private static String extractRepoPath(Map<String, Object> analysis, FixSession session) {
         Object pp = analysis.get("projectPath");
         if (pp instanceof String s && !s.isBlank()) return s;
-        // TODO: lookup from report or config
-        return System.getProperty("user.dir");
+        // Fallback to system property; refuse to silently default to user.dir
+        // (which is the backend's CWD, not the target repo) — passing that to
+        // WorktreeService would point git worktree add at the wrong repository.
+        String configured = System.getProperty("hisi.fix.repo-path");
+        if (configured != null && !configured.isBlank()) return configured;
+        throw new IllegalStateException(
+                "Cannot determine repoPath for fix session " + session.getId()
+                + ": analysis.projectPath is null and -Dhisi.fix.repo-path not set");
     }
 
     /**

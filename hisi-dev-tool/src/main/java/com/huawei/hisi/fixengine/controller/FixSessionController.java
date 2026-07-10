@@ -2,6 +2,7 @@ package com.huawei.hisi.fixengine.controller;
 
 import com.huawei.hisi.fixengine.model.FixSession;
 import com.huawei.hisi.fixengine.repository.FixSessionRepository;
+import com.huawei.hisi.fixengine.service.FixChatService;
 import com.huawei.hisi.fixengine.service.FixOrchestrator;
 import com.huawei.hisi.model.ApiResponse;
 import com.huawei.hisi.ram.model.AgentEvent;
@@ -24,13 +25,16 @@ public class FixSessionController {
     private final FixOrchestrator fixOrchestrator;
     private final FixSessionRepository fixSessionRepository;
     private final AgentEventRepository agentEventRepository;
+    private final FixChatService fixChatService;
 
     public FixSessionController(FixOrchestrator fixOrchestrator,
                                 FixSessionRepository fixSessionRepository,
-                                AgentEventRepository agentEventRepository) {
+                                AgentEventRepository agentEventRepository,
+                                FixChatService fixChatService) {
         this.fixOrchestrator = fixOrchestrator;
         this.fixSessionRepository = fixSessionRepository;
         this.agentEventRepository = agentEventRepository;
+        this.fixChatService = fixChatService;
     }
 
     /**
@@ -47,10 +51,11 @@ public class FixSessionController {
      * Send a follow-up message to a running fix session.
      */
     @PostMapping("/sessions/{sessionId}/follow-up")
-    public ApiResponse<Void> followUp(@PathVariable String sessionId,
-                                      @RequestBody String userMessage) {
+    public ApiResponse<String> followUp(@PathVariable String sessionId,
+                                        @RequestBody String userMessage) {
         log.info("[FixController] followUp sessionId={} msg.len={}", sessionId, userMessage.length());
-        return ApiResponse.success(null);
+        String reply = fixChatService.chat(sessionId, userMessage);
+        return ApiResponse.success(reply);
     }
 
     /**
