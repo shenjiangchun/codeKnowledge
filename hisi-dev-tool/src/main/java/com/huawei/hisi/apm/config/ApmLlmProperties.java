@@ -48,7 +48,14 @@ public class ApmLlmProperties {
     /** Sampling temperature passed to the upstream API. */
     private double temperature = 0.2;
 
-    /** Maximum tokens to generate per call. */
+    /**
+     * Maximum tokens to generate per call.
+     *
+     * <p>Default 8192 — large enough for reasoning-style models (e.g. GLM-5.1-wenshu)
+     * whose internal "reasoning" phase consumes tokens before the visible content
+     * is produced. With the previous default of 1024, all tokens could be eaten by
+     * reasoning, leaving {@code choices[0].message.content} null.
+     */
     @Min(1)
-    private int maxTokens = 1024;
+    private int maxTokens = 8192;
 }

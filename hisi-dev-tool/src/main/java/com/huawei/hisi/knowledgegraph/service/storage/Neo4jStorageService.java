@@ -76,6 +76,7 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
                 map.put("comment", n.getComment());
                 map.put("thrownExceptions", n.getThrownExceptions());
                 map.put("caughtExceptions", n.getCaughtExceptions());
+                map.put("language", n.getLanguage());
                 return map;
             })
             .toList();
@@ -110,6 +111,43 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
         }
         methodNodeRepository.createBridgeRelations(relations);
         log.info("[Neo4j] 保存 bridge 关系: {} 条", relations.size());
+    }
+
+    /**
+     * 批量保存 CONTAINS 关系（codegraph contains 边）。
+     * 一期 parent/child 均为 Method 节点。
+     */
+    @Transactional(transactionManager = "neo4jTransactionManager")
+    public void saveContainsRelations(List<Map<String, Object>> relations) {
+        if (relations == null || relations.isEmpty()) {
+            return;
+        }
+        methodNodeRepository.createContainsRelations(relations);
+        log.info("[Neo4j] 保存 CONTAINS 关系: {} 条", relations.size());
+    }
+
+    /**
+     * 批量保存 IMPORTS 关系（codegraph imports 边）。
+     */
+    @Transactional(transactionManager = "neo4jTransactionManager")
+    public void saveImportsRelations(List<Map<String, Object>> relations) {
+        if (relations == null || relations.isEmpty()) {
+            return;
+        }
+        methodNodeRepository.createImportsRelations(relations);
+        log.info("[Neo4j] 保存 IMPORTS 关系: {} 条", relations.size());
+    }
+
+    /**
+     * 批量保存 REFERENCES 关系（codegraph references 边，回调注册合成）。
+     */
+    @Transactional(transactionManager = "neo4jTransactionManager")
+    public void saveReferencesRelations(List<Map<String, Object>> relations) {
+        if (relations == null || relations.isEmpty()) {
+            return;
+        }
+        methodNodeRepository.createReferencesRelations(relations);
+        log.info("[Neo4j] 保存 REFERENCES 关系: {} 条", relations.size());
     }
 
     @Override
@@ -154,6 +192,7 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
                 map.put("briefDescription", e.getBriefDescription());
                 map.put("detailedDescription", e.getDetailedDescription());
                 map.put("serviceName", e.getServiceName());
+                map.put("language", e.getLanguage());
                 return map;
             })
             .toList();

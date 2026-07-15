@@ -82,6 +82,33 @@ public class GitExecutor {
         }
     }
 
+    /**
+     * 探测仓库当前分支名（HEAD 所指的 local branch），用于 worktree 的 base branch。
+     * 兼容 master / main / develop 等任意默认分支，避免硬编码 "master"。
+     *
+     * @return 当前分支名（如 "master" / "develop"）；失败或 detached HEAD 时返回 null
+     */
+    public String currentBranch(String repoPath) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder("git", "rev-parse", "--abbrev-ref", "HEAD");
+            pb.directory(new File(repoPath));
+            pb.redirectErrorStream(true);
+            Process proc = pb.start();
+            String branch;
+            try (var reader = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
+                branch = reader.readLine();
+            }
+            proc.waitFor(DEFAULT_TIMEOUT_MINUTES, TimeUnit.MINUTES);
+            if (proc.exitValue() != 0 || branch == null || branch.isBlank() || "HEAD".equals(branch.trim())) {
+                return null;
+            }
+            return branch.trim();
+        } catch (Exception e) {
+            log.error("[GitExecutor] current branch probe failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
     // ------------------------------------------------------------------
 
     private void exec(String cwd, String... cmd) {

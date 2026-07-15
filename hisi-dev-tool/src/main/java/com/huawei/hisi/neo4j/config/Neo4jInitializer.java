@@ -71,7 +71,11 @@ public class Neo4jInitializer {
         "CREATE INDEX entryPoint_entryKey_index IF NOT EXISTS FOR (e:EntryPoint) ON (e.entryKey)",
         "CREATE INDEX entryPoint_entryType_index IF NOT EXISTS FOR (e:EntryPoint) ON (e.entryType)",
         "CREATE INDEX entryPoint_methodNodeId_index IF NOT EXISTS FOR (e:EntryPoint) ON (e.methodNodeId)",
-        "CREATE INDEX entryPoint_serviceName_index IF NOT EXISTS FOR (e:EntryPoint) ON (e.serviceName)"
+        "CREATE INDEX entryPoint_serviceName_index IF NOT EXISTS FOR (e:EntryPoint) ON (e.serviceName)",
+        // codegraph sidecar 新增关系索引（CONTAINS / IMPORTS / REFERENCES）
+        "CREATE INDEX contains_projectPath_index IF NOT EXISTS FOR ()-[r:CONTAINS]-() ON (r.projectPath)",
+        "CREATE INDEX imports_projectPath_index IF NOT EXISTS FOR ()-[r:IMPORTS]-() ON (r.projectPath)",
+        "CREATE INDEX references_projectPath_index IF NOT EXISTS FOR ()-[r:REFERENCES]-() ON (r.projectPath)"
     );
 
     /**

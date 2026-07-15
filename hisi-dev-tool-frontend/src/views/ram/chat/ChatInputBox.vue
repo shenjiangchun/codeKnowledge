@@ -3,6 +3,10 @@ import { ref } from 'vue'
 import { useRamChatStore } from '@/stores/ramChatStore'
 import { Promotion } from '@element-plus/icons-vue'
 
+const props = defineProps<{
+  sendHandler?: (text: string) => Promise<void>
+}>()
+
 const store = useRamChatStore()
 const text = ref('')
 const sending = ref(false)
@@ -13,7 +17,11 @@ async function send() {
   text.value = ''
   sending.value = true
   try {
-    await store.sendMessage(trimmed)
+    if (props.sendHandler) {
+      await props.sendHandler(trimmed)
+    } else {
+      await store.sendMessage(trimmed)
+    }
   } catch (e: unknown) {
     console.error('[ChatInput] send failed', e)
   } finally {

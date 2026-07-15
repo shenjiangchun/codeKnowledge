@@ -26,7 +26,9 @@ public final class ProjectLanguageDetector {
      */
     public enum Language {
         JAVA,
-        PYTHON
+        PYTHON,
+        TYPESCRIPT,
+        JAVASCRIPT
     }
 
     /**

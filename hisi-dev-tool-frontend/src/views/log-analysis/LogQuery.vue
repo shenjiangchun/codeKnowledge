@@ -697,6 +697,9 @@
         </div>
       </div>
       <template #footer>
+        <el-button v-if="canAutoFixSelectedReport" type="warning" @click="goAutoFix">
+          <el-icon style="margin-right: 4px"><SetUp /></el-icon>自动修复
+        </el-button>
         <el-button @click="reportDetailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
@@ -706,7 +709,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Search, Document, Warning, Cpu, Check, Delete, Plus, Download } from '@element-plus/icons-vue'
+import { Search, Document, Warning, Cpu, Check, Delete, Plus, Download, SetUp } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { logAnalysisApi, type AppLogConfig } from '@/api/logAnalysis'
 import { aiAnalysisApi } from '@/api/aiAnalysis'
@@ -1035,6 +1038,19 @@ const viewReportDetail = async (report: any) => {
 }
 
 // checkReportStatus removed as it was never referenced in the template
+
+const canAutoFixSelectedReport = computed(() => {
+  const s = selectedReport.value?.status?.toLowerCase()
+  return s === 'completed' || s === 'error'
+})
+
+const goAutoFix = () => {
+  if (!selectedReport.value) return
+  const id = selectedReport.value.reportId
+  if (!id) return
+  reportDetailVisible.value = false
+  router.push(`/fix/chat?reportId=${id}`)
+}
 
 const handleReanalyzeReport = async (report: any) => {
   try {

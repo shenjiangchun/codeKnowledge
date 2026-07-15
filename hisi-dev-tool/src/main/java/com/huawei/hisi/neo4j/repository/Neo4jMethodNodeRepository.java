@@ -330,6 +330,48 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
         """)
     void createBridgeRelations(@Param("relations") List<Map<String, Object>> relations);
 
+    /**
+     * 批量创建 CONTAINS 关系（codegraph contains 边）
+     * 方向: (parent:Method) -[:CONTAINS]-> (child:Method)
+     * 用于表达文件/类/方法层级（一期 parent/child 均为 Method 节点）。
+     */
+    @Query("""
+        UNWIND $relations AS rel
+        MATCH (parent:Method {nodeId: rel.parentId})
+        MATCH (child:Method {nodeId: rel.childId})
+        MERGE (parent)-[r:CONTAINS]->(child)
+        SET r.projectPath = rel.projectPath
+        """)
+    void createContainsRelations(@Param("relations") List<Map<String, Object>> relations);
+
+    /**
+     * 批量创建 IMPORTS 关系（codegraph imports 边）
+     * 方向: (source:Method) -[:IMPORTS]-> (target:Method)
+     * 一期两端均映射为 Method 节点（文件级 import 暂以源/目标文件首个符号节点代表）。
+     */
+    @Query("""
+        UNWIND $relations AS rel
+        MATCH (source:Method {nodeId: rel.sourceId})
+        MATCH (target:Method {nodeId: rel.targetId})
+        MERGE (source)-[r:IMPORTS]->(target)
+        SET r.projectPath = rel.projectPath
+        """)
+    void createImportsRelations(@Param("relations") List<Map<String, Object>> relations);
+
+    /**
+     * 批量创建 REFERENCES 关系（codegraph references 边，回调注册合成）
+     * 方向: (source:Method) -[:REFERENCES]-> (target:Method)
+     * refType 标记来源（如 CALLBACK），用于区分未来其它 references 子类。
+     */
+    @Query("""
+        UNWIND $relations AS rel
+        MATCH (source:Method {nodeId: rel.sourceId})
+        MATCH (target:Method {nodeId: rel.targetId})
+        MERGE (source)-[r:REFERENCES]->(target)
+        SET r.projectPath = rel.projectPath, r.refType = rel.refType
+        """)
+    void createReferencesRelations(@Param("relations") List<Map<String, Object>> relations);
+
     // ==================== 接口实现关系 (IMPLEMENTS) ====================
 
     /**

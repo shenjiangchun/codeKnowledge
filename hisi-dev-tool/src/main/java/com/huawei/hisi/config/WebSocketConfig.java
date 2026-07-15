@@ -66,7 +66,8 @@ public class WebSocketConfig implements WebSocketConfigurer {
                 .addInterceptors(new HttpSessionHandshakeInterceptor());
 
         // 注册 RAM Chat WebSocket 处理器
-        registry.addHandler(ramChatWebSocketHandler, "/ws/ram-chat")
+        // 同时支持 query-based (/ws/ram-chat?sessionId=xxx) 和 path-based (/ws/ram-chat/{sid})
+        registry.addHandler(ramChatWebSocketHandler, "/ws/ram-chat", "/ws/ram-chat/*")
                 .setAllowedOrigins(allowedOrigins)
                 .addInterceptors(new HttpSessionHandshakeInterceptor());
 

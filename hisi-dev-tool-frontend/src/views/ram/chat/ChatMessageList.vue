@@ -77,7 +77,8 @@ const turns = computed<Turn[]>(() => {
         if (turn.status !== 'streaming') break
         turn.assistantText += (payload.delta as string) || ''
         break
-      case 'tool_use_start':           // 后端 WS 推送的就是 tool_use_start（不是 tool_use）
+      case 'tool_use':                      // DB EventType.name() 大写，小写后是 tool_use
+      case 'tool_use_start':                // 后端 WS 推送的是 tool_use_start
         turn.toolSteps.push({
           toolName: (payload.toolName as string) || '',
           input: JSON.stringify(payload.input || {}),
@@ -88,8 +89,9 @@ const turns = computed<Turn[]>(() => {
       case 'tool_result':
         if (turn.toolSteps.length > 0) {
           const last = turn.toolSteps[turn.toolSteps.length - 1]
-          if (last.toolName === payload.toolName) {
-            last.result = (payload.result as string) || ''
+          if (last.toolName === payload.toolName || !payload.toolName) {
+            const r = payload.result
+            last.result = r == null ? '' : (typeof r === 'object' ? JSON.stringify(r) : String(r))
           }
         }
         break

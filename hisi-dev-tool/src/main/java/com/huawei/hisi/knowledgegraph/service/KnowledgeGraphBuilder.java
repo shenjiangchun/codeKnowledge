@@ -9,6 +9,11 @@ import com.huawei.hisi.cache.GlobalAnalysisCache;
 import com.huawei.hisi.knowledgegraph.model.*;
 import com.huawei.hisi.knowledgegraph.repository.GenerationTaskRepository;
 import com.huawei.hisi.knowledgegraph.service.storage.KnowledgeGraphStorageService;
+import com.huawei.hisi.knowledgegraph.codegraph.CodegraphSidecarService;
+import com.huawei.hisi.knowledgegraph.codegraph.CodegraphSqliteReader;
+import com.huawei.hisi.knowledgegraph.codegraph.CodegraphSqliteReader.CodegraphDb;
+import com.huawei.hisi.knowledgegraph.codegraph.CodegraphToNeo4jTransformer;
+import com.huawei.hisi.knowledgegraph.codegraph.CodegraphToNeo4jTransformer.TransformResult;
 
 import java.util.concurrent.Semaphore;
 import com.huawei.hisi.model.FeignClientInfo;
@@ -107,6 +112,11 @@ public class KnowledgeGraphBuilder {
     // Neo4j 数据模型节点 Repository
     private final Neo4jDataModelNodeRepository neo4jDataModelNodeRepository;
 
+    // codegraph sidecar 相关依赖（TS/JS/Vue 走 codegraph 路径）
+    private final CodegraphSidecarService codegraphSidecarService;
+    private final CodegraphSqliteReader codegraphSqliteReader;
+    private final CodegraphToNeo4jTransformer codegraphTransformer;
+
     public KnowledgeGraphBuilder(
             CodeAnalysisCoreService coreService,
             GlobalAnalysisCache globalCache,
@@ -126,7 +136,10 @@ public class KnowledgeGraphBuilder {
             PythonKnowledgeGraphBuilder pythonKnowledgeGraphBuilder,
             Neo4jGenerationCheckpointRepository checkpointRepository,
             JavaDataModelScanner javaDataModelScanner,
-            Neo4jDataModelNodeRepository neo4jDataModelNodeRepository) {
+            Neo4jDataModelNodeRepository neo4jDataModelNodeRepository,
+            CodegraphSidecarService codegraphSidecarService,
+            CodegraphSqliteReader codegraphSqliteReader,
+            CodegraphToNeo4jTransformer codegraphTransformer) {
         this.coreService = coreService;
         this.globalCache = globalCache;
         this.storageService = storageService;
@@ -146,6 +159,9 @@ public class KnowledgeGraphBuilder {
         this.checkpointRepository = checkpointRepository;
         this.javaDataModelScanner = javaDataModelScanner;
         this.neo4jDataModelNodeRepository = neo4jDataModelNodeRepository;
+        this.codegraphSidecarService = codegraphSidecarService;
+        this.codegraphSqliteReader = codegraphSqliteReader;
+        this.codegraphTransformer = codegraphTransformer;
     }
 
     /**
@@ -193,6 +209,11 @@ public class KnowledgeGraphBuilder {
         // 如果是Python项目，使用PythonKnowledgeGraphBuilder
         if (language == Language.PYTHON) {
             return buildPythonKnowledgeGraph(projectPath, excludePaths, startTime);
+        }
+
+        // 如果是 TypeScript/JavaScript/Vue 项目，走 codegraph sidecar
+        if (language == Language.TYPESCRIPT || language == Language.JAVASCRIPT) {
+            return buildCodegraphKnowledgeGraph(projectPath, startTime, language);
         }
 
         // 否则使用Java知识图谱构建（默认）
@@ -246,6 +267,64 @@ public class KnowledgeGraphBuilder {
 
         log.info("Python知识图谱构建完成: {}", result);
         return result;
+    }
+
+    /**
+     * Build knowledge graph for TypeScript/JavaScript/Vue projects via codegraph sidecar.
+     * 流程：codegraph init → 读 SQLite → 转 Neo4j。
+     * 不调用 vectorGenerationService / LLMDescriptionService / DataModelScanner 等后处理
+     * （TS/JS 后处理是 Phase 2 的工作）。
+     */
+    private Map<String, Object> buildCodegraphKnowledgeGraph(String projectPath, long startTime, Language language) {
+        log.info("[KG Build] Building {} knowledge graph via codegraph sidecar...", language);
+
+        // 1. 清理旧数据
+        cleanOldData(projectPath);
+
+        try {
+            // 2. 运行 codegraph sidecar
+            CodegraphSidecarService.CodegraphRunResult runResult = codegraphSidecarService.run(projectPath);
+            log.info("[KG Build] codegraph finished, db: {}", runResult.outputDbPath());
+
+            // 3. 读 SQLite
+            CodegraphDb db = codegraphSqliteReader.readAll(runResult.outputDbPath());
+            log.info("[KG Build] codegraph db loaded: nodes={}, edges={}, files={}",
+                    db.nodes().size(), db.edges().size(), db.files().size());
+
+            // 4. 转换并写入 Neo4j
+            String serviceName = new File(projectPath).getName();
+            TransformResult transformResult = codegraphTransformer.transform(db, projectPath, serviceName);
+            log.info("[KG Build] Neo4j transform done: methods={}, entryPoints={}, calls={}, contains={}, imports={}, references={}, skipped={}",
+                    transformResult.methodsSaved(), transformResult.entryPointsSaved(),
+                    transformResult.callsRelations(), transformResult.containsRelations(),
+                    transformResult.importsRelations(), transformResult.referencesRelations(),
+                    transformResult.skipped());
+
+            // 5. 统计返回结果
+            int methodNodeCount = (int) neo4jMethodNodeRepository.countByProjectPath(projectPath);
+            int entryPointCount = (int) neo4jEntryPointNodeRepository.countByProjectPath(projectPath);
+            int callRelationCount = (int) neo4jMethodNodeRepository.countCallRelationsByProjectPath(projectPath);
+
+            long endTime = System.currentTimeMillis();
+            Map<String, Object> result = new HashMap<>();
+            result.put("methodNodeCount", methodNodeCount);
+            result.put("callRelationCount", callRelationCount);
+            result.put("entryPointCount", entryPointCount);
+            result.put("interfaceImplCount", 0); // TS/JS 不做接口实现扫描
+            result.put("language", language == Language.TYPESCRIPT ? "typescript" : "javascript");
+            result.put("elapsedMs", endTime - startTime);
+            result.put("codegraphNodes", db.nodes().size());
+            result.put("codegraphEdges", db.edges().size());
+
+            // 知识图谱生成完成后，异步启动向量生成（与 Java/Python 流程对齐）
+            log.info("[KG Build] codegraph 知识图谱生成完成，启动向量生成: {}", projectPath);
+            vectorGenerationService.startVectorGeneration(projectPath);
+
+            return result;
+        } catch (Exception e) {
+            log.error("[KG Build] codegraph knowledge graph build failed for: {}", projectPath, e);
+            throw new RuntimeException("codegraph 知识图谱构建失败: " + e.getMessage(), e);
+        }
     }
 
     /**

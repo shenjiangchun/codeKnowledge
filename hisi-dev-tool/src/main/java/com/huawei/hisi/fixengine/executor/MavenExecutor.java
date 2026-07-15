@@ -30,7 +30,9 @@ public class MavenExecutor {
         log.info("[MavenExecutor] running test={} module={} in {}", testClass, module, worktreePath);
 
         var cmd = new java.util.ArrayList<String>();
-        cmd.add("mvn");
+        // Windows 上 mvn 是 mvn.cmd 批处理；ProcessBuilder 不会自动走 PATHEXT，
+        // 直接 "mvn" 会 CreateProcess error=2。显式选 mvn.cmd。
+        cmd.add(System.getProperty("os.name", "").toLowerCase().contains("win") ? "mvn.cmd" : "mvn");
         cmd.add("test");
         cmd.add("-Dtest=" + testClass);
         if (module != null && !module.isBlank()) {

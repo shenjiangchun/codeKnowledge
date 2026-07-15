@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import type { ChatEvent } from '@/api/ramChat'
 
 export interface FixSession {
   id: string
@@ -19,17 +20,9 @@ export interface FixSession {
   updatedAt: number
 }
 
-export interface FixChatMessage {
-  id: number
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  metadata?: Record<string, unknown>
-  createdAt: number
-}
-
 export const fixApi = {
   /** Start a new fix session for a report. Returns the sessionId (String). */
-  startSession(reportId: number) {
+  startSession(reportId: string) {
     return request.post<string>('/fix/sessions', null, { params: { reportId } })
   },
 
@@ -40,9 +33,9 @@ export const fixApi = {
     })
   },
 
-  /** Get chat history for a fix session. */
+  /** Get chat history for a fix session as RAM-chat-compatible events. */
   getHistory(sessionId: string) {
-    return request.get<FixChatMessage[]>(`/fix/sessions/${sessionId}/history`)
+    return request.get<ChatEvent[]>(`/fix/sessions/${sessionId}/history`)
   },
 
   /** Get fix session details. */
@@ -51,7 +44,7 @@ export const fixApi = {
   },
 
   /** List fix sessions for a report. */
-  listByReport(reportId: number) {
+  listByReport(reportId: string) {
     return request.get<FixSession[]>('/fix/sessions', { params: { reportId } })
   }
 }

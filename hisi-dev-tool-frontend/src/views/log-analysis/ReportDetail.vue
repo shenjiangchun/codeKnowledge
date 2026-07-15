@@ -176,7 +176,7 @@ const handleAutoFix = () => {
 
 const loadFixSessions = async () => {
   try {
-    const sessions = await fixApi.listByReport(Number(reportId.value))
+    const sessions = await fixApi.listByReport(reportId.value)
     fixSessions.value = sessions
   } catch {
     // 静默失败：报告可能没有修复历史

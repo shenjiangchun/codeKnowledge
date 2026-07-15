@@ -43,6 +43,15 @@ public class WorktreeService {
     }
 
     /**
+     * 探测仓库当前分支名，供 worktree base branch 使用。
+     *
+     * @return 当前分支名；探测失败或 detached HEAD 时返回 null
+     */
+    public String currentBranch(String repoPath) {
+        return gitExecutor.currentBranch(repoPath);
+    }
+
+    /**
      * Write a test source file into the worktree.
      */
     public void writeTestFile(String worktreePath, String packageName,

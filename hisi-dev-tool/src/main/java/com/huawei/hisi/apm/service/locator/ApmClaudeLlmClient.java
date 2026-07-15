@@ -44,7 +44,8 @@ import com.huawei.hisi.apm.config.ApmLlmProperties;
 public class ApmClaudeLlmClient implements LlmClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(ApmClaudeLlmClient.class);
-    private static final String CHAT_PATH = "/v1/chat/completions";
+    private static final String CHAT_PATH = "/chat/completions";
+    private static final String CHAT_PATH_FULL = "/v1/chat/completions";
 
     private final ApmLlmProperties props;
     private final RestTemplate restTemplate;
@@ -102,7 +103,7 @@ public class ApmClaudeLlmClient implements LlmClient {
                     systemPrompt == null ? 0 : systemPrompt.length(),
                     userPrompt == null ? 0 : userPrompt.length());
 
-            String url = trimTrailingSlash(props.getBaseUrl()) + CHAT_PATH;
+            String url = resolveChatUrl(props.getBaseUrl());
             String body = buildRequestBody(systemPrompt, userPrompt);
 
             HttpHeaders headers = new HttpHeaders();
@@ -175,6 +176,29 @@ public class ApmClaudeLlmClient implements LlmClient {
             return "";
         }
         return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
+    }
+
+    /**
+     * Resolve the full chat-completions URL, tolerant of whether {@code baseUrl}
+     * already includes the {@code /v1} segment. Mirrors the convention used by
+     * {@link com.huawei.hisi.ram.sdk.impl.AnthropicHttpClient}.
+     *
+     * <p>Examples:
+     * <ul>
+     *   <li>{@code http://h/v1} → {@code http://h/v1/chat/completions}</li>
+     *   <li>{@code http://h} → {@code http://h/v1/chat/completions}</li>
+     *   <li>{@code http://h/v1/} → {@code http://h/v1/chat/completions}</li>
+     * </ul>
+     */
+    static String resolveChatUrl(String baseUrl) {
+        String trimmed = trimTrailingSlash(baseUrl);
+        if (trimmed.endsWith("/v1")) {
+            return trimmed + CHAT_PATH;
+        }
+        if (trimmed.endsWith(CHAT_PATH_FULL)) {
+            return trimmed;
+        }
+        return trimmed + CHAT_PATH_FULL;
     }
 
     private static String safeBody(String body) {

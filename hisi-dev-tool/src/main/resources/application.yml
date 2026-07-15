@@ -76,7 +76,9 @@ hisi:
         timeout-seconds: 40
         max-concurrency: 2
         temperature: 0.2
-        max-tokens: 1024
+        # 默认 8192：兼容 Claude（标准模型）与推理模型（如 GLM-5.1-wenshu）。
+        # 推理模型会先消费 token 在 reasoning 字段再输出 content，max_tokens 太小会导致 content=null。
+        max-tokens: 8192
 
 # ==================== 旧版平台配置（已废弃，保留向后兼容） ====================
 # 以下配置已迁移至上方 embedding / text-model 统一配置，不再生效
@@ -273,3 +275,17 @@ anthropic:
   api-key: ${ANTHROPIC_API_KEY:}
   base-url: ${ANTHROPIC_URL:}
   model: ${ANTHROPIC_MODEL:}
+
+# Maven 构建配置（由 build.sh / build.bat 读取后传给 mvn）
+# 用法：bash build.sh [mvn args...]   例: bash build.sh clean compile
+maven:
+  # 自定义 settings.xml（含 Huawei 内网镜像 + 鉴权）
+  settings: ${MAVEN_SETTINGS:D:/setting/settings-saas.xml}
+  # 本地仓库路径
+  repo: ${MAVEN_REPO:D:/repository}
+  # JDK 17+ 路径（ antlr4-maven-plugin 4.13.1 需 Java 11+ ）
+  java-home: ${MAVEN_JAVA_HOME:C:/Program Files/Java/jdk-17.0.3.1}
+  ssl:
+    insecure: ${MAVEN_SSL_INSECURE:true}
+    allowall: ${MAVEN_SSL_ALLOWALL:true}
+    ignore-validity-dates: ${MAVEN_SSL_IGNORE_VALIDITY_DATES:true}

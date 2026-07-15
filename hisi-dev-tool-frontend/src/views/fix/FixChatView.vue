@@ -1,6 +1,5 @@
 <template>
   <div class="fix-chat">
-    <!-- Header -->
     <header class="fix-header">
       <div class="header-left">
         <el-button text @click="goBack">
@@ -15,6 +14,15 @@
       <div class="header-right">
         <span v-if="session?.branchName" class="branch-name">{{ session.branchName }}</span>
         <el-button
+          v-if="session?.reportId"
+          size="small"
+          text
+          @click="startNewSession"
+        >
+          <el-icon><Plus /></el-icon>
+          新建会话
+        </el-button>
+        <el-button
           v-if="session?.worktreePath"
           type="primary"
           size="small"
@@ -27,7 +35,6 @@
       </div>
     </header>
 
-    <!-- Error alert -->
     <el-alert
       v-if="session?.errorMsg"
       :title="session.errorMsg"
@@ -37,81 +44,37 @@
       class="error-alert"
     />
 
-    <!-- Messages -->
-    <div ref="messagesRef" class="messages-container">
+    <div class="chat-body">
       <div v-if="loading" class="loading-box">
         <el-icon class="is-loading" :size="24"><Loading /></el-icon>
         <span>{{ loadingText }}</span>
       </div>
-
-      <div
-        v-for="msg in messages"
-        :key="msg.id"
-        :class="['message-row', `message-${msg.role}`]"
-      >
-        <div class="message-bubble">
-          <div class="message-role">
-            {{ msg.role === 'user' ? '我' : msg.role === 'assistant' ? 'AI 助手' : '系统' }}
-          </div>
-          <pre class="message-content">{{ msg.content }}</pre>
-        </div>
-      </div>
-
-      <div v-if="streamingContent" class="message-row message-assistant">
-        <div class="message-bubble streaming">
-          <div class="message-role">AI 助手</div>
-          <pre class="message-content">{{ streamingContent }}</pre>
-        </div>
-      </div>
+      <ChatMessageList v-else />
     </div>
 
-    <!-- Input area -->
-    <div class="input-area">
-      <el-input
-        v-model="inputText"
-        type="textarea"
-        :rows="2"
-        :placeholder="inputPlaceholder"
-        :disabled="!canFollowUp"
-        resize="none"
-        @keydown.enter.exact.prevent="handleSend"
-      />
-      <el-button
-        type="primary"
-        :disabled="!canFollowUp || !inputText.trim()"
-        :loading="sending"
-        @click="handleSend"
-      >
-        发送
-      </el-button>
-    </div>
+    <ChatInputBox :send-handler="handleSend" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, FolderOpened, Loading } from '@element-plus/icons-vue'
+import { ArrowLeft, FolderOpened, Loading, Plus } from '@element-plus/icons-vue'
 import { fixApi } from '@/api/fix'
-import type { FixSession, FixChatMessage } from '@/api/fix'
+import type { FixSession } from '@/api/fix'
+import { useRamChatStore } from '@/stores/ramChatStore'
+import { useRamChatWebSocket } from '@/composables/useRamChatWebSocket'
+import ChatMessageList from '@/views/ram/chat/ChatMessageList.vue'
+import ChatInputBox from '@/views/ram/chat/ChatInputBox.vue'
 
 const route = useRoute()
 const router = useRouter()
+const store = useRamChatStore()
+const { connect, disconnect } = useRamChatWebSocket()
 
 const session = ref<FixSession | null>(null)
-const messages = ref<FixChatMessage[]>([])
-const inputText = ref('')
 const loading = ref(false)
-const sending = ref(false)
-const streamingContent = ref('')
-const messagesRef = ref<HTMLDivElement | null>(null)
-
-let ws: WebSocket | null = null
-let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-let reconnectAttempts = 0
-
-const sessionId = computed(() => session.value?.id ?? null)
 
 const loadingText = computed(() => {
   if (route.query.reportId) return '正在启动修复会话...'
@@ -138,180 +101,56 @@ const statusTagType = computed(() => {
   return session.value ? (map[session.value.status] ?? '') : ''
 })
 
-const canFollowUp = computed(() => {
-  if (!session.value) return false
-  return session.value.status === 'SUCCESS' || session.value.status === 'PAUSED'
-})
-
-const inputPlaceholder = computed(() => {
-  if (!session.value) return '等待会话初始化...'
-  if (session.value.status === 'RUNNING') return '修复进行中，请等待完成...'
-  if (session.value.status === 'FAILED') return '修复已失败，无法继续对话'
-  return '输入追问消息，按 Enter 发送...'
-})
-
 function goBack() {
   router.push('/log-analysis')
 }
 
 function openWorktree() {
   if (session.value?.worktreePath) {
-    // Copy path to clipboard as a convenience
     navigator.clipboard.writeText(session.value.worktreePath)
     ElMessage.success('worktree 路径已复制到剪贴板')
   }
 }
 
-function scrollToBottom() {
-  nextTick(() => {
-    if (messagesRef.value) {
-      messagesRef.value.scrollTop = messagesRef.value.scrollHeight
-    }
-  })
+async function handleSend(text: string) {
+  if (!session.value) return
+  await fixApi.followUp(session.value.id, text)
 }
 
-function appendMessage(msg: FixChatMessage) {
-  messages.value.push(msg)
-  scrollToBottom()
+async function startNewSession() {
+  const reportId = session.value?.reportId
+  if (!reportId) {
+    ElMessage.warning('当前会话缺少 reportId，无法新建')
+    return
+  }
+  disconnect()
+  session.value = null
+  await router.replace({ name: 'FixChat', query: { reportId } })
+  initByReportId(reportId, true)
 }
 
-async function loadHistory(sid: string) {
-  try {
-    const history = await fixApi.getHistory(sid)
-    messages.value = history
-    scrollToBottom()
-  } catch {
-    ElMessage.error('加载对话历史失败')
-  }
-}
-
-async function loadSession(sid: string) {
-  try {
-    session.value = await fixApi.getSession(sid)
-  } catch {
-    ElMessage.error('加载会话信息失败')
-  }
-}
-
-function connectWebSocket(sid: string) {
-  disconnectWs()
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const host = window.location.host
-  const url = `${protocol}//${host}/ws/ram-chat/${sid}`
-
-  ws = new WebSocket(url)
-
-  ws.onopen = () => {
-    reconnectAttempts = 0
-  }
-
-  ws.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data) as Record<string, unknown>
-      handleWsMessage(data)
-    } catch {
-      console.error('[FixChatWS] Failed to parse message')
-    }
-  }
-
-  ws.onclose = () => {
-    scheduleReconnect(sid)
-  }
-
-  ws.onerror = (err) => {
-    console.error('[FixChatWS] error', err)
-  }
-}
-
-function handleWsMessage(data: Record<string, unknown>) {
-  const type = data.type as string | undefined
-
-  if (type === 'message') {
-    // A complete message from the assistant
-    streamingContent.value = ''
-    appendMessage({
-      id: (data.id as number) ?? Date.now(),
-      role: (data.role as FixChatMessage['role']) ?? 'assistant',
-      content: (data.content as string) ?? '',
-      createdAt: (data.createdAt as number) ?? Date.now()
-    })
-  } else if (type === 'stream' || type === 'token') {
-    // Streaming token
-    const token = (data.content as string) ?? (data.token as string) ?? ''
-    streamingContent.value += token
-    scrollToBottom()
-  } else if (type === 'stream_end') {
-    // Stream finished — promote streaming content to a real message
-    if (streamingContent.value) {
-      appendMessage({
-        id: (data.id as number) ?? Date.now(),
-        role: 'assistant',
-        content: streamingContent.value,
-        createdAt: Date.now()
-      })
-      streamingContent.value = ''
-    }
-  } else if (type === 'status') {
-    // Session status update
-    const newStatus = data.status as FixSession['status'] | undefined
-    if (newStatus && session.value) {
-      session.value = { ...session.value, status: newStatus }
-    }
-  }
-}
-
-function disconnectWs() {
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer)
-    reconnectTimer = null
-  }
-  if (ws) {
-    ws.onclose = null
-    ws.close()
-    ws = null
-  }
-}
-
-function scheduleReconnect(sid: string) {
-  if (reconnectAttempts >= 5) return
-  const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000)
-  reconnectAttempts++
-  reconnectTimer = setTimeout(() => connectWebSocket(sid), delay)
-}
-
-async function handleSend() {
-  const text = inputText.value.trim()
-  if (!text || !sessionId.value || !canFollowUp.value) return
-
-  // Optimistic local append
-  appendMessage({
-    id: Date.now(),
-    role: 'user',
-    content: text,
-    createdAt: Date.now()
-  })
-  inputText.value = ''
-  sending.value = true
-
-  try {
-    await fixApi.followUp(sessionId.value, text)
-  } catch {
-    ElMessage.error('发送失败，请重试')
-  } finally {
-    sending.value = false
-  }
-}
-
-async function initByReportId(reportId: number) {
+async function initByReportId(reportId: string, forceNew = false) {
   loading.value = true
   try {
-    const sid = await fixApi.startSession(reportId)
-    session.value = await fixApi.getSession(String(sid))
-    await loadHistory(String(sid))
-    connectWebSocket(String(sid))
-    // Update URL to include sessionId for refresh resilience
-    router.replace({ name: 'fix-chat', params: { sid: String(sid) } })
-  } catch {
+    let sid: string | undefined
+    if (!forceNew) {
+      try {
+        const existing = await fixApi.listByReport(reportId)
+        if (existing.length > 0) {
+          sid = existing[0].id
+        }
+      } catch {
+        // 静默，落到新建流程
+      }
+    }
+    if (!sid) {
+      sid = String(await fixApi.startSession(reportId))
+    }
+    await loadSession(sid)
+    await bindChatChannel()
+    router.replace({ name: 'FixChatSession', params: { sid } })
+  } catch (e) {
+    console.error('启动修复会话失败:', e)
     ElMessage.error('启动修复会话失败')
   } finally {
     loading.value = false
@@ -322,8 +161,7 @@ async function initBySessionId(sid: string) {
   loading.value = true
   try {
     await loadSession(sid)
-    await loadHistory(sid)
-    connectWebSocket(sid)
+    await bindChatChannel()
   } catch {
     ElMessage.error('加载修复会话失败')
   } finally {
@@ -331,8 +169,21 @@ async function initBySessionId(sid: string) {
   }
 }
 
+async function loadSession(sid: string) {
+  session.value = await fixApi.getSession(sid)
+}
+
+async function bindChatChannel() {
+  const chatSessionId = session.value?.chatSessionId
+  if (!chatSessionId) {
+    ElMessage.warning('会话缺少 chatSessionId')
+    return
+  }
+  await store.selectSession(chatSessionId)
+  connect(chatSessionId)
+}
+
 onMounted(() => {
-  // 优先从 route.params.sid 获取（/fix/chat/:sid）
   const paramSid = route.params.sid as string | undefined
   const reportIdParam = route.query.reportId
   const sessionIdParam = route.query.sessionId
@@ -340,7 +191,7 @@ onMounted(() => {
   if (paramSid) {
     initBySessionId(paramSid)
   } else if (reportIdParam) {
-    initByReportId(Number(reportIdParam))
+    initByReportId(String(reportIdParam))
   } else if (sessionIdParam) {
     initBySessionId(String(sessionIdParam))
   } else {
@@ -349,7 +200,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  disconnectWs()
+  disconnect()
 })
 </script>
 
@@ -362,7 +213,6 @@ onUnmounted(() => {
   background: #f5f7fa;
 }
 
-/* Header */
 .fix-header {
   display: flex;
   justify-content: space-between;
@@ -404,20 +254,14 @@ onUnmounted(() => {
   border-radius: 4px;
 }
 
-/* Error alert */
 .error-alert {
   margin: 0;
   flex-shrink: 0;
 }
 
-/* Messages */
-.messages-container {
+.chat-body {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
 }
 
 .loading-box {
@@ -428,71 +272,5 @@ onUnmounted(() => {
   gap: 12px;
   padding: 60px 0;
   color: #909399;
-}
-
-.message-row {
-  display: flex;
-}
-
-.message-user {
-  justify-content: flex-end;
-}
-
-.message-assistant,
-.message-system {
-  justify-content: flex-start;
-}
-
-.message-bubble {
-  max-width: 80%;
-  padding: 12px 16px;
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-}
-
-.message-user .message-bubble {
-  background: #ecf5ff;
-  border: 1px solid #d9ecff;
-}
-
-.message-system .message-bubble {
-  background: #f4f4f5;
-  border: 1px solid #e9e9eb;
-}
-
-.message-bubble.streaming {
-  border-left: 3px solid #409eff;
-}
-
-.message-role {
-  font-size: 12px;
-  color: #909399;
-  margin-bottom: 4px;
-}
-
-.message-content {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 14px;
-  line-height: 1.6;
-  color: #303133;
-  font-family: inherit;
-}
-
-/* Input area */
-.input-area {
-  display: flex;
-  gap: 12px;
-  padding: 12px 20px;
-  background: #fff;
-  border-top: 1px solid #e5e7eb;
-  flex-shrink: 0;
-  align-items: flex-end;
-}
-
-.input-area .el-input {
-  flex: 1;
 }
 </style>
