@@ -1,8 +1,10 @@
 package com.huawei.hisi.fixengine.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hisi.fixengine.agent.FixAgent;
 import com.huawei.hisi.fixengine.model.FixSession;
 import com.huawei.hisi.fixengine.repository.FixSessionRepository;
+import com.huawei.hisi.ram.chat.RamChatWebSocketHandler;
 import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
@@ -24,7 +26,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -41,15 +43,20 @@ class FixChatServiceTest {
     @Mock
     private FixAgent fixAgent;
 
+    @Mock
+    private RamChatWebSocketHandler wsHandler;
+
+    private ObjectMapper objectMapper = new ObjectMapper();
+
     private FixChatService fixChatService;
 
     @BeforeEach
     void setUp() {
-        fixChatService = new FixChatService(fixSessionRepository, agentEventRepository, fixAgent);
+        fixChatService = new FixChatService(fixSessionRepository, agentEventRepository, fixAgent, wsHandler, objectMapper);
     }
 
     @Test
-    @DisplayName("chat persists USER_MSG then calls handleFollowUp then persists ASSISTANT_DELTA")
+    @DisplayName("chat persists USER_MSG then async calls handleFollowUp then persists ASSISTANT_DELTA + CHECKPOINT")
     void chat_happyPath_persistsUserAndAssistantEvents() {
         String sessionId = "fix-123";
         long chatSessionId = 999L;
@@ -64,15 +71,17 @@ class FixChatServiceTest {
 
         String reply = fixChatService.chat(sessionId, "what's the status?");
 
-        assertThat(reply).isEqualTo("step 4 running");
+        // HTTP returns null immediately — reply delivered via WebSocket
+        assertThat(reply).isNull();
 
+        // Async: should append USER_MSG, ASSISTANT_DELTA, and CHECKPOINT (3 events)
         ArgumentCaptor<AgentEvent> captor = ArgumentCaptor.forClass(AgentEvent.class);
-        verify(agentEventRepository, times(2)).append(captor.capture());
+        verify(agentEventRepository, timeout(2000).times(3)).append(captor.capture());
         List<AgentEvent> appended = captor.getAllValues();
         assertThat(appended.get(0).getType()).isEqualTo(EventType.USER_MSG);
         assertThat(appended.get(1).getType()).isEqualTo(EventType.ASSISTANT_DELTA);
+        assertThat(appended.get(2).getType()).isEqualTo(EventType.CHECKPOINT);
         assertThat(appended.get(0).getSessionId()).isEqualTo(chatSessionId);
-        assertThat(appended.get(1).getSessionId()).isEqualTo(chatSessionId);
         assertThat(appended.get(0).getPayload()).contains("what's the status?");
         assertThat(appended.get(1).getPayload()).contains("step 4 running");
     }

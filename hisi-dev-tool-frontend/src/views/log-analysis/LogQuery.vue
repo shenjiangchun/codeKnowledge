@@ -1037,8 +1037,6 @@ const viewReportDetail = async (report: any) => {
   }
 }
 
-// checkReportStatus removed as it was never referenced in the template
-
 const canAutoFixSelectedReport = computed(() => {
   const s = selectedReport.value?.status?.toLowerCase()
   return s === 'completed' || s === 'error'
@@ -1051,6 +1049,8 @@ const goAutoFix = () => {
   reportDetailVisible.value = false
   router.push(`/fix/chat?reportId=${id}`)
 }
+
+// checkReportStatus removed as it was never referenced in the template
 
 const handleReanalyzeReport = async (report: any) => {
   try {

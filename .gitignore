@@ -11,6 +11,7 @@ target/
 # OS
 .DS_Store
 Thumbs.db
+sh.exe.stackdump
 
 # Logs
 logs/
@@ -47,6 +48,17 @@ ai-sessions/
 /.codeai/
 /ai-sessions/
 
+# Frontend build artifacts / standalone test outputs
+hisi-dev-tool-frontend/package-lock.json
+hisi-dev-tool-frontend/standalone-ram-test*.mjs
+hisi-dev-tool-frontend/test-results-standalone/
+hisi-dev-tool-frontend/.codegraph/
+
+# Codegraph SQLite DB (local sidecar output, not source code)
+**/codegraph.db
+**/codegraph.db-shm
+**/codegraph.db-wal
+
 # Personal / HR files — NEVER commit
 *.docx
 *.pdf
@@ -59,3 +71,8 @@ gen_*.py
 *沈江春*
 *审视*
 *用户手册*
+
+# Personal notes / review files (local only)
+2026_work_review.txt
+HiSi-DevTool-AI4Coding.md
+RAM_CHAT_FIX_PATCH.md

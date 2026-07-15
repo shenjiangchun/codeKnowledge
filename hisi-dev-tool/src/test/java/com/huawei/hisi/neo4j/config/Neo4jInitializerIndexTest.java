@@ -36,6 +36,14 @@ class Neo4jInitializerIndexTest {
         indexes.forEach(s -> assertThat(s).contains("IF NOT EXISTS"));
     }
 
+    @Test
+    void rangeIndexes_containsCodegraphRelationshipIndexes() throws Exception {
+        List<String> indexes = readListConstant(Neo4jInitializer.class, "RANGE_INDEXES");
+        assertThat(indexes).anyMatch(s -> s.contains("CONTAINS") && s.contains("projectPath"));
+        assertThat(indexes).anyMatch(s -> s.contains("IMPORTS") && s.contains("projectPath"));
+        assertThat(indexes).anyMatch(s -> s.contains("REFERENCES") && s.contains("projectPath"));
+    }
+
     @SuppressWarnings("unchecked")
     private static List<String> readListConstant(Class<?> cls, String name) throws Exception {
         Field f = cls.getDeclaredField(name);
