@@ -75,11 +75,9 @@ class RamChatOrchestratorTest {
         );
         ReflectionTestUtils.setField(orchestrator, "timeoutSeconds", 10L);
 
-        // Persist path: return whatever was passed in.
         when(eventRepository.append(any(AgentEvent.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
-        // Context / tools stubs — minimal, do not care about content.
         when(contextBuilder.buildContext(anyLong(), anyString(), any()))
                 .thenReturn(new ChatContextBuilder.ChatContext("sys", "user"));
         when(kgToolRegistry.buildToolDefinitions(any(List.class)))
@@ -91,10 +89,6 @@ class RamChatOrchestratorTest {
         when(projectOverviewTool.buildHandler(any(List.class)))
                 .thenReturn(map -> null);
 
-        // TurnRegistry stubbing: capture the ActiveTurn passed to register(...),
-        // then serve it back via get(...) so isActive() returns true for the
-        // current turn. Without this the CHECKPOINT / delta / tool events are
-        // dropped by the late-write guards added in Phase A T1.
         AtomicReference<TurnRegistry.ActiveTurn> activeRef = new AtomicReference<>();
         doAnswer(inv -> {
             activeRef.set(inv.getArgument(1));
@@ -107,9 +101,6 @@ class RamChatOrchestratorTest {
     @Test
     @DisplayName("CHECKPOINT payload uses streamed markdown text, not JSON schema fields")
     void checkpoint_usesStreamedMarkdown() throws Exception {
-        // Stub the streaming Claude call: fire 3 assistant deltas, then return
-        // a JsonCallResult whose `json` map contains an `answer` field that
-        // MUST NOT leak into the CHECKPOINT payload.
         when(claudeClient.callJsonWithToolsAndStreamingMultiTurn(
                 anyString(), anyList(), any(), anyMap(), any(), any(StreamCallbacks.class), any()))
                 .thenAnswer(inv -> {
@@ -127,7 +118,6 @@ class RamChatOrchestratorTest {
 
         orchestrator.runTurn(42L, "hi", "/tmp/proj");
 
-        // Capture all events written to the repository, find the CHECKPOINT.
         ArgumentCaptor<AgentEvent> captor = ArgumentCaptor.forClass(AgentEvent.class);
         verify(eventRepository, atLeastOnce()).append(captor.capture());
 
@@ -139,22 +129,16 @@ class RamChatOrchestratorTest {
         Map<String, Object> payload = objectMapper.readValue(
                 ckpt.getPayload(), new TypeReference<Map<String, Object>>() {});
 
-        // The streamed markdown buffer must feed finalText.
         assertThat(payload).containsEntry("finalText", "段1段2段3");
-
-        // JSON-schema-derived fields must NOT appear.
         assertThat(payload).doesNotContainKey("answer");
         assertThat(payload).doesNotContainKey("key_findings");
         assertThat(payload).doesNotContainKey("finalJson");
-
-        // summary is now empty (no JSON schema to pull from).
-        assertThat(payload).containsEntry("summary", "");
+        assertThat(payload).containsEntry("summary", "段1段2段3");
     }
 
     @Test
     @DisplayName("orchestrator sources model id from ChatModelProperties.defaultModelId() (Phase B #5)")
     void orchestrator_usesConfigDrivenDefaultModelId() throws Exception {
-        // Re-build chatProps with a custom default-model override.
         ChatModelProperties customProps = new ChatModelProperties();
         customProps.setDefaultModel("test-custom-model");
         ChatModelProperties.ModelSpec spec = new ChatModelProperties.ModelSpec();
@@ -162,23 +146,14 @@ class RamChatOrchestratorTest {
         customProps.setModels(Map.of("glm-5.1", spec));
 
         RamChatOrchestrator customOrchestrator = new RamChatOrchestrator(
-                eventRepository,
-                claudeClient,
-                kgToolRegistry,
-                projectOverviewTool,
-                contextBuilder,
-                wsHandler,
-                objectMapper,
-                customProps,
-                turnRegistry);
+                eventRepository, claudeClient, kgToolRegistry,
+                projectOverviewTool, contextBuilder, wsHandler,
+                objectMapper, customProps, turnRegistry);
         ReflectionTestUtils.setField(customOrchestrator, "timeoutSeconds", 10L);
 
-        // Re-stub the same context/tools/turnRegistry/captured-ActiveTurn setup used in setUp().
         AtomicReference<TurnRegistry.ActiveTurn> activeRef = new AtomicReference<>();
-        doAnswer(inv -> {
-            activeRef.set(inv.getArgument(1));
-            return null;
-        }).when(turnRegistry).register(anyLong(), any(TurnRegistry.ActiveTurn.class));
+        doAnswer(inv -> { activeRef.set(inv.getArgument(1)); return null; })
+                .when(turnRegistry).register(anyLong(), any(TurnRegistry.ActiveTurn.class));
         when(turnRegistry.get(anyLong())).thenAnswer(inv -> Optional.ofNullable(activeRef.get()));
         when(eventRepository.append(any(AgentEvent.class))).thenAnswer(inv -> inv.getArgument(0));
         when(contextBuilder.buildContext(anyLong(), anyString(), any()))
@@ -197,8 +172,66 @@ class RamChatOrchestratorTest {
 
         customOrchestrator.runTurn(99L, "hi", "/tmp/proj");
 
-        // The ActiveTurn registered with TurnRegistry must carry the custom model id.
         assertThat(activeRef.get()).isNotNull();
         assertThat(activeRef.get().modelId()).isEqualTo("test-custom-model");
+    }
+
+    // ---- P0-4 FIXED: checkpoint summaries ----
+    // P0-4 resolved: summarize() extracts first meaningful line from finalText
+
+    @Test
+    @DisplayName("P0-4 FIXED: checkpoint summary is derived from first line of finalText")
+    void checkpoint_summaryIsAlwaysEmpty_documentedGap_P0_4() throws Exception {
+        // DOCUMENTATION: P0-4 fixed — RamChatOrchestrator.summarize() now extracts
+        // the first meaningful line from the streamed markdown as the checkpoint summary.
+        when(claudeClient.callJsonWithToolsAndStreamingMultiTurn(
+                anyString(), anyList(), any(), anyMap(), any(), any(StreamCallbacks.class), any()))
+                .thenAnswer(inv -> {
+                    StreamCallbacks cb = inv.getArgument(5);
+                    cb.onAssistantDelta("A detailed analysis of the codebase structure.");
+                    cb.onRoundComplete(0, "end_turn");
+                    return new RamClaudeJsonClient.JsonCallResult(Map.of(), List.of());
+                });
+
+        orchestrator.runTurn(100L, "analyze", "/project");
+
+        ArgumentCaptor<AgentEvent> captor = ArgumentCaptor.forClass(AgentEvent.class);
+        verify(eventRepository, atLeastOnce()).append(captor.capture());
+        AgentEvent ckpt = captor.getAllValues().stream()
+                .filter(e -> e.getType() == EventType.CHECKPOINT)
+                .findFirst().orElseThrow();
+        Map<String, Object> payload = objectMapper.readValue(
+                ckpt.getPayload(), new TypeReference<Map<String, Object>>() {});
+
+        // P0-4 FIXED: summary is now derived from the first line of the LLM response
+        assertThat(payload).containsEntry("summary", "A detailed analysis of the codebase structure.");
+        assertThat(payload.get("finalText")).asString().isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("P2-5 GAP: AgentEvent.cumulativeTokens is always 0 (not tracked)")
+    void agentEvent_cumulativeTokensIsAlwaysZero_documentedGap_P2_5() throws Exception {
+        // DOCUMENTATION: AgentEvent.cumulativeTokens is set to 0L in the builder
+        // and never updated by RamChatOrchestrator. Token usage is not captured.
+        when(claudeClient.callJsonWithToolsAndStreamingMultiTurn(
+                anyString(), anyList(), any(), anyMap(), any(), any(StreamCallbacks.class), any()))
+                .thenAnswer(inv -> {
+                    StreamCallbacks cb = inv.getArgument(5);
+                    cb.onAssistantDelta("response with supposed token usage");
+                    cb.onRoundComplete(0, "end_turn");
+                    return new RamClaudeJsonClient.JsonCallResult(Map.of(), List.of());
+                });
+
+        orchestrator.runTurn(200L, "test tokens", "/project");
+
+        ArgumentCaptor<AgentEvent> captor = ArgumentCaptor.forClass(AgentEvent.class);
+        verify(eventRepository, atLeastOnce()).append(captor.capture());
+        List<AgentEvent> events = captor.getAllValues();
+
+        for (AgentEvent ev : events) {
+            assertThat(ev.getCumulativeTokens())
+                    .as("Event type=%s should have cumulativeTokens=0 (gap P2-5)", ev.getType())
+                    .isEqualTo(0L);
+        }
     }
 }

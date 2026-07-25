@@ -282,7 +282,7 @@ public class RamChatOrchestrator {
                     .join();
 
             String finalText = partialTextBuf.toString();
-            String summary = "";
+            String summary = summarize(finalText);
 
             if (isActive(sessionId, turnId)) {
                 AgentEvent ckptEv = appendEvent(sessionId, EventType.CHECKPOINT, Map.of(
@@ -336,6 +336,24 @@ public class RamChatOrchestrator {
         return turnRegistry.get(sessionId)
                 .map(t -> t.turnId().equals(turnId))
                 .orElse(false);
+    }
+
+    /**
+     * Extract a short summary (first line or first 200 chars) from the LLM response.
+     * Falls back to empty string for null/blank input.
+     */
+    static String summarize(String text) {
+        if (text == null || text.isBlank()) return "";
+        // Use the first non-empty meaningful line (skip markdown headings prefix "# ")
+        for (String line : text.lines().toList()) {
+            String trimmed = line.strip();
+            if (trimmed.isEmpty()) continue;
+            // Strip leading markdown heading markers
+            String cleaned = trimmed.replaceFirst("^#{1,6}\\s+", "");
+            if (cleaned.length() > 200) cleaned = cleaned.substring(0, 200);
+            return cleaned;
+        }
+        return "";
     }
 
     private AgentEvent appendEvent(long sessionId, EventType type, Map<String, Object> payload, String idempotencyKey) {
