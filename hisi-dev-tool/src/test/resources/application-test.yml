@@ -1,6 +1,10 @@
 # Test profile - provides dummy defaults for Spring AI auto-config
-# so @SpringBootTest can load without real API keys.
+# and a dedicated SQLite DB so @SpringBootTest doesn't touch production devtool.db.
 spring:
+  datasource:
+    url: "jdbc:sqlite:target/test-devtool.db?foreign_keys=on"
+    hikari:
+      maximum-pool-size: 1
   ai:
     anthropic:
       api-key: test-anthropic-key

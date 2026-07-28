@@ -55,6 +55,10 @@ import static org.assertj.core.api.Assertions.assertThat;
         // Use a file-based SQLite under the build target so the schema persists
         // across the multiple datasource connections opened during context start.
         "spring.datasource.url=jdbc:sqlite:target/apm-e2e.db",
+        "spring.datasource.hikari.maximum-pool-size=1",
+        // Explicitly deactivate ApmClaudeLlmClient (application-local.yml may
+        // carry a real key that overrides application-test.yml).
+        "hisi.apm.diagnose.llm.api-key=",
         // Make the run deterministic and fast.
         "hisi.apm.diagnose.enabled=true",
         "hisi.apm.diagnose.llmEnabled=true",
