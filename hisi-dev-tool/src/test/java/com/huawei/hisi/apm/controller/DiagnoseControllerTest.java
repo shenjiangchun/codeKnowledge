@@ -5,6 +5,7 @@ import com.huawei.hisi.apm.cache.DiagnosisReportStore;
 import com.huawei.hisi.apm.model.DiagnoseReport;
 import com.huawei.hisi.apm.model.DiagnoseRequest;
 import com.huawei.hisi.apm.service.locator.FailureLocatorService;
+import com.huawei.hisi.config.JwtTokenProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +44,9 @@ class DiagnoseControllerTest {
 
     @MockBean
     private DiagnosisReportStore reportStore;
+
+    @MockBean
+    private JwtTokenProvider jwtTokenProvider;
 
     private static final String VALID_BODY = """
         {"traceId":"abc123","projectPath":"/proj/x"}

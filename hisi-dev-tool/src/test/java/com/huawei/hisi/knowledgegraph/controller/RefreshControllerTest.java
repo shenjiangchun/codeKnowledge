@@ -1,5 +1,6 @@
 package com.huawei.hisi.knowledgegraph.controller;
 
+import com.huawei.hisi.config.JwtTokenProvider;
 import com.huawei.hisi.knowledgegraph.exception.NoCheckpointException;
 import com.huawei.hisi.knowledgegraph.exception.WorkingDirDirtyException;
 import com.huawei.hisi.knowledgegraph.service.IncrementalRefreshService;
@@ -27,6 +28,9 @@ class RefreshControllerTest {
 
     @MockBean
     private IncrementalRefreshService refreshService;
+
+    @MockBean
+    private JwtTokenProvider jwtTokenProvider;
 
     @Test
     @DisplayName("refresh success returns 200 with result")

@@ -87,19 +87,10 @@ public class Neo4jConfig {
     }
 
     /**
-     * 配置 Neo4j 事务管理器
-     * 使用 transactionManager 作为主事务管理器
-     */
-    @Bean
-    @org.springframework.context.annotation.Primary
-    public PlatformTransactionManager transactionManager(Driver driver, DatabaseSelectionProvider databaseSelectionProvider) {
-        return new Neo4jTransactionManager(driver, databaseSelectionProvider);
-    }
-
-    /**
-     * Neo4j 专用事务管理器别名
+     * 配置 Neo4j 事务管理器（唯一实例，@Primary 供 SDN 自动配置使用）
      */
     @Bean("neo4jTransactionManager")
+    @org.springframework.context.annotation.Primary
     public PlatformTransactionManager neo4jTransactionManager(Driver driver, DatabaseSelectionProvider databaseSelectionProvider) {
         return new Neo4jTransactionManager(driver, databaseSelectionProvider);
     }

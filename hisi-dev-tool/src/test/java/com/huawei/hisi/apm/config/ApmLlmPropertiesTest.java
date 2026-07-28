@@ -38,7 +38,7 @@ class ApmLlmPropertiesTest {
         assertThat(p.getTimeoutSeconds()).isEqualTo(40);
         assertThat(p.getMaxConcurrency()).isEqualTo(2);
         assertThat(p.getTemperature()).isEqualTo(0.2);
-        assertThat(p.getMaxTokens()).isEqualTo(1024);
+        assertThat(p.getMaxTokens()).isEqualTo(8192);
     }
 
     @Test
