@@ -276,6 +276,71 @@ anthropic:
   base-url: ${ANTHROPIC_URL:}
   model: ${ANTHROPIC_MODEL:}
 
+# ---- Spring AI 1.0.8 Configuration ----
+spring:
+  ai:
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY:}
+      base-url: ${ANTHROPIC_URL:https://api.anthropic.com}
+      chat:
+        options:
+          model: ${ANTHROPIC_MODEL:claude-sonnet-4-20250514}
+          temperature: 0.3
+    openai:
+      api-key: ${ZHIPU_API_KEY:}
+      base-url: ${ZHIPU_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+      chat:
+        options:
+          model: ${ZHIPU_TEXT_MODEL:glm-4-flash}
+          temperature: 0.1
+    retry:
+      max-attempts: 3
+      backoff:
+        initial-interval: 1000
+        multiplier: 2
+      on-http-codes: 429, 500, 502, 503
+
+# ---- Resilience4j CircuitBreaker ----
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30000
+        permitted-number-of-calls-in-half-open-state: 3
+    instances:
+      llm-anthropic:
+        base-config: default
+      llm-zhipu:
+        base-config: default
+
+# ---- Agent Registry (YAML 声明式) ----
+hisi:
+  agents:
+    apm-diagnose:
+      system-prompt: "你是APM诊断专家。根据异常日志和调用链信息定位根因并给出修复建议。"
+      provider: anthropic
+    call-chain-analysis:
+      system-prompt: "你是调用链分析专家。追踪方法间调用关系，识别性能瓶颈和循环依赖。"
+      provider: anthropic
+    log-analysis:
+      system-prompt: "你是日志分析专家。从日志中提取错误模式并关联到代码。"
+      provider: anthropic
+    code-analysis:
+      system-prompt: "你是代码变更分析专家。分析Git提交记录并评估影响范围。"
+      provider: anthropic
+    dialog:
+      system-prompt: "你是自然语言交互助手。理解用户意图并调用对应功能。"
+      provider: anthropic
+    fix:
+      system-prompt: "你是代码修复专家。根据异常信息和测试用例定位并修复代码缺陷。"
+      provider: anthropic
+      tool-call-limit: 5
+      hitl:
+        mode: post-react
+        timeout-minutes: 30
+
 # Maven 构建配置（由 build.sh / build.bat 读取后传给 mvn）
 # 用法：bash build.sh [mvn args...]   例: bash build.sh clean compile
 maven:
