@@ -1,4 +1,4 @@
-# Test profile — provides dummy defaults for Spring AI auto-config
+# Test profile - provides dummy defaults for Spring AI auto-config
 # so @SpringBootTest can load without real API keys.
 spring:
   ai:
@@ -6,3 +6,11 @@ spring:
       api-key: test-anthropic-key
     openai:
       api-key: test-openai-key
+
+# Explicitly empty to prevent ApmClaudeLlmClient activation
+# (its @ConditionalOnExpression checks for non-empty api-key).
+hisi:
+  apm:
+    diagnose:
+      llm:
+        api-key: ""

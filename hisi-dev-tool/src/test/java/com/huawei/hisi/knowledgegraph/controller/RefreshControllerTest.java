@@ -1,10 +1,14 @@
 package com.huawei.hisi.knowledgegraph.controller;
 
+import com.huawei.hisi.config.AdminOnlyInterceptor;
 import com.huawei.hisi.config.JwtTokenProvider;
 import com.huawei.hisi.knowledgegraph.exception.NoCheckpointException;
 import com.huawei.hisi.knowledgegraph.exception.WorkingDirDirtyException;
 import com.huawei.hisi.knowledgegraph.service.IncrementalRefreshService;
+import com.huawei.hisi.knowledgegraph.service.IncrementalRefreshServiceV2;
+import com.huawei.hisi.knowledgegraph.service.VectorGenerationService;
 import com.huawei.hisi.knowledgegraph.service.IncrementalRefreshService.RefreshResult;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +18,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -32,11 +38,25 @@ class RefreshControllerTest {
     @MockBean
     private JwtTokenProvider jwtTokenProvider;
 
+    @MockBean
+    private IncrementalRefreshServiceV2 refreshServiceV2;
+
+    @MockBean
+    private VectorGenerationService vectorGenerationService;
+
+    @MockBean
+    private AdminOnlyInterceptor adminOnlyInterceptor;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        when(adminOnlyInterceptor.preHandle(any(), any(), any())).thenReturn(true);
+    }
+
     @Test
     @DisplayName("refresh success returns 200 with result")
     void refresh_success_returns200() throws Exception {
         var result = new RefreshResult(false, 5, 2, 3, 1, 0, 0);
-        when(refreshService.refresh(eq("/project")))
+        when(refreshService.refresh(eq("/project"), anyBoolean()))
                 .thenReturn(result);
 
         mockMvc.perform(post("/api/knowledge-graph/refresh")
@@ -54,7 +74,7 @@ class RefreshControllerTest {
     @Test
     @DisplayName("refresh with no checkpoint returns 409")
     void refresh_noCheckpoint_returns409() throws Exception {
-        when(refreshService.refresh(any()))
+        when(refreshService.refresh(anyString(), anyBoolean()))
                 .thenThrow(new NoCheckpointException("/project"));
 
         mockMvc.perform(post("/api/knowledge-graph/refresh")
@@ -70,7 +90,7 @@ class RefreshControllerTest {
     @Test
     @DisplayName("refresh with dirty working dir returns 412")
     void refresh_dirtyWorkDir_returns412() throws Exception {
-        when(refreshService.refresh(any()))
+        when(refreshService.refresh(anyString(), anyBoolean()))
                 .thenThrow(new WorkingDirDirtyException("/project"));
 
         mockMvc.perform(post("/api/knowledge-graph/refresh")

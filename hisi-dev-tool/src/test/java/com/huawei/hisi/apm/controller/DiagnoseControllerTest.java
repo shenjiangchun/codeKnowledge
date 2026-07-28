@@ -5,10 +5,13 @@ import com.huawei.hisi.apm.cache.DiagnosisReportStore;
 import com.huawei.hisi.apm.model.DiagnoseReport;
 import com.huawei.hisi.apm.model.DiagnoseRequest;
 import com.huawei.hisi.apm.service.locator.FailureLocatorService;
+import com.huawei.hisi.config.AdminOnlyInterceptor;
 import com.huawei.hisi.config.JwtTokenProvider;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
@@ -31,6 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Web-layer tests for {@link DiagnoseController}.
  */
 @WebMvcTest(DiagnoseController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class DiagnoseControllerTest {
 
     @Autowired
@@ -47,6 +51,14 @@ class DiagnoseControllerTest {
 
     @MockBean
     private JwtTokenProvider jwtTokenProvider;
+
+    @MockBean
+    private AdminOnlyInterceptor adminOnlyInterceptor;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        when(adminOnlyInterceptor.preHandle(any(), any(), any())).thenReturn(true);
+    }
 
     private static final String VALID_BODY = """
         {"traceId":"abc123","projectPath":"/proj/x"}
