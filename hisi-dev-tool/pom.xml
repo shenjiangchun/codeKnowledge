@@ -245,7 +245,6 @@
         <dependency>
             <groupId>org.neo4j.driver</groupId>
             <artifactId>neo4j-java-driver</artifactId>
-            <version>5.15.0</version>
         </dependency>
 
         <!-- Neo4j Harness — in-process Bolt server (embedded-like mode) -->

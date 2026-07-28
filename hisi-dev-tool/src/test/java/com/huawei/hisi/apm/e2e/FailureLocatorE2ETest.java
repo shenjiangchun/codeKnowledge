@@ -6,6 +6,9 @@ import com.huawei.hisi.apm.model.DiagnoseReport;
 import com.huawei.hisi.apm.model.DiagnoseRequest;
 import com.huawei.hisi.apm.service.SpanIngestionService;
 import com.huawei.hisi.apm.service.locator.LlmClient;
+import com.huawei.hisi.config.AdminOnlyInterceptor;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -69,7 +72,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 })
 class FailureLocatorE2ETest {
 
-    /** Deterministic stub LLM — bypasses any real provider. */
+    /** Deterministic stub LLM + auth bypass for E2E tests. */
     @TestConfiguration
     static class StubLlmConfig {
         @Bean
@@ -80,6 +83,22 @@ class FailureLocatorE2ETest {
                     + "  \"confidence\": 0.88,\n"
                     + "  \"summary\": \"stub root cause\"\n"
                     + "}";
+        }
+
+        /**
+         * Override AdminOnlyInterceptor to allow all requests in E2E tests.
+         * The production interceptor blocks POST/PUT/DELETE without auth,
+         * but E2E tests call /v1/traces and /api/apm/diagnose directly.
+         */
+        @Bean
+        @Primary
+        AdminOnlyInterceptor stubAdminOnlyInterceptor() {
+            return new AdminOnlyInterceptor() {
+                @Override
+                public boolean preHandle(HttpServletRequest req, HttpServletResponse resp, Object handler) {
+                    return true;
+                }
+            };
         }
     }
 

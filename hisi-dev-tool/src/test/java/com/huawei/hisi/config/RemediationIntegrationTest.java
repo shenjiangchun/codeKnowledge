@@ -3,11 +3,16 @@ package com.huawei.hisi.config;
 import com.huawei.hisi.model.ApiResponse;
 import com.huawei.hisi.model.ImpactAnalysisRequest;
 import com.huawei.hisi.agent.model.DiagnosisRequest;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -28,6 +33,21 @@ import static org.junit.jupiter.api.Assertions.*;
 @ActiveProfiles("test")
 @DisplayName("整改项集成测试")
 class RemediationIntegrationTest {
+
+    /** Bypass AdminOnlyInterceptor so POST tests don't get 401. */
+    @TestConfiguration
+    static class StubInterceptorConfig {
+        @Bean
+        @Primary
+        AdminOnlyInterceptor stubAdminOnlyInterceptor() {
+            return new AdminOnlyInterceptor() {
+                @Override
+                public boolean preHandle(HttpServletRequest req, HttpServletResponse resp, Object handler) {
+                    return true;
+                }
+            };
+        }
+    }
 
     @Autowired
     private TestRestTemplate restTemplate;
