@@ -28,7 +28,12 @@ import java.util.function.Function;
  * <p>Collects the full SSE stream into a single text response, then
  * parses it as a {@code Map<String, Object>} (the LLM is instructed
  * to return raw JSON — no markdown fences).
+ *
+ * @deprecated 请使用 Spring AI {@link org.springframework.ai.chat.client.ChatClient}
+ *             替代裸 HTTP 调用。callJsonWithToolsAndStreamingMultiTurn 保留用于
+ *             tool-use 流程——Spring AI 1.1+ ToolCallingAdvisor 可完全替代。
  */
+@Deprecated(since = "5.0", forRemoval = true)
 @Slf4j
 @Component
 public class RamClaudeJsonClient {

@@ -28,7 +28,11 @@ import java.util.concurrent.TimeUnit;
  * Thin OkHttp client that POSTs to {@code /v1/messages} with {@code stream=true}
  * and returns the raw SSE {@code data:} lines as a {@link Flux}. Higher-level
  * parsing into typed events is the caller's responsibility.
+ *
+ * @deprecated 请使用 Spring AI {@code AnthropicChatModel} + {@code ChatClient}
+ *             替代裸 HTTP 调用。当前保留用于 RamClaudeJsonClient tool-use 流程。
  */
+@Deprecated(since = "5.0", forRemoval = true)
 @Slf4j
 @Component
 public class AnthropicHttpClient {
