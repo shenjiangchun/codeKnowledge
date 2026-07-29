@@ -3,11 +3,10 @@ package com.huawei.hisi.ram.chat;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hisi.ram.chat.dto.TurnResult;
-import com.huawei.hisi.ram.chat.tools.ProjectOverviewTool;
+import com.huawei.hisi.agent.tools.AgentTools;
 import com.huawei.hisi.ram.config.ChatModelProperties;
 import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.EventType;
-import com.huawei.hisi.ram.nodes.impl.KgToolRegistry;
 import com.huawei.hisi.ram.nodes.impl.RamClaudeJsonClient;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,8 +44,7 @@ class RamChatInjectTest {
 
     @Mock private AgentEventRepository eventRepository;
     @Mock private RamClaudeJsonClient claudeClient;
-    @Mock private KgToolRegistry kgToolRegistry;
-    @Mock private ProjectOverviewTool projectOverviewTool;
+    @Mock private AgentTools agentTools;
     @Mock private ChatContextBuilder contextBuilder;
     @Mock private RamChatWebSocketHandler wsHandler;
     @Mock private TurnRegistry turnRegistry;
@@ -81,8 +79,7 @@ class RamChatInjectTest {
         RamChatOrchestrator real = new RamChatOrchestrator(
                 eventRepository,
                 claudeClient,
-                kgToolRegistry,
-                projectOverviewTool,
+                agentTools,
                 contextBuilder,
                 wsHandler,
                 objectMapper,

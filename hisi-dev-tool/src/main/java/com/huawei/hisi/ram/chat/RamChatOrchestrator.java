@@ -7,12 +7,12 @@ import com.huawei.hisi.ram.chat.tools.ProjectOverviewTool;
 import com.huawei.hisi.ram.config.ChatModelProperties;
 import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.EventType;
-import com.huawei.hisi.ram.nodes.impl.KgToolRegistry;
 import com.huawei.hisi.ram.nodes.impl.RamClaudeJsonClient;
 import com.huawei.hisi.ram.nodes.impl.StreamCallbacks;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.sdk.SendOptions;
 import com.huawei.hisi.ram.sdk.ToolDefinition;
+import com.huawei.hisi.agent.tools.AgentTools;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,8 +39,7 @@ public class RamChatOrchestrator {
 
     private final AgentEventRepository eventRepository;
     private final RamClaudeJsonClient claudeClient;
-    private final KgToolRegistry kgToolRegistry;
-    private final ProjectOverviewTool projectOverviewTool;
+    private final AgentTools agentTools;
     private final ChatContextBuilder contextBuilder;
     private final RamChatWebSocketHandler wsHandler;
     private final ObjectMapper objectMapper;
@@ -148,12 +147,11 @@ public class RamChatOrchestrator {
         try {
             ChatContextBuilder.ChatContext ctx = contextBuilder.buildContext(sessionId, userText, projectPaths);
 
-            List<ToolDefinition> tools = new ArrayList<>(kgToolRegistry.buildToolDefinitions(projectPaths));
-            tools.add(projectOverviewTool.buildDefinition());
-
-            Map<String, Function<Map<String, Object>, Object>> handlers = new LinkedHashMap<>(
-                    kgToolRegistry.buildToolHandlers(projectPaths));
-            handlers.put("generate_project_overview", projectOverviewTool.buildHandler(projectPaths));
+            List<ToolDefinition> tools = agentTools.buildToolDefinitions();
+            String primaryPath = projectPaths != null && !projectPaths.isEmpty()
+                    ? projectPaths.get(0) : "";
+            Map<String, Function<Map<String, Object>, Object>> handlers =
+                    agentTools.buildToolHandlers(primaryPath);
 
             StringBuilder partialTextBuf = new StringBuilder();
             StreamCallbacks callbacks = new StreamCallbacks() {

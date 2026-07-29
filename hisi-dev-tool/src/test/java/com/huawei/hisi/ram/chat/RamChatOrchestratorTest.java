@@ -2,11 +2,10 @@ package com.huawei.hisi.ram.chat;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.huawei.hisi.ram.chat.tools.ProjectOverviewTool;
+import com.huawei.hisi.agent.tools.AgentTools;
 import com.huawei.hisi.ram.config.ChatModelProperties;
 import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.EventType;
-import com.huawei.hisi.ram.nodes.impl.KgToolRegistry;
 import com.huawei.hisi.ram.nodes.impl.RamClaudeJsonClient;
 import com.huawei.hisi.ram.nodes.impl.StreamCallbacks;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
@@ -46,8 +45,7 @@ class RamChatOrchestratorTest {
 
     @Mock private AgentEventRepository eventRepository;
     @Mock private RamClaudeJsonClient claudeClient;
-    @Mock private KgToolRegistry kgToolRegistry;
-    @Mock private ProjectOverviewTool projectOverviewTool;
+    @Mock private AgentTools agentTools;
     @Mock private ChatContextBuilder contextBuilder;
     @Mock private RamChatWebSocketHandler wsHandler;
     @Mock private TurnRegistry turnRegistry;
@@ -65,8 +63,7 @@ class RamChatOrchestratorTest {
         orchestrator = new RamChatOrchestrator(
                 eventRepository,
                 claudeClient,
-                kgToolRegistry,
-                projectOverviewTool,
+                agentTools,
                 contextBuilder,
                 wsHandler,
                 objectMapper,
@@ -80,14 +77,10 @@ class RamChatOrchestratorTest {
 
         when(contextBuilder.buildContext(anyLong(), anyString(), any()))
                 .thenReturn(new ChatContextBuilder.ChatContext("sys", "user"));
-        when(kgToolRegistry.buildToolDefinitions(any(List.class)))
+        when(agentTools.buildToolDefinitions())
                 .thenReturn(List.<ToolDefinition>of());
-        when(kgToolRegistry.buildToolHandlers(any(List.class)))
+        when(agentTools.buildToolHandlers(anyString()))
                 .thenReturn(Map.of());
-        when(projectOverviewTool.buildDefinition())
-                .thenReturn(mock(ToolDefinition.class));
-        when(projectOverviewTool.buildHandler(any(List.class)))
-                .thenReturn(map -> null);
 
         AtomicReference<TurnRegistry.ActiveTurn> activeRef = new AtomicReference<>();
         doAnswer(inv -> {
@@ -146,8 +139,8 @@ class RamChatOrchestratorTest {
         customProps.setModels(Map.of("glm-5.1", spec));
 
         RamChatOrchestrator customOrchestrator = new RamChatOrchestrator(
-                eventRepository, claudeClient, kgToolRegistry,
-                projectOverviewTool, contextBuilder, wsHandler,
+                eventRepository, claudeClient, agentTools,
+                contextBuilder, wsHandler,
                 objectMapper, customProps, turnRegistry);
         ReflectionTestUtils.setField(customOrchestrator, "timeoutSeconds", 10L);
 
@@ -158,10 +151,8 @@ class RamChatOrchestratorTest {
         when(eventRepository.append(any(AgentEvent.class))).thenAnswer(inv -> inv.getArgument(0));
         when(contextBuilder.buildContext(anyLong(), anyString(), any()))
                 .thenReturn(new ChatContextBuilder.ChatContext("sys", "user"));
-        when(kgToolRegistry.buildToolDefinitions(any(List.class))).thenReturn(List.<ToolDefinition>of());
-        when(kgToolRegistry.buildToolHandlers(any(List.class))).thenReturn(Map.of());
-        when(projectOverviewTool.buildDefinition()).thenReturn(mock(ToolDefinition.class));
-        when(projectOverviewTool.buildHandler(any(List.class))).thenReturn(map -> null);
+        when(agentTools.buildToolDefinitions()).thenReturn(List.<ToolDefinition>of());
+        when(agentTools.buildToolHandlers(anyString())).thenReturn(Map.of());
         when(claudeClient.callJsonWithToolsAndStreamingMultiTurn(
                 anyString(), anyList(), any(), anyMap(), any(), any(StreamCallbacks.class), any()))
                 .thenAnswer(inv -> {
