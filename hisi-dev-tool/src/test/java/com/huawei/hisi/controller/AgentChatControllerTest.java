@@ -36,9 +36,17 @@ class AgentChatControllerTest {
     @BeforeEach
     void setUp() throws Exception {
         when(adminOnlyInterceptor.preHandle(any(), any(), any())).thenReturn(true);
-        // Provide a sample agent type
+        // Provide sample agent types for known routes
         when(agentTypeRegistry.get("apm-diagnose"))
                 .thenReturn(new AgentChatController.AgentTypeConfig("You are an APM expert.", "anthropic", null));
+        when(agentTypeRegistry.get("call-chain-analysis"))
+                .thenReturn(new AgentChatController.AgentTypeConfig("You are a call chain expert.", "anthropic", null));
+        when(agentTypeRegistry.get("log-analysis"))
+                .thenReturn(new AgentChatController.AgentTypeConfig("You are a log analysis expert.", "anthropic", null));
+        when(agentTypeRegistry.get("code-analysis"))
+                .thenReturn(new AgentChatController.AgentTypeConfig("You are a code analysis expert.", "anthropic", null));
+        when(agentTypeRegistry.get("dialog"))
+                .thenReturn(new AgentChatController.AgentTypeConfig("You are a dialog assistant.", "anthropic", null));
         // Stub the streaming chain
         var reqSpec = mock(org.springframework.ai.chat.client.ChatClient.ChatClientRequestSpec.class);
         var streamSpec = mock(org.springframework.ai.chat.client.ChatClient.StreamResponseSpec.class);
@@ -56,6 +64,50 @@ class AgentChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                             {"message":"分析异常","sessionId":"s1"}
+                            """))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("POST /api/chat/call-chain-analysis returns 200")
+    void callChainAnalysisType_returns200() throws Exception {
+        mockMvc.perform(post("/api/chat/call-chain-analysis")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {"message":"分析调用链","sessionId":"s2"}
+                            """))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("POST /api/chat/log-analysis returns 200")
+    void logAnalysisType_returns200() throws Exception {
+        mockMvc.perform(post("/api/chat/log-analysis")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {"message":"分析日志","sessionId":"s3"}
+                            """))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("POST /api/chat/code-analysis returns 200")
+    void codeAnalysisType_returns200() throws Exception {
+        mockMvc.perform(post("/api/chat/code-analysis")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {"message":"分析代码变更","sessionId":"s4"}
+                            """))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("POST /api/chat/dialog returns 200")
+    void dialogType_returns200() throws Exception {
+        mockMvc.perform(post("/api/chat/dialog")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {"message":"帮我理解这个项目","sessionId":"s5"}
                             """))
                 .andExpect(status().isOk());
     }

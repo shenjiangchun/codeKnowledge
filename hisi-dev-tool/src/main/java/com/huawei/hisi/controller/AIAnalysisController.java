@@ -32,9 +32,11 @@ public class AIAnalysisController {
      * 从 Neo4j 拉取入口点的完整调用链（nodes + edges + signatures + method body + SQL）
      * 前端拿到 prompt 后创建 workspace session 发送到 Claude CLI 终端
      *
+     * @deprecated 请使用 {@link AgentChatController} 统一端点 (POST /api/chat/call-chain-analysis)
      * @param request { entryKey: "GET /api/orders", projectPath: "/path/to/project" }
      * @return 组装好的富提示词
      */
+    @Deprecated(since = "5.0", forRemoval = true)
     @PostMapping("/call-chain/prompt")
     public ApiResponse<Map<String, Object>> buildCallChainPrompt(@RequestBody Map<String, String> request) {
         String entryKey = request.get("entryKey");
