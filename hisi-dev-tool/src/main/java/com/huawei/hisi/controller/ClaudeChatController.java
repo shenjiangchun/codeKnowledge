@@ -35,7 +35,11 @@ import java.util.concurrent.Executors;
  * 底层调用 TextModelConfig 配置的 OpenAI 兼容模型 (streaming mode)。
  * <p>
  * 支持多场景 prompt 模板：APM_DIAGNOSIS, call-chain-analysis, log-analysis 等。
+ *
+ * @deprecated 请使用 {@link AgentChatController} 统一端点 (POST /api/chat/{agentType})，
+ *             替代 scene 参数化的 universal-chat 模式。
  */
+@Deprecated(since = "5.0", forRemoval = true)
 @Slf4j
 @RestController
 @RequestMapping("/api/claude")
