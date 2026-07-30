@@ -1,9 +1,9 @@
 package com.huawei.hisi.ram.nodes.impl;
 
 import com.huawei.hisi.ram.nodes.ImplementLlmClient;
-import com.huawei.hisi.ram.sdk.SendOptions;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Primary;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -11,12 +11,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Real Claude-backed {@link ImplementLlmClient}. Active only when
- * {@code anthropic.api-key} is set; otherwise {@link StubImplementLlmClient}
- * remains the only candidate.
+ * ChatClient-backed {@link ImplementLlmClient} — replaces raw
+ * {@link RamClaudeJsonClient} with Spring AI {@link ChatClient}.
  */
 @Slf4j
-@Primary
 @Component
 public class ClaudeImplementLlmClient implements ImplementLlmClient {
 
@@ -70,21 +68,21 @@ public class ClaudeImplementLlmClient implements ImplementLlmClient {
             规则：
             - biz_plan.steps: 3-7个具体的、有序的实现步骤，覆盖所有AC
             - biz_plan.data_flow: 一段话描述数据流向和关键角色
-            - biz_plan.acceptance_mapping: 每个AC映射到覆盖它的步骤编号（步骤引用steps中的条目子串）
-            - api_changes: 每个受影响的API端点，必须包含current_behavior和new_behavior的对比
-            - state_machine_changes: 枚举/状态值变更，包含旧值→新值对比和迁移说明；无状态变更则为空数组
-            - data_model_changes: 实体/字段变更（类型、约束、枚举更新等）；无则为空数组
-            - config_changes: 配置项变更（properties/yml/常量）；无则为空数组
-            - 不要输出 tech_plan 或 ui_plan，这两个结构已废弃
+            - biz_plan.acceptance_mapping: 每个AC映射到覆盖它的步骤编号
+            - api_changes: 每个受影响的API端点，必须包含current和new behavior对比
+            - state_machine_changes: 枚举/状态值变更；无则为空数组
+            - data_model_changes: 实体/字段变更；无则为空数组
+            - config_changes: 配置项变更；无则为空数组
             - 所有自然语言值使用简体中文
-            - JSON key、文件路径、类名/方法名、HTTP路由、SQL/列名保持原样
+            - JSON key、文件路径、类名/方法名、HTTP路由保持原样
             """;
 
-    private final RamClaudeJsonClient claude;
+    private final ChatClient agentChatClient;
     private final StubImplementLlmClient fallback;
 
-    public ClaudeImplementLlmClient(RamClaudeJsonClient claude, StubImplementLlmClient fallback) {
-        this.claude = claude;
+    public ClaudeImplementLlmClient(ChatClient agentChatClient,
+                                     StubImplementLlmClient fallback) {
+        this.agentChatClient = agentChatClient;
         this.fallback = fallback;
     }
 
@@ -93,27 +91,23 @@ public class ClaudeImplementLlmClient implements ImplementLlmClient {
     public Map<String, Object> draft(Map<String, Object> impactOutput,
                                      List<String> acceptanceCriteria,
                                      String model) {
-        log.info("[RAM][ClaudeImplementLlmClient] draft impact.keys={} acs={} model={}",
+        log.info("[RAM][ClaudeImplementLlmClient] draft impact.keys={} acs={}",
                 impactOutput == null ? "null" : impactOutput.keySet(),
-                acceptanceCriteria == null ? 0 : acceptanceCriteria.size(),
-                model);
-
-        if (!claude.isAvailable()) {
-            log.error("[RAM][ClaudeImplementLlmClient] Claude UNAVAILABLE (anthropic.api-key empty) — falling back to Stub. THIS IS WHY OUTPUT IS POOR.");
-            return fallback.draft(impactOutput, acceptanceCriteria, model);
-        }
+                acceptanceCriteria == null ? 0 : acceptanceCriteria.size());
 
         String prompt = buildUserPrompt(impactOutput, acceptanceCriteria);
-        String effectiveModel = (model == null || model.isBlank()) ? claude.defaultModel() : model;
         try {
-            Map<String, Object> raw = claude.callJson(
-                    SYSTEM_PROMPT, prompt,
-                    new SendOptions(effectiveModel, 4096, 0.3, null));
-            log.info("[RAM][ClaudeImplementLlmClient] Claude returned keys={}",
+            Map<String, Object> raw = agentChatClient.prompt()
+                    .system(SYSTEM_PROMPT)
+                    .user(prompt)
+                    .call()
+                    .entity(new ParameterizedTypeReference<Map<String, Object>>() {});
+
+            log.info("[RAM][ClaudeImplementLlmClient] returned keys={}",
                     raw == null ? "null" : raw.keySet());
             return normalize(raw, impactOutput, acceptanceCriteria, model);
         } catch (Exception ex) {
-            log.error("[RAM][ClaudeImplementLlmClient] Claude call FAILED — falling back to Stub. err={}", ex.toString(), ex);
+            log.error("[RAM][ClaudeImplementLlmClient] call FAILED: {}", ex.toString(), ex);
             return fallback.draft(impactOutput, acceptanceCriteria, model);
         }
     }
@@ -141,27 +135,17 @@ public class ClaudeImplementLlmClient implements ImplementLlmClient {
             return fallback.draft(impactOutput, acs, model);
         }
         Map<String, Object> out = new LinkedHashMap<>();
-
-        // biz_plan (required)
         Map<String, Object> biz = asMap(raw.get("biz_plan"));
         Map<String, Object> normBiz = new LinkedHashMap<>();
         normBiz.put("steps", asList(biz.get("steps")));
         normBiz.put("data_flow", biz.get("data_flow") instanceof String s ? s : "");
-        normBiz.put("acceptance_mapping", biz.get("acceptance_mapping") instanceof Map m ? m : new LinkedHashMap<>());
+        normBiz.put("acceptance_mapping",
+                biz.get("acceptance_mapping") instanceof Map m ? m : new LinkedHashMap<>());
         out.put("biz_plan", normBiz);
-
-        // api_changes (required)
         out.put("api_changes", asList(raw.get("api_changes")));
-
-        // state_machine_changes (optional, default empty)
         out.put("state_machine_changes", asList(raw.get("state_machine_changes")));
-
-        // data_model_changes (optional, default empty)
         out.put("data_model_changes", asList(raw.get("data_model_changes")));
-
-        // config_changes (optional, default empty)
         out.put("config_changes", asList(raw.get("config_changes")));
-
         return out;
     }
 

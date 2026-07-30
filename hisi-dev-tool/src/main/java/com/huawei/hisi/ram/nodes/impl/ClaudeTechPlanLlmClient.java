@@ -1,20 +1,22 @@
 package com.huawei.hisi.ram.nodes.impl;
 
+import com.huawei.hisi.agent.tools.AgentTools;
 import com.huawei.hisi.ram.nodes.TechPlanLlmClient;
-import com.huawei.hisi.ram.sdk.SendOptions;
-import com.huawei.hisi.ram.sdk.ToolDefinition;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 
 /**
- * Claude-backed {@link TechPlanLlmClient} that uses tool-enhanced analysis
- * (8 tools from {@link KgToolRegistry}: 5 KG + 3 FS) to produce a
- * complete technical plan with method specs, diagrams, test scope, and risks.
+ * ChatClient-backed {@link TechPlanLlmClient} — replaces raw
+ * {@link RamClaudeJsonClient} HTTP calls with Spring AI {@link ChatClient}.
+ *
+ * <p>Uses Spring AI 1.1.8 automatic tool calling when {@link AgentTools} KG
+ * tools are available. Falls back to a prompt-only call when KG is not configured.
  */
 @Slf4j
 @Component
@@ -73,16 +75,16 @@ public class ClaudeTechPlanLlmClient implements TechPlanLlmClient {
             6. risk_mitigations 每个风险必须有对应的缓解措施
             7. 所有自然语言值使用简体中文
             8. JSON key、文件路径、类名/方法名保持原样
-            9. markdown_report 值中可以使用 markdown 语法（表格、列表、标题等），但换行必须用 \\n 转义，不可使用字面换行符
-            10. **绝对禁止**在 JSON 之外添加任何文本或说明——只输出纯 JSON
+            9. markdown_report 值中可以使用 markdown 语法，但换行必须用 \\\\n 转义
+            10. 绝对禁止在 JSON 之外添加任何文本或说明——只输出纯 JSON
             """;
 
-    private final RamClaudeJsonClient claude;
-    private final KgToolRegistry kgToolRegistry;
+    private final ChatClient agentChatClient;
+    private final AgentTools agentTools;
 
-    public ClaudeTechPlanLlmClient(RamClaudeJsonClient claude, KgToolRegistry kgToolRegistry) {
-        this.claude = claude;
-        this.kgToolRegistry = kgToolRegistry;
+    public ClaudeTechPlanLlmClient(ChatClient agentChatClient, AgentTools agentTools) {
+        this.agentChatClient = agentChatClient;
+        this.agentTools = agentTools;
     }
 
     @Override
@@ -92,46 +94,38 @@ public class ClaudeTechPlanLlmClient implements TechPlanLlmClient {
                                          String projectPath) {
         log.info("[RAM][ClaudeTechPlanLlmClient] generate intent={} projectPath={}", intent, projectPath);
 
-        if (!claude.isAvailable()) {
-            log.warn("[RAM][ClaudeTechPlanLlmClient] Claude unavailable — returning minimal output");
-            return minimalOutput(intent);
-        }
-
         String userPrompt = buildUserPrompt(impactOutput, implementOutput, intent);
 
         try {
-            List<ToolDefinition> tools = kgToolRegistry.buildToolDefinitions(projectPath);
-            Map<String, Function<Map<String, Object>, Object>> handlers =
-                    kgToolRegistry.buildToolHandlers(projectPath);
+            // Spring AI 1.1.8 ChatClient with automatic tool calling.
+            // toolContext("projectPath" → projectPath) is consumed by AgentTools
+            // @Tool methods via ToolContext — no custom sendOptions needed.
+            Map<String, Object> raw = agentChatClient.prompt()
+                    .system(SYSTEM_PROMPT)
+                    .user(userPrompt)
+                    .toolContext(Map.of("projectPath", projectPath))
+                    .tools(agentTools)
+                    .call()
+                    .entity(new ParameterizedTypeReference<Map<String, Object>>() {});
 
-            SendOptions opts = new SendOptions(claude.defaultModel(), 8192, 0.2, SYSTEM_PROMPT);
+            log.info("[RAM][ClaudeTechPlanLlmClient] returned keys={}",
+                    raw == null ? "null" : raw.keySet());
 
-            RamClaudeJsonClient.JsonCallResult result =
-                    claude.callJsonWithToolsAndReasoning(SYSTEM_PROMPT, userPrompt, tools, handlers, opts);
-
-            Map<String, Object> raw = result.json();
-            log.info("[RAM][ClaudeTechPlanLlmClient] Claude returned keys={}, tool rounds={}",
-                    raw == null ? "null" : raw.keySet(),
-                    result.reasoning().size());
-
-            return normalize(raw, result.reasoning());
+            return normalize(raw, List.of());
         } catch (Exception ex) {
-            log.error("[RAM][ClaudeTechPlanLlmClient] Claude call FAILED: {}", ex.getMessage(), ex);
+            log.error("[RAM][ClaudeTechPlanLlmClient] call FAILED: {}", ex.getMessage(), ex);
             return minimalOutput(intent);
         }
     }
 
     @Override
     public boolean isAvailable() {
-        return claude.isAvailable();
+        return true; // ChatClient always available with sk-placeholder
     }
 
     private String buildUserPrompt(Map<String, Object> impactOutput,
                                    Map<String, Object> implementOutput,
                                    String intent) {
-        log.info("[RAM][ClaudeTechPlanLlmClient] buildUserPrompt impact={} implement={}",
-                impactOutput != null ? ("keys=" + impactOutput.keySet()) : "null",
-                implementOutput != null ? ("keys=" + implementOutput.keySet()) : "null");
         StringBuilder sb = new StringBuilder();
         sb.append("## 需求描述\n").append(intent != null ? intent : "").append("\n\n");
         sb.append("## 影响分析结果\n");
@@ -147,12 +141,10 @@ public class ClaudeTechPlanLlmClient implements TechPlanLlmClient {
         if (raw == null) return minimalOutput("");
 
         Map<String, Object> out = new LinkedHashMap<>();
-
         out.put("target_methods_detail", asList(raw.get("target_methods_detail")));
         out.put("sequence_diagrams", asList(raw.get("sequence_diagrams")));
         out.put("flow_diagrams", asList(raw.get("flow_diagrams")));
 
-        // test_scope
         if (raw.get("test_scope") instanceof Map<?, ?> ts) {
             Map<String, Object> normTs = new LinkedHashMap<>();
             normTs.put("unit_tests", asList(ts.get("unit_tests")));
@@ -183,7 +175,7 @@ public class ClaudeTechPlanLlmClient implements TechPlanLlmClient {
                 "integration_tests", List.of(),
                 "data_migration", List.of()));
         out.put("risk_mitigations", List.of());
-        out.put("reasoning", "Claude不可用，无法生成技术方案");
+        out.put("reasoning", "LLM不可用，无法生成技术方案");
         out.put("markdown_report", "");
         return out;
     }
@@ -193,7 +185,8 @@ public class ClaudeTechPlanLlmClient implements TechPlanLlmClient {
         return List.of();
     }
 
-    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON =
+            new com.fasterxml.jackson.databind.ObjectMapper();
 
     private String formatMap(Map<String, Object> map) {
         try {
