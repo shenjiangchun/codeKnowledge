@@ -1,13 +1,11 @@
 package com.huawei.hisi.controller;
 
+import com.huawei.hisi.config.AgentTypeRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -18,7 +16,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -54,8 +51,6 @@ public class AgentChatController {
 
         var config = agentTypeRegistry.get(agentType);
         if (config == null) {
-            SseEmitter err = new SseEmitter();
-            err.completeWithError(new IllegalArgumentException("Unknown agent type: " + agentType));
             return ResponseEntity.notFound().build();
         }
 
@@ -64,7 +59,8 @@ public class AgentChatController {
         }
 
         log.info("[AgentChat] agentType={}, provider={}, msgLen={}",
-                agentType, config.provider(), request.message().length());
+                agentType, config.systemPrompt() != null ? "configured" : "null",
+                request.message().length());
 
         SseEmitter emitter = new SseEmitter(300_000L);
         String sessionId = request.sessionId() != null ? request.sessionId() : "";
@@ -78,7 +74,7 @@ public class AgentChatController {
 
                 // Stream using Spring AI ChatClient with per-agent system prompt
                 agentChatClient.prompt()
-                        .system(config.systemPrompt())
+                        .system(config.systemPrompt() != null ? config.systemPrompt() : "")
                         .user(request.message())
                         .stream()
                         .chatResponse()
@@ -131,32 +127,22 @@ public class AgentChatController {
     @PostMapping("/_list")
     public ResponseEntity<Map<String, Object>> listAgents() {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("agentTypes", agentTypeRegistry.keys());
+        // Fallback: read directly from registry; if empty, list known keys
+        var keys = agentTypeRegistry.keys();
+        if (keys.isEmpty()) {
+            result.put("agentTypes", java.util.List.of(
+                    "apm-diagnose", "call-chain-analysis", "log-analysis",
+                    "code-analysis", "dialog", "fix"));
+            result.put("_note", "YAML binding of hisi.agents not active; showing hardcoded list");
+        } else {
+            result.put("agentTypes", keys);
+        }
         return ResponseEntity.ok(result);
     }
 
     // ── DTOs ──
 
     public record ChatRequest(String message, String sessionId, Map<String, Object> context) {}
-
-    /** Agent type config loaded from hisi.agents.* YAML. */
-    public record AgentTypeConfig(String systemPrompt, String provider, Integer toolCallLimit) {}
-
-    /** Registry that auto-binds hisi.agents.* config. */
-    @ConfigurationProperties(prefix = "hisi.agents")
-    @Component
-    @Primary
-    public static class AgentTypeRegistry {
-        private final Map<String, AgentTypeConfig> agents = new ConcurrentHashMap<>();
-
-        public AgentTypeConfig get(String key) { return agents.get(key); }
-        public java.util.Set<String> keys() { return agents.keySet(); }
-        public Map<String, AgentTypeConfig> getAgents() { return agents; }
-        public void setAgents(Map<String, AgentTypeConfig> agents) {
-            this.agents.clear();
-            this.agents.putAll(agents);
-        }
-    }
 
     // ── utilities ──
 

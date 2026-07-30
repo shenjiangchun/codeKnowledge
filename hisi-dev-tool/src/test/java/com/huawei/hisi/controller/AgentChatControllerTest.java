@@ -1,6 +1,7 @@
 package com.huawei.hisi.controller;
 
 import com.huawei.hisi.config.AdminOnlyInterceptor;
+import com.huawei.hisi.config.AgentTypeRegistry;
 import com.huawei.hisi.config.JwtTokenProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -31,22 +32,22 @@ class AgentChatControllerTest {
     @MockBean private org.springframework.ai.chat.client.ChatClient agentChatClient;
     @MockBean private JwtTokenProvider jwtTokenProvider;
     @MockBean private AdminOnlyInterceptor adminOnlyInterceptor;
-    @MockBean private AgentChatController.AgentTypeRegistry agentTypeRegistry;
+    @MockBean private AgentTypeRegistry agentTypeRegistry;
 
     @BeforeEach
     void setUp() throws Exception {
         when(adminOnlyInterceptor.preHandle(any(), any(), any())).thenReturn(true);
         // Provide sample agent types for known routes
         when(agentTypeRegistry.get("apm-diagnose"))
-                .thenReturn(new AgentChatController.AgentTypeConfig("You are an APM expert.", "anthropic", null));
+                .thenReturn(new AgentTypeRegistry.AgentTypeConfig("You are an APM expert.", "anthropic", null));
         when(agentTypeRegistry.get("call-chain-analysis"))
-                .thenReturn(new AgentChatController.AgentTypeConfig("You are a call chain expert.", "anthropic", null));
+                .thenReturn(new AgentTypeRegistry.AgentTypeConfig("You are a call chain expert.", "anthropic", null));
         when(agentTypeRegistry.get("log-analysis"))
-                .thenReturn(new AgentChatController.AgentTypeConfig("You are a log analysis expert.", "anthropic", null));
+                .thenReturn(new AgentTypeRegistry.AgentTypeConfig("You are a log analysis expert.", "anthropic", null));
         when(agentTypeRegistry.get("code-analysis"))
-                .thenReturn(new AgentChatController.AgentTypeConfig("You are a code analysis expert.", "anthropic", null));
+                .thenReturn(new AgentTypeRegistry.AgentTypeConfig("You are a code analysis expert.", "anthropic", null));
         when(agentTypeRegistry.get("dialog"))
-                .thenReturn(new AgentChatController.AgentTypeConfig("You are a dialog assistant.", "anthropic", null));
+                .thenReturn(new AgentTypeRegistry.AgentTypeConfig("You are a dialog assistant.", "anthropic", null));
         // Stub the streaming chain
         var reqSpec = mock(org.springframework.ai.chat.client.ChatClient.ChatClientRequestSpec.class);
         var streamSpec = mock(org.springframework.ai.chat.client.ChatClient.StreamResponseSpec.class);
@@ -148,7 +149,7 @@ class AgentChatControllerTest {
     @Test
     @DisplayName("AgentTypeRegistry default constructor works")
     void agentTypeRegistry_defaultCtor() {
-        var registry = new AgentChatController.AgentTypeRegistry();
+        var registry = new AgentTypeRegistry();
         assertNotNull(registry.getAgents());
     }
 }
