@@ -59,7 +59,7 @@ public class AgentChatController {
         }
 
         log.info("[AgentChat] agentType={}, provider={}, msgLen={}",
-                agentType, config.systemPrompt() != null ? "configured" : "null",
+                agentType, config.getProvider() != null ? config.getProvider() : "unknown",
                 request.message().length());
 
         SseEmitter emitter = new SseEmitter(300_000L);
@@ -74,7 +74,7 @@ public class AgentChatController {
 
                 // Stream using Spring AI ChatClient with per-agent system prompt
                 agentChatClient.prompt()
-                        .system(config.systemPrompt() != null ? config.systemPrompt() : "")
+                        .system(config.getSystemPrompt() != null ? config.getSystemPrompt() : "")
                         .user(request.message())
                         .stream()
                         .chatResponse()

@@ -205,7 +205,7 @@ export const claudeApi = {
   },
 
   /**
-   * 通用对话接口 - 支持多种场景
+   * 通用对话接口 — 使用 Spring AI 统一端点 POST /api/chat/{agentType}
    * @param data 通用对话请求
    * @param callbacks 回调函数
    * @returns 返回 sessionId 的 Promise
@@ -219,22 +219,28 @@ export const claudeApi = {
       let buffer = ''
       let currentEventType = ''
 
-      fetch('/api/claude/universal-chat', {
+      // Map scene → agentType path
+      const agentType = mapSceneToAgentType(data.scene)
+      const url = `/api/chat/${agentType}`
+
+      fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          message: data.prompt,
+          sessionId: data.sessionId,
+          context: data.metadata || {},
+        }),
       })
         .then(async response => {
           if (!response.ok) {
-            // 尝试解析错误响应
             const contentType = response.headers.get('content-type')
             if (contentType && contentType.includes('application/json')) {
               const errData = await response.json()
               throw new Error(errData?.message || `HTTP error! status: ${response.status}`)
             }
-            // 对于纯文本响应（如 SSE 错误）
             const text = await response.text()
             throw new Error(text || `HTTP error! status: ${response.status}`)
           }
@@ -256,7 +262,11 @@ export const claudeApi = {
 
               buffer += decoder.decode(value, { stream: true })
 
-              // 解析 SSE 格式
+              // Parse Spring AI SSE format:
+              //   event:session / data:xxx → session event
+              //   data: {"choices":[{"delta":{"content":"..."}}]}
+              //   data: [DONE]
+              //   event:error / data:xxx
               const lines = buffer.split('\n')
               buffer = lines.pop() || ''
 
@@ -267,16 +277,24 @@ export const claudeApi = {
                   const content = line.slice(5).trim()
 
                   if (currentEventType === 'session') {
-                    // 收到 session ID
-                    sessionId = content
+                    sessionId = content || sessionId
                     callbacks.onSession?.(content)
-                  } else if (currentEventType === 'done') {
-                    callbacks.onDone?.(content)
                   } else if (currentEventType === 'error') {
                     callbacks.onError?.(content)
+                  } else if (content === '[DONE]') {
+                    callbacks.onDone?.('completed')
                   } else {
-                    // 默认是 output 事件
-                    callbacks.onOutput?.(content)
+                    // Try to parse Spring AI token format
+                    try {
+                      const parsed = JSON.parse(content)
+                      const token = parsed?.choices?.[0]?.delta?.content
+                      if (token) {
+                        callbacks.onOutput?.(token)
+                      }
+                    } catch {
+                      // Plain text fallback
+                      callbacks.onOutput?.(content)
+                    }
                   }
                   currentEventType = ''
                 }
@@ -293,5 +311,16 @@ export const claudeApi = {
           reject(error)
         })
     })
+  }
+}
+
+/** Map old scene names to new Spring AI agentType path segments. */
+function mapSceneToAgentType(scene?: string): string {
+  switch (scene) {
+    case 'APM_DIAGNOSIS': return 'apm-diagnose'
+    case 'call-chain-analysis': return 'call-chain-analysis'
+    case 'log-analysis': return 'log-analysis'
+    case 'code-analysis': return 'code-analysis'
+    default: return 'dialog'
   }
 }
