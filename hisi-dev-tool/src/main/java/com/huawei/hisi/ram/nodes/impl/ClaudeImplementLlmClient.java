@@ -3,6 +3,7 @@ package com.huawei.hisi.ram.nodes.impl;
 import com.huawei.hisi.ram.nodes.ImplementLlmClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.context.annotation.Primary;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +16,7 @@ import java.util.Map;
  * {@link RamClaudeJsonClient} with Spring AI {@link ChatClient}.
  */
 @Slf4j
+@Primary
 @Component
 public class ClaudeImplementLlmClient implements ImplementLlmClient {
 

@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -23,6 +24,7 @@ import java.util.Map;
  * {@link AgentTools}.
  */
 @Slf4j
+@Primary
 @Component
 public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
 
