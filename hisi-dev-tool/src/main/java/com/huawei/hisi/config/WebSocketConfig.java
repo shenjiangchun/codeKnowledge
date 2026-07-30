@@ -6,6 +6,7 @@ import com.huawei.hisi.loganalysis.websocket.LogAnalysisWebSocketHandler;
 import com.huawei.hisi.loganalysis.websocket.LogFollowupWebSocketHandler;
 import com.huawei.hisi.ram.chat.RamChatWebSocketHandler;
 import com.huawei.hisi.agent.event.AgentEventPublisher;
+import com.huawei.hisi.websocket.UnifiedWebSocketHandler;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
@@ -37,6 +38,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
     private final RamChatWebSocketHandler ramChatWebSocketHandler;
     private final LogAnalysisWebSocketHandler logAnalysisWebSocketHandler;
     private final LogFollowupWebSocketHandler logFollowupWebSocketHandler;
+    private final UnifiedWebSocketHandler unifiedWebSocketHandler;
 
     // 默认允许的源（开发环境）- 与 CorsConfig 保持一致
     private static final String DEFAULT_ALLOWED_ORIGINS =
@@ -78,6 +80,11 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
         // 注册日志分析追问 WebSocket 处理器
         registry.addHandler(logFollowupWebSocketHandler, "/ws/log-followup")
+                .setAllowedOrigins(allowedOrigins)
+                .addInterceptors(new HttpSessionHandshakeInterceptor());
+
+        // 注册统一 Agent WebSocket 网关（频道化路由，保留旧端点兼容）
+        registry.addHandler(unifiedWebSocketHandler, "/ws/agent")
                 .setAllowedOrigins(allowedOrigins)
                 .addInterceptors(new HttpSessionHandshakeInterceptor());
 
