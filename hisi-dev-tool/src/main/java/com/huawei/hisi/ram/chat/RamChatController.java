@@ -63,13 +63,15 @@ public class RamChatController {
 
     @PostMapping("/{sid}/messages")
     public ApiResponse<SendMessageResponse> sendMessage(
-            @PathVariable Long sid,
+            @PathVariable String sid,
             @RequestBody SendMessageRequest request) {
         if (request == null || request.text() == null || request.text().isBlank()) {
             return ApiResponse.error(400, "text is required");
         }
+        Long id = parseSid(sid);
+        if (id == null) return ApiResponse.error(400, "invalid session id: " + sid);
 
-        AgentSession session = sessionRepository.findById(sid).orElse(null);
+        AgentSession session = sessionRepository.findById(id).orElse(null);
         if (session == null) {
             return ApiResponse.error(404, "session not found: " + sid);
         }
@@ -82,7 +84,7 @@ public class RamChatController {
         // Async: return immediately with turnId; streaming reaches the client via WebSocket.
         // The previous synchronous call to orchestrator.runTurn(...) blocked the HTTP thread
         // for the full multi-tool turn, exceeding the frontend's 120s axios timeout.
-        String turnId = orchestrator.startTurnAsync(sid, request.text(), projectPaths);
+        String turnId = orchestrator.startTurnAsync(id, request.text(), projectPaths);
         return ApiResponse.success(new SendMessageResponse(
                 turnId,
                 "STARTED",
@@ -91,8 +93,10 @@ public class RamChatController {
     }
 
     @GetMapping("/{sid}/events")
-    public ApiResponse<List<ChatEventDto>> getEvents(@PathVariable Long sid) {
-        List<AgentEvent> events = eventRepository.findBySessionId(sid);
+    public ApiResponse<List<ChatEventDto>> getEvents(@PathVariable String sid) {
+        Long id = parseSid(sid);
+        if (id == null) return ApiResponse.error(400, "invalid session id: " + sid);
+        List<AgentEvent> events = eventRepository.findBySessionId(id);
         List<ChatEventDto> dtos = events.stream()
                 .map(e -> new ChatEventDto(
                         e.getId(),
@@ -123,12 +127,14 @@ public class RamChatController {
     }
 
     @PatchMapping("/{sid}/title")
-    public ApiResponse<Void> renameSession(@PathVariable Long sid, @RequestBody Map<String, String> body) {
+    public ApiResponse<Void> renameSession(@PathVariable String sid, @RequestBody Map<String, String> body) {
         String title = body.get("title");
         if (title == null || title.isBlank()) {
             return ApiResponse.error(400, "title is required");
         }
-        sessionRepository.findById(sid).ifPresent(s -> {
+        Long id = parseSid(sid);
+        if (id == null) return ApiResponse.error(400, "invalid session id: " + sid);
+        sessionRepository.findById(id).ifPresent(s -> {
             s.setIntent(title);
             sessionRepository.update(s);
         });
@@ -136,8 +142,10 @@ public class RamChatController {
     }
 
     @DeleteMapping("/{sid}")
-    public ApiResponse<Void> deleteSession(@PathVariable Long sid) {
-        sessionRepository.updateStatus(sid, SessionStatus.ARCHIVED);
+    public ApiResponse<Void> deleteSession(@PathVariable String sid) {
+        Long id = parseSid(sid);
+        if (id == null) return ApiResponse.error(400, "invalid session id: " + sid);
+        sessionRepository.updateStatus(id, SessionStatus.ARCHIVED);
         return ApiResponse.success(null);
     }
 
@@ -150,12 +158,14 @@ public class RamChatController {
      * and 500 if serializing the interrupt payload fails.
      */
     @PostMapping("/{sid}/inject")
-    public ResponseEntity<?> inject(@PathVariable Long sid, @RequestBody InjectRequest request) {
+    public ResponseEntity<?> inject(@PathVariable String sid, @RequestBody InjectRequest request) {
         if (request == null || request.content() == null || request.content().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "content is required"));
         }
+        Long id = parseSid(sid);
+        if (id == null) return ResponseEntity.badRequest().body(Map.of("error", "invalid session id: " + sid));
 
-        AgentSession session = sessionRepository.findById(sid).orElse(null);
+        AgentSession session = sessionRepository.findById(id).orElse(null);
         if (session == null) {
             return ResponseEntity.status(404).body(Map.of("error", "session not found: " + sid));
         }
@@ -166,7 +176,7 @@ public class RamChatController {
         }
 
         try {
-            orchestrator.injectAndContinue(sid, request.content(), projectPaths);
+            orchestrator.injectAndContinue(id, request.content(), projectPaths);
         } catch (IllegalStateException e) {
             log.error("Failed to inject for session {}: {}", sid, e.getMessage());
             return ResponseEntity.status(500).body(Map.of("error", "internal_error"));
@@ -175,8 +185,10 @@ public class RamChatController {
     }
 
     @PostMapping("/{sid}/interrupt")
-    public ResponseEntity<?> interrupt(@PathVariable Long sid) {
-        var maybe = turnRegistry.interrupt(sid);
+    public ResponseEntity<?> interrupt(@PathVariable String sid) {
+        Long id = parseSid(sid);
+        if (id == null) return ResponseEntity.badRequest().body(Map.of("error", "invalid session id: " + sid));
+        var maybe = turnRegistry.interrupt(id);
         if (maybe.isEmpty()) {
             return ResponseEntity.ok(Map.of("interrupted", false));
         }
@@ -193,23 +205,29 @@ public class RamChatController {
             return ResponseEntity.status(500).body(Map.of("error", "internal_error"));
         }
         AgentEvent ev = eventRepository.append(AgentEvent.turnInterrupted(
-                sid, 0L, res.turnId(), payload, "interrupt-" + res.turnId())); // seq assigned by repository on append
+                id, 0L, res.turnId(), payload, "interrupt-" + res.turnId())); // seq assigned by repository on append
 
         Map<String, Object> wsPayload = new LinkedHashMap<>();
         wsPayload.put("type", "turn_interrupted");
         wsPayload.put("turnId", res.turnId());
         wsPayload.put("partialText", res.partialText());
-        wsPayload.put("sessionId", sid);
+        wsPayload.put("sessionId", id);
         wsPayload.put("eventId", ev != null ? ev.getId() : null);
         wsPayload.put("seq", ev != null ? ev.getSeq() : null);
         wsPayload.put("createdAt", ev != null ? ev.getCreatedAt() : System.currentTimeMillis() / 1000L);
-        wsHandler.pushEvent(sid, wsPayload);
+        wsHandler.pushEvent(id, wsPayload);
 
         return ResponseEntity.accepted().body(Map.of(
                 "interrupted", true,
                 "turnId", res.turnId(),
                 "partialText", res.partialText()
         ));
+    }
+
+    /** Parse a sid path variable to Long; returns null on parse failure so callers can return 400. */
+    private static Long parseSid(String sid) {
+        if (sid == null || sid.isBlank()) return null;
+        try { return Long.parseLong(sid); } catch (NumberFormatException e) { return null; }
     }
 
     @SuppressWarnings("unchecked")

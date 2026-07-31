@@ -6,8 +6,25 @@ export function useRamChatWebSocket() {
   const connected = ref(false)
   const reconnectAttempts = ref(0)
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null
 
   const store = useRamChatStore()
+
+  function startHeartbeat() {
+    stopHeartbeat()
+    heartbeatTimer = setInterval(() => {
+      if (ws.value && ws.value.readyState === WebSocket.OPEN) {
+        ws.value.send(JSON.stringify({ action: 'ping' }))
+      }
+    }, 30_000) // 30s ping keeps proxy/server from closing idle connection
+  }
+
+  function stopHeartbeat() {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer)
+      heartbeatTimer = null
+    }
+  }
 
   function connect(sid: string) {
     disconnect()
@@ -20,6 +37,7 @@ export function useRamChatWebSocket() {
     ws.value.onopen = () => {
       connected.value = true
       reconnectAttempts.value = 0
+      startHeartbeat()
     }
 
     ws.value.onmessage = (event) => {
@@ -42,6 +60,7 @@ export function useRamChatWebSocket() {
   }
 
   function disconnect() {
+    stopHeartbeat()
     if (reconnectTimer) {
       clearTimeout(reconnectTimer)
       reconnectTimer = null

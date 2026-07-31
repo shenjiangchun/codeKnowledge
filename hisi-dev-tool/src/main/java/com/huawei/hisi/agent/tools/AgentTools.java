@@ -4,6 +4,9 @@ import com.huawei.hisi.ram.kg.KgMcpClient;
 import com.huawei.hisi.ram.sdk.ToolDefinition;
 import com.huawei.hisi.repository.LogAnalysisRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -293,6 +296,88 @@ public class AgentTools {
             }
         }
         return overview;
+    }
+
+    // ──────────────────── @Tool wrappers (Spring AI 1.1.x) ────────────────────
+
+    @Tool(name = "hybrid_search", description = "语义搜索项目代码。输入自然语言查询，返回最相关的方法列表（nodeId、摘要、相似度分数）。")
+    public List<Map<String, Object>> hybridSearchTool(
+            @ToolParam(description = "自然语言查询") String query,
+            @ToolParam(description = "最多结果数，默认10") Integer limit,
+            ToolContext context) {
+        return hybridSearch(projectPath(context), query, limit);
+    }
+
+    @Tool(name = "load_method_bodies", description = "加载指定方法的源码。输入 nodeId 列表（从 hybrid_search 结果获得）。")
+    public List<Map<String, Object>> loadMethodBodiesTool(
+            @ToolParam(description = "方法节点ID列表") List<String> nodeIds,
+            ToolContext context) {
+        return loadMethodBodies(projectPath(context), nodeIds);
+    }
+
+    @Tool(name = "callees_tree", description = "查看方法的下游调用链（树形结构）。")
+    public Object calleesTreeTool(
+            @ToolParam(description = "完整类名") String className,
+            @ToolParam(description = "方法名") String methodName,
+            @ToolParam(description = "最大追踪深度，默认5") Integer maxDepth,
+            ToolContext context) {
+        return calleesTree(projectPath(context), className, methodName, maxDepth);
+    }
+
+    @Tool(name = "root_entries", description = "查看方法的上游入口——哪些Controller/定时任务会调用到该方法。")
+    public Object rootEntriesTool(
+            @ToolParam(description = "完整类名") String className,
+            @ToolParam(description = "方法名") String methodName,
+            ToolContext context) {
+        return rootEntries(projectPath(context), className, methodName);
+    }
+
+    @Tool(name = "entry_points", description = "列出项目的系统入口点（Controller、定时任务、MQ监听器、Feign客户端）。")
+    public Object entryPointsTool(
+            @ToolParam(description = "入口类型: CONTROLLER/SCHEDULED/MQ_LISTENER/FEIGN_CLIENT/ALL") String entryType,
+            ToolContext context) {
+        return entryPoints(projectPath(context), entryType);
+    }
+
+    @Tool(name = "grep_project", description = "在项目目录下搜索包含指定文本或正则表达式的文件。")
+    public Map<String, Object> grepProjectTool(
+            @ToolParam(description = "搜索的文本或正则表达式") String pattern,
+            @ToolParam(description = "文件名过滤glob，如 *.java") String fileGlob,
+            @ToolParam(description = "是否区分大小写，默认false") Boolean caseSensitive,
+            ToolContext context) {
+        return grepProject(projectPath(context), pattern, fileGlob, caseSensitive);
+    }
+
+    @Tool(name = "read_file", description = "读取项目中指定文件的内容（相对路径）。")
+    public Map<String, Object> readFileTool(
+            @ToolParam(description = "相对于项目根目录的文件路径") String relativePath,
+            ToolContext context) {
+        return readFile(projectPath(context), relativePath);
+    }
+
+    @Tool(name = "list_files", description = "列出项目中指定目录的文件和子目录（相对路径）。")
+    public Map<String, Object> listFilesTool(
+            @ToolParam(description = "相对于项目根目录的路径，留空表示根目录") String relativePath,
+            @ToolParam(description = "是否递归列出，默认false") Boolean recursive,
+            ToolContext context) {
+        return listFiles(projectPath(context), relativePath, recursive);
+    }
+
+    @Tool(name = "lookup_log_report", description = "查看日志分析报告的详细信息，包括原始错误消息、堆栈跟踪、分析结果。传入 reportId 获取完整报告数据。")
+    public Map<String, Object> lookupLogReportTool(
+            @ToolParam(description = "日志分析报告 ID") Long reportId) {
+        return lookupLogReport(reportId);
+    }
+
+    @Tool(name = "generate_project_overview", description = "查看项目概览：可用工具有哪些、项目路径、顶层文件结构。用于了解当前可以调用哪些工具。")
+    public Map<String, Object> generateProjectOverviewTool(ToolContext context) {
+        return generateProjectOverview(projectPath(context));
+    }
+
+    private static String projectPath(ToolContext context) {
+        if (context == null || context.getContext() == null) return "";
+        Object v = context.getContext().get("projectPath");
+        return v instanceof String s ? s : "";
     }
 
     // ──────────────────── ToolDefinition / Handler backward compat ────────────────────

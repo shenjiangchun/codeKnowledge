@@ -63,7 +63,7 @@ public class RamChatWebSocketHandler extends TextWebSocketHandler {
         String key = String.valueOf(sessionId);
         WebSocketSession session = sessionByRamSessionId.get(key);
         if (session == null || !session.isOpen()) {
-            log.debug("[RamChatWS] no active session for sessionId={}", sessionId);
+            log.warn("[RamChatWS] no active WebSocket session for sessionId={} — event dropped (client may have disconnected)", sessionId);
             return;
         }
         try {
