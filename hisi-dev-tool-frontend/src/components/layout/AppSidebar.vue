@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Document, Folder, Monitor, Search, Shop, DataAnalysis, Setting, Cpu, MagicStick, Connection, User, Tools, ChatDotRound } from '@element-plus/icons-vue'
+import { Document, Folder, Monitor, Shop, DataAnalysis, Setting, Cpu, MagicStick, Connection, User, Tools, ChatDotRound } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import { computed } from 'vue'
 import type { Component } from 'vue'
@@ -7,7 +7,7 @@ import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 
 // Define menu key type that matches availableMenus keys
-type MenuKey = 'log-analysis' | 'project-management' | 'claude-terminal' | 'prompt-config' | 'search' | 'skill-market' | 'kg-skills-kit' | 'knowledge-graph' | 'settings' | 'apm-debug' | 'ram' | 'ram-demand' | 'ram-chat' | 'merge-analysis'
+type MenuKey = 'log-analysis' | 'project-management' | 'claude-terminal' | 'prompt-config' | 'skill-market' | 'kg-skills-kit' | 'knowledge-graph' | 'settings' | 'apm-debug' | 'ram' | 'ram-demand' | 'ram-chat' | 'merge-analysis'
 
 interface MenuItem {
   index: string
@@ -46,12 +46,6 @@ const baseMenuItems: MenuItem[] = [
     title: 'APM 调试',
     icon: Cpu,
     menuKey: 'apm-debug' as MenuKey
-  },
-  {
-    index: '/search',
-    title: '增强检索',
-    icon: Search,
-    menuKey: 'search'
   },
   {
     index: '/log-analysis',

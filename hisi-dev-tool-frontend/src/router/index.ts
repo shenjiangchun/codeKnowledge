@@ -8,10 +8,6 @@ const routes: RouteRecordRaw[] = [
     redirect: '/project'
   },
   {
-    path: '/mcp-guide',
-    redirect: '/skill-market'
-  },
-  {
     path: '/apm-debug',
     name: 'ApmDebug',
     component: () => import('@/views/apm-debug/ApmDebugView.vue'),
@@ -28,12 +24,6 @@ const routes: RouteRecordRaw[] = [
     name: 'ClaudeTerminal',
     component: () => import('@/views/claude-terminal/ClaudeTerminal.vue'),
     meta: { title: 'Claude 终端' }
-  },
-  {
-    path: '/search',
-    name: 'SemanticSearch',
-    component: () => import('@/views/search/SemanticSearchView.vue'),
-    meta: { title: '增强检索' }
   },
   {
     path: '/log-analysis',
@@ -274,19 +264,9 @@ router.beforeEach(async (to, _from, next) => {
     return next('/project')
   }
 
-  if (to.path.startsWith('/search') && !menuAvailability['search']) {
-    ElMessage.warning('请先在项目管理页面选择项目')
-    return next('/project')
-  }
-
   if (to.path.startsWith('/ram') && !menuAvailability['ram']) {
     ElMessage.warning('请先在项目管理页面选择项目')
     return next('/project')
-  }
-
-  // Redirect mcp-guide to skill-market (replaced)
-  if (to.path === '/mcp-guide') {
-    return next('/skill-market')
   }
 
   next()
