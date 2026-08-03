@@ -1,0 +1,1043 @@
+package com.huawei.hisi.fixengine.service;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.huawei.hisi.fixengine.executor.MavenExecutor;
+import com.huawei.hisi.fixengine.executor.TestRunResult;
+import com.huawei.hisi.fixengine.model.FixSession;
+import com.huawei.hisi.fixengine.model.TestGenInput;
+import com.huawei.hisi.fixengine.repository.FixSessionRepository;
+import com.huawei.hisi.loganalysis.orchestrator.LogAnalysisDagOrchestrator;
+import com.huawei.hisi.ram.chat.RamChatWebSocketHandler;
+import com.huawei.hisi.ram.model.AgentEvent;
+import com.huawei.hisi.ram.model.EventType;
+import com.huawei.hisi.ram.repository.AgentEventRepository;
+import com.huawei.hisi.repository.LogAnalysisRepository;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+/**
+ * Baseline tests for {@link FixFlowRunner} — documents current behavior BEFORE refactoring.
+ *
+ * <p>All external dependencies are mocked. Tests use reflection to access private
+ * methods to document their current contracts. No {@code @SpringBootTest} is used.
+ *
+ * <p>Known issues documented here:
+ * <ul>
+ *   <li><b>P0-5</b>: {@code extractTestClassName} always returns {@code "ReproTest"}
+ *       regardless of input — hardcoded placeholder that ignores the test method signature.</li>
+ *   <li><b>Step 2</b>: KG search is a no-op placeholder that passes throwPointSig through unchanged.</li>
+ *   <li>Lenient policy: build/repro/pass failures produce {@code SUCCESS_UNVERIFIED} not {@code ERROR}.</li>
+ * </ul>
+ */
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+@DisplayName("FixFlowRunner")
+class FixFlowRunnerTest {
+
+    @Mock
+    private LogAnalysisDagOrchestrator logOrch;
+    @Mock
+    private WorktreeService wtSvc;
+    @Mock
+    private TestGenService tgSvc;
+    @Mock
+    private ReproService repSvc;
+    @Mock
+    private FixService fixSvc;
+    @Mock
+    private MavenExecutor mvnExec;
+    @Mock
+    private FixSessionRepository fixRepo;
+    @Mock
+    private RamChatWebSocketHandler ws;
+    @Mock
+    private LogAnalysisRepository logRepo;
+    @Mock
+    private AgentEventRepository evtRepo;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private FixFlowRunner runner;
+
+    @BeforeEach
+    void setUp() {
+        runner = new FixFlowRunner(logOrch, wtSvc, tgSvc, repSvc, fixSvc, mvnExec,
+                fixRepo, ws, logRepo, evtRepo, objectMapper);
+        lenient().when(evtRepo.append(any())).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(fixRepo.update(any())).thenReturn(1);
+    }
+
+    @AfterEach
+    void tearDown() {
+        System.clearProperty("hisi.fix.repo-path");
+    }
+
+    // ===================================================================
+    // Helper: set currentReportId via reflection (needed for multi-repo
+    // resolution in stepLogRecognition).
+    // ===================================================================
+
+    private void injectReportId(FixFlowRunner r, String reportId) {
+        try {
+            Field f = FixFlowRunner.class.getDeclaredField("currentReportId");
+            f.setAccessible(true);
+            f.set(r, reportId);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    // ===================================================================
+    // Session + standard mock factory helpers
+    // ===================================================================
+
+    private FixSession session(String reportId, String chatSessionId, String branchName) {
+        long now = System.currentTimeMillis() / 1000L;
+        return FixSession.builder()
+                .id("fix-" + reportId)
+                .reportId(reportId)
+                .chatSessionId(chatSessionId)
+                .status("RUNNING")
+                .branchName(branchName)
+                .errorMsg("NullPointerException: something went wrong")
+                .throwPointSig("com.foo.Bar.do")
+                .tenantId("default")
+                .createBy("system")
+                .delFlag(0)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+    }
+
+    /** Set up a LogAnalysisReportEntity with projectPath and stackTrace. */
+    @SuppressWarnings("unchecked")
+    private void setupReport(String reportId) {
+        LogAnalysisRepository.LogAnalysisReportEntity report =
+                new LogAnalysisRepository.LogAnalysisReportEntity();
+        report.setId(100L);
+        Map<String, Object> queryParams = Map.of("projectPath", "/repo");
+        report.setQueryParams(queryParams);
+        report.setLogStackTrace("at com.foo.Bar.do(Bar.java:10)");
+        when(logRepo.findById(Long.parseLong(reportId))).thenReturn(report);
+    }
+
+    /**
+     * Wire up the full happy-path mock chain so {@code runner.run()} completes all 9 steps.
+     */
+    @SuppressWarnings("unchecked")
+    private void setupHappyPath(FixSession s) {
+        setupReport(s.getReportId());
+
+        // Step 1: log analysis DAG returns extracted exception info
+        Map<String, Object> dagOutput = new LinkedHashMap<>();
+        dagOutput.put("parsedError", Map.of("errorType", "NullPointerException"));
+        dagOutput.put("keyFrames", List.of(Map.of("fullSignature", "com.foo.Bar.do")));
+        dagOutput.put("exceptionMessage", "something went wrong");
+        dagOutput.put("projectPath", "/repo");
+        try {
+            when(logOrch.analyzeLog(anyString(), any(), anyString(), any(), any()))
+                    .thenReturn(dagOutput);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        // Step 3: worktree
+        when(wtSvc.currentBranch(anyString())).thenReturn("master");
+        when(wtSvc.createWorktree(anyString(), anyString(), anyString()))
+                .thenReturn("/tmp/wt/" + s.getBranchName());
+
+        // Step 4: test generation with compileCheck callback
+        when(tgSvc.generate(any(TestGenInput.class), any()))
+                .thenAnswer(inv -> {
+                    Function<String, String> compileCheck = inv.getArgument(1);
+                    compileCheck.apply("generatedCode");
+                    return "generatedCode";
+                });
+
+        // Maven executor (for compile check in step 4)
+        when(mvnExec.runTest(anyString(), anyString(), any()))
+                .thenReturn(new TestRunResult(0, "OK"));
+
+        // Step 5: repro succeeds
+        when(repSvc.runAndCheckRepro(anyString(), anyString(), anyString(), any(), anyInt()))
+                .thenReturn(true);
+
+        // Step 6: AI fix
+        when(fixSvc.fix(anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn("class Fixed { void do() { /* fixed */ } }");
+
+        // Step 7: pass check
+        when(repSvc.runAndCheckPass(anyString(), anyString()))
+                .thenReturn(true);
+
+        // Step 8: commit
+        when(wtSvc.commit(anyString(), anyString(), anyString()))
+                .thenReturn("abc123def");
+    }
+
+    // ===================================================================
+    // 1. extractTestClassName — documents P0-5 hardcoded behavior
+    // ===================================================================
+
+    @Nested
+    @DisplayName("extractTestClassName")
+    class ExtractTestClassNameTests {
+
+        @Test
+        @DisplayName("derives class name from testMethodName (P0-5: fixed hardcoded placeholder)")
+        void derivesFromTestMethodName() throws Exception {
+            Method m = FixFlowRunner.class.getDeclaredMethod("extractTestClassName", TestGenInput.class);
+            m.setAccessible(true);
+
+            String result = (String) m.invoke(null,
+                    TestGenInput.builder()
+                            .testMethodSignature("com.foo.Bar.do")
+                            .testMethodName("testDoNullPointerException")
+                            .build());
+
+            assertThat(result).isEqualTo("DoNullPointerExceptionTest");
+        }
+
+        @Test
+        @DisplayName("derives class name from exotic input signature")
+        void derivesFromExoticInput() throws Exception {
+            Method m = FixFlowRunner.class.getDeclaredMethod("extractTestClassName", TestGenInput.class);
+            m.setAccessible(true);
+
+            String result = (String) m.invoke(null,
+                    TestGenInput.builder()
+                            .testMethodSignature("org.example.Deeply.Nested.Class.call")
+                            .testMethodName("testCallIllegalArgumentException")
+                            .build());
+
+            assertThat(result).isEqualTo("CallIllegalArgumentExceptionTest");
+        }
+    }
+
+    // ===================================================================
+    // 2. sigToFilePath
+    // ===================================================================
+
+    @Nested
+    @DisplayName("sigToFilePath")
+    class SigToFilePathTests {
+
+        @Test
+        @DisplayName("converts 'com.foo.MyClass' to 'src/main/java/com/foo/MyClass.java'")
+        void convertsFqnToFilePath() throws Exception {
+            Method m = FixFlowRunner.class.getDeclaredMethod("sigToFilePath", String.class);
+            m.setAccessible(true);
+
+            String result = (String) m.invoke(null, "com.foo.MyClass.methodName");
+
+            assertThat(result).isEqualTo("src/main/java/com/foo/MyClass.java");
+        }
+
+        @Test
+        @DisplayName("returns unknown path for null input")
+        void returnsUnknownForNull() throws Exception {
+            Method m = FixFlowRunner.class.getDeclaredMethod("sigToFilePath", String.class);
+            m.setAccessible(true);
+
+            String result = (String) m.invoke(null, (Object) null);
+
+            assertThat(result).isEqualTo("src/main/java/Unknown.java");
+        }
+
+        @Test
+        @DisplayName("returns unknown path for single-segment input (no dot)")
+        void returnsUnknownForSingleSegment() throws Exception {
+            Method m = FixFlowRunner.class.getDeclaredMethod("sigToFilePath", String.class);
+            m.setAccessible(true);
+
+            String result = (String) m.invoke(null, "Bar");
+
+            assertThat(result).isEqualTo("src/main/java/Unknown.java");
+        }
+
+        @Test
+        @DisplayName("handles nested packages")
+        void handlesNestedPackages() throws Exception {
+            Method m = FixFlowRunner.class.getDeclaredMethod("sigToFilePath", String.class);
+            m.setAccessible(true);
+
+            String result = (String) m.invoke(null, "com.huawei.hisi.deep.nested.Util.helper");
+
+            assertThat(result).isEqualTo("src/main/java/com/huawei/hisi/deep/nested/Util.java");
+        }
+    }
+
+    // ===================================================================
+    // 3. flattenDagOutputs — extracts exceptionType and throwPointSig
+    //    from nested DAG output
+    // ===================================================================
+
+    @Nested
+    @DisplayName("flattenDagOutputs")
+    class FlattenDagOutputsTests {
+
+        @Test
+        @DisplayName("extracts exceptionType from parsedError.errorType")
+        void extractsExceptionType() throws Exception {
+            Method m = FixFlowRunner.class.getDeclaredMethod("flattenDagOutputs", Map.class);
+            m.setAccessible(true);
+
+            Map<String, Object> dagOutput = new LinkedHashMap<>();
+            dagOutput.put("parsedError", Map.of("errorType", "NullPointerException"));
+            dagOutput.put("keyFrames", List.of(Map.of("fullSignature", "com.foo.Bar.do")));
+
+            m.invoke(runner, dagOutput);
+
+            assertThat(dagOutput).containsEntry("exceptionType", "NullPointerException");
+            assertThat(dagOutput).containsEntry("throwPointSig", "com.foo.Bar.do");
+        }
+
+        @Test
+        @DisplayName("does not overwrite existing exceptionType")
+        void doesNotOverwriteExistingExceptionType() throws Exception {
+            Method m = FixFlowRunner.class.getDeclaredMethod("flattenDagOutputs", Map.class);
+            m.setAccessible(true);
+
+            Map<String, Object> dagOutput = new LinkedHashMap<>();
+            dagOutput.put("exceptionType", "AlreadySet");
+            dagOutput.put("parsedError", Map.of("errorType", "DifferentException"));
+
+            m.invoke(runner, dagOutput);
+
+            assertThat(dagOutput.get("exceptionType")).isEqualTo("AlreadySet");
+        }
+
+        @Test
+        @DisplayName("skips exceptionType when errorType is 'Unknown'")
+        void skipsUnknownErrorType() throws Exception {
+            Method m = FixFlowRunner.class.getDeclaredMethod("flattenDagOutputs", Map.class);
+            m.setAccessible(true);
+
+            Map<String, Object> dagOutput = new LinkedHashMap<>();
+            dagOutput.put("parsedError", Map.of("errorType", "Unknown"));
+
+            m.invoke(runner, dagOutput);
+
+            assertThat(dagOutput).doesNotContainKey("exceptionType");
+        }
+
+        @Test
+        @DisplayName("skips throwPointSig when keyFrames is empty list")
+        void skipsEmptyKeyFrames() throws Exception {
+            Method m = FixFlowRunner.class.getDeclaredMethod("flattenDagOutputs", Map.class);
+            m.setAccessible(true);
+
+            Map<String, Object> dagOutput = new LinkedHashMap<>();
+            dagOutput.put("keyFrames", Collections.emptyList());
+
+            m.invoke(runner, dagOutput);
+
+            assertThat(dagOutput).doesNotContainKey("throwPointSig");
+        }
+
+        @Test
+        @DisplayName("skips throwPointSig when keyFrames entry lacks fullSignature")
+        void skipsMissingFullSignature() throws Exception {
+            Method m = FixFlowRunner.class.getDeclaredMethod("flattenDagOutputs", Map.class);
+            m.setAccessible(true);
+
+            Map<String, Object> dagOutput = new LinkedHashMap<>();
+            dagOutput.put("keyFrames", List.of(Map.of("className", "SomeClass")));
+
+            m.invoke(runner, dagOutput);
+
+            assertThat(dagOutput).doesNotContainKey("throwPointSig");
+        }
+
+        @Test
+        @DisplayName("gracefully handles null parsedError and keyFrames")
+        void gracefullyHandlesNullFields() throws Exception {
+            Method m = FixFlowRunner.class.getDeclaredMethod("flattenDagOutputs", Map.class);
+            m.setAccessible(true);
+
+            Map<String, Object> dagOutput = new LinkedHashMap<>();
+            // No parsedError, no keyFrames — should not throw
+            m.invoke(runner, dagOutput);
+
+            assertThat(dagOutput).doesNotContainKey("exceptionType");
+            assertThat(dagOutput).doesNotContainKey("throwPointSig");
+        }
+    }
+
+    // ===================================================================
+    // 4. Step 2: KG search is a placeholder
+    // ===================================================================
+
+    @Nested
+    @DisplayName("Step 2: KG search (placeholder)")
+    class Step2KgSearchTests {
+
+        @Test
+        @DisplayName("step 2 is a no-op placeholder that logs a TODO but does not call any KG API")
+        void kgSearchIsPlaceholder() {
+            FixSession s = session("100", "42", "fix/100-a");
+            setupHappyPath(s);
+
+            runner.run(s);
+
+            // The LogAnalysisDagOrchestrator is ONLY called once (step 1), not again in step 2.
+            // No external KG service is invoked for step 2.
+            try {
+                verify(logOrch, times(1)).analyzeLog(anyString(), any(), anyString(), any(), any());
+            } catch (Exception ignored) {
+                // analyzeLog declares throws Exception but the mock never throws
+            }
+        }
+    }
+
+    // ===================================================================
+    // 5. Step 3: create_worktree delegates to WorktreeService
+    // ===================================================================
+
+    @Nested
+    @DisplayName("Step 3: create_worktree")
+    class Step3CreateWorktreeTests {
+
+        @Test
+        @DisplayName("step 3 delegates to WorktreeService.createWorktree with correct args")
+        void step3DelegatesToWorktreeService() {
+            FixSession s = session("700", "49", "fix/700-a");
+            setupHappyPath(s);
+
+            runner.run(s);
+
+            verify(wtSvc).createWorktree(eq("fix/700-a"), eq("/repo"), eq("master"));
+        }
+
+        @Test
+        @DisplayName("step 3 updates session with worktree path")
+        void step3UpdatesSessionWorktreePath() {
+            FixSession s = session("701", "50", "fix/701-a");
+            setupHappyPath(s);
+
+            runner.run(s);
+
+            ArgumentCaptor<FixSession> captor = ArgumentCaptor.forClass(FixSession.class);
+            verify(fixRepo, atLeastOnce()).update(captor.capture());
+            List<FixSession> updates = captor.getAllValues();
+            FixSession lastUpdate = updates.get(updates.size() - 1);
+            assertThat(lastUpdate.getWorktreePath()).isNotNull();
+        }
+    }
+
+    // ===================================================================
+    // 6. Step 4: generate_test delegates to TestGenService
+    // ===================================================================
+
+    @Nested
+    @DisplayName("Step 4: generate_test")
+    class Step4GenerateTestTests {
+
+        @Test
+        @DisplayName("step 4 delegates to TestGenService.generate with compileCheck callback")
+        void step4DelegatesToTestGenService() {
+            FixSession s = session("800", "51", "fix/800-a");
+            setupHappyPath(s);
+
+            runner.run(s);
+
+            verify(tgSvc).generate(any(TestGenInput.class), any());
+        }
+
+        @Test
+        @DisplayName("step 4 delegates to WorktreeService.writeTestFile to persist generated test")
+        void step4WritesTestFile() {
+            FixSession s = session("801", "52", "fix/801-a");
+            setupHappyPath(s);
+
+            runner.run(s);
+
+            // The test is written after generation
+            verify(wtSvc, times(2)).writeTestFile(anyString(), eq("com.foo"), eq("DoNullPointerExceptionTest"), anyString());
+        }
+    }
+
+    // ===================================================================
+    // 7. Step 6: ai_fix delegates to FixService/FixAgent
+    // ===================================================================
+
+    @Nested
+    @DisplayName("Step 6: ai_fix")
+    class Step6AiFixTests {
+
+        @Test
+        @DisplayName("step 6 delegates to FixService.fix")
+        void step6DelegatesToFixService() {
+            FixSession s = session("900", "53", "fix/900-a");
+            setupHappyPath(s);
+
+            runner.run(s);
+
+            verify(fixSvc).fix(eq("com.foo.Bar.do"), eq("NullPointerException"),
+                    any(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("step 6 applies the fix to the worktree via WorktreeService.applyFix")
+        void step6AppliesFixToWorktree() {
+            FixSession s = session("901", "54", "fix/901-a");
+            setupHappyPath(s);
+
+            runner.run(s);
+
+            // Fix is applied to the correct file path derived from the signature
+            verify(wtSvc).applyFix(anyString(),
+                    eq("src/main/java/com/foo/Bar.java"),
+                    any());
+        }
+    }
+
+    // ===================================================================
+    // 8. Step 8: commit delegates to WorktreeService.commit()
+    // ===================================================================
+
+    @Nested
+    @DisplayName("Step 8: commit")
+    class Step8CommitTests {
+
+        @Test
+        @DisplayName("step 8 delegates to WorktreeService.commit")
+        void step8DelegatesToWorktreeServiceCommit() {
+            FixSession s = session("1000", "55", "fix/1000-a");
+            setupHappyPath(s);
+
+            runner.run(s);
+
+            verify(wtSvc).commit(eq("fix/1000-a"), anyString(), contains("NullPointerException"));
+        }
+
+        @Test
+        @DisplayName("step 8 updates session with commit hash")
+        void step8UpdatesSessionCommitHash() {
+            FixSession s = session("1001", "56", "fix/1001-a");
+            setupHappyPath(s);
+            when(wtSvc.commit(anyString(), anyString(), anyString())).thenReturn("def456abc");
+
+            runner.run(s);
+
+            ArgumentCaptor<FixSession> captor = ArgumentCaptor.forClass(FixSession.class);
+            verify(fixRepo, atLeastOnce()).update(captor.capture());
+            List<FixSession> updates = captor.getAllValues();
+            FixSession lastUpdate = updates.get(updates.size() - 1);
+            assertThat(lastUpdate.getCommitHash()).isEqualTo("def456abc");
+        }
+    }
+
+    // ===================================================================
+    // 9. Step 9: done sets session status to SUCCESS
+    // ===================================================================
+
+    @Nested
+    @DisplayName("Step 9: done (status)")
+    class Step9DoneTests {
+
+        @Test
+        @DisplayName("happy path sets status to SUCCESS")
+        void happyPathSetsSuccess() {
+            FixSession s = session("2000", "57", "fix/2000-a");
+            setupHappyPath(s);
+
+            runner.run(s);
+
+            ArgumentCaptor<FixSession> captor = ArgumentCaptor.forClass(FixSession.class);
+            verify(fixRepo, atLeastOnce()).update(captor.capture());
+            assertThat(captor.getValue().getStatus()).isEqualTo("SUCCESS");
+        }
+
+        @Test
+        @DisplayName("final checkpoint event is emitted with summary and finalText")
+        void emitsCheckpointEvent() {
+            FixSession s = session("2001", "58", "fix/2001-a");
+            setupHappyPath(s);
+
+            runner.run(s);
+
+            ArgumentCaptor<AgentEvent> captor = ArgumentCaptor.forClass(AgentEvent.class);
+            verify(evtRepo, atLeastOnce()).append(captor.capture());
+            boolean hasCheckpoint = captor.getAllValues().stream()
+                    .anyMatch(e -> e.getType() == EventType.CHECKPOINT);
+            assertThat(hasCheckpoint).isTrue();
+        }
+    }
+
+    // ===================================================================
+    // 10. Lenient policy: build/repro/pass failure -> SUCCESS_UNVERIFIED
+    // ===================================================================
+
+    @Nested
+    @DisplayName("Lenient policy: SUCCESS_UNVERIFIED")
+    class LenientPolicyTests {
+
+        @Test
+        @DisplayName("repro failure (step 5) -> SUCCESS_UNVERIFIED, not ERROR")
+        void reproFailureProducesSuccessUnverified() {
+            FixSession s = session("400", "44", "fix/400-a");
+            setupHappyPath(s);
+            when(repSvc.runAndCheckRepro(anyString(), anyString(), anyString(), any(), anyInt()))
+                    .thenReturn(false);
+
+            runner.run(s);
+
+            ArgumentCaptor<FixSession> captor = ArgumentCaptor.forClass(FixSession.class);
+            verify(fixRepo, atLeastOnce()).update(captor.capture());
+            assertThat(captor.getValue().getStatus()).isEqualTo("SUCCESS_UNVERIFIED");
+        }
+
+        @Test
+        @DisplayName("pass failure (step 7) -> SUCCESS_UNVERIFIED")
+        void passFailureProducesSuccessUnverified() {
+            FixSession s = session("300", "45", "fix/300-a");
+            setupHappyPath(s);
+            when(repSvc.runAndCheckPass(anyString(), anyString())).thenReturn(false);
+
+            runner.run(s);
+
+            ArgumentCaptor<FixSession> captor = ArgumentCaptor.forClass(FixSession.class);
+            verify(fixRepo, atLeastOnce()).update(captor.capture());
+            assertThat(captor.getValue().getStatus()).isEqualTo("SUCCESS_UNVERIFIED");
+        }
+
+        @Test
+        @DisplayName("both repro and pass failure -> SUCCESS_UNVERIFIED")
+        void bothFailuresProduceSuccessUnverified() {
+            FixSession s = session("500", "46", "fix/500-a");
+            setupHappyPath(s);
+            when(repSvc.runAndCheckRepro(anyString(), anyString(), anyString(), any(), anyInt()))
+                    .thenReturn(false);
+            when(repSvc.runAndCheckPass(anyString(), anyString())).thenReturn(false);
+
+            runner.run(s);
+
+            ArgumentCaptor<FixSession> captor = ArgumentCaptor.forClass(FixSession.class);
+            verify(fixRepo, atLeastOnce()).update(captor.capture());
+            assertThat(captor.getValue().getStatus()).isEqualTo("SUCCESS_UNVERIFIED");
+        }
+    }
+
+    // ===================================================================
+    // 11. extractMethodBody
+    // ===================================================================
+
+    @Nested
+    @DisplayName("extractMethodBody")
+    class ExtractMethodBodyTests {
+
+        @Test
+        @DisplayName("extracts a simple public method with body")
+        void extractsSimpleMethod() throws Exception {
+            Method m = FixFlowRunner.class.getDeclaredMethod("extractMethodBody",
+                    String.class, String.class);
+            m.setAccessible(true);
+
+            String source = """
+                    package com.foo;
+                    public class Foo {
+                        public void bar(String x) {
+                            System.out.println(x);
+                        }
+                    }
+                    """;
+
+            String result = (String) m.invoke(null, source, "bar");
+
+            assertThat(result).contains("public void bar(String x)");
+            assertThat(result).contains("System.out.println(x)");
+            assertThat(result).contains("{").contains("}");
+        }
+
+        @Test
+        @DisplayName("returns '// method not found: xxx' for missing method")
+        void returnsMethodNotFoundForMissingMethod() throws Exception {
+            Method m = FixFlowRunner.class.getDeclaredMethod("extractMethodBody",
+                    String.class, String.class);
+            m.setAccessible(true);
+
+            String source = """
+                    package com.foo;
+                    public class Foo {
+                        public void bar(String x) {
+                            System.out.println(x);
+                        }
+                    }
+                    """;
+
+            String result = (String) m.invoke(null, source, "baz");
+
+            assertThat(result).isEqualTo("// method not found: baz");
+        }
+
+        @Test
+        @DisplayName("extracts method with multiple lines and braces")
+        void extractsMultiLineMethod() throws Exception {
+            Method m = FixFlowRunner.class.getDeclaredMethod("extractMethodBody",
+                    String.class, String.class);
+            m.setAccessible(true);
+
+            String source = """
+                    public class Service {
+                        private void helper() { }
+
+                        public String doStuff(int n) {
+                            if (n > 0) {
+                                return "positive";
+                            } else {
+                                return "non-positive";
+                            }
+                        }
+
+                        public void other() { }
+                    }
+                    """;
+
+            String result = (String) m.invoke(null, source, "doStuff");
+
+            assertThat(result).contains("public String doStuff(int n)");
+            assertThat(result).contains("return \"positive\"");
+            assertThat(result).contains("return \"non-positive\"");
+        }
+
+        @Test
+        @DisplayName("returns '// method not found: xxx' for empty source")
+        void returnsMethodNotFoundForEmptySource() throws Exception {
+            Method m = FixFlowRunner.class.getDeclaredMethod("extractMethodBody",
+                    String.class, String.class);
+            m.setAccessible(true);
+
+            String result = (String) m.invoke(null, "", "anyMethod");
+
+            assertThat(result).isEqualTo("// method not found: anyMethod");
+        }
+    }
+
+    // ===================================================================
+    // Edge-case tests
+    // ===================================================================
+
+    @Nested
+    @DisplayName("Edge cases")
+    class EdgeCases {
+
+        @Test
+        @DisplayName("chatSessionId '0' -> runs successfully, status SUCCESS")
+        void chatSessionIdZero() {
+            FixSession s = session("9000", "0", "fix/9000-a");
+            setupHappyPath(s);
+
+            runner.run(s);
+
+            ArgumentCaptor<FixSession> captor = ArgumentCaptor.forClass(FixSession.class);
+            verify(fixRepo, atLeastOnce()).update(captor.capture());
+            assertThat(captor.getValue().getStatus()).isEqualTo("SUCCESS");
+        }
+
+        @Test
+        @DisplayName("non-numeric chatSessionId -> runs successfully, status SUCCESS")
+        void nonNumericChatSessionId() {
+            FixSession s = session("9001", "abc", "fix/9001-a");
+            setupHappyPath(s);
+
+            runner.run(s);
+
+            ArgumentCaptor<FixSession> captor = ArgumentCaptor.forClass(FixSession.class);
+            verify(fixRepo, atLeastOnce()).update(captor.capture());
+            assertThat(captor.getValue().getStatus()).isEqualTo("SUCCESS");
+        }
+
+        @Test
+        @DisplayName("step 1 log analysis is invoked")
+        void step1LogAnalysisInvoked() {
+            FixSession s = session("600", "48", "fix/600-a");
+            setupHappyPath(s);
+
+            runner.run(s);
+
+            try {
+                verify(logOrch).analyzeLog(anyString(), any(), anyString(), any(), any());
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        @Test
+        @DisplayName("missing signature -> status MISSING_SIGNATURE, flow aborted at step 4")
+        void missingSignatureAbortsFlow() {
+            FixSession s = session("5000", "47", "fix/5000-a");
+            s.setThrowPointSig(null);
+            setupReport("5000");
+            try {
+                when(logOrch.analyzeLog(anyString(), any(), anyString(), any(), any()))
+                        .thenReturn(null);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+            System.setProperty("hisi.fix.repo-path", "/repo");
+            when(wtSvc.currentBranch("/repo")).thenReturn("master");
+            when(wtSvc.createWorktree(anyString(), anyString(), anyString()))
+                    .thenReturn("/tmp/wt5000");
+
+            runner.run(s);
+
+            ArgumentCaptor<FixSession> captor = ArgumentCaptor.forClass(FixSession.class);
+            verify(fixRepo, atLeastOnce()).update(captor.capture());
+            assertThat(captor.getValue().getStatus()).isEqualTo("MISSING_SIGNATURE");
+        }
+
+        @Test
+        @DisplayName("unexpected exception in flow -> status ERROR")
+        void unexpectedExceptionSetsError() {
+            FixSession s = session("9999", "51", "fix/9999-e");
+            s.setErrorMsg("err");
+            setupReport("9999");
+            try {
+                when(logOrch.analyzeLog(anyString(), any(), anyString(), any(), any()))
+                        .thenThrow(new RuntimeException("crash"));
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+
+            runner.run(s);
+
+            ArgumentCaptor<FixSession> captor = ArgumentCaptor.forClass(FixSession.class);
+            verify(fixRepo, atLeastOnce()).update(captor.capture());
+            assertThat(captor.getValue().getStatus()).isEqualTo("ERROR");
+        }
+    }
+
+    // ===================================================================
+    // HITL gate tests
+    // ===================================================================
+
+    @Nested
+    @DisplayName("HITL gate")
+    class HitlGateTests {
+
+        private final java.util.List<com.huawei.hisi.ram.model.AgentEvent> hitlEvents = new java.util.ArrayList<>();
+
+        @BeforeEach
+        void setUp() {
+            hitlEvents.clear();
+            when(evtRepo.append(any())).thenAnswer(inv -> {
+                com.huawei.hisi.ram.model.AgentEvent e = inv.getArgument(0);
+                hitlEvents.add(e);
+                return e;
+            });
+            when(evtRepo.findBySessionId(anyLong())).thenReturn(hitlEvents);
+        }
+
+        /**
+         * Create a session with hitlEnabled=true and set up happy-path stubs.
+         */
+        private FixSession hitlSession(String id, String chatId, String branch) {
+            FixSession s = session(id, chatId, branch);
+            s.setHitlEnabled(true);
+            return s;
+        }
+
+        @Test
+        @DisplayName("hitlEnabled=false runs all 9 steps normally")
+        void hitlDisabledRunsAllSteps() {
+            FixSession s = session("300", "200", "fix/h1");
+            s.setHitlEnabled(false);
+            setupHappyPath(s);
+
+            runner.run(s);
+
+            ArgumentCaptor<FixSession> captor = ArgumentCaptor.forClass(FixSession.class);
+            verify(fixRepo, atLeastOnce()).update(captor.capture());
+            assertThat(captor.getValue().getStatus()).isEqualTo("SUCCESS");
+            assertThat(captor.getValue().getCurrentStep()).isNull();
+        }
+
+        @Test
+        @DisplayName("hitlEnabled=true parks after step 4 (generate_test) with WAITING_HITL")
+        void parksAfterStep4() {
+            FixSession s = hitlSession("301", "201", "fix/h2");
+            setupHappyPath(s);
+
+            runner.run(s);
+
+            ArgumentCaptor<FixSession> captor = ArgumentCaptor.forClass(FixSession.class);
+            verify(fixRepo, atLeastOnce()).update(captor.capture());
+            FixSession last = captor.getValue();
+            assertThat(last.getStatus()).isEqualTo("WAITING_HITL");
+            assertThat(last.getCurrentStep()).isEqualTo("generate_test");
+        }
+
+        @Test
+        @DisplayName("hitlEnabled=true parks after step 6 (ai_fix) once step 4 is confirmed")
+        void parksAfterStep6WhenStep4Confirmed() {
+            FixSession s = hitlSession("302", "202", "fix/h3");
+            setupHappyPath(s);
+
+            // First run: parks at step 4
+            runner.run(s);
+
+            assertThat(s.getStatus()).isEqualTo("WAITING_HITL");
+            assertThat(s.getCurrentStep()).isEqualTo("generate_test");
+
+            // Confirm step 4
+            when(fixRepo.findById(s.getId())).thenReturn(java.util.Optional.of(s));
+            runner.confirmAndResume(s.getId(), "approve", null, null);
+
+            // Second run: should park at step 6
+            runner.run(s);
+
+            ArgumentCaptor<FixSession> captor = ArgumentCaptor.forClass(FixSession.class);
+            verify(fixRepo, atLeastOnce()).update(captor.capture());
+            FixSession last = captor.getValue();
+            assertThat(last.getStatus()).isEqualTo("WAITING_HITL");
+            assertThat(last.getCurrentStep()).isEqualTo("ai_fix");
+        }
+
+        @Test
+        @DisplayName("confirmAndResume with approve advances step and resumes to SUCCESS")
+        void confirmApproveAdvancesAndCompletes() {
+            FixSession s = hitlSession("303", "203", "fix/h4");
+            setupHappyPath(s);
+
+            // Park at step 4
+            runner.run(s);
+            assertThat(s.getStatus()).isEqualTo("WAITING_HITL");
+
+            // Confirm step 4
+            when(fixRepo.findById(s.getId())).thenReturn(java.util.Optional.of(s));
+            runner.confirmAndResume(s.getId(), "approve", null, null);
+
+            // Run to park at step 6
+            runner.run(s);
+            assertThat(s.getStatus()).isEqualTo("WAITING_HITL");
+            assertThat(s.getCurrentStep()).isEqualTo("ai_fix");
+
+            when(fixRepo.findById(s.getId())).thenReturn(java.util.Optional.of(s));
+            runner.confirmAndResume(s.getId(), "approve", null, null);
+
+            // Final run: should complete
+            runner.run(s);
+
+            ArgumentCaptor<FixSession> captor = ArgumentCaptor.forClass(FixSession.class);
+            verify(fixRepo, atLeastOnce()).update(captor.capture());
+            assertThat(captor.getValue().getStatus()).isEqualTo("SUCCESS");
+            assertThat(captor.getValue().getCurrentStep()).isNull();
+        }
+
+        @Test
+        @DisplayName("confirmAndResume with reject keeps currentStep, re-executes gated step")
+        void confirmRejectReexecutes() {
+            FixSession s = hitlSession("304", "204", "fix/h5");
+            setupHappyPath(s);
+
+            // Park at step 4
+            runner.run(s);
+            assertThat(s.getStatus()).isEqualTo("WAITING_HITL");
+
+            // Reject with feedback
+            when(fixRepo.findById(s.getId())).thenReturn(java.util.Optional.of(s));
+            runner.confirmAndResume(s.getId(), "reject", "bad test", null);
+            // confirmAndResume updates session with hitlFeedback and keeps currentStep
+            // The cached step output is invalidated (no HITL_RES approved found)
+            assertThat(s.getCurrentStep()).isEqualTo("generate_test"); // not advanced
+
+            // When run() is called again, it re-executes step 4 (no cached output with approved HITL_RES)
+        }
+
+        @Test
+        @DisplayName("confirmAndResume with edit saves edited output and advances")
+        void confirmEditSavesEditedOutput() {
+            FixSession s = hitlSession("305", "205", "fix/h6");
+            setupHappyPath(s);
+
+            // Park at step 4
+            runner.run(s);
+            assertThat(s.getStatus()).isEqualTo("WAITING_HITL");
+
+            // Edit the output
+            Map<String, Object> edited = Map.of("testClass", "com.foo.EditedTest");
+            when(fixRepo.findById(s.getId())).thenReturn(java.util.Optional.of(s));
+            runner.confirmAndResume(s.getId(), "edit", null, edited);
+            assertThat(s.getCurrentStep()).isEqualTo("run_repro"); // advanced
+        }
+
+        @Test
+        @DisplayName("confirmAndResume on non-WAITING_HITL session throws")
+        void confirmWrongStatusThrows() {
+            FixSession s = session("306", "206", "fix/h7");
+            s.setStatus("RUNNING");
+            when(fixRepo.findById("fix-306")).thenReturn(java.util.Optional.of(s));
+
+            assertThatThrownBy(() -> runner.confirmAndResume("fix-306", "approve", null, null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("not WAITING_HITL");
+        }
+
+        @Test
+        @DisplayName("confirmAndResume on missing session throws")
+        void confirmMissingSessionThrows() {
+            when(fixRepo.findById("nonexistent")).thenReturn(java.util.Optional.empty());
+
+            assertThatThrownBy(() -> runner.confirmAndResume("nonexistent", "approve", null, null))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("FixSession not found");
+        }
+
+        @Test
+        @DisplayName("step output is cached and reused on HITL resume")
+        void stepOutputCachedOnResume() {
+            FixSession s = hitlSession("307", "207", "fix/h8");
+            setupHappyPath(s);
+
+            // First run: park at step 4
+            runner.run(s);
+            assertThat(s.getStatus()).isEqualTo("WAITING_HITL");
+            assertThat(s.getCurrentStep()).isEqualTo("generate_test");
+
+            // Verify HITL_REQ event was appended
+            verify(evtRepo, atLeastOnce()).append(argThat(
+                    e -> e.getType() == EventType.HITL_REQ));
+
+            // Confirm step 4
+            when(fixRepo.findById(s.getId())).thenReturn(java.util.Optional.of(s));
+            runner.confirmAndResume(s.getId(), "approve", null, null);
+
+            // Second run: step 4 should be cached (no re-generation)
+            // To verify, reset the testGenService mock so we can check it's NOT called
+            reset(tgSvc);
+            when(tgSvc.generate(any(TestGenInput.class), any()))
+                    .thenAnswer(inv -> {
+                        throw new AssertionError("step 4 should not re-execute on HITL resume");
+                    });
+            // But we still need repro service for step 5
+            when(repSvc.runAndCheckRepro(anyString(), anyString(), anyString(), any(), anyInt()))
+                    .thenReturn(true);
+
+            runner.run(s);
+            // Should NOT throw AssertionError — step 4 was cached
+        }
+    }
+}

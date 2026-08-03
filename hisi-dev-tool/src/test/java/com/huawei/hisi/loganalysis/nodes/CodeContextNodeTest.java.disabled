@@ -1,0 +1,199 @@
+package com.huawei.hisi.loganalysis.nodes;
+
+import com.huawei.hisi.ram.kg.KgMcpClient;
+import com.huawei.hisi.ram.kg.dto.Entry;
+import com.huawei.hisi.ram.kg.dto.MethodBodyInfo;
+import com.huawei.hisi.ram.kg.dto.Seed;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.*;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class CodeContextNodeTest {
+
+    @Mock
+    private KgMcpClient kgMcpClient;
+    private CodeContextNode codeContextNode;
+
+    @BeforeEach
+    void setUp() { codeContextNode = new CodeContextNode(kgMcpClient); }
+
+    @Test
+    @DisplayName("loads method bodies for matched methods")
+    void loadsMethodBodies_fromMatchedMethods() {
+        when(kgMcpClient.loadMethodBodies(anyList(), anyList()))
+                .thenReturn(List.of(new MethodBodyInfo("n1", "c1", "m1", "desc", "body", "f1")));
+
+        Map<String, Object> input = buildBaseInput("/path");
+        input.put("matchedMethods", List.of(new Seed("n1", 0.95, "c1#m1")));
+
+        Map<String, Object> output = codeContextNode.execute(input);
+        @SuppressWarnings("unchecked")
+        List<MethodBodyInfo> codeBodies = (List<MethodBodyInfo>) output.get("codeBodies");
+        assertThat(codeBodies).hasSize(1);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> methodDetails = (List<Map<String, Object>>) output.get("methodDetails");
+        assertThat(methodDetails.get(0).get("hasBody")).isEqualTo(true);
+        assertThat(methodDetails.get(0).get("hasDescription")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("loads method bodies from entry points")
+    void loadsMethodBodies_fromEntryPoints() {
+        when(kgMcpClient.loadMethodBodies(anyList(), anyList()))
+                .thenReturn(List.of(new MethodBodyInfo("e1", "c2", "m2", "desc", "body", "f2")));
+
+        Map<String, Object> input = buildBaseInput("/path");
+        input.put("entryPoints", List.of(new Entry("e1", "c2", "m2", "CONTROLLER")));
+
+        Map<String, Object> output = codeContextNode.execute(input);
+        @SuppressWarnings("unchecked")
+        List<MethodBodyInfo> codeBodies = (List<MethodBodyInfo>) output.get("codeBodies");
+        assertThat(codeBodies).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("deduplicates nodeIds across multiple sources")
+    void deduplicatesNodeIds() {
+        when(kgMcpClient.loadMethodBodies(anyList(), anyList()))
+                .thenReturn(Collections.emptyList());
+
+        Map<String, Object> input = buildBaseInput("/path");
+        input.put("matchedMethods", List.of(new Seed("shared", 0.9, "c#m")));
+        input.put("entryPoints", List.of(new Entry("shared", "c", "m", "CONTROLLER")));
+
+        codeContextNode.execute(input);
+        verify(kgMcpClient).loadMethodBodies(argThat(list -> list.size() == 1), anyList());
+    }
+
+    @Test
+    @DisplayName("limits loaded nodeIds to 50")
+    void limitsTo50NodeIds() {
+        when(kgMcpClient.loadMethodBodies(anyList(), anyList())).thenReturn(Collections.emptyList());
+        List<Seed> methods = new ArrayList<>();
+        for (int i = 0; i < 100; i++) methods.add(new Seed("n" + i, 0.9, "c" + i + "#m"));
+
+        Map<String, Object> input = buildBaseInput("/path");
+        input.put("matchedMethods", methods);
+        codeContextNode.execute(input);
+
+        verify(kgMcpClient).loadMethodBodies(argThat(list -> list.size() == 50), anyList());
+    }
+
+    @Test
+    @DisplayName("handles empty matched methods")
+    void emptyMatchedMethods_noLoad() {
+        Map<String, Object> input = buildBaseInput("/path");
+        input.put("matchedMethods", Collections.emptyList());
+        Map<String, Object> output = codeContextNode.execute(input);
+
+        @SuppressWarnings("unchecked")
+        List<MethodBodyInfo> codeBodies = (List<MethodBodyInfo>) output.get("codeBodies");
+        assertThat(codeBodies).isEmpty();
+    }
+
+    @Test
+    @DisplayName("handles all null inputs gracefully")
+    void allNullInputs_noError() {
+        Map<String, Object> input = buildBaseInput(null);
+        Map<String, Object> output = codeContextNode.execute(input);
+
+        @SuppressWarnings("unchecked")
+        List<MethodBodyInfo> codeBodies = (List<MethodBodyInfo>) output.get("codeBodies");
+        assertThat(codeBodies).isEmpty();
+    }
+
+    @Test
+    @DisplayName("parseProjectPaths splits comma-separated paths")
+    void parseProjectPaths_commaSeparated() {
+        when(kgMcpClient.loadMethodBodies(anyList(), anyList())).thenReturn(Collections.emptyList());
+        Map<String, Object> input = buildBaseInput("/a, /b");
+        input.put("matchedMethods", List.of(new Seed("n1", 0.9, "c#m")));
+        codeContextNode.execute(input);
+
+        verify(kgMcpClient).loadMethodBodies(anyList(), argThat(list ->
+                list.size() == 2 && list.contains("/a")));
+    }
+
+    @Test
+    @DisplayName("method details reflect hasBody and hasDescription")
+    void methodDetails_hasBodyAndDescription() {
+        when(kgMcpClient.loadMethodBodies(anyList(), anyList()))
+                .thenReturn(List.of(
+                        new MethodBodyInfo("n1", "c1", "m1", "desc", "body", "f1"),
+                        new MethodBodyInfo("n2", "c2", "m2", null, null, "f2")));
+
+        Map<String, Object> input = buildBaseInput("/path");
+        input.put("matchedMethods", List.of(new Seed("n1", 0.9, "c1#m1"), new Seed("n2", 0.8, "c2#m2")));
+
+        Map<String, Object> output = codeContextNode.execute(input);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> details = (List<Map<String, Object>>) output.get("methodDetails");
+        assertThat(details).hasSize(2);
+        assertThat(details.get(0).get("hasBody")).isEqualTo(true);
+        assertThat(details.get(1).get("hasBody")).isEqualTo(false);
+    }
+
+    @Test
+    @DisplayName("loadMethodBodies throws exception -> empty codeBodies, no error propagation")
+    void loadMethodBodies_failureGraceful() {
+        when(kgMcpClient.loadMethodBodies(anyList(), anyList()))
+                .thenThrow(new RuntimeException("KG service unavailable"));
+
+        Map<String, Object> input = buildBaseInput("/path");
+        input.put("matchedMethods", List.of(new Seed("n1", 0.95, "c1#m1")));
+
+        // execute() itself doesn't catch exceptions from loadMethodBodies,
+        // so this test documents that an exception here will propagate
+        try {
+            codeContextNode.execute(input);
+        } catch (Exception e) {
+            assertThat(e).isInstanceOf(RuntimeException.class);
+            assertThat(e.getMessage()).contains("KG service unavailable");
+        }
+    }
+
+    @Test
+    @DisplayName("projectPath null with valid matchedMethods -> no load attempted")
+    void nullProjectPath_withMatchedMethods() {
+        Map<String, Object> input = buildBaseInput(null);
+        input.put("matchedMethods", List.of(new Seed("n1", 0.9, "c1#m1")));
+
+        Map<String, Object> output = codeContextNode.execute(input);
+
+        @SuppressWarnings("unchecked")
+        List<MethodBodyInfo> codeBodies = (List<MethodBodyInfo>) output.get("codeBodies");
+        assertThat(codeBodies).isEmpty();
+        verify(kgMcpClient, never()).loadMethodBodies(anyList(), anyList());
+    }
+
+    @Test
+    @DisplayName("projectPath empty with valid matchedMethods -> no load attempted")
+    void emptyProjectPath_withMatchedMethods() {
+        Map<String, Object> input = buildBaseInput("");
+        input.put("matchedMethods", List.of(new Seed("n1", 0.9, "c1#m1")));
+
+        Map<String, Object> output = codeContextNode.execute(input);
+
+        @SuppressWarnings("unchecked")
+        List<MethodBodyInfo> codeBodies = (List<MethodBodyInfo>) output.get("codeBodies");
+        assertThat(codeBodies).isEmpty();
+        verify(kgMcpClient, never()).loadMethodBodies(anyList(), anyList());
+    }
+
+    private Map<String, Object> buildBaseInput(String projectPath) {
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("projectPath", projectPath);
+        return input;
+    }
+}

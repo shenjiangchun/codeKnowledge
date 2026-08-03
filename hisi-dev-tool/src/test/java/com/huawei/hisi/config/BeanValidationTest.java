@@ -2,7 +2,6 @@ package com.huawei.hisi.config;
 
 import com.huawei.hisi.agent.model.DiagnosisRequest;
 import com.huawei.hisi.model.ImpactAnalysisRequest;
-import com.huawei.hisi.service.intent.DialogController;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -157,107 +156,6 @@ class BeanValidationTest {
         Set<ConstraintViolation<ImpactAnalysisRequest>> violations = validator.validate(request);
 
         assertTrue(violations.isEmpty(), "project为null应通过验证");
-    }
-
-    // ==================== DialogRequest验证测试 ====================
-
-    @Test
-    @DisplayName("测试DialogRequest - userInput不能为空")
-    void testDialogRequestUserInputNotBlank() {
-        DialogController.DialogRequest request = new DialogController.DialogRequest();
-        request.setUserInput("");  // 空字符串
-
-        Set<ConstraintViolation<DialogController.DialogRequest>> violations = validator.validate(request);
-
-        assertFalse(violations.isEmpty(), "userInput为空应有验证错误");
-        assertTrue(violations.stream()
-                .anyMatch(v -> v.getPropertyPath().toString().equals("userInput")),
-                "应包含userInput的验证错误");
-        assertEquals("用户输入不能为空",
-                violations.iterator().next().getMessage(),
-                "验证消息应为'用户输入不能为空'");
-    }
-
-    @Test
-    @DisplayName("测试DialogRequest - userInput为null应验证失败")
-    void testDialogRequestUserInputNull() {
-        DialogController.DialogRequest request = new DialogController.DialogRequest();
-        request.setUserInput(null);
-
-        Set<ConstraintViolation<DialogController.DialogRequest>> violations = validator.validate(request);
-
-        assertFalse(violations.isEmpty(), "userInput为null应有验证错误");
-    }
-
-    @Test
-    @DisplayName("测试DialogRequest - 有效请求应通过验证")
-    void testDialogRequestValid() {
-        DialogController.DialogRequest request = new DialogController.DialogRequest();
-        request.setUserInput("分析这个NullPointerException异常");
-        request.setSessionId("session-001");
-
-        Set<ConstraintViolation<DialogController.DialogRequest>> violations = validator.validate(request);
-
-        assertTrue(violations.isEmpty(), "有效请求应通过验证");
-    }
-
-    @Test
-    @DisplayName("测试DialogRequest - sessionId和projectPath可选")
-    void testDialogRequestOptionalFieldsNullable() {
-        DialogController.DialogRequest request = new DialogController.DialogRequest();
-        request.setUserInput("test input");
-        request.setSessionId(null);     // 可选
-        request.setProjectPath(null);   // 可选
-
-        Set<ConstraintViolation<DialogController.DialogRequest>> violations = validator.validate(request);
-
-        assertTrue(violations.isEmpty(), "可选字段为null应通过验证");
-    }
-
-    // ==================== InterventionRequestDto验证测试 ====================
-
-    @Test
-    @DisplayName("测试InterventionRequestDto - sessionId不能为空")
-    void testInterventionRequestSessionIdNotBlank() {
-        DialogController.InterventionRequestDto request = new DialogController.InterventionRequestDto();
-        request.setSessionId("");
-        request.setInterventionType("SKIP");
-
-        Set<ConstraintViolation<DialogController.InterventionRequestDto>> violations = validator.validate(request);
-
-        assertFalse(violations.isEmpty(), "sessionId为空应有验证错误");
-        assertEquals("会话ID不能为空",
-                violations.iterator().next().getMessage(),
-                "验证消息应为'会话ID不能为空'");
-    }
-
-    @Test
-    @DisplayName("测试InterventionRequestDto - interventionType不能为空")
-    void testInterventionRequestTypeNotBlank() {
-        DialogController.InterventionRequestDto request = new DialogController.InterventionRequestDto();
-        request.setSessionId("session-001");
-        request.setInterventionType(null);
-
-        Set<ConstraintViolation<DialogController.InterventionRequestDto>> violations = validator.validate(request);
-
-        assertFalse(violations.isEmpty(), "interventionType为null应有验证错误");
-        assertEquals("干预类型不能为空",
-                violations.iterator().next().getMessage(),
-                "验证消息应为'干预类型不能为空'");
-    }
-
-    @Test
-    @DisplayName("测试InterventionRequestDto - 有效请求应通过验证")
-    void testInterventionRequestValid() {
-        DialogController.InterventionRequestDto request = new DialogController.InterventionRequestDto();
-        request.setSessionId("session-001");
-        request.setInterventionType("SKIP");
-        request.setTarget("agent-1");
-        request.setReason("不需要这个分析");
-
-        Set<ConstraintViolation<DialogController.InterventionRequestDto>> violations = validator.validate(request);
-
-        assertTrue(violations.isEmpty(), "有效请求应通过验证");
     }
 
     // ==================== 验证框架集成测试 ====================

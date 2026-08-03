@@ -1,0 +1,183 @@
+package com.huawei.hisi.loganalysis.nodes;
+
+import com.huawei.hisi.ram.nodes.impl.RamClaudeJsonClient;
+import com.huawei.hisi.ram.sdk.SendOptions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.*;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class ClaudeAnalyzeNodeTest {
+
+    @Mock
+    private RamClaudeJsonClient claudeClient;
+    private RoundPromptBuilder promptBuilder;
+    private ClaudeAnalyzeNode claudeAnalyzeNode;
+
+    @BeforeEach
+    void setUp() {
+        promptBuilder = new RoundPromptBuilder();
+        claudeAnalyzeNode = new ClaudeAnalyzeNode(claudeClient, promptBuilder);
+    }
+
+    @Test
+    @DisplayName("3-round analysis: all rounds succeed -> version 3.0")
+    void allRoundsSucceed_version30() {
+        when(claudeClient.isAvailable()).thenReturn(true);
+        when(claudeClient.defaultModel()).thenReturn("claude-sonnet-4");
+
+        Map<String, Object> r1 = new LinkedHashMap<>();
+        r1.put("patternType", "NPE_CHAIN"); r1.put("patternConfidence", "high");
+        r1.put("initialHypothesis", "NPE in process"); r1.put("suggestedDepth", "medium");
+        when(claudeClient.callJson(contains("模式识别"), anyString(), any(SendOptions.class))).thenReturn(r1);
+
+        when(claudeClient.callText(contains("根因分析"), anyString(), any(SendOptions.class)))
+                .thenReturn("## 根因\n\nNPE analysis.");
+
+        Map<String, Object> r3 = new LinkedHashMap<>();
+        r3.put("fixSuggestions", List.of(Map.of("suggestion", "Add null check", "priority", "P0")));
+        r3.put("verificationChecklist", List.of()); r3.put("riskAssessment", "Low");
+        when(claudeClient.callJson(contains("修复方案"), anyString(), any(SendOptions.class))).thenReturn(r3);
+
+        Map<String, Object> input = buildInputWithError("NullPointerException");
+        Map<String, Object> output = claudeAnalyzeNode.execute(input);
+
+        assertThat(output.get("patternType")).isEqualTo("NPE_CHAIN");
+        assertThat(output.get("analysisVersion")).isEqualTo("3.0");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> raw = (Map<String, Object>) output.get("rawAnalysis");
+        assertThat(raw).containsKeys("round1", "round2Markdown", "round3");
+    }
+
+    @Test
+    @DisplayName("Round 1 fails -> singleRoundFallback with version 2.0-fallback")
+    void round1Exception_singleRoundFallback() {
+        when(claudeClient.isAvailable()).thenReturn(true);
+        when(claudeClient.defaultModel()).thenReturn("claude-sonnet-4");
+        when(claudeClient.callJson(contains("模式识别"), anyString(), any(SendOptions.class)))
+                .thenThrow(new RuntimeException("API timeout"));
+        when(claudeClient.callText(anyString(), anyString(), any(SendOptions.class)))
+                .thenReturn("## 根因\n\nFallback.");
+
+        Map<String, Object> input = buildInputWithError("NPE");
+        Map<String, Object> output = claudeAnalyzeNode.execute(input);
+
+        assertThat(output.get("analysisVersion")).isEqualTo("2.0-fallback");
+        assertThat(output.get("analysisConfidence")).isEqualTo("unknown");
+    }
+
+    @Test
+    @DisplayName("Round 1 empty -> singleRoundFallback")
+    void round1Empty_singleRoundFallback() {
+        when(claudeClient.isAvailable()).thenReturn(true);
+        when(claudeClient.defaultModel()).thenReturn("claude-sonnet-4");
+        when(claudeClient.callJson(anyString(), anyString(), any(SendOptions.class))).thenReturn(Map.of());
+        when(claudeClient.callText(anyString(), anyString(), any(SendOptions.class)))
+                .thenReturn("## 根因\n\nDegraded.");
+
+        Map<String, Object> input = buildInputWithError("RuntimeException");
+        Map<String, Object> output = claudeAnalyzeNode.execute(input);
+
+        assertThat(output.get("analysisVersion")).isEqualTo("2.0-fallback");
+    }
+
+    @Test
+    @DisplayName("Round 1 + fallback both fail -> error version")
+    void round1AndFallbackFail_errorVersion() {
+        when(claudeClient.isAvailable()).thenReturn(true);
+        when(claudeClient.defaultModel()).thenReturn("claude-sonnet-4");
+        when(claudeClient.callJson(contains("模式识别"), anyString(), any(SendOptions.class)))
+                .thenThrow(new RuntimeException("timeout"));
+        when(claudeClient.callText(anyString(), anyString(), any(SendOptions.class)))
+                .thenThrow(new RuntimeException("also failed"));
+
+        Map<String, Object> input = buildInputWithError("RuntimeException");
+        Map<String, Object> output = claudeAnalyzeNode.execute(input);
+
+        assertThat(output.get("analysisVersion")).isEqualTo("error");
+    }
+
+    @Test
+    @DisplayName("Round 2 fails -> round2FailedFallback with version 2.0-partial")
+    void round2Fails_partialFallback() {
+        when(claudeClient.isAvailable()).thenReturn(true);
+        when(claudeClient.defaultModel()).thenReturn("claude-sonnet-4");
+
+        Map<String, Object> r1 = new LinkedHashMap<>();
+        r1.put("patternType", "NPE_CHAIN"); r1.put("patternConfidence", "medium");
+        r1.put("initialHypothesis", "NPE in process");
+        when(claudeClient.callJson(contains("模式识别"), anyString(), any(SendOptions.class))).thenReturn(r1);
+        when(claudeClient.callText(contains("根因分析"), anyString(), any(SendOptions.class)))
+                .thenThrow(new RuntimeException("rate limited"));
+
+        Map<String, Object> input = buildInputWithError("NullPointerException");
+        Map<String, Object> output = claudeAnalyzeNode.execute(input);
+
+        assertThat(output.get("analysisVersion")).isEqualTo("2.0-partial");
+        assertThat((String) output.get("rootCauseAnalysis")).contains("NPE in process");
+    }
+
+    @Test
+    @DisplayName("Claude API not available -> rule-based analysis")
+    void apiNotAvailable_ruleBasedAnalysis() {
+        when(claudeClient.isAvailable()).thenReturn(false);
+
+        Map<String, Object> input = buildInputWithError("NullPointerException");
+        Map<String, Object> output = claudeAnalyzeNode.execute(input);
+
+        assertThat(output.get("analysisVersion")).isEqualTo("rule-based");
+        assertThat(output.get("analysisConfidence")).isEqualTo("low");
+        assertThat((String) output.get("rootCauseAnalysis")).contains("Claude API 未配置");
+    }
+
+    @Test
+    @DisplayName("Round 3 fails -> merges with default P2 suggestions")
+    void round3Fails_defaultP2Suggestions() {
+        when(claudeClient.isAvailable()).thenReturn(true);
+        when(claudeClient.defaultModel()).thenReturn("claude-sonnet-4");
+
+        Map<String, Object> r1 = new LinkedHashMap<>();
+        r1.put("patternType", "NPE_CHAIN"); r1.put("patternConfidence", "high");
+        r1.put("initialHypothesis", "NPE"); r1.put("suggestedDepth", "medium");
+        when(claudeClient.callJson(contains("模式识别"), anyString(), any(SendOptions.class))).thenReturn(r1);
+        when(claudeClient.callText(anyString(), anyString(), any(SendOptions.class)))
+                .thenReturn("## 根因\n\nDetailed.");
+        when(claudeClient.callJson(contains("修复方案"), anyString(), any(SendOptions.class)))
+                .thenThrow(new RuntimeException("token limit"));
+
+        Map<String, Object> input = buildInputWithError("NPE");
+        Map<String, Object> output = claudeAnalyzeNode.execute(input);
+
+        assertThat(output.get("analysisVersion")).isEqualTo("3.0");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> fixes = (List<Map<String, Object>>) output.get("fixSuggestions");
+        assertThat(fixes).isNotEmpty();
+        assertThat(fixes.get(0).get("priority")).isEqualTo("P2");
+    }
+
+    private Map<String, Object> buildInputWithError(String errorType) {
+        Map<String, Object> parsedError = new LinkedHashMap<>();
+        parsedError.put("errorType", errorType);
+        parsedError.put("rootCauseException", errorType);
+        parsedError.put("fullMessage", "Error message for " + errorType);
+        parsedError.put("stackTrace", "at com.example.Service.process(Service.java:42)");
+
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("parsedError", parsedError);
+        input.put("codeBodies", Collections.emptyList());
+        input.put("callChains", Collections.emptyList());
+        input.put("entryPoints", Collections.emptyList());
+        input.put("entryPointsWithLayers", Collections.emptyList());
+        return input;
+    }
+}

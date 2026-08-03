@@ -5,27 +5,21 @@
   "ideBottomHeight": 300,
   "terminalOpen": false,
   "terminalHeight": 260,
-  "terminalTheme": "void",
+  "terminalTheme": "auto",
   "terminalMaximized": false,
   "extensionsSubTab": "mcp",
   "chatTabs": {
     "tabs": [
       {
-        "name": "新建对话",
+        "name": "【跨模式上下文】以下内容来自当前聊天中该模式尚未接收的上下文。请只把它当作延续背景，不要逐字复述。\n\nassi...",
         "projectPath": "C:\\Users\\47583\\projects\\hisi_dev_tool v5.0",
-        "sessionId": null
-      },
-      {
-        "name": "重启后依然一直转，你自己启动后端自己测试吧，魔方前端调用看看到底是什么问题",
-        "projectPath": "C:\\Users\\47583\\projects\\hisi_dev_tool v5.0",
-        "sessionId": "98c73b34-1175-4308-b601-8f3baffb7c93"
-      },
-      {
-        "name": "目前我要参与AI4Coding获奖案例深度解析与实战经验分享培训，我获奖项目就是当前目录内项目，请你帮我刷新材...",
-        "projectPath": "C:\\Users\\47583\\projects\\hisi_dev_tool v5.0",
-        "sessionId": "a6969100-a509-4b9d-ba9d-def43d9281f0"
+        "sessionId": "aa8a3bc5-93ad-44ff-aca7-97249555c059",
+        "agentProvider": "claude",
+        "providerSessionIds": {
+          "claude": "aa8a3bc5-93ad-44ff-aca7-97249555c059"
+        }
       }
     ],
-    "activeIndex": 1
+    "activeIndex": 0
   }
 }
