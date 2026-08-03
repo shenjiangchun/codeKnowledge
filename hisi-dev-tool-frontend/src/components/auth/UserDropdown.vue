@@ -62,7 +62,7 @@ function handleLogout() {
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  color: #fff;
+  color: var(--color-text-primary);
 }
 
 .username {

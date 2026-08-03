@@ -15,10 +15,11 @@ import UserDropdown from '@/components/auth/UserDropdown.vue'
 
 <style scoped>
 .app-header {
-  background-color: #409eff;
-  color: #fff;
+  background-color: var(--color-surface);
+  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-border);
   padding: 0 20px;
-  height: 60px;
+  height: 48px;
   display: flex;
   align-items: center;
 }
@@ -31,11 +32,11 @@ import UserDropdown from '@/components/auth/UserDropdown.vue'
 }
 
 .app-title {
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   margin: 0;
-  color: #fff;
-  letter-spacing: 0.5px;
+  color: var(--color-text-primary);
+  letter-spacing: 0.3px;
 }
 
 .header-right {

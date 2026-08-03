@@ -1,0 +1,22 @@
+/* Element Plus 全局主题覆盖 — Clean Light */
+:root {
+  --el-color-primary: #2563eb;
+  --el-color-primary-light-3: #60a5fa;
+  --el-color-primary-light-5: #93bbfd;
+  --el-color-primary-light-7: #bfdbfe;
+  --el-color-primary-light-8: #dbeafe;
+  --el-color-primary-light-9: #eff6ff;
+  --el-color-primary-dark-2: #1d4ed8;
+  --el-border-radius-base: 6px;
+  --el-border-radius-small: 4px;
+  --el-bg-color: #ffffff;
+  --el-bg-color-page: #f8fafb;
+  --el-text-color-primary: #111827;
+  --el-text-color-regular: #4b5563;
+  --el-text-color-secondary: #6b7280;
+  --el-text-color-placeholder: #9ca3af;
+  --el-border-color: #e5e7eb;
+  --el-border-color-light: #f3f4f6;
+  --el-fill-color-light: #f3f4f6;
+  --el-box-shadow-light: 0 1px 3px rgba(0,0,0,0.06);
+}

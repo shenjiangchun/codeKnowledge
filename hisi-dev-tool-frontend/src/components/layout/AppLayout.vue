@@ -37,7 +37,7 @@ onMounted(() => authStore.init())
 }
 
 .app-main {
-  background-color: #f8fafb;
+  background-color: var(--color-bg);
   padding: 24px 28px;
   overflow-y: auto;
   flex: 1;
