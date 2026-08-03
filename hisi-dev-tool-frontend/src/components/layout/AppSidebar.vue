@@ -285,6 +285,13 @@ function isActive(item: MenuItem): boolean {
   text-decoration: none;
   font-weight: 450;
   margin: 1px 0;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.nav-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .nav-item:hover:not(.disabled) {
@@ -310,7 +317,7 @@ function isActive(item: MenuItem): boolean {
   border-radius: var(--radius-md);
 }
 
-.nav-item .el-icon {
+.nav-item :deep(.el-icon) {
   flex-shrink: 0;
   width: 18px;
   height: 18px;
