@@ -74,6 +74,7 @@ class ApiRegressionTest {
     void unknownAgentType_returns404() throws Exception {
         // Don't stub get("nonexistent") — Mockito returns null, controller returns 404
         mockMvc.perform(post("/api/chat/nonexistent")
+                        .accept(MediaType.TEXT_EVENT_STREAM)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"hello\"}"))
                 .andExpect(status().isNotFound());
@@ -86,6 +87,7 @@ class ApiRegressionTest {
                 .thenReturn(new AgentTypeRegistry.AgentTypeConfig("Dialog prompt.", "anthropic", null));
 
         mockMvc.perform(post("/api/chat/dialog")
+                        .accept(MediaType.TEXT_EVENT_STREAM)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"\",\"sessionId\":\"s1\"}"))
                 .andExpect(status().isBadRequest());
@@ -98,6 +100,7 @@ class ApiRegressionTest {
                 .thenReturn(new AgentTypeRegistry.AgentTypeConfig("Dialog prompt.", "anthropic", null));
 
         mockMvc.perform(post("/api/chat/dialog")
+                        .accept(MediaType.TEXT_EVENT_STREAM)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sessionId\":\"s1\"}"))
                 .andExpect(status().isBadRequest());

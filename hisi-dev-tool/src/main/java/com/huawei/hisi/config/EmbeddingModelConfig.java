@@ -5,8 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * 向量生成模型（Embedding）统一配置
- * 替代原来按平台分散的 ZhipuConfig/SiliconFlowConfig/IFlytekConfig 中的 embedding 部分。
+ * 向量生成模型（Embedding）统一配置。
  * 支持任意 OpenAI 兼容的 /embeddings 端点。
  */
 @Configuration

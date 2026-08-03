@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * HTTP 代理配置
  * 支持运行时通过 /api/settings/proxy API 热修改，无需重启。
- * 所有外部 HTTP 调用（ZhipuService、SiliconFlowEmbeddingService 等）共享此 RestTemplate Bean。
+ * 所有外部 HTTP 调用（ZhipuService 等）共享此 RestTemplate Bean。
  */
 @Configuration
 @ConfigurationProperties(prefix = "proxy")

@@ -24,8 +24,6 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>并发控制：使用令牌桶 ({@link TokenBucketRateLimiter}) 主动限流，
  * 配合 429 / Retry-After / 偶发 IO 异常的指数退避重试，L2 归一化 + 维度校验。
- *
- * 取代原来的 SiliconFlowEmbeddingService / IFlytekEmbeddingService / ZhipuService(embedding 部分)
  */
 @Slf4j
 @Service

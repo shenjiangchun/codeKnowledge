@@ -2,7 +2,6 @@
 // Note: Some types are defined in multiple files, we use explicit exports to resolve conflicts
 export * from './log'
 export * from './callchain'
-export * from './search'
 export * from './api'
 export * from './skill'
 
