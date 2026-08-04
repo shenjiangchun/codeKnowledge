@@ -245,8 +245,8 @@ const EMBEDDING_PRESETS: EmbeddingPreset[] = [
     baseUrl: 'http://onlineservice.cn-southwest-2.roma.huawei.com:8085/csb-inner-service/rest/infers/91d5b5d2-77cc-49bc-ab5d-aafe8e48e555?endpoint=infer-modelarts-cn-southwest-2.myhuaweicloud.com&path=/v1',
     model: 'Qwen3-Embedding-8B',
     dimension: 4096,
-    apiKey: '***REMOVED_API_KEY***',
-    csbToken: '***REMOVED_TOKEN***'
+    apiKey: '',
+    csbToken: ''
   },
 ]
 
