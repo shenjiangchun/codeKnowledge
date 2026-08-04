@@ -66,6 +66,7 @@ public class Neo4jInitializer {
         "CREATE INDEX method_serviceName_index IF NOT EXISTS FOR (m:Method) ON (m.serviceName)",
         "CREATE INDEX method_startLine_index IF NOT EXISTS FOR (m:Method) ON (m.startLine)",
         "CREATE INDEX method_complexity_index IF NOT EXISTS FOR (m:Method) ON (m.complexity)",
+        "CREATE INDEX method_codeHash_index IF NOT EXISTS FOR (m:Method) ON (m.codeHash)",
         // EntryPoint 节点索引
         "CREATE INDEX entryPoint_projectPath_index IF NOT EXISTS FOR (e:EntryPoint) ON (e.projectPath)",
         "CREATE INDEX entryPoint_entryKey_index IF NOT EXISTS FOR (e:EntryPoint) ON (e.entryKey)",

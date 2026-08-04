@@ -12,7 +12,9 @@ import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -290,6 +292,50 @@ public class LLMDescriptionService {
         } catch (Exception e) {
             fileLog("[ERROR] " + methodId + " 文本模型生成失败（含方法体）: " + e.getMessage());
             throw new RuntimeException("LLM描述生成失败（含方法体）: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 批量生成方法描述。
+     * 将多个 MethodNode 转为 Map 列表后委托 UnifiedTextService.generateDescriptionsBatch。
+     *
+     * @param nodes 方法节点列表
+     * @return 与输入顺序一致的描述列表
+     */
+    public List<String> generateDescriptionsBatch(List<MethodNode> nodes) {
+        if (nodes == null || nodes.isEmpty()) {
+            return List.of();
+        }
+        initFileLogger();
+
+        List<Map<String, String>> methods = new ArrayList<>(nodes.size());
+        for (MethodNode node : nodes) {
+            Map<String, String> m = new HashMap<>();
+            m.put("className", node.getClassName());
+            m.put("methodName", node.getMethodName());
+            m.put("signature", node.getSignature() != null ? node.getSignature() : "");
+            m.put("comment", node.getComment() != null ? node.getComment() : "无");
+            m.put("methodBody", node.getMethodBody() != null ? node.getMethodBody() : "无");
+            methods.add(m);
+        }
+
+        String glossary = nodes.isEmpty() ? "" : buildGlossarySegment(nodes.get(0).getProjectPath());
+
+        try {
+            return textService.generateDescriptionsBatch(methods, glossary);
+        } catch (Exception e) {
+            fileLog("[ERROR] 批量描述生成失败: " + e.getMessage() + ", 降级单条");
+            // 降级：逐条生成
+            List<String> results = new ArrayList<>(nodes.size());
+            for (MethodNode node : nodes) {
+                try {
+                    results.add(generateDescriptionWithBody(node));
+                } catch (Exception ex) {
+                    results.add(node.getClassName() + "." + node.getMethodName() + " - " + node.getSignature());
+                    fileLog("[ERROR] 单条降级也失败: " + node.getClassName() + "." + node.getMethodName());
+                }
+            }
+            return results;
         }
     }
 

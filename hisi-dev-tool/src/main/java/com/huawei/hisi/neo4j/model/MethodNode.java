@@ -142,4 +142,12 @@ public class MethodNode {
      */
     @Property("codeEmbedding")
     private float[] codeEmbedding;
+
+    /**
+     * 代码指纹 (SHA-256，用于二期增量跳过逻辑)
+     * 计算方式: SHA-256({@code className.methodName(signature)\nmethodBody})
+     * 一期仅创建字段和索引，不实现跳过逻辑；二期启用
+     */
+    @Property("codeHash")
+    private String codeHash;
 }

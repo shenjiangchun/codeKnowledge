@@ -17,6 +17,9 @@ import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -640,5 +643,271 @@ public class UnifiedTextService {
     private String truncate(String s, int maxLen) {
         if (s == null) return "";
         return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...";
+    }
+
+    // ==================== 批量描述生成 ====================
+
+    /** 每个方法描述约需的输出 token 数（50 中文字符 ≈ 25-30 tokens） */
+    private static final int OUTPUT_TOKENS_PER_DESC = 30;
+
+    /**
+     * 批量生成方法描述。
+     *
+     * @param methods 方法信息列表（className, methodName, signature, comment, methodBody）
+     * @param glossary 术语表片段（可为空字符串）
+     * @return 与输入顺序一致的描述列表
+     */
+    public List<String> generateDescriptionsBatch(List<Map<String, String>> methods, String glossary) {
+        if (methods == null || methods.isEmpty()) {
+            return List.of();
+        }
+        int count = methods.size();
+        if (count == 1) {
+            return List.of(generateDescriptionWithBody(
+                    methods.get(0).get("className"),
+                    methods.get(0).get("methodName"),
+                    methods.get(0).get("signature"),
+                    methods.get(0).get("methodBody")));
+        }
+
+        // token 预检 → 按输出 token 估算（每方法 ~30 输出 tokens）
+        int outputTokensNeeded = count * OUTPUT_TOKENS_PER_DESC;
+        int batchMax = config.getBatchMaxTokens() > 0
+                ? config.getBatchMaxTokens()
+                : Math.max(config.getMaxTokens(), 2048);  // 批量默认至少 2048
+        int maxTokenBudget = (int) (batchMax * 0.7);
+        if (outputTokensNeeded > maxTokenBudget && count > 5) {
+            int safeCount = Math.max(5, maxTokenBudget * count / outputTokensNeeded);
+            log.info("[BATCH-LLM] token 预检超限 (need={}, budget={}), batch size {} → {}",
+                    outputTokensNeeded, maxTokenBudget, count, safeCount);
+            List<String> results = new ArrayList<>(methods.stream()
+                    .limit(safeCount)
+                    .map(m -> generateDescriptionWithBody(
+                            m.get("className"), m.get("methodName"),
+                            m.get("signature"), m.get("methodBody")))
+                    .toList());
+            // 递归处理剩余
+            results.addAll(generateDescriptionsBatch(methods.subList(safeCount, count), glossary));
+            return results;
+        }
+
+        String prompt = buildBatchPrompt(methods, glossary);
+        String strategy = config.getJsonOutputStrategy();
+        long batchStart = System.currentTimeMillis();
+
+        // 尝试①: json_object 模式
+        if (!"prompt-only".equals(strategy)) {
+            try {
+                String response = generateBatchText(prompt, true);
+                List<String> results = extractDescriptions(response, count);
+                if (results != null) {
+                    logPerf(count, batchStart, "batch(json)");
+                    return results;
+                }
+                log.warn("[BATCH-LLM] json_mode 解析失败, resp前500字={}", truncate(response, 500));
+            } catch (Exception e) {
+                log.warn("[BATCH-LLM] json_mode 调用失败: {}", e.getMessage());
+            }
+        }
+
+        // 尝试②: prompt-only 模式（不设 response_format，纯 prompt 工程）
+        try {
+            String response = generateBatchText(prompt, false);
+            // prompt-only 可能输出 markdown fence → 兼容裸数组 和 {"descriptions": [...]}
+            List<String> results = extractDescriptions(stripMarkdownFence(response), count);
+            if (results != null) {
+                logPerf(count, batchStart, "batch(prompt-only)");
+                return results;
+            }
+            log.warn("[BATCH-LLM] prompt-only 解析失败, resp前500字={}", truncate(response, 500));
+        } catch (Exception e) {
+            log.warn("[BATCH-LLM] prompt-only 调用失败: {}", e.getMessage());
+        }
+
+        // 降级单条
+        long singleStart = System.currentTimeMillis();
+        List<String> singleResults = fallbackToSingle(methods);
+        logPerf(count, batchStart, String.format("fallback-single(%d calls, %dms)", count,
+                System.currentTimeMillis() - singleStart));
+        return singleResults;
+    }
+
+    private List<String> fallbackToSingle(List<Map<String, String>> methods) {
+        List<String> results = new ArrayList<>(methods.size());
+        for (Map<String, String> m : methods) {
+            results.add(generateDescriptionWithBody(
+                    m.get("className"), m.get("methodName"),
+                    m.get("signature"), m.get("methodBody")));
+        }
+        return results;
+    }
+
+    private String generateBatchText(String prompt, boolean useJsonMode) {
+        int maxRetries = config.getMaxRetries();
+        long baseDelay = config.getRetryBaseDelayMs();
+
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                if (!rateLimiter.tryAcquire(config.getAcquireTimeoutSeconds(), TimeUnit.SECONDS)) {
+                    throw new RuntimeException("[BATCH-LLM] 获取令牌超时");
+                }
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("[BATCH-LLM] 等待令牌被中断", ie);
+            }
+
+            try {
+                String url = config.getBaseUrl() + "/chat/completions";
+                ObjectNode requestBody = objectMapper.createObjectNode();
+                requestBody.put("model", config.getModel());
+                requestBody.put("temperature", 0.0);
+                int effectiveMaxTokens = config.getBatchMaxTokens() > 0
+                        ? config.getBatchMaxTokens()
+                        : Math.max(config.getMaxTokens(), 2048);
+                requestBody.put("max_tokens", effectiveMaxTokens);
+
+                disableThinking(requestBody, config.getModel());
+
+                // json_object 模式
+                if (useJsonMode) {
+                    ObjectNode rf = requestBody.putObject("response_format");
+                    rf.put("type", "json_object");
+                }
+
+                ArrayNode messages = requestBody.putArray("messages");
+                ObjectNode userMsg = messages.addObject();
+                userMsg.put("role", "user");
+                userMsg.put("content", prompt);
+
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                headers.set("Authorization", "Bearer " + config.getApiKey());
+
+                HttpEntity<String> entity = new HttpEntity<>(
+                        objectMapper.writeValueAsString(requestBody), headers);
+
+                log.info("[BATCH-LLM] 批量调用: count={}, attempt={}/{}, jsonMode={}",
+                        prompt.length(), attempt + 1, maxRetries + 1, useJsonMode);
+
+                RestTemplate rt = proxyConfig.getCurrentRestTemplate();
+                ResponseEntity<String> response = rt.exchange(url, HttpMethod.POST, entity, String.class);
+
+                return extractFullTextContent(response.getBody());
+
+            } catch (HttpClientErrorException e) {
+                if (e.getStatusCode().value() == 429 && attempt < maxRetries) {
+                    long delay = computeRetryDelay(e.getResponseHeaders(), baseDelay, attempt);
+                    log.warn("[BATCH-LLM] 限流(429)，重试等待{}ms", delay);
+                    sleepQuietly(delay);
+                    continue;
+                }
+                throw new RuntimeException("批量文本生成失败: " + e.getMessage(), e);
+            } catch (HttpServerErrorException e) {
+                if (attempt < maxRetries) {
+                    sleepQuietly(baseDelay * (1L << attempt));
+                    continue;
+                }
+                throw new RuntimeException("批量文本生成失败: " + e.getMessage(), e);
+            } catch (ResourceAccessException e) {
+                if (attempt < maxRetries) {
+                    sleepQuietly(baseDelay * (1L << attempt));
+                    continue;
+                }
+                throw new RuntimeException("批量文本生成失败(IO): " + e.getMessage(), e);
+            } catch (Exception e) {
+                throw new RuntimeException("批量文本生成失败: " + e.getMessage(), e);
+            }
+        }
+        throw new RuntimeException("批量文本生成失败: 超过最大重试次数");
+    }
+
+    /**
+     * 构建批量 prompt 模板。
+     * 编号格式 [0] [1] ... + 强约束禁止错位 + 1 个示例。
+     */
+    static String buildBatchPrompt(List<Map<String, String>> methods, String glossary) {
+        StringBuilder sb = new StringBuilder(2048);
+        sb.append("你是专业的代码语义解析专家。请为以下方法列表中的每个方法生成一句中文描述（50字以内）。\n\n");
+        sb.append("## 规则\n");
+        sb.append("1. 分析方法体实际行为，以方法体为准（注释可能过时）\n");
+        sb.append("2. 不要输出代码或实现细节\n");
+        if (glossary != null && !glossary.isBlank()) {
+            sb.append(glossary).append("\n");
+        }
+        sb.append("\n## 方法列表（共 ").append(methods.size()).append(" 个）\n");
+
+        for (int i = 0; i < methods.size(); i++) {
+            Map<String, String> m = methods.get(i);
+            sb.append("---\n");
+            sb.append("[").append(i).append("] 类名：").append(m.get("className")).append("\n");
+            sb.append("    方法名：").append(m.get("methodName")).append("\n");
+            sb.append("    签名：").append(m.getOrDefault("signature", "")).append("\n");
+            sb.append("    注释：").append(m.getOrDefault("comment", "无")).append("\n");
+            String body = m.getOrDefault("methodBody", "无");
+            sb.append("    方法体：\n    ").append(body.replace("\n", "\n    ")).append("\n");
+        }
+
+        sb.append("\n## 输出格式（严格遵守，违反将导致解析失败）\n");
+        sb.append("返回一个 JSON 对象：{\"descriptions\": [\"描述0\", \"描述1\", ...]}\n");
+        sb.append("\"descriptions\" 数组长度必须 = ").append(methods.size()).append("。\n");
+        sb.append("数组的第 i 个元素必须是编号 [i] 的方法的描述。\n");
+        sb.append("禁止跳位、错位、多输出或少输出。\n");
+        sb.append("禁止输出 JSON 以外的任何内容（禁止 markdown fence、禁止解释文字）。\n\n");
+        sb.append("示例（count=").append(Math.min(methods.size(), 3)).append("）：\n");
+        sb.append("{\"descriptions\": [\"描述0\", \"描述1\", \"描述2\"]}");
+
+        return sb.toString();
+    }
+
+    /**
+     * 从 LLM 响应中提取描述列表。
+     * 优先从 {"descriptions": [...]} 中提取，兼容旧格式的裸 JSON 数组。
+     */
+    private static List<String> extractDescriptions(String response, int expectedCount) {
+        try {
+            JsonNode root = new ObjectMapper().readTree(response);
+            if (root.has("descriptions") && root.get("descriptions").isArray()) {
+                JsonNode arr = root.get("descriptions");
+                if (arr.size() == expectedCount) {
+                    List<String> results = new ArrayList<>(expectedCount);
+                    for (JsonNode n : arr) {
+                        results.add(n.asText());
+                    }
+                    return results;
+                }
+            }
+            if (root.isArray() && root.size() == expectedCount) {
+                List<String> results = new ArrayList<>(expectedCount);
+                for (JsonNode n : root) {
+                    results.add(n.asText());
+                }
+                return results;
+            }
+        } catch (Exception e) {
+            // fall through
+        }
+        return null;
+    }
+
+    /** 去除 markdown ```json fence */
+    private static String stripMarkdownFence(String response) {
+        if (response == null) return "";
+        String s = response.trim();
+        if (s.startsWith("```")) {
+            int start = s.indexOf('\n');
+            int end = s.lastIndexOf("```");
+            if (start >= 0 && end > start) {
+                return s.substring(start + 1, end).trim();
+            }
+        }
+        return response;
+    }
+
+    /** 记录批量 vs 单条的耗时对比 */
+    private void logPerf(int methodCount, long batchStartMs, String strategy) {
+        long elapsed = System.currentTimeMillis() - batchStartMs;
+        long perMethod = elapsed / methodCount;
+        log.info("[BATCH-PERF] strategy={} methods={} elapsed={}ms perMethod={}ms",
+                strategy, methodCount, elapsed, perMethod);
     }
 }

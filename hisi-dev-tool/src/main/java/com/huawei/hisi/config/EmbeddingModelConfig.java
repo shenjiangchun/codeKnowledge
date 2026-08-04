@@ -47,4 +47,7 @@ public class EmbeddingModelConfig {
 
     /** ROMA CSB 网关鉴权 Token（可选，部分内网网关需要 csb-token header） */
     private String csbToken;
+
+    /** 批量 embedding 每批方法数（默认 20，可配） */
+    private int batchSize = 20;
 }

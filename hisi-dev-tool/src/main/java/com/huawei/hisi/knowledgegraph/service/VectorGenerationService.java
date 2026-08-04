@@ -10,6 +10,7 @@ import com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jSqlNodeRepository;
 import com.huawei.hisi.neo4j.service.EmbeddingService;
+import com.huawei.hisi.service.AdaptiveBatchController;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -77,11 +78,13 @@ public class VectorGenerationService {
     @Value("${vector.generation.batch-size:0}")
     private int batchSizeConfig;
 
+    @Value("${embedding.batch-size:20}")
+    private int embeddingBatchSize;
+
     @Value("${vector.generation.progress-update-interval:10}")
     private int progressUpdateInterval;
 
     private ExecutorService executorService;
-    private final ConcurrentHashMap<String, AtomicInteger> progressTracker = new ConcurrentHashMap<>();
 
     @Lazy
     @Autowired
@@ -117,7 +120,9 @@ public class VectorGenerationService {
     }
 
     private int getBatchSize() {
-        return batchSizeConfig > 0 ? batchSizeConfig : concurrency;
+        // batchSizeConfig (vector.generation.batch-size) overrides if non-zero
+        if (batchSizeConfig > 0) return batchSizeConfig;
+        return embeddingBatchSize;
     }
 
     @PreDestroy
@@ -179,10 +184,8 @@ public class VectorGenerationService {
         task = taskRepository.insert(task);
         fileLog("[向量生成] 任务已创建, taskId=" + task.getId());
 
-        AtomicInteger processedCount = new AtomicInteger(0);
         AtomicInteger successCount = new AtomicInteger(0);
         AtomicInteger failCount = new AtomicInteger(0);
-        progressTracker.put(projectPath, processedCount);
 
         try {
             // 1. 查询所有方法节点
@@ -205,37 +208,59 @@ public class VectorGenerationService {
             taskRepository.save(task);
             fileLog("[向量生成] Initial task state saved");
 
-            // 3. 分批提交到线程池并发处理 —— 限流由下游令牌桶承担
+            // 3. 批量处理 —— 自适应 batch size + 流水线化
             int totalMethods = methods.size();
             int batchSz = getBatchSize();
 
             if (!methods.isEmpty()) {
-                fileLog("[向量生成] 开始分批处理: 总方法数={}, batchSize={}, 线程数={}",
+                fileLog("[向量生成] 开始批量处理: 总方法数=%d, 初始batchSize=%d, 线程数=%d",
                         totalMethods, batchSz, concurrency);
 
-                for (int offset = 0; offset < totalMethods; offset += batchSz) {
-                    int end = Math.min(offset + batchSz, totalMethods);
-                    List<MethodNode> batch = methods.subList(offset, end);
+                AdaptiveBatchController adaptiveCtrl = new AdaptiveBatchController(
+                        Math.min(batchSz, totalMethods), 5, 50);
 
-                    List<CompletableFuture<Void>> futures = new ArrayList<>(batch.size());
-                    for (MethodNode method : batch) {
-                        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                            processMethod(method, successCount, failCount);
+                int offset = 0;
+                while (offset < totalMethods) {
+                    int effectiveSize = Math.min(adaptiveCtrl.getEffectiveBatchSize(), totalMethods - offset);
+                    List<MethodNode> batch = methods.subList(offset, Math.min(offset + effectiveSize, totalMethods));
 
-                            int processed = processedCount.incrementAndGet();
-                            if (processed % progressUpdateInterval == 0 || processed == totalMethods) {
-                                updateProgress(projectPath, processed, totalMethods, successCount, failCount);
+                    long batchStart = System.currentTimeMillis();
+                    boolean batchError = false;
+
+                    try {
+                        processBatch(batch, successCount, failCount);
+                    } catch (Exception e) {
+                        batchError = true;
+                        fileLog("[ERROR] 批处理失败: offset=" + offset + ", size=" + batch.size() + ", error=" + e.getMessage());
+                        // 降级：逐条处理
+                        for (MethodNode m : batch) {
+                            try {
+                                processMethod(m, successCount, failCount);
+                            } catch (Exception ex) {
+                                failCount.incrementAndGet();
                             }
-                        }, executorService);
-                        futures.add(future);
+                        }
                     }
 
-                    // 等待本批次全部完成再提交下一批，防止队列堆积 OOM
-                    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-                    fileLog("[向量生成] 批次完成: {}/{}, 批次大小={}", end, totalMethods, batch.size());
+                    offset += batch.size();
+                    int processed = offset;
+                    if (processed % progressUpdateInterval == 0 || processed >= totalMethods) {
+                        updateProgress(projectPath, processed, totalMethods, successCount, failCount);
+                    }
+
+                    long batchLatency = System.currentTimeMillis() - batchStart;
+                    adaptiveCtrl.recordBatch(batch.size(), batchLatency, batchError);
+
+                    if (adaptiveCtrl.shouldAdjust()) {
+                        AdaptiveBatchController.AdjustmentResult adj = adaptiveCtrl.adjust();
+                        fileLog("[向量生成] 自适应: batch=%d, %s", adj.newBatchSize(), adj.reason());
+                    }
+
+                    fileLog("[向量生成] 批次完成: %d/%d, 批次大小=%d, 耗时=%dms",
+                            offset, totalMethods, batch.size(), batchLatency);
                 }
 
-                fileLog("[向量生成] 全部方法处理完成, 线程数=" + concurrency);
+                fileLog("[向量生成] 全部方法处理完成, 总批次数=" + adaptiveCtrl.getTotalBatches());
             } else {
                 fileLog("[向量生成] 没有需要处理的方法，跳转到 SQL 向量生成...");
             }
@@ -282,8 +307,7 @@ public class VectorGenerationService {
                 log.error("[FATAL] Failed to update failed state", ex);
             }
         } finally {
-            progressTracker.remove(projectPath);
-            fileLog("[向量生成] Task completed, removed from progressTracker");
+            fileLog("[向量生成] Task completed");
         }
     }
 
@@ -352,6 +376,58 @@ public class VectorGenerationService {
         }
     }
 
+    /**
+     * 批量处理：① 批量 LLM 描述 → ② Emb(desc) ∥ Emb(code) → ③ Neo4j 更新
+     */
+    private void processBatch(List<MethodNode> batch,
+                              AtomicInteger successCount,
+                              AtomicInteger failCount) {
+        // ① 批量 LLM 描述
+        List<String> descriptions = llmDescriptionService.generateDescriptionsBatch(batch);
+        if (descriptions.size() != batch.size()) {
+            throw new RuntimeException("批量描述数量不匹配: expected=" + batch.size() + ", actual=" + descriptions.size());
+        }
+
+        // ② Emb(desc) ∥ Emb(code)
+        List<String> descTexts = descriptions;
+        List<String> codeTexts = batch.stream().map(this::buildCodeText).toList();
+
+        CompletableFuture<List<float[]>> descEmbFuture = CompletableFuture.supplyAsync(
+                () -> embeddingService.batchGenerateEmbeddings(descTexts), executorService);
+        CompletableFuture<List<float[]>> codeEmbFuture = CompletableFuture.supplyAsync(
+                () -> embeddingService.batchGenerateEmbeddings(codeTexts), executorService);
+
+        List<float[]> descEmbs;
+        List<float[]> codeEmbs;
+        try {
+            descEmbs = descEmbFuture.get(120, TimeUnit.SECONDS);
+            codeEmbs = codeEmbFuture.get(120, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new RuntimeException("批量 Embedding 超时或失败: " + e.getMessage(), e);
+        }
+
+        if (descEmbs.size() != batch.size() || codeEmbs.size() != batch.size()) {
+            throw new RuntimeException("批量 Embedding 结果数量不匹配");
+        }
+
+        // ③ Neo4j 逐条更新（整批原子写由 @Transactional 在调用层处理）
+        for (int i = 0; i < batch.size(); i++) {
+            MethodNode method = batch.get(i);
+            try {
+                neo4jMethodNodeRepository.updateDescriptionAndCodeEmbedding(
+                        method.getNodeId(), descriptions.get(i),
+                        toDoubleList(descEmbs.get(i)), toDoubleList(codeEmbs.get(i)));
+                successCount.incrementAndGet();
+            } catch (Exception e) {
+                fileLog("[ERROR] Neo4j 更新失败: nodeId=" + method.getNodeId() +
+                        ", className=" + method.getClassName() +
+                        ", methodName=" + method.getMethodName() +
+                        ", error=" + e.getMessage());
+                failCount.incrementAndGet();
+            }
+        }
+    }
+
     private String buildCodeText(MethodNode method) {
         StringBuilder sb = new StringBuilder();
         sb.append(method.getClassName()).append(".").append(method.getMethodName());
@@ -397,30 +473,36 @@ public class VectorGenerationService {
 
         AtomicInteger sqlSuccess = new AtomicInteger(0);
         AtomicInteger sqlFail = new AtomicInteger(0);
-        int batchSz = getBatchSize();
+        int batchSz = Math.min(getBatchSize(), sqlNodes.size());
         int totalSql = sqlNodes.size();
 
         for (int offset = 0; offset < totalSql; offset += batchSz) {
             int end = Math.min(offset + batchSz, totalSql);
             List<SqlNode> batch = sqlNodes.subList(offset, end);
 
-            List<CompletableFuture<Void>> futures = new ArrayList<>(batch.size());
-            for (SqlNode sqlNode : batch) {
-                CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+            // 批量 embedding（自然受益于 generateEmbeddings）
+            List<String> sqlTexts = batch.stream()
+                    .map(SqlNode::getSqlStatement)
+                    .toList();
+            try {
+                List<float[]> embeddings = embeddingService.batchGenerateEmbeddings(sqlTexts);
+                for (int i = 0; i < batch.size(); i++) {
+                    neo4jSqlNodeRepository.updateSqlEmbedding(batch.get(i).getNodeId(), embeddings.get(i));
+                    sqlSuccess.incrementAndGet();
+                }
+            } catch (Exception e) {
+                fileLog("[ERROR] SQL 批量 embedding 失败: " + e.getMessage() + ", 降级逐条");
+                for (SqlNode sqlNode : batch) {
                     try {
                         processSqlNode(sqlNode);
                         sqlSuccess.incrementAndGet();
-                    } catch (Exception e) {
-                        fileLog("[ERROR] 处理 SQL 节点失败: nodeId=" + sqlNode.getNodeId() +
-                                ", sqlId=" + sqlNode.getSqlId() + ", error=" + e.getMessage());
+                    } catch (Exception ex) {
                         sqlFail.incrementAndGet();
                     }
-                }, executorService);
-                futures.add(future);
+                }
             }
 
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-            fileLog("[SQL向量生成] 批次完成: {}/{}, 批次大小={}", end, totalSql, batch.size());
+            fileLog("[SQL向量生成] 批次完成: %d/%d, 批次大小=%d", end, totalSql, batch.size());
         }
 
         fileLog("[SQL向量生成] 完成: 成功=" + sqlSuccess.get() + ", 失败=" + sqlFail.get());

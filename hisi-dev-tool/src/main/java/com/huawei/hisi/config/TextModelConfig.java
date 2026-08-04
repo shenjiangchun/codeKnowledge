@@ -50,4 +50,10 @@ public class TextModelConfig {
 
     /** 获取令牌的最长等待时间（秒）。 */
     private long acquireTimeoutSeconds = 120;
+
+    /** 批量描述生成时的最大 Token 数（默认 2048，0 表示不启用批量专用值，回退 maxTokens） */
+    private int batchMaxTokens = 0;
+
+    /** JSON 输出策略: auto | json-mode | prompt-only */
+    private String jsonOutputStrategy = "auto";
 }
