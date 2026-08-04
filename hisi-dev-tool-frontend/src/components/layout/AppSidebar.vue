@@ -67,12 +67,6 @@ const baseMenuItems: MenuItem[] = [
     menuKey: 'ram-chat' as MenuKey
   },
   {
-    index: '/fix/chat',
-    title: '异常修复',
-    icon: Setting,
-    menuKey: 'log-analysis' as MenuKey
-  },
-  {
     index: '/merge-analysis',
     title: '合入分析',
     icon: Connection,
