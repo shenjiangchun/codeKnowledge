@@ -1,0 +1,50 @@
+{
+  "_comment_1": "把 hooks 节点合并进你的 ~/.claude/settings.json。如果已有 hooks 字段,做对象合并不要整段覆盖。",
+  "_comment_2": "把 command 中的 python 路径改成目标机器实际路径(若 PATH 中无 python 则用绝对路径如 C:/Python313/python.exe)",
+  "_comment_3": "脚本路径中的反斜杠必须改为正斜杠或双反斜杠",
+  "_comment_4": "测试完毕后请删除本配置,避免长期记录无关数据",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/47583/.claude/skills/ai-tool-benchmark/bench.py hook PreToolUse"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/47583/.claude/skills/ai-tool-benchmark/bench.py hook PostToolUse"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/47583/.claude/skills/ai-tool-benchmark/bench.py hook UserPromptSubmit"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/47583/.claude/skills/ai-tool-benchmark/bench.py hook Stop"
+          }
+        ]
+      }
+    ]
+  }
+}

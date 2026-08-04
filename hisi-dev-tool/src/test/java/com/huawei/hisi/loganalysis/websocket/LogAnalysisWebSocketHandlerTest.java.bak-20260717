@@ -1,0 +1,184 @@
+package com.huawei.hisi.loganalysis.websocket;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketSession;
+
+import java.io.IOException;
+import java.net.URI;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class LogAnalysisWebSocketHandlerTest {
+
+    @Mock
+    private WebSocketSession session;
+
+    private LogAnalysisWebSocketHandler handler;
+
+    @BeforeEach
+    void setUp() {
+        handler = new LogAnalysisWebSocketHandler();
+        lenient().when(session.getId()).thenReturn("ws-1");
+        lenient().when(session.isOpen()).thenReturn(true);
+    }
+
+    @Test
+    @DisplayName("afterConnectionEstablished with valid reportId registers and sends connected")
+    void afterConnectionEstablished_validReportId() throws Exception {
+        when(session.getUri()).thenReturn(URI.create("ws://localhost/ws/log-analysis?reportId=123"));
+
+        handler.afterConnectionEstablished(session);
+
+        assertThat(handler.hasActiveSession(123)).isTrue();
+        verify(session).sendMessage(any(TextMessage.class));
+    }
+
+    @Test
+    @DisplayName("afterConnectionEstablished with missing reportId closes session")
+    void afterConnectionEstablished_missingReportId() throws Exception {
+        when(session.getUri()).thenReturn(URI.create("ws://localhost/ws/log-analysis"));
+
+        handler.afterConnectionEstablished(session);
+
+        verify(session).close();
+    }
+
+    @Test
+    @DisplayName("afterConnectionEstablished with null URI closes session")
+    void afterConnectionEstablished_nullUri() throws Exception {
+        when(session.getUri()).thenReturn(null);
+
+        handler.afterConnectionEstablished(session);
+
+        verify(session).close();
+    }
+
+    @Test
+    @DisplayName("afterConnectionEstablished with empty reportId still registers")
+    void afterConnectionEstablished_emptyReportId() throws Exception {
+        when(session.getUri()).thenReturn(URI.create("ws://localhost/ws/log-analysis?reportId="));
+
+        handler.afterConnectionEstablished(session);
+
+        // source code only checks for null reportId, not empty
+        verify(session, never()).close();
+    }
+
+    @Test
+    @DisplayName("afterConnectionClosed removes session from maps")
+    void afterConnectionClosed_removesFromMaps() throws Exception {
+        when(session.getUri()).thenReturn(URI.create("ws://localhost/ws/log-analysis?reportId=123"));
+        handler.afterConnectionEstablished(session);
+
+        handler.afterConnectionClosed(session, CloseStatus.NORMAL);
+
+        assertThat(handler.hasActiveSession(123)).isFalse();
+    }
+
+    @Test
+    @DisplayName("afterConnectionClosed for unknown session is no-op")
+    void afterConnectionClosed_unknownSession() {
+        when(session.getId()).thenReturn("unknown");
+
+        // Should not throw
+        handler.afterConnectionClosed(session, CloseStatus.NORMAL);
+    }
+
+    @Test
+    @DisplayName("pushEvent sends message to connected session")
+    void pushEvent_sendsToSession() throws Exception {
+        when(session.getUri()).thenReturn(URI.create("ws://localhost/ws/log-analysis?reportId=456"));
+        handler.afterConnectionEstablished(session);
+
+        handler.pushEvent(456, "{\"type\":\"NODE_START\",\"nodeName\":\"parse\"}");
+
+        verify(session, times(2)).sendMessage(any(TextMessage.class)); // connected + push
+    }
+
+    @Test
+    @DisplayName("pushEvent with no active session does nothing")
+    void pushEvent_noActiveSession() {
+        handler.pushEvent(999, "{\"type\":\"TEST\"}");
+
+        verify(session, never()).sendMessage(any(TextMessage.class));
+    }
+
+    @Test
+    @DisplayName("pushEvent with closed session does not send")
+    void pushEvent_closedSession() throws Exception {
+        when(session.getUri()).thenReturn(URI.create("ws://localhost/ws/log-analysis?reportId=789"));
+        handler.afterConnectionEstablished(session);
+        when(session.isOpen()).thenReturn(false);
+
+        handler.pushEvent(789, "{\"type\":\"TEST\"}");
+
+        verify(session, times(1)).sendMessage(any(TextMessage.class)); // only the connected msg
+    }
+
+    @Test
+    @DisplayName("same reportId reconnection replaces old session")
+    void sameReportIdReconnection_replacesOldSession() throws Exception {
+        WebSocketSession session2 = mock(WebSocketSession.class);
+        when(session.getUri()).thenReturn(URI.create("ws://localhost/ws/log-analysis?reportId=42"));
+        when(session2.getUri()).thenReturn(URI.create("ws://localhost/ws/log-analysis?reportId=42"));
+        when(session2.getId()).thenReturn("ws-2");
+        when(session2.isOpen()).thenReturn(true);
+
+        handler.afterConnectionEstablished(session);
+        handler.afterConnectionEstablished(session2);
+
+        ArgumentCaptor<TextMessage> captor = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session2).sendMessage(captor.capture());
+        String payload = captor.getValue().getPayload();
+        assertThat(payload).contains("connected").contains("42");
+    }
+
+    @Test
+    @DisplayName("ping message returns pong")
+    void ping_returnsPong() throws Exception {
+        when(session.getUri()).thenReturn(URI.create("ws://localhost/ws/log-analysis?reportId=1"));
+        handler.afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage("{\"action\":\"ping\"}"));
+
+        verify(session, times(2)).sendMessage(any(TextMessage.class));
+    }
+
+    @Test
+    @DisplayName("invalid JSON message does not throw")
+    void invalidJsonMessage_noThrow() throws Exception {
+        when(session.getUri()).thenReturn(URI.create("ws://localhost/ws/log-analysis?reportId=1"));
+        handler.afterConnectionEstablished(session);
+
+        // Should not throw
+        handler.handleTextMessage(session, new TextMessage("not json"));
+    }
+
+    @Test
+    @DisplayName("hasActiveSession returns false for unknown reportId")
+    void hasActiveSession_unknownId() {
+        assertThat(handler.hasActiveSession(999)).isFalse();
+    }
+
+    @Test
+    @DisplayName("pushEvent with IOException does not throw")
+    void pushEvent_ioException_noThrow() throws Exception {
+        when(session.getUri()).thenReturn(URI.create("ws://localhost/ws/log-analysis?reportId=100"));
+        handler.afterConnectionEstablished(session);
+        doThrow(new IOException("broken pipe")).when(session).sendMessage(any(TextMessage.class));
+
+        // Should not throw
+        handler.pushEvent(100, "{\"type\":\"TEST\"}");
+    }
+}

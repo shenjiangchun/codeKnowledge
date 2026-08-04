@@ -1,0 +1,154 @@
+{
+  "version": "1.0.0",
+  "description": "技能市场技能定义配置文件",
+  "lastUpdated": "2026-04-13",
+  "skills": [
+    {
+      "id": "hisi-dev-tool-mcp",
+      "name": "HiSi DevTool MCP",
+      "category": "mcp",
+      "version": "1.0.0",
+      "description": "HiSi开发工具MCP服务，提供项目构建、代码生成、数据库操作等核心能力",
+      "author": "HiSi DevTeam",
+      "tags": ["mcp", "tool", "development"],
+      "enabled": true,
+      "priority": 100,
+      "config": {
+        "command": "java",
+        "args": ["-jar", "hisi-dev-tool.jar", "--mcp-mode"],
+        "env": {}
+      }
+    },
+    {
+      "id": "pre-tool-use",
+      "name": "安全钩子",
+      "category": "hook",
+      "version": "1.0.0",
+      "description": "在工具执行前进行安全检查，防止危险操作如删除生产数据、暴露敏感信息等",
+      "author": "HiSi DevTeam",
+      "tags": ["hook", "security", "safety"],
+      "enabled": true,
+      "priority": 1000,
+      "trigger": "pre_tool_use",
+      "script": "hooks/pre-tool-use.js"
+    },
+    {
+      "id": "skill-forced-eval",
+      "name": "自我进化",
+      "category": "hook",
+      "version": "1.0.0",
+      "description": "强制技能评估钩子，用于技能执行后的自我评估和学习改进",
+      "author": "HiSi DevTeam",
+      "tags": ["hook", "evaluation", "learning"],
+      "enabled": true,
+      "priority": 500,
+      "trigger": "post_tool_use",
+      "script": "hooks/skill-forced-eval.js"
+    },
+    {
+      "id": "crud-development",
+      "name": "CRUD开发规范",
+      "category": "backend-skill",
+      "version": "1.0.0",
+      "description": "提供CRUD（增删改查）开发的标准规范和最佳实践，包括Controller、Service、Mapper层的代码生成和规范检查",
+      "author": "HiSi DevTeam",
+      "tags": ["backend", "crud", "development", "standard"],
+      "enabled": true,
+      "priority": 100,
+      "skillPath": "skills/crud-development/SKILL.md",
+      "templates": [
+        "templates/crud/controller.java.ftl",
+        "templates/crud/service.java.ftl",
+        "templates/crud/mapper.java.ftl",
+        "templates/crud/entity.java.ftl"
+      ]
+    },
+    {
+      "id": "lesson-learned",
+      "name": "经验学习",
+      "category": "general-skill",
+      "version": "1.0.0",
+      "description": "从历史问题和解决方案中学习，积累项目经验知识库，提供问题诊断和解决方案建议",
+      "author": "HiSi DevTeam",
+      "tags": ["learning", "knowledge", "experience"],
+      "enabled": true,
+      "priority": 80,
+      "skillPath": "skills/lesson-learned/SKILL.md",
+      "knowledgeBase": "knowledge/lesson-learned/"
+    },
+    {
+      "id": "git-code-review",
+      "name": "Git代码审查",
+      "category": "general-skill",
+      "version": "1.0.0",
+      "description": "Git提交代码审查，分析影响范围和业务流变化",
+      "author": "HiSi DevTeam",
+      "tags": ["git", "review", "impact-analysis"],
+      "enabled": true,
+      "priority": 100,
+      "skillPath": "../.claude/skills/git-code-review.md",
+      "triggerKeywords": ["/git-review", "代码审查", "commit"]
+    },
+    {
+      "id": "error-log-analysis",
+      "name": "错误日志分析",
+      "category": "general-skill",
+      "version": "1.0.0",
+      "description": "错误日志分析，结合知识图谱定位问题根因",
+      "author": "HiSi DevTeam",
+      "tags": ["log", "error", "analysis"],
+      "enabled": true,
+      "priority": 100,
+      "skillPath": "../.claude/skills/error-log-analysis.md",
+      "triggerKeywords": ["/error-analysis", "错误分析", "异常定位"]
+    },
+    {
+      "id": "interface-flow-analysis",
+      "name": "接口业务流分析",
+      "category": "general-skill",
+      "version": "1.0.0",
+      "description": "接口业务流分析，输出完整业务流逻辑",
+      "author": "HiSi DevTeam",
+      "tags": ["interface", "flow", "analysis"],
+      "enabled": true,
+      "priority": 100,
+      "skillPath": "../.claude/skills/interface-flow-analysis.md",
+      "triggerKeywords": ["/interface-flow", "业务流", "调用链分析"]
+    },
+    {
+      "id": "tech-design",
+      "name": "技术方案设计",
+      "category": "general-skill",
+      "version": "1.0.0",
+      "description": "技术方案设计，根据需求生成完整技术方案",
+      "author": "HiSi DevTeam",
+      "tags": ["design", "tech", "requirement"],
+      "enabled": true,
+      "priority": 100,
+      "skillPath": "../.claude/skills/tech-design.md",
+      "triggerKeywords": ["/tech-design", "技术方案", "需求设计"]
+    }
+  ],
+  "categories": [
+    {
+      "id": "mcp",
+      "name": "MCP服务",
+      "description": "Model Context Protocol服务类技能"
+    },
+    {
+      "id": "hook",
+      "name": "钩子",
+      "description": "工具执行前后的拦截处理"
+    },
+    {
+      "id": "backend-skill",
+      "name": "后端技能",
+      "description": "后端开发相关技能"
+    },
+    {
+      "id": "general-skill",
+      "name": "通用技能",
+      "description": "通用开发技能和知识"
+    }
+  ]
+}

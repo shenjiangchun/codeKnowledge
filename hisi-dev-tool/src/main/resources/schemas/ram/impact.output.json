@@ -1,0 +1,84 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Impact Stage Output",
+  "type": "object",
+  "required": ["methods_to_modify", "affected_entries", "risk", "validation"],
+  "properties": {
+    "methods_to_modify": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["className", "methodName"],
+        "properties": {
+          "nodeId": { "type": "string" },
+          "className": { "type": "string" },
+          "methodName": { "type": "string" },
+          "reason": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "affected_entries": {
+      "type": "object",
+      "required": ["direct", "indirect"],
+      "properties": {
+        "direct": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/annotatedEntry"
+          }
+        },
+        "indirect": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/annotatedEntry"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "risk": {
+      "type": "object",
+      "required": ["score", "level"],
+      "properties": {
+        "score": { "type": "number" },
+        "level": {
+          "type": "string",
+          "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+        }
+      },
+      "additionalProperties": true
+    },
+    "validation": {
+      "type": "object",
+      "required": ["passed", "violations"],
+      "properties": {
+        "passed": { "type": "boolean" },
+        "violations": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "reasoning": { "type": "string" },
+    "markdown_report": { "type": "string" }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "annotatedEntry": {
+      "type": "object",
+      "required": ["relevance", "reason"],
+      "properties": {
+        "nodeId": { "type": "string" },
+        "className": { "type": "string" },
+        "methodName": { "type": "string" },
+        "type": { "type": "string" },
+        "relevance": { "type": "string", "enum": ["DIRECT", "INDIRECT"] },
+        "reason": { "type": "string" },
+        "business_function": { "type": "string", "description": "业务功能说明" },
+        "impact_mechanism": { "type": "string", "description": "影响机制" },
+        "change_behavior": { "type": "string", "description": "行为变化" },
+        "call_path": { "type": "string", "description": "调用路径" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

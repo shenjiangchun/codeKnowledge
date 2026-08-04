@@ -2,8 +2,9 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/backend" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/frontend" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/hisi-mcp-server" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/remote-repos/nl2sql" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test-projects/java-spring-test" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/test-projects/python-fastapi-test" vcs="Git" />
   </component>
 </project>

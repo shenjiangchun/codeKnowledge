@@ -1,0 +1,288 @@
+package com.huawei.hisi.ram.chat;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.huawei.hisi.config.JwtTokenProvider;
+import com.huawei.hisi.ram.chat.dto.CreateSessionRequest;
+import com.huawei.hisi.ram.chat.dto.InjectRequest;
+import com.huawei.hisi.ram.chat.dto.SendMessageRequest;
+import com.huawei.hisi.ram.model.AgentEvent;
+import com.huawei.hisi.ram.model.AgentSession;
+import com.huawei.hisi.ram.model.EventType;
+import com.huawei.hisi.ram.model.SessionStatus;
+import com.huawei.hisi.ram.model.SessionType;
+import com.huawei.hisi.ram.repository.AgentEventRepository;
+import com.huawei.hisi.ram.repository.AgentSessionRepository;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration;
+import org.springframework.boot.autoconfigure.security.servlet.SecurityFilterAutoConfiguration;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import static org.hamcrest.Matchers.containsString;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@WebMvcTest(controllers = RamChatController.class,
+        excludeAutoConfiguration = {
+                SecurityAutoConfiguration.class,
+                SecurityFilterAutoConfiguration.class
+        })
+@DisplayName("RamChatController integration tests")
+class RamChatControllerIntegrationTest {
+
+    @Autowired private MockMvc mockMvc;
+    @Autowired private ObjectMapper objectMapper;
+
+    @MockBean private AgentSessionRepository sessionRepository;
+    @MockBean private AgentEventRepository eventRepository;
+    @MockBean private RamChatOrchestrator orchestrator;
+    @MockBean private TurnRegistry turnRegistry;
+    @MockBean private RamChatWebSocketHandler wsHandler;
+    @MockBean private JwtTokenProvider jwtTokenProvider;
+
+    @Test
+    @DisplayName("createSession: returns 200 with session data")
+    void createSession_validRequest_returns200() throws Exception {
+        AgentSession saved = new AgentSession();
+        saved.setId(100L);
+        when(sessionRepository.save(any(AgentSession.class))).thenReturn(saved);
+        CreateSessionRequest req = new CreateSessionRequest(List.of("/proj/test"), "TestProject", null);
+        mockMvc.perform(post("/api/ram/chat/sessions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.sessionId").value("100"))
+                .andExpect(jsonPath("$.data.projectPath").value("/proj/test"))
+                .andExpect(jsonPath("$.data.projectName").value("TestProject"));
+    }
+
+    @Test
+    @DisplayName("createSession: missing projectPaths returns 400")
+    void createSession_missingProjectPaths_returns400() throws Exception {
+        CreateSessionRequest req = new CreateSessionRequest(List.of(), null, null);
+        mockMvc.perform(post("/api/ram/chat/sessions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message", containsString("projectPaths")));
+    }
+
+    @Test
+    @DisplayName("createSession: null body returns 400")
+    void createSession_nullBody_returns400() throws Exception {
+        mockMvc.perform(post("/api/ram/chat/sessions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("null"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(400));
+    }
+
+    @Test
+    @DisplayName("createSession: with initialQuestion triggers runTurn")
+    void createSession_withInitialQuestion_triggersRunTurn() throws Exception {
+        AgentSession saved = new AgentSession();
+        saved.setId(200L);
+        when(sessionRepository.save(any(AgentSession.class))).thenReturn(saved);
+        CreateSessionRequest req = new CreateSessionRequest(List.of("/proj/foo"), "Foo", "What is this project?");
+        mockMvc.perform(post("/api/ram/chat/sessions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+        verify(orchestrator, times(1)).runTurn(eq(200L), eq("What is this project?"), eq(List.of("/proj/foo")));
+    }
+
+    @Test
+    @DisplayName("sendMessage: returns STARTED status with turnId")
+    void sendMessage_validRequest_returnsStarted() throws Exception {
+        AgentSession session = stubSession(300L, "[\"/proj/a\"]");
+        when(sessionRepository.findById(300L)).thenReturn(Optional.of(session));
+        when(orchestrator.startTurnAsync(anyLong(), anyString(), anyList())).thenReturn("turn-abc-123");
+        SendMessageRequest req = new SendMessageRequest("hello world");
+        mockMvc.perform(post("/api/ram/chat/{sid}/messages", 300L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.turnId").value("turn-abc-123"))
+                .andExpect(jsonPath("$.data.status").value("STARTED"))
+                .andExpect(jsonPath("$.data.errorMessage").isEmpty());
+    }
+
+    @Test
+    @DisplayName("sendMessage: session not found returns 404")
+    void sendMessage_sessionNotFound_returns404() throws Exception {
+        when(sessionRepository.findById(999L)).thenReturn(Optional.empty());
+        SendMessageRequest req = new SendMessageRequest("hello");
+        mockMvc.perform(post("/api/ram/chat/{sid}/messages", 999L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(404))
+                .andExpect(jsonPath("$.message", containsString("not found")));
+    }
+
+    @Test
+    @DisplayName("sendMessage: empty text returns 400")
+    void sendMessage_emptyText_returns400() throws Exception {
+        SendMessageRequest req = new SendMessageRequest("");
+        mockMvc.perform(post("/api/ram/chat/{sid}/messages", 1L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(400));
+    }
+
+    @Test
+    @DisplayName("sendMessage: null request body returns 400")
+    void sendMessage_nullBody_returns400() throws Exception {
+        mockMvc.perform(post("/api/ram/chat/{sid}/messages", 1L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("null"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(400));
+    }
+
+    @Test
+    @DisplayName("interrupt: active turn returns 202 and publishes event")
+    void interrupt_activeTurn_returns202() throws Exception {
+        when(turnRegistry.interrupt(1L))
+                .thenReturn(Optional.of(new TurnRegistry.InterruptResult("turn-x", "partial text")));
+        AgentEvent persisted = AgentEvent.builder()
+                .id(10L).sessionId(1L).seq(5L)
+                .type(EventType.TURN_INTERRUPTED)
+                .payload("{}").createdAt(1_700_000_000L).build();
+        when(eventRepository.append(any(AgentEvent.class))).thenReturn(persisted);
+        mockMvc.perform(post("/api/ram/chat/{sid}/interrupt", 1L))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.interrupted").value(true))
+                .andExpect(jsonPath("$.turnId").value("turn-x"))
+                .andExpect(jsonPath("$.partialText").value("partial text"));
+        verify(eventRepository).append(any(AgentEvent.class));
+        verify(wsHandler).pushEvent(eq(1L), any(Map.class));
+    }
+
+    @Test
+    @DisplayName("interrupt: no active turn returns 200 with interrupted=false")
+    void interrupt_noActiveTurn_returns200() throws Exception {
+        when(turnRegistry.interrupt(2L)).thenReturn(Optional.empty());
+        mockMvc.perform(post("/api/ram/chat/{sid}/interrupt", 2L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.interrupted").value(false));
+        verify(eventRepository, never()).append(any(AgentEvent.class));
+        verify(wsHandler, never()).pushEvent(eq(2L), any(Map.class));
+    }
+
+    @Test
+    @DisplayName("inject: valid request returns 202")
+    void inject_validRequest_returns202() throws Exception {
+        AgentSession session = stubSession(400L, "[\"/proj/x\"]");
+        when(sessionRepository.findById(400L)).thenReturn(Optional.of(session));
+        InjectRequest req = new InjectRequest("new instruction");
+        mockMvc.perform(post("/api/ram/chat/{sid}/inject", 400L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isAccepted());
+    }
+
+    @Test
+    @DisplayName("inject: empty content returns 400")
+    void inject_emptyContent_returns400() throws Exception {
+        InjectRequest req = new InjectRequest("");
+        mockMvc.perform(post("/api/ram/chat/{sid}/inject", 1L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("inject: session not found returns 404")
+    void inject_sessionNotFound_returns404() throws Exception {
+        when(sessionRepository.findById(999L)).thenReturn(Optional.empty());
+        InjectRequest req = new InjectRequest("something");
+        mockMvc.perform(post("/api/ram/chat/{sid}/inject", 999L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("getEvents: returns event list")
+    void getEvents_returnsEventList() throws Exception {
+        AgentEvent ev = AgentEvent.builder()
+                .id(1L).sessionId(500L).seq(0L)
+                .type(EventType.USER_MSG)
+                .payload("{\"text\":\"hi\"}")
+                .createdAt(1_700_000_000L).build();
+        when(eventRepository.findBySessionId(500L)).thenReturn(List.of(ev));
+        mockMvc.perform(get("/api/ram/chat/{sid}/events", 500L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data[0].id").value(1))
+                .andExpect(jsonPath("$.data[0].type").value("USER_MSG"));
+    }
+
+    @Test
+    @DisplayName("getEvents: empty session returns empty list")
+    void getEvents_emptySession_returnsEmptyList() throws Exception {
+        when(eventRepository.findBySessionId(600L)).thenReturn(List.of());
+        mockMvc.perform(get("/api/ram/chat/{sid}/events", 600L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
+    @DisplayName("listSessions: returns session summaries")
+    void listSessions_returnsSessionSummaries() throws Exception {
+        AgentSession session = new AgentSession();
+        session.setId(1L);
+        session.setIntent("Some Task");
+        session.setStatus(SessionStatus.RUNNING);
+        session.setProjectPaths("[\"/proj/a\"]");
+        session.setCreatedAt(1_700_000_000L);
+        session.setUpdatedAt(1_700_000_100L);
+        when(sessionRepository.listRecentBySessionType("STATUS", 50)).thenReturn(List.of(session));
+        when(eventRepository.countBySessionId(1L)).thenReturn(3L);
+        mockMvc.perform(get("/api/ram/chat/sessions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data[0].sessionId").value("1"))
+                .andExpect(jsonPath("$.data[0].projectPath").value("/proj/a"))
+                .andExpect(jsonPath("$.data[0].status").value("RUNNING"));
+    }
+
+    private AgentSession stubSession(long id, String projectPathsJson) {
+        AgentSession session = new AgentSession();
+        session.setId(id);
+        session.setStatus(SessionStatus.RUNNING);
+        session.setProjectPaths(projectPathsJson);
+        session.setIntent("Test session");
+        session.setSessionType(SessionType.STATUS);
+        session.setCreatedAt(1_700_000_000L);
+        session.setUpdatedAt(1_700_000_100L);
+        return session;
+    }
+}

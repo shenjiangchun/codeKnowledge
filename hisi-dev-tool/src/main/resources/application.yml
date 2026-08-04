@@ -1,0 +1,340 @@
+spring:
+  application:
+    name: devTool
+  profiles:
+    active: dev,local
+  datasource:
+    url: jdbc:sqlite:${user.home}/.hisi-devtool/devtool.db?foreign_keys=on
+    hikari:
+      connection-init-sql: PRAGMA foreign_keys = ON
+  # WebSocket 配置 - 保持长连接
+  websocket:
+    max-text-message-buffer-size: 65536
+    max-binary-message-buffer-size: 65536
+  # 允许循环依赖（临时解决方案）
+  main:
+    allow-circular-references: true
+  # 双层配置：chat-models.yml（能力元数据，纳入版本控制）
+  # + application-local.yml（endpoint/apiKey 本地覆盖，.gitignore 排除）
+  config:
+    import:
+      - classpath:chat-models.yml
+      - optional:classpath:application-local.yml
+  ai:
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY:sk-placeholder}
+      base-url: ${ANTHROPIC_URL:https://api.anthropic.com}
+      chat:
+        options:
+          model: ${ANTHROPIC_MODEL:claude-sonnet-4-20250514}
+          temperature: 0.3
+    openai:
+      api-key: ${ZHIPU_API_KEY:sk-placeholder}
+      base-url: ${ZHIPU_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+      chat:
+        options:
+          model: ${ZHIPU_TEXT_MODEL:glm-4-flash}
+          temperature: 0.1
+    retry:
+      max-attempts: 3
+      backoff:
+        initial-interval: 1000
+        multiplier: 2
+      on-http-codes: 429, 500, 502, 503
+
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+# ==================== 向量生成模型（Embedding） ====================
+# 用于代码语义向量化，支持任意 OpenAI 兼容的 /embeddings 端点
+# 前端「系统设置」可快速切换预置供应商或自定义
+embedding:
+  api-key: ${EMBEDDING_API_KEY:}
+  base-url: https://api.siliconflow.cn/v1
+  model: Qwen/Qwen3-VL-Embedding-8B
+  dimension: 4096
+  timeout: 30000
+  max-retries: 3
+  retry-base-delay-ms: 5000
+  # 令牌桶限流
+  qps: 25.0
+  burst: 5
+  acquire-timeout-seconds: 180
+  # ---- 备选向量模型（修改上方配置即可切换） ----
+  # 智谱 AI:       base-url=https://open.bigmodel.cn/api/paas/v4  model=embedding-3          dimension=2048
+  # 科大讯飞:      base-url=https://maas-api.cn-huabei-1.xf-yun.com/v2  model=xop3qwen8bembedding  dimension=768
+
+# ==================== 自然语言生成模型（Text / Chat） ====================
+# 用于代码描述生成，支持任意 OpenAI 兼容的 /chat/completions 端点
+text-model:
+  api-key: ${TEXT_MODEL_API_KEY:}
+  base-url: https://open.bigmodel.cn/api/paas/v4
+  model: GLM-4-FlashX-250414
+  temperature: 0.1
+  max-tokens: 200
+  timeout: 30000
+  max-retries: 3
+  retry-base-delay-ms: 5000
+  # 令牌桶限流
+  qps: 3.0
+  burst: 5
+  acquire-timeout-seconds: 120
+  # ---- 备选文本模型（修改上方配置即可切换） ----
+  # 智谱 glm-4-flash: base-url=https://open.bigmodel.cn/api/paas/v4  model=glm-4-flash (当前默认)
+
+# ==================== APM Failure Locator LLM ====================
+# 独立的诊断 LLM 配置，与 text-model（用于 KG 描述生成）解耦。
+# api-key 留占位，真实 token 在 application-local.yml。
+hisi:
+  apm:
+    diagnose:
+      llm:
+        base-url: https://www.dmxapi.cn
+        model: claude-opus-4-6-cc
+        api-key: ${APM_DIAGNOSE_LLM_API_KEY:}
+        timeout-seconds: 40
+        max-concurrency: 2
+        temperature: 0.2
+        # 默认 8192：兼容 Claude（标准模型）与推理模型（如 GLM-5.1-wenshu）。
+        # 推理模型会先消费 token 在 reasoning 字段再输出 content，max_tokens 太小会导致 content=null。
+        max-tokens: 8192
+  agents:
+    apm-diagnose:
+      system-prompt: "你是APM诊断专家。根据异常日志和调用链信息定位根因并给出修复建议。"
+      provider: anthropic
+    call-chain-analysis:
+      system-prompt: "你是调用链分析专家。追踪方法间调用关系，识别性能瓶颈和循环依赖。"
+      provider: anthropic
+    log-analysis:
+      system-prompt: "你是日志分析专家。从日志中提取错误模式并关联到代码。"
+      provider: anthropic
+    code-analysis:
+      system-prompt: "你是代码变更分析专家。分析Git提交记录并评估影响范围。"
+      provider: anthropic
+    dialog:
+      system-prompt: "你是自然语言交互助手。理解用户意图并调用对应功能。"
+      provider: anthropic
+    fix:
+      system-prompt: "你是代码修复专家。根据异常信息和测试用例定位并修复代码缺陷。"
+      provider: anthropic
+      tool-call-limit: 5
+      hitl:
+        mode: post-react
+        timeout-minutes: 30
+
+#应用配置
+app:
+  project_dir: C:\Users\47583\projects\hisi-dev-tool
+  codeHubUser: ${CODEHUB_USERNAME:placeholder}
+  codeHubPassword: ${CODEHUB_PASSWORD:placeholder}
+
+# CORS 跨域配置（生产环境请通过环境变量 CORS_ALLOWED_ORIGINS 配置允许的源）
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
+
+# JWT 认证配置
+jwt:
+  secret: ${JWT_SECRET:***REMOVED_JWT_SECRET***}
+  expiration-ms: 86400000  # 24小时
+
+# 影响分析配置
+impact:
+  # 默认测试覆盖率分数（当实际覆盖率数据不可用时使用）
+  # 可通过环境变量 IMPACT_DEFAULT_COVERAGE_SCORE 覆盖
+  default-coverage-score: ${IMPACT_DEFAULT_COVERAGE_SCORE:50}
+
+# 日志配置
+logging:
+  level:
+    root: info
+    com.example.llmapi: info
+    com.huawei.hisi: info
+    org.springframework.web: info
+    # Spring框架日志（生产环境建议设为warn）
+    org.springframework: warn
+    org.springframework.beans: warn
+    org.springframework.context: warn
+    # 抑制 Neo4j id() 弃用警告（Spring Data Neo4j 内部使用）
+    org.springframework.data.neo4j.cypher.deprecation: error
+    org.springframework.data.neo4j.cypher.unrecognized: error
+    # 只对关键模块开启debug
+    com.huawei.hisi.neo4j: debug
+    com.huawei.hisi.knowledgegraph: debug
+
+# 日志云配置
+logcloud:
+  # 基础 URL（用于 Playwright 模式，HTTP API 模式不使用）
+  base-url: https://console.his.huawei.com
+  # 应用 ID
+  app-id: com.huawei.hiapm
+  # 用户名（Playwright 模式用）
+  username: ${LOGCLOUD_USERNAME:}
+  # 密码（Playwright 模式用）
+  password: ${LOGCLOUD_PASSWORD:}
+  # HTTP API 配置
+  api:
+    # API 基础 URL
+    base-url: https://apig-beta.his.huawei.com/api/gaia/rm-openapi
+    # 查询接口路径
+    query-path: /platforms/logQueryService/dslQuery/hiapm_error_fetcher
+    # 请求头：X-HW-ID
+    header-xhw-id: com.huawei.hiapm
+    # 请求头：x-hw-appkey
+    header-appkey: ${LOGCLOUD_APPKEY:placeholder}
+    # 请求超时时间（毫秒）
+    timeout: 60000
+    # 连接超时时间（毫秒）
+    connect-timeout: 30000
+  # 浏览器配置（Playwright 模式用，保留以兼容旧代码）
+  browser:
+    headless: true
+    timeout: 60000
+    cache-expire: 1800
+
+# 日志拉取定时任务配置
+log:
+  pull:
+    # 是否启用定时日志拉取（需要配置 app_log_config 表）
+    enabled: ${LOG_PULL_ENABLED:false}
+    # 默认拉取间隔（分钟），可通过环境变量覆盖
+    default-interval-minutes: ${LOG_PULL_INTERVAL:10}
+
+# 异常继承关系配置
+exception:
+  inheritance:
+    enable-defaults: true
+    # 可通过以下配置添加自定义异常继承关系
+    # hierarchy:
+    #   java.lang.Exception:
+    #     - com.example.CustomException
+
+# 代码分析功能开关配置
+# 用于控制新旧逻辑切换，确保重构安全
+analysis:
+  features:
+    # 增强版接口实现解析 - 同时存储简单名称和完整限定名
+    enhanced-interface-resolution: true
+    # 增强版字段调用解析 - 识别 @Autowired、@Lazy 等注入字段
+    enhanced-field-call-resolution: true
+    # Spring 注解感知调用链分析 - 识别 @Async、@Transactional 等代理调用
+    spring-annotation-aware: true
+    # 调试日志 - 输出详细的类型解析日志
+    debug-logging: true
+
+# Neo4j 图数据库配置
+neo4j:
+  # 嵌入式模式（默认启用，进程内 Bolt 服务器，无需安装 Neo4j Desktop/Docker）
+  embedded:
+    enabled: ${NEO4J_EMBEDDED:false}
+    data-directory: ${NEO4J_DATA_DIR:./neo4j-data}
+  # 外部服务器模式（embedded.enabled=false 时生效）
+  uri: bolt://127.0.0.1:7687
+  database: ${NEO4J_DATABASE:codeKnowledge}
+  username: neo4j
+  password: ${NEO4J_PASSWORD:12345678}
+  pool:
+    max-connection-pool-size: 50
+    connection-timeout: 30s
+
+# HTTP 代理配置（用于内网环境连接外部大模型 API）
+# 前端可通过 /api/settings/proxy 实时修改
+proxy:
+  enabled: ${PROXY_ENABLED:false}
+  host: ${PROXY_HOST:}
+  port: ${PROXY_PORT:0}
+  # 代理类型: HTTP / SOCKS
+  type: ${PROXY_TYPE:HTTP}
+  # 代理认证（可选）
+  username: ${PROXY_USERNAME:}
+  password: ${PROXY_PASSWORD:}
+  # 不走代理的地址列表（逗号分隔）
+  non-proxy-hosts: ${PROXY_NON_HOSTS:localhost,127.0.0.1,*.huawei.com,*.inhuawei.com}
+  # 是否禁用 SSL 证书验证（仅用于内网/测试环境）
+  disable-ssl-verification: ${PROXY_DISABLE_SSL_VERIFICATION:true}
+
+# APM（Application Performance Monitoring）配置
+apm:
+  otel-agent-version: "2.14.0"
+  # 可选：指定本地 OTel Agent JAR 路径（内网环境无法下载时使用）
+  # 留空则自动从 GitHub releases 下载（需能访问 github.com 或配置 proxy）
+  otel-agent-path: ${APM_OTEL_AGENT_PATH:}
+  # 目标 JVM 启动 + OTel agent 加载 + Spring Boot 端口监听的总超时（秒）
+  # 实测大型 Spring Boot 应用首次冷启动 + agent instrumentation 需要 3-8 分钟
+  # 若仍超时可继续调大，或通过环境变量 APM_TARGET_READY_TIMEOUT 覆盖
+  target-ready-timeout-seconds: ${APM_TARGET_READY_TIMEOUT:600}
+  span-ttl-hours: 24
+  target-shutdown-grace-seconds: 5
+
+# RAM（Requirement Analysis Master）SSE 配置
+ram:
+  sse:
+    # SSE 轮询线程池大小
+    pool-size: 2
+    # SSE 轮询间隔（毫秒）
+    poll-interval-ms: 500
+
+# 意图感知多通道检索配置
+search:
+  # 各意图类型的原始权重（对数缩放前）
+  # w_eff = 1 + α·ln(w_raw / w_base)，α=log-scale-alpha, w_base=log-scale-base
+  intent-weights:
+    GENERAL: 1.0
+    SCHEDULE: 2.0
+    HTTP: 2.0
+    SQL: 1.8
+    EXCEPTION: 1.8
+    LISTENER: 1.8
+    CONFIG: 1.8
+    AUTH: 1.8
+    TRANSACTION: 1.8
+    KEYWORD_SUPPLEMENT: 0.1
+  rrf:
+    k: 60
+    log-scale-alpha: 0.5
+    log-scale-base: 1.0
+    # 多路命中归一化上限系数：cap = max(w_eff) × ratio
+    max-multi-hit-ratio: 2.0
+    # Callee 权重传播比例（入口方法高权→核心业务方法继承部分权重）
+    callee-propagation-ratio: 0.3
+    # Post-filter 注解命中加分
+    annotation-bonus-score: 0.5
+    # 低置信度双通道阈值
+    dual-channel-threshold: 0.7
+    # 专用通道必选词过滤开关
+    required-word-filter-enabled: true
+
+anthropic:
+  api-key: ${ANTHROPIC_API_KEY:}
+  base-url: ${ANTHROPIC_URL:}
+  model: ${ANTHROPIC_MODEL:}
+
+# ---- Resilience4j CircuitBreaker ----
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30000
+        permitted-number-of-calls-in-half-open-state: 3
+    instances:
+      llm-anthropic:
+        base-config: default
+      llm-zhipu:
+        base-config: default
+
+# Maven 构建配置（由 build.sh / build.bat 读取后传给 mvn）
+# 用法：bash build.sh [mvn args...]   例: bash build.sh clean compile
+maven:
+  # 自定义 settings.xml（含 Huawei 内网镜像 + 鉴权）
+  settings: ${MAVEN_SETTINGS:D:/setting/settings-saas.xml}
+  # 本地仓库路径
+  repo: ${MAVEN_REPO:D:/repository}
+  # JDK 17+ 路径（ antlr4-maven-plugin 4.13.1 需 Java 11+ ）
+  java-home: ${MAVEN_JAVA_HOME:C:/Program Files/Java/jdk-17.0.3.1}
+  ssl:
+    insecure: ${MAVEN_SSL_INSECURE:true}
+    allowall: ${MAVEN_SSL_ALLOWALL:true}
+    ignore-validity-dates: ${MAVEN_SSL_IGNORE_VALIDITY_DATES:true}

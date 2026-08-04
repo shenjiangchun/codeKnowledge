@@ -1,0 +1,79 @@
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+sh.exe.stackdump
+
+# Logs
+logs/
+*.log
+
+# Agent deliverables (internal)
+.agent-deliverables/
+
+# Git worktrees
+.worktrees/
+
+# Environment variables
+.env
+.env.local
+.env.neo4j
+
+# Neo4j volumes (local data)
+neo4j-data/
+neo4j-backup/
+models/
+
+.codeai
+.claude
+.gitignore
+
+# Generated JS files from Vue/TypeScript
+*.vue.js
+*.js
+!*.spec.js
+!*.test.js
+remote-repos/
+ai-sessions/
+**/application-local.yml
+/.codeai/
+/ai-sessions/
+
+# Frontend build artifacts / standalone test outputs
+hisi-dev-tool-frontend/package-lock.json
+hisi-dev-tool-frontend/standalone-ram-test*.mjs
+hisi-dev-tool-frontend/test-results-standalone/
+hisi-dev-tool-frontend/.codegraph/
+
+# Codegraph SQLite DB (local sidecar output, not source code)
+**/codegraph.db
+**/codegraph.db-shm
+**/codegraph.db-wal
+
+# Personal / HR files — NEVER commit
+*.docx
+*.pdf
+gen_*.py
+*简历*
+*面试*
+*自评*
+*宣讲*
+*获奖*
+*沈江春*
+*审视*
+*用户手册*
+
+# Personal notes / review files (local only)
+2026_work_review.txt
+HiSi-DevTool-AI4Coding.md
+RAM_CHAT_FIX_PATCH.md
+/.claude_snapshot/

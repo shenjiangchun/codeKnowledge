@@ -1,0 +1,53 @@
+agents:
+  - agentId: clarify-v1
+    version: "1.0"
+    capabilities: [clarification, contract-validation]
+    tags: [planning, hitl]
+    inputContract: clarify.input
+    outputContract: clarify.output
+    model:
+      preferred: claude-sonnet-4-5
+      fallback: claude-haiku-4-5
+    costHint: 0.02
+    supportsHitl: true
+    circuitBreaker: {failureRateThreshold: 0.5, minimumCalls: 10, cooldownSeconds: 60}
+    endpoint: {transport: in-process, handler: clarifyNode}
+  - agentId: impact-v1
+    version: "1.0"
+    capabilities: [impact-analysis, knowledge-graph]
+    tags: [analysis, impact]
+    inputContract: clarify.output
+    outputContract: impact.output
+    model:
+      preferred: claude-opus-4-6
+      fallback: claude-sonnet-4-5
+    costHint: 0.20
+    supportsHitl: false
+    circuitBreaker: {failureRateThreshold: 0.3, minimumCalls: 5, cooldownSeconds: 120}
+    endpoint: {transport: in-process, handler: impactNode}
+  - agentId: implement-v1
+    version: "1.0"
+    capabilities: [implementation-drafting, markdown-generation]
+    tags: [planning, drafting]
+    inputContract: impact.output
+    outputContract: implement.output
+    model:
+      preferred: claude-sonnet-4-5
+      fallback: claude-haiku-4-5
+    costHint: 0.10
+    supportsHitl: false
+    circuitBreaker: {failureRateThreshold: 0.4, minimumCalls: 10, cooldownSeconds: 60}
+    endpoint: {transport: in-process, handler: implementNode}
+  - agentId: verify-v1
+    version: "1.0"
+    capabilities: [cross-validation, deterministic-checks]
+    tags: [verification, qa]
+    inputContract: implement.output
+    outputContract: verify.output
+    model:
+      preferred: claude-haiku-4-5
+      fallback: claude-sonnet-4-5
+    costHint: 0.01
+    supportsHitl: false
+    circuitBreaker: {failureRateThreshold: 0.5, minimumCalls: 10, cooldownSeconds: 60}
+    endpoint: {transport: in-process, handler: verifyNode}

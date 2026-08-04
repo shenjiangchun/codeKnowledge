@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__hisi-dev-tool__find_callers",
+      "mcp__hisi-dev-tool__search_methods"
+    ]
+  }
+}

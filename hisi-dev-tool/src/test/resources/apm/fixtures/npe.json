@@ -1,0 +1,71 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "order-service"}},
+          {"key": "service.version", "value": {"stringValue": "1.0.0"}},
+          {"key": "telemetry.sdk.language", "value": {"stringValue": "java"}}
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {"name": "io.opentelemetry.spring-webmvc-6.0", "version": "2.10.0"},
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000001",
+              "spanId": "1111111111111111",
+              "name": "GET /api/orders/{id}",
+              "kind": 2,
+              "startTimeUnixNano": "1747828800000000000",
+              "endTimeUnixNano": "1747828800180000000",
+              "status": {"code": 2, "message": "NullPointerException"},
+              "attributes": [
+                {"key": "http.method", "value": {"stringValue": "GET"}},
+                {"key": "http.route", "value": {"stringValue": "/api/orders/{id}"}},
+                {"key": "http.status_code", "value": {"intValue": "500"}},
+                {"key": "http.target", "value": {"stringValue": "/api/orders/42"}}
+              ],
+              "events": [
+                {
+                  "name": "exception",
+                  "timeUnixNano": "1747828800175000000",
+                  "attributes": [
+                    {"key": "exception.type", "value": {"stringValue": "java.lang.NullPointerException"}},
+                    {"key": "exception.message", "value": {"stringValue": "Cannot invoke \"com.example.demo.Customer.getName()\" because \"customer\" is null"}},
+                    {"key": "exception.stacktrace", "value": {"stringValue": "java.lang.NullPointerException: Cannot invoke \"com.example.demo.Customer.getName()\" because \"customer\" is null\n\tat com.example.demo.OrderService.findById(OrderService.java:42)\n\tat com.example.demo.OrderController.getOrder(OrderController.java:28)\n\tat jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)\n\tat java.lang.reflect.Method.invoke(Method.java:580)\n\tat org.springframework.web.method.support.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:255)\n\tat org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter.invokeHandlerMethod(RequestMappingHandlerAdapter.java:909)\n\tat org.springframework.web.servlet.DispatcherServlet.doDispatch(DispatcherServlet.java:1089)\n\tat org.springframework.web.servlet.FrameworkServlet.service(FrameworkServlet.java:885)\n\tat jakarta.servlet.http.HttpServlet.service(HttpServlet.java:658)"}}
+                  ]
+                }
+              ]
+            },
+            {
+              "traceId": "00000000000000000000000000000001",
+              "spanId": "2222222222222222",
+              "parentSpanId": "1111111111111111",
+              "name": "OrderService.findById",
+              "kind": 1,
+              "startTimeUnixNano": "1747828800020000000",
+              "endTimeUnixNano": "1747828800170000000",
+              "status": {"code": 2, "message": "NullPointerException"},
+              "attributes": [
+                {"key": "code.namespace", "value": {"stringValue": "com.example.demo.OrderService"}},
+                {"key": "code.function", "value": {"stringValue": "findById"}}
+              ],
+              "events": [
+                {
+                  "name": "exception",
+                  "timeUnixNano": "1747828800165000000",
+                  "attributes": [
+                    {"key": "exception.type", "value": {"stringValue": "java.lang.NullPointerException"}},
+                    {"key": "exception.message", "value": {"stringValue": "Cannot invoke \"com.example.demo.Customer.getName()\" because \"customer\" is null"}},
+                    {"key": "exception.stacktrace", "value": {"stringValue": "java.lang.NullPointerException: Cannot invoke \"com.example.demo.Customer.getName()\" because \"customer\" is null\n\tat com.example.demo.OrderService.findById(OrderService.java:42)\n\tat com.example.demo.OrderController.getOrder(OrderController.java:28)"}}
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

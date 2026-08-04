@@ -1,0 +1,324 @@
+package com.huawei.hisi.fixengine.agent;
+
+import com.huawei.hisi.apm.service.locator.LlmClient;
+import com.huawei.hisi.ram.model.AgentEvent;
+import com.huawei.hisi.ram.model.EventType;
+import com.huawei.hisi.ram.repository.AgentEventRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+@DisplayName("FixAgent")
+class FixAgentTest {
+
+    @Mock
+    private LlmClient llm;
+
+    @Mock
+    private AgentEventRepository agentEventRepository;
+
+    private FixAgent fixAgent;
+
+    @BeforeEach
+    void setUp() {
+        fixAgent = new FixAgent(llm, agentEventRepository);
+    }
+
+    // --- generateFix tests ---
+
+    @Test
+    @DisplayName("generateFix returns LLM response stripped of code fences")
+    void generateFix_validContext_returnsFixedCode() {
+        when(llm.chat(anyString(), anyString()))
+            .thenReturn("```java\npublic void doStuff() { return; }\n```");
+
+        String result = fixAgent.generateFix(
+            "com.foo.Bar.doStuff", "NullPointerException",
+            "Cannot invoke method", "{}",
+            "public void doStuff() { throw new NullPointerException(); }");
+
+        assertThat(result).isEqualTo("public void doStuff() { return; }");
+    }
+
+    @Test
+    @DisplayName("generateFill passes methodSignature / exceptionType / exceptionMessage / entryParams / sourceCode into prompt")
+    void generateFill_placeholdersReplacedInPrompt() {
+        when(llm.chat(anyString(), anyString())).thenReturn("fixed");
+
+        fixAgent.generateFix(
+            "com.foo.Bar.doStuff", "NullPointerException",
+            "msg: boom", "{\"a\":1}",
+            "public void doStuff() {}");
+
+        ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(llm).chat(anyString(), userPromptCaptor.capture());
+        String prompt = userPromptCaptor.getValue();
+        assertThat(prompt).contains("com.foo.Bar.doStuff");
+        assertThat(prompt).contains("NullPointerException");
+        assertThat(prompt).contains("msg: boom");
+        assertThat(prompt).contains("{\"a\":1}");
+        assertThat(prompt).contains("public void doStuff() {}");
+    }
+
+    @Test
+    @DisplayName("generateFix replaces null parameters with empty string")
+    void generateFix_allNullParams_doesNotThrow() {
+        when(llm.chat(anyString(), anyString())).thenReturn("ok");
+
+        String result = fixAgent.generateFix(null, null, null, null, null);
+
+        assertThat(result).isEqualTo("ok");
+        ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(llm).chat(anyString(), userPromptCaptor.capture());
+        // Null placeholders become empty strings; the template still has structure
+        String prompt = userPromptCaptor.getValue();
+        assertThat(prompt).doesNotContain("{methodSignature}"); // placeholders replaced
+        assertThat(prompt).doesNotContain("{exceptionType}");
+        assertThat(prompt).doesNotContain("{exceptionMessage}");
+    }
+
+    @Test
+    @DisplayName("generateFix handles empty method body gracefully")
+    void generateFix_emptySource_handlesFine() {
+        when(llm.chat(anyString(), anyString())).thenReturn("no-op");
+
+        String result = fixAgent.generateFix(
+            "com.foo.Bar.empty", "NullPointerException",
+            "", "{}", "");
+
+        assertThat(result).isEqualTo("no-op");
+    }
+
+    @Test
+    @DisplayName("generateFix loads prompt template and systemPrompt is correctly set")
+    void generateFill_systemPromptIsUtf8() {
+        when(llm.chat(anyString(), anyString())).thenReturn("x");
+
+        fixAgent.generateFix("sig", "ex", "msg", "{}", "code");
+
+        ArgumentCaptor<String> systemCaptor = ArgumentCaptor.forClass(String.class);
+        verify(llm).chat(systemCaptor.capture(), anyString());
+        assertThat(systemCaptor.getValue())
+            .contains("senior Java engineer")
+            .contains("Output only the corrected Java method source code");
+    }
+
+    // --- stripCodeFences (via reflection, private static) ---
+
+    @Test
+    @DisplayName("stripCodeFences removes ```java block markers")
+    void stripCodeFences_removesJavaBlock() throws Exception {
+        Method m = FixAgent.class.getDeclaredMethod("stripCodeFences", String.class);
+        m.setAccessible(true);
+        String result = (String) m.invoke(null,
+            "```java\npublic void foo() {}\n```");
+        assertThat(result).isEqualTo("public void foo() {}");
+    }
+
+    @Test
+    @DisplayName("stripCodeFences removes bare ``` block markers without language tag")
+    void stripCodeFences_removesBareBlock() throws Exception {
+        Method m = FixAgent.class.getDeclaredMethod("stripCodeFences", String.class);
+        m.setAccessible(true);
+        String result = (String) m.invoke(null,
+            "```\npublic void foo() {}\n```");
+        assertThat(result).isEqualTo("public void foo() {}");
+    }
+
+    @Test
+    @DisplayName("stripCodeFences returns empty string for null input")
+    void stripCodeFences_null_returnsEmpty() throws Exception {
+        Method m = FixAgent.class.getDeclaredMethod("stripCodeFences", String.class);
+        m.setAccessible(true);
+        String result = (String) m.invoke(null, (String) null);
+        assertThat(result).isEqualTo("");
+    }
+
+    @Test
+    @DisplayName("stripCodeFences returns trimmed text when no fences present")
+    void stripCodeFences_plainText_returnsTrimmed() throws Exception {
+        Method m = FixAgent.class.getDeclaredMethod("stripCodeFences", String.class);
+        m.setAccessible(true);
+        String result = (String) m.invoke(null, "  plain text  ");
+        assertThat(result).isEqualTo("plain text");
+    }
+
+    @Test
+    @DisplayName("stripCodeFences handles only opening fence (no closing)")
+    void stripCodeFences_onlyOpeningFence_stripsOpening() throws Exception {
+        Method m = FixAgent.class.getDeclaredMethod("stripCodeFences", String.class);
+        m.setAccessible(true);
+        String result = (String) m.invoke(null,
+            "```java\npublic void foo() {}");
+        assertThat(result).isEqualTo("public void foo() {}");
+    }
+
+    @Test
+    @DisplayName("stripCodeFences handles empty fence block")
+    void stripCodeFences_emptyFenceBlock_returnsEmpty() throws Exception {
+        Method m = FixAgent.class.getDeclaredMethod("stripCodeFences", String.class);
+        m.setAccessible(true);
+        String result = (String) m.invoke(null, "```\n```");
+        assertThat(result).isEqualTo("");
+    }
+
+    @Nested
+    @DisplayName("handleFollowUp")
+    class HandleFollowUpTests {
+
+        @Test
+        @DisplayName("pulls recent events and calls llm.chat with context")
+        void handleFollowUp_buildsContextFromRecentEvents() {
+            long sid = 100L;
+            List<AgentEvent> events = List.of(
+                buildEvent(sid, EventType.USER_MSG, "fix this NPE"),
+                buildEvent(sid, EventType.ASSISTANT_DELTA, "looking into it"),
+                buildEvent(sid, EventType.TOOL_USE, "git diff")
+            );
+            when(agentEventRepository.findBySessionId(sid)).thenReturn(events);
+            when(llm.chat(contains("You are assisting"), contains("Recent events")))
+                .thenReturn("Step 4 is running: generating repro test");
+
+            String reply = fixAgent.handleFollowUp(sid, "what's the status?");
+
+            assertThat(reply).isEqualTo("Step 4 is running: generating repro test");
+
+            ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
+            verify(llm).chat(anyString(), userPromptCaptor.capture());
+            String userPrompt = userPromptCaptor.getValue();
+            assertThat(userPrompt)
+                .contains("USER_MSG: fix this NPE")
+                .contains("ASSISTANT_DELTA: looking into it")
+                .contains("TOOL_USE: git diff")
+                .contains("User question: what's the status?");
+        }
+
+        @Test
+        @DisplayName("truncates to last 10 events when more exist")
+        void handleFollowUp_truncatesToLast10Events() {
+            long sid = 200L;
+            List<AgentEvent> events = new ArrayList<>();
+            for (int i = 0; i < 15; i++) {
+                events.add(buildEvent(sid, EventType.USER_MSG, "msg-" + i));
+            }
+            when(agentEventRepository.findBySessionId(sid)).thenReturn(events);
+            when(llm.chat(anyString(), anyString())).thenReturn("ok");
+
+            fixAgent.handleFollowUp(sid, "question");
+
+            ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
+            verify(llm).chat(anyString(), userPromptCaptor.capture());
+            String userPrompt = userPromptCaptor.getValue();
+            assertThat(userPrompt)
+                .contains("msg-14")
+                .doesNotContain("msg-0")
+                .doesNotContain("msg-4");   // boundary: 0..4 excluded, 5..14 included
+            assertThat(userPrompt).contains("msg-5");
+        }
+
+        @Test
+        @DisplayName("with empty history still calls llm with empty context")
+        void handleFollowUp_emptyHistory_stillCallsLlm() {
+            long sid = 300L;
+            when(agentEventRepository.findBySessionId(sid)).thenReturn(List.of());
+            when(llm.chat(anyString(), anyString())).thenReturn("no events yet");
+
+            String reply = fixAgent.handleFollowUp(sid, "anything?");
+
+            assertThat(reply).isEqualTo("no events yet");
+        }
+
+        @Test
+        @DisplayName("with exactly 10 events shows all of them")
+        void handleFollowUp_exactly10Events_showsAll() {
+            long sid = 400L;
+            List<AgentEvent> events = new ArrayList<>();
+            for (int i = 0; i < 10; i++) {
+                events.add(buildEvent(sid, EventType.USER_MSG, "msg-" + i));
+            }
+            when(agentEventRepository.findBySessionId(sid)).thenReturn(events);
+            when(llm.chat(anyString(), anyString())).thenReturn("ok");
+
+            fixAgent.handleFollowUp(sid, "question");
+
+            ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
+            verify(llm).chat(anyString(), userPromptCaptor.capture());
+            String userPrompt = userPromptCaptor.getValue();
+            assertThat(userPrompt).contains("msg-0").contains("msg-9");
+        }
+
+        @Test
+        @DisplayName("with null payload in event does not throw")
+        void handleFollowUp_nullEventPayload_doesNotThrow() {
+            long sid = 500L;
+            AgentEvent event = AgentEvent.builder()
+                .sessionId(sid).seq(0).type(EventType.TOOL_USE)
+                .payload(null).idempotencyKey("k").build();
+            when(agentEventRepository.findBySessionId(sid)).thenReturn(List.of(event));
+            when(llm.chat(anyString(), anyString())).thenReturn("ok");
+
+            String reply = fixAgent.handleFollowUp(sid, "q");
+            assertThat(reply).isEqualTo("ok");
+        }
+    }
+
+    @Test
+    @DisplayName("stripCodeFences handles fence with no newline after backticks")
+    void stripCodeFences_noNewlineAfterFence_returnsAsIs() throws Exception {
+        Method m = FixAgent.class.getDeclaredMethod("stripCodeFences", String.class);
+        m.setAccessible(true);
+        String result = (String) m.invoke(null, "```python print('hi')");
+        assertThat(result).isEqualTo("```python print('hi')");
+    }
+
+    @Test
+    @DisplayName("stripCodeFences handles text ending with ``` without opening fence")
+    void stripCodeFences_onlyClosingFence_returnsTrimmed() throws Exception {
+        Method m = FixAgent.class.getDeclaredMethod("stripCodeFences", String.class);
+        m.setAccessible(true);
+        String result = (String) m.invoke(null, "code here\n```");
+        assertThat(result).isEqualTo("code here\n```");
+    }
+
+    @Test
+    @DisplayName("generateFix with long source code does not truncate")
+    void generateFix_longSource_returnsFullResult() {
+        String longCode = "public void foo() {\n" + "    System.out.println(\"line\");\n".repeat(50) + "}";
+        when(llm.chat(anyString(), anyString())).thenReturn("fixed-long");
+
+        String result = fixAgent.generateFix(
+                "com.foo.Bar.longMethod", "RuntimeException",
+                "too long", "{}", longCode);
+
+        assertThat(result).isEqualTo("fixed-long");
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(llm).chat(anyString(), promptCaptor.capture());
+        assertThat(promptCaptor.getValue()).contains("System.out.println");
+    }
+
+    private static AgentEvent buildEvent(long sid, EventType type, String payload) {
+        return AgentEvent.builder()
+            .sessionId(sid)
+            .seq(0)
+            .type(type)
+            .payload(payload)
+            .idempotencyKey("test-" + sid + "-" + Math.abs(payload != null ? payload.hashCode() : 0))
+            .build();
+    }
+}

@@ -1,0 +1,235 @@
+package com.huawei.hisi.loganalysis.nodes;
+
+import com.huawei.hisi.ram.kg.KgMcpClient;
+import com.huawei.hisi.ram.kg.dto.CallTreeNode;
+import com.huawei.hisi.ram.kg.dto.Seed;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.*;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class KgSearchNodeTest {
+
+    @Mock
+    private KgMcpClient kgMcpClient;
+    private KgSearchNode kgSearchNode;
+
+    @BeforeEach
+    void setUp() { kgSearchNode = new KgSearchNode(kgMcpClient); }
+
+    @Test
+    @DisplayName("hybridSearch returns matched methods for search terms")
+    void hybridSearch_returnsMatchedMethods() {
+        when(kgMcpClient.hybridSearch(anyString(), anyList(), anyInt()))
+                .thenReturn(List.of(new Seed("node-1", 0.95, "com.example.Service#process")));
+        when(kgMcpClient.calleesTree(anyString(), anyString(), anyList(), anyInt())).thenReturn(null);
+
+        Map<String, Object> input = buildBaseInput("/path/to/project");
+        input.put("searchTerms", List.of("com.example.Service"));
+        input.put("keyFrames", List.of(Map.of("className", "com.example.Service", "methodName", "process")));
+
+        Map<String, Object> output = kgSearchNode.execute(input);
+        @SuppressWarnings("unchecked")
+        List<Seed> matchedMethods = (List<Seed>) output.get("matchedMethods");
+        assertThat(matchedMethods).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("progressive search: first batch empty, finds data in other frames")
+    void progressiveSearch_firstBatchEmptyThenFound() {
+        when(kgMcpClient.hybridSearch(anyString(), anyList(), anyInt()))
+                .thenAnswer(invocation -> {
+                    String term = invocation.getArgument(0);
+                    if (term.contains("OtherLib")) return List.of(new Seed("node-other-1", 0.90, "com.other.lib.OtherLib#run"));
+                    return Collections.emptyList();
+                });
+        when(kgMcpClient.calleesTree(anyString(), anyString(), anyList(), anyInt())).thenReturn(null);
+
+        Map<String, Object> input = buildBaseInput("/path/to/project");
+        input.put("searchTerms", List.of("com.vendor.Service"));
+        input.put("keyFrames", new ArrayList<>(List.of(Map.of("className", "com.vendor.Service", "methodName", "execute"))));
+        input.put("otherNonFrameworkFrames", List.of(
+                Map.of("className", "com.other.lib.OtherLib", "methodName", "run")));
+
+        Map<String, Object> output = kgSearchNode.execute(input);
+        @SuppressWarnings("unchecked")
+        List<Seed> matchedMethods = (List<Seed>) output.get("matchedMethods");
+        assertThat(matchedMethods).isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("progressive search: all batches empty returns empty without error")
+    void progressiveSearch_allBatchesEmpty() {
+        Map<String, Object> input = buildBaseInput("/path/to/project");
+        input.put("searchTerms", Collections.emptyList());
+        input.put("keyFrames", Collections.emptyList());
+        input.put("otherNonFrameworkFrames", List.of(Map.of("className", "c1", "methodName", "m1")));
+
+        Map<String, Object> output = kgSearchNode.execute(input);
+        @SuppressWarnings("unchecked")
+        List<Seed> matchedMethods = (List<Seed>) output.get("matchedMethods");
+        assertThat(matchedMethods).isEmpty();
+    }
+
+    @Test
+    @DisplayName("null projectPath skips KG search entirely")
+    void nullProjectPath_skipsSearch() {
+        Map<String, Object> input = buildBaseInput(null);
+        input.put("searchTerms", List.of("com.example.Service"));
+        kgSearchNode.execute(input);
+        verify(kgMcpClient, never()).hybridSearch(anyString(), anyList(), anyInt());
+    }
+
+    @Test
+    @DisplayName("empty projectPath skips KG search")
+    void emptyProjectPath_skipsSearch() {
+        Map<String, Object> input = buildBaseInput("");
+        input.put("searchTerms", List.of("com.example.Service"));
+        kgSearchNode.execute(input);
+        verify(kgMcpClient, never()).hybridSearch(anyString(), anyList(), anyInt());
+    }
+
+    @Test
+    @DisplayName("parseProjectPaths splits comma-separated paths")
+    void parseProjectPaths_splitsCommaSeparated() {
+        when(kgMcpClient.hybridSearch(anyString(), anyList(), anyInt())).thenReturn(Collections.emptyList());
+
+        Map<String, Object> input = buildBaseInput("/path/a, /path/b, /path/c");
+        input.put("searchTerms", List.of("com.example.Service"));
+        input.put("keyFrames", new ArrayList<Map<String, Object>>());
+        kgSearchNode.execute(input);
+
+        verify(kgMcpClient).hybridSearch(eq("com.example.Service"), argThat(list ->
+                list.size() == 3 && list.contains("/path/a")), anyInt());
+    }
+
+    @Test
+    @DisplayName("handles KG API failure gracefully")
+    void kgApiFailure_continuesGracefully() {
+        when(kgMcpClient.hybridSearch(anyString(), anyList(), anyInt()))
+                .thenThrow(new RuntimeException("KG service unavailable"));
+        when(kgMcpClient.calleesTree(anyString(), anyString(), anyList(), anyInt())).thenReturn(null);
+
+        Map<String, Object> input = buildBaseInput("/path/to/project");
+        input.put("searchTerms", List.of("com.example.Service"));
+        input.put("keyFrames", List.of(Map.of("className", "com.example.Service", "methodName", "process")));
+
+        Map<String, Object> output = kgSearchNode.execute(input);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> eps = (List<Map<String, Object>>) output.get("entryPointsWithLayers");
+        assertThat(eps).isNotEmpty(); // fallback generated
+    }
+
+    @Test
+    @DisplayName("fallback entry points generated when KG returns empty")
+    void entryPoints_fallbackWhenKgEmpty() {
+        when(kgMcpClient.calleesTree(anyString(), anyString(), anyList(), anyInt())).thenReturn(null);
+
+        Map<String, Object> input = buildBaseInput("/path/to/project");
+        input.put("searchTerms", Collections.emptyList());
+        input.put("keyFrames", List.of(Map.of("className", "com.example.Svc", "methodName", "process")));
+
+        Map<String, Object> output = kgSearchNode.execute(input);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> eps = (List<Map<String, Object>>) output.get("entryPointsWithLayers");
+        assertThat(eps).isNotEmpty();
+        assertThat(eps.get(0).get("source")).isEqualTo("stack_trace");
+    }
+
+    @Test
+    @DisplayName("builds call chains for key frames")
+    void callChains_builtFromKeyFrames() {
+        when(kgMcpClient.calleesTree(anyString(), anyString(), anyList(), anyInt()))
+                .thenReturn(new CallTreeNode("c1", "com.example.Callee", "invoke", 1,
+                        List.of(new CallTreeNode("c2", "com.example.Deep", "run", 2, null))));
+
+        Map<String, Object> input = buildBaseInput("/path/to/project");
+        input.put("searchTerms", Collections.emptyList());
+        input.put("keyFrames", List.of(Map.of("className", "com.example.Service", "methodName", "process")));
+
+        Map<String, Object> output = kgSearchNode.execute(input);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> callChains = (List<Map<String, Object>>) output.get("callChains");
+        assertThat(callChains).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("search query passes searchTerms from ParseNode to hybridSearch")
+    void searchQuery_usesParseNodeSearchTerms() {
+        when(kgMcpClient.hybridSearch(anyString(), anyList(), anyInt())).thenReturn(Collections.emptyList());
+
+        Map<String, Object> input = buildBaseInput("/path/to/project");
+        input.put("searchTerms", List.of("com.example.Service", "com.example.Handler"));
+
+        kgSearchNode.execute(input);
+
+        verify(kgMcpClient).hybridSearch(eq("com.example.Service"), anyList(), anyInt());
+        verify(kgMcpClient).hybridSearch(eq("com.example.Handler"), anyList(), anyInt());
+    }
+
+    @Test
+    @DisplayName("output contains matchedMethods even when empty")
+    void output_containsMatchedMethods() {
+        Map<String, Object> input = buildBaseInput("/path/to/project");
+        input.put("searchTerms", Collections.emptyList());
+
+        Map<String, Object> output = kgSearchNode.execute(input);
+
+        assertThat(output).containsKeys("matchedMethods", "callChains", "entryPoints",
+                "entryPointsWithLayers", "businessEntryPoints", "rootCauseEntryPoints");
+    }
+
+    @Test
+    @DisplayName("deep mode includes rootCauseEntryPoints in output")
+    void deepMode_rootCauseEntryPoints() {
+        when(kgMcpClient.rootEntries(anyString(), anyString(), anyList()))
+                .thenReturn(List.of(new com.huawei.hisi.ram.kg.dto.Entry("e1", "c1", "m1", "SCHEDULED")));
+
+        Map<String, Object> input = buildBaseInput("/path/to/project");
+        input.put("searchTerms", Collections.emptyList());
+        input.put("rootCauseFrames", List.of(Map.of("className", "c1", "methodName", "m1")));
+        input.put("deepMode", true);
+
+        Map<String, Object> output = kgSearchNode.execute(input);
+        @SuppressWarnings("unchecked")
+        List<?> rootCauseEps = (List<?>) output.get("rootCauseEntryPoints");
+        assertThat(rootCauseEps).isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("kg_root_entries failure per-frame does not break the loop")
+    void entryPoints_perFrameFailureContinues() {
+        when(kgMcpClient.rootEntries(anyString(), anyString(), anyList()))
+                .thenThrow(new RuntimeException("KG error for first frame"))
+                .thenReturn(List.of(new com.huawei.hisi.ram.kg.dto.Entry("e2", "c2", "m2", "CONTROLLER")));
+
+        Map<String, Object> input = buildBaseInput("/path/to/project");
+        input.put("searchTerms", Collections.emptyList());
+        input.put("businessFrames", List.of(
+                Map.of("className", "c1", "methodName", "m1"),
+                Map.of("className", "c2", "methodName", "m2")));
+
+        Map<String, Object> output = kgSearchNode.execute(input);
+        @SuppressWarnings("unchecked")
+        List<?> eps = (List<?>) output.get("businessEntryPoints");
+        // Should have results from the second frame despite first failing
+        assertThat(eps).isNotEmpty();
+    }
+
+    private Map<String, Object> buildBaseInput(String projectPath) {
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("projectPath", projectPath);
+        input.put("searchTerms", Collections.emptyList());
+        input.put("keyFrames", Collections.emptyList());
+        return input;
+    }
+}

@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Verify Stage Output",
+  "type": "object",
+  "required": ["checks", "pass", "blockers"],
+  "properties": {
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "passed", "detail"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "acceptance_criteria_addressed",
+              "api_changes_consistent",
+              "state_changes_complete",
+              "data_migration_covered",
+              "impact_validation_passed",
+              "change_coverage_ratio"
+            ]
+          },
+          "passed": { "type": "boolean" },
+          "detail": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "pass": { "type": "boolean" },
+    "blockers": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}
