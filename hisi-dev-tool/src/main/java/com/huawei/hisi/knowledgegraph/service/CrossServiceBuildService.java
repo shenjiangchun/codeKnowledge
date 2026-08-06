@@ -14,7 +14,7 @@ import java.util.List;
 public class CrossServiceBuildService {
 
     private final Neo4jMethodNodeRepository methodRepo;
-    private final IncrementalRefreshService refreshService;
+    private final IncrementalKnowledgeGraphBuilder incrementalBuilder;
     private final CrossServiceLinker linker;
 
     public void build(List<String> projectPaths) {
@@ -28,7 +28,7 @@ public class CrossServiceBuildService {
         // 2. Incremental refresh each project
         for (String path : projectPaths) {
             try {
-                refreshService.refresh(path);
+                incrementalBuilder.incrementalRefresh(path);
             } catch (Exception e) {
                 log.warn("Refresh skipped for {}: {}", path, e.getMessage());
             }

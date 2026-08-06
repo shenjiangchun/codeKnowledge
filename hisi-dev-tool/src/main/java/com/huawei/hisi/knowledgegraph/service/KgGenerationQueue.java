@@ -39,6 +39,7 @@ public class KgGenerationQueue {
     private static final long VECTOR_MAX_WAIT_SECONDS = 3600;
 
     private final KnowledgeGraphBuilder knowledgeGraphBuilder;
+    private final IncrementalKnowledgeGraphBuilder incrementalBuilder;
     private final GenerationTaskRepository taskRepository;
 
     private final LinkedBlockingQueue<QueueItem> queue = new LinkedBlockingQueue<>();
@@ -48,14 +49,17 @@ public class KgGenerationQueue {
     private final AtomicReference<String> currentProcessing = new AtomicReference<>(null);
 
     public KgGenerationQueue(KnowledgeGraphBuilder knowledgeGraphBuilder,
+                             IncrementalKnowledgeGraphBuilder incrementalBuilder,
                              GenerationTaskRepository taskRepository) {
         this.knowledgeGraphBuilder = knowledgeGraphBuilder;
+        this.incrementalBuilder = incrementalBuilder;
         this.taskRepository = taskRepository;
     }
 
     // ==================== 内部队列项 ====================
 
-    record QueueItem(String projectPath, List<String> excludePaths, Long taskId) {}
+    record QueueItem(String projectPath, List<String> excludePaths, Long taskId,
+                     boolean incremental) {}
 
     // ==================== 生命周期 ====================
 
@@ -114,8 +118,38 @@ public class KgGenerationQueue {
                 .build();
         genTask = taskRepository.insert(genTask);
 
-        queue.offer(new QueueItem(projectPath, excludePaths, genTask.getId()));
+        queue.offer(new QueueItem(projectPath, excludePaths, genTask.getId(), false));
         log.info("[KG Queue] Enqueued: projectPath={}, taskId={}, queueSize={}",
+                projectPath, genTask.getId(), queue.size());
+
+        return toKnowledgeGraphTask(genTask);
+    }
+
+    /**
+     * 增量刷新入队。与全量构建共享同一队列，严格串行。
+     *
+     * @return 创建的 KG 任务（PENDING 状态）
+     */
+    public KnowledgeGraphTask enqueueIncremental(String rawProjectPath) {
+        String projectPath = KnowledgeGraphCommonUtils.normalizePath(rawProjectPath);
+        validateProjectPath(projectPath);
+
+        if (projectPath.equals(currentProcessing.get())) {
+            throw new IllegalStateException("该项目正在生成中: " + projectPath);
+        }
+        if (isInQueue(projectPath)) {
+            throw new IllegalStateException("该项目已在队列中等待: " + projectPath);
+        }
+
+        GenerationTask genTask = GenerationTask.builder()
+                .taskType(KG_TASK_TYPE)
+                .projectPath(projectPath)
+                .status("PENDING")
+                .build();
+        genTask = taskRepository.insert(genTask);
+
+        queue.offer(new QueueItem(projectPath, null, genTask.getId(), true));
+        log.info("[KG Queue] Enqueued incremental: projectPath={}, taskId={}, queueSize={}",
                 projectPath, genTask.getId(), queue.size());
 
         return toKnowledgeGraphTask(genTask);
@@ -207,30 +241,33 @@ public class KgGenerationQueue {
     }
 
     /**
-     * 处理单个项目：KG 生成 → 等待向量完成。
-     *
-     * <p>KnowledgeGraphBuilder.buildKnowledgeGraph() 内部：
-     * 1. 通过 Semaphore 串行化（队列消费线程独占，不会阻塞）
-     * 2. 完成后自动调用 vectorGenerationService.startVectorGeneration()（异步）
-     *
-     * <p>我们在此方法中轮询等待向量任务完成，确保"完整完成"后再取下一个。
+     * 处理单个项目：根据 incremental 标记分发到全量或增量构建。
      */
     private void processItem(QueueItem item) {
         long startTime = System.currentTimeMillis();
-
-        // 1. 标记任务开始
         taskRepository.updateStarted(item.taskId());
 
-        // 2. 执行 KG 构建（内部会自动触发异步向量生成）
-        knowledgeGraphBuilder.buildKnowledgeGraph(item.projectPath(), item.excludePaths());
-
-        // 3. 标记 KG 任务完成
-        taskRepository.updateCompleted(item.taskId(), 0, 0, 0, 0);
+        if (item.incremental()) {
+            // 增量刷新
+            IncrementalKnowledgeGraphBuilder.RefreshResult result =
+                    incrementalBuilder.incrementalRefresh(item.projectPath());
+            if (result.success()) {
+                taskRepository.updateCompleted(item.taskId(), 0, 0, 0, 0);
+            } else {
+                taskRepository.updateFailed(item.taskId(), "Incremental refresh returned failure");
+                return;
+            }
+        } else {
+            // 全量构建（内部自动触发异步向量生成）
+            knowledgeGraphBuilder.buildKnowledgeGraph(item.projectPath(), item.excludePaths());
+            taskRepository.updateCompleted(item.taskId(), 0, 0, 0, 0);
+        }
 
         long kgTime = System.currentTimeMillis() - startTime;
-        log.info("[KG Queue] KG completed: projectPath={}, costMs={}", item.projectPath(), kgTime);
+        log.info("[KG Queue] {} completed: projectPath={}, costMs={}",
+                item.incremental() ? "Incremental" : "KG", item.projectPath(), kgTime);
 
-        // 4. 等待向量生成完成
+        // 等待向量生成完成
         waitForVectorCompletion(item.projectPath());
 
         long totalTime = System.currentTimeMillis() - startTime;

@@ -62,60 +62,60 @@ import java.util.stream.Collectors;
 @Slf4j
 public class KnowledgeGraphBuilder {
 
-    private final CodeAnalysisCoreService coreService;
-    private final GlobalAnalysisCache globalCache;
+    protected final CodeAnalysisCoreService coreService;
+    protected final GlobalAnalysisCache globalCache;
 
     // Neo4j 存储服务（核心图数据）
-    private final KnowledgeGraphStorageService storageService;
+    protected final KnowledgeGraphStorageService storageService;
 
     // Neo4j SQL 节点 Repository（替代 PostgreSQL MyBatisSqlRepository）
-    private final Neo4jSqlNodeRepository neo4jSqlNodeRepository;
+    protected final Neo4jSqlNodeRepository neo4jSqlNodeRepository;
 
     // Neo4j 方法节点 Repository（用于 IMPLEMENTS 关系验证）
-    private final Neo4jMethodNodeRepository neo4jMethodNodeRepository;
+    protected final Neo4jMethodNodeRepository neo4jMethodNodeRepository;
 
     // Neo4j 入口点 Repository
-    private final com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository neo4jEntryPointNodeRepository;
+    protected final com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository neo4jEntryPointNodeRepository;
 
     // Mapper 调用解析器
-    private final MapperCallResolver mapperCallResolver;
+    protected final MapperCallResolver mapperCallResolver;
 
     // 新增扫描器依赖
-    private final FeignClientScanner feignClientScanner;
-    private final MQEndpointScanner mqEndpointScanner;
-    private final HttpCallScanner httpCallScanner;
-    private final ProxyClassScanner proxyClassScanner;
-    private final MyBatisXmlScanner myBatisXmlScanner;
+    protected final FeignClientScanner feignClientScanner;
+    protected final MQEndpointScanner mqEndpointScanner;
+    protected final HttpCallScanner httpCallScanner;
+    protected final ProxyClassScanner proxyClassScanner;
+    protected final MyBatisXmlScanner myBatisXmlScanner;
 
     // 向量生成服务
-    private final VectorGenerationService vectorGenerationService;
+    protected final VectorGenerationService vectorGenerationService;
 
     // 向量生成任务 Repository (unified)
-    private final GenerationTaskRepository generationTaskRepository;
+    protected final GenerationTaskRepository generationTaskRepository;
 
     // Git 状态服务（用于增量更新）
-    private final GitStatusService gitStatusService;
+    protected final GitStatusService gitStatusService;
 
     // Python 知识图谱构建器
-    private final PythonKnowledgeGraphBuilder pythonKnowledgeGraphBuilder;
+    protected final PythonKnowledgeGraphBuilder pythonKnowledgeGraphBuilder;
 
     // Neo4j 增量刷新 Checkpoint 仓库
-    private final Neo4jGenerationCheckpointRepository checkpointRepository;
+    protected final Neo4jGenerationCheckpointRepository checkpointRepository;
 
     // 数据模型扫描器
-    private final JavaDataModelScanner javaDataModelScanner;
+    protected final JavaDataModelScanner javaDataModelScanner;
 
     // 全局信号量：同一时刻只允许一个项目执行知识图谱生成
     // 因为 GlobalAnalysisCache 是单例，并发生成会导致缓存互相覆盖
-    private final Semaphore generationSemaphore = new Semaphore(1, true);
+    protected final Semaphore generationSemaphore = new Semaphore(1, true);
 
     // Neo4j 数据模型节点 Repository
-    private final Neo4jDataModelNodeRepository neo4jDataModelNodeRepository;
+    protected final Neo4jDataModelNodeRepository neo4jDataModelNodeRepository;
 
     // codegraph sidecar 相关依赖（TS/JS/Vue 走 codegraph 路径）
-    private final CodegraphSidecarService codegraphSidecarService;
-    private final CodegraphSqliteReader codegraphSqliteReader;
-    private final CodegraphToNeo4jTransformer codegraphTransformer;
+    protected final CodegraphSidecarService codegraphSidecarService;
+    protected final CodegraphSqliteReader codegraphSqliteReader;
+    protected final CodegraphToNeo4jTransformer codegraphTransformer;
 
     public KnowledgeGraphBuilder(
             CodeAnalysisCoreService coreService,
@@ -185,7 +185,7 @@ public class KnowledgeGraphBuilder {
         }
     }
 
-    private Map<String, Object> doBuildKnowledgeGraph(String projectPath, List<String> excludePaths) {
+    protected Map<String, Object> doBuildKnowledgeGraph(String projectPath, List<String> excludePaths) {
         // 入口规范化：把反斜杠统一成正斜杠，并去尾斜杠，确保 Neo4j 节点的 projectPath
         // 始终使用规范形态。否则同一份代码用 \ 和 / 调两次会产生两套重复节点。
         String rawInput = projectPath;
@@ -223,7 +223,7 @@ public class KnowledgeGraphBuilder {
     /**
      * Build Python knowledge graph by delegating to PythonKnowledgeGraphBuilder.
      */
-    private Map<String, Object> buildPythonKnowledgeGraph(String projectPath, List<String> excludePaths, long startTime) {
+    protected Map<String, Object> buildPythonKnowledgeGraph(String projectPath, List<String> excludePaths, long startTime) {
         log.info("[KG Build] Building Python knowledge graph...");
 
         // 1. 清理旧数据
@@ -275,7 +275,7 @@ public class KnowledgeGraphBuilder {
      * 不调用 vectorGenerationService / LLMDescriptionService / DataModelScanner 等后处理
      * （TS/JS 后处理是 Phase 2 的工作）。
      */
-    private Map<String, Object> buildCodegraphKnowledgeGraph(String projectPath, long startTime, Language language) {
+    protected Map<String, Object> buildCodegraphKnowledgeGraph(String projectPath, long startTime, Language language) {
         log.info("[KG Build] Building {} knowledge graph via codegraph sidecar...", language);
 
         // 1. 清理旧数据
@@ -330,7 +330,7 @@ public class KnowledgeGraphBuilder {
     /**
      * Build Java knowledge graph (existing logic).
      */
-    private Map<String, Object> buildJavaKnowledgeGraph(String projectPath, List<String> excludePaths, long startTime) {
+    protected Map<String, Object> buildJavaKnowledgeGraph(String projectPath, List<String> excludePaths, long startTime) {
         log.info("[KG Build] Building Java knowledge graph...");
 
         // 1. 清理旧数据
@@ -628,7 +628,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 使用桥接扫描器扫描端点信息
      */
-    private void scanBridgeEndpoints(List<Path> javaFilePaths, String projectPath) {
+    protected void scanBridgeEndpoints(List<Path> javaFilePaths, String projectPath) {
         log.info("开始扫描桥接端点...");
 
         // 扫描 FeignClient
@@ -651,7 +651,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 识别桥接调用（Mapper/JPA/Feign/MQ/HTTP）
      */
-    private List<Map<String, Object>> identifyBridgeCalls(List<Map<String, Object>> existingRelations, String projectPath) {
+    protected List<Map<String, Object>> identifyBridgeCalls(List<Map<String, Object>> existingRelations, String projectPath) {
         List<Map<String, Object>> bridgeRelations = new ArrayList<>();
 
         // 遍历现有调用关系，识别桥接类型
@@ -688,7 +688,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 构建 MQ 桥接调用关系
      */
-    private List<Map<String, Object>> buildMqBridgeRelations(String projectPath) {
+    protected List<Map<String, Object>> buildMqBridgeRelations(String projectPath) {
         List<Map<String, Object>> relations = new ArrayList<>();
 
         // 从生产者索引和消费者索引构建桥接关系
@@ -724,7 +724,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 构建 HTTP/Feign 桥接调用关系
      */
-    private List<Map<String, Object>> buildHttpBridgeRelations(String projectPath) {
+    protected List<Map<String, Object>> buildHttpBridgeRelations(String projectPath) {
         List<Map<String, Object>> relations = new ArrayList<>();
 
         // 从 Feign URI 索引构建桥接关系
@@ -764,7 +764,7 @@ public class KnowledgeGraphBuilder {
      * 构建 EXECUTES_SQL 关系
      * 当方法调用 Mapper 时，创建从 Method 到 SqlNode 的关系
      */
-    private List<Map<String, Object>> buildExecutesSqlRelations(
+    protected List<Map<String, Object>> buildExecutesSqlRelations(
             List<Map<String, Object>> allCallRelations,
             List<SqlNode> sqlNodes,
             Map<String, String> methodSignatureToNodeId) {
@@ -803,7 +803,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 从方法 ID 提取接口名
      */
-    private String extractInterfaceName(String methodId) {
+    protected String extractInterfaceName(String methodId) {
         if (methodId == null) return "";
         int lastDot = methodId.lastIndexOf(".");
         return lastDot > 0 ? methodId.substring(0, lastDot) : methodId;
@@ -812,7 +812,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 从方法 ID 提取方法名
      */
-    private String extractMethodName(String methodId) {
+    protected String extractMethodName(String methodId) {
         if (methodId == null) return "";
         int lastDot = methodId.lastIndexOf(".");
         return lastDot > 0 ? methodId.substring(lastDot + 1) : methodId;
@@ -821,7 +821,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 从方法 ID 提取类名
      */
-    private String extractClassName(String methodId) {
+    protected String extractClassName(String methodId) {
         if (methodId == null) return "";
         int lastDot = methodId.lastIndexOf(".");
         return lastDot > 0 ? methodId.substring(0, lastDot) : methodId;
@@ -831,7 +831,7 @@ public class KnowledgeGraphBuilder {
      * 扫描方法节点
      * 包括普通方法、静态方法、构造方法
      */
-    private List<MethodNode> scanMethodNodes(CompilationUnit cu, String filePath, String projectPath) {
+    protected List<MethodNode> scanMethodNodes(CompilationUnit cu, String filePath, String projectPath) {
         List<MethodNode> nodes = new ArrayList<>();
 
         String packageName = cu.getPackageDeclaration()
@@ -938,7 +938,7 @@ public class KnowledgeGraphBuilder {
      * 修复: 遍历 implementationMap，找出每对 interface→impl 关系中，
      * 父接口有但子接口/实现类缺少的方法，为缺少的方法创建合成 MethodNode。
      */
-    private List<MethodNode> synthesizeInheritedMethodNodes(List<MethodNode> existingNodes, String projectPath) {
+    protected List<MethodNode> synthesizeInheritedMethodNodes(List<MethodNode> existingNodes, String projectPath) {
         List<MethodNode> syntheticNodes = new ArrayList<>();
 
         // 建立 className -> List<MethodNode> 索引（保留所有重载方法）
@@ -1046,7 +1046,7 @@ public class KnowledgeGraphBuilder {
      * 复用 CodeAnalysisCoreService.findMethodCallTargets 的复杂解析逻辑
      * 增强：支持静态方法调用、构造方法调用
      */
-    private List<Map<String, Object>> scanCallRelationsWithCoreService(
+    protected List<Map<String, Object>> scanCallRelationsWithCoreService(
             CompilationUnit cu, String projectPath,
             Map<String, String> methodSignatureToNodeId,
             Map<String, String> methodFullKeyToNodeId,
@@ -1265,7 +1265,7 @@ public class KnowledgeGraphBuilder {
      * 解析静态方法调用
      * 处理类似 ApiResponse.success()、LocalDateTime.now() 等静态方法
      */
-    private Map<String, Object> resolveStaticMethodCall(MethodCallExpr call, String callerId,
+    protected Map<String, Object> resolveStaticMethodCall(MethodCallExpr call, String callerId,
             Map<String, String> methodSignatureToNodeId, String projectPath) {
 
         if (!call.getScope().isPresent()) {
@@ -1352,7 +1352,7 @@ public class KnowledgeGraphBuilder {
      * TypeSolver 无法解析到目标方法时，至少保证建立与接口方法的 CALLS 关系，
      * 而不是静默丢弃调用边。
      */
-    private Map<String, Object> resolveInferredFieldCall(
+    protected Map<String, Object> resolveInferredFieldCall(
             MethodCallExpr call, com.github.javaparser.ast.body.ClassOrInterfaceDeclaration clazz,
             String scopeName, String callerId,
             Map<String, String> methodSignatureToNodeId) {
@@ -1397,7 +1397,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 从 CompilationUnit 的 import 声明中解析字段类型的全限定名
      */
-    private String resolveFieldTypeNameFromImports(String simpleTypeName, com.github.javaparser.ast.body.ClassOrInterfaceDeclaration clazz) {
+    protected String resolveFieldTypeNameFromImports(String simpleTypeName, com.github.javaparser.ast.body.ClassOrInterfaceDeclaration clazz) {
         return clazz.findCompilationUnit()
             .map(cu -> cu.getImports().stream()
                 .filter(imp -> imp.getNameAsString().endsWith("." + simpleTypeName))
@@ -1411,7 +1411,7 @@ public class KnowledgeGraphBuilder {
      * 创建入口点（从 CompilationUnit 解析）
      * 支持多种入口类型：HTTP、MQ、定时任务、事件监听等
      */
-    private List<EntryPointNode> createEntryPoints(CompilationUnit cu, String projectPath) {
+    protected List<EntryPointNode> createEntryPoints(CompilationUnit cu, String projectPath) {
         List<EntryPointNode> entryPoints = new ArrayList<>();
 
         String packageName = cu.getPackageDeclaration()
@@ -1661,7 +1661,7 @@ public class KnowledgeGraphBuilder {
      *   ]
      * }
      */
-    private String buildEntryInfo(String className, MethodDeclaration method) {
+    protected String buildEntryInfo(String className, MethodDeclaration method) {
         try {
             StringBuilder sb = new StringBuilder();
             sb.append("{\"className\":\"").append(escapeJson(className)).append("\"");
@@ -1722,7 +1722,7 @@ public class KnowledgeGraphBuilder {
         }
     }
 
-    private static String escapeJson(String s) {
+    protected static String escapeJson(String s) {
         if (s == null) return "";
         return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
@@ -1731,7 +1731,7 @@ public class KnowledgeGraphBuilder {
      * 从注解中提取 value 属性值
      * 支持 @PathVariable("id") 和 @PathVariable(value = "id")
      */
-    private String extractAnnotationValue(com.github.javaparser.ast.expr.AnnotationExpr ann) {
+    protected String extractAnnotationValue(com.github.javaparser.ast.expr.AnnotationExpr ann) {
         if (ann instanceof com.github.javaparser.ast.expr.SingleMemberAnnotationExpr single) {
             return single.getMemberValue().toString().replace("\"", "");
         }
@@ -1748,7 +1748,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 从注解中提取指定属性的值
      */
-    private String extractAnnotationAttribute(com.github.javaparser.ast.expr.AnnotationExpr ann, String attrName) {
+    protected String extractAnnotationAttribute(com.github.javaparser.ast.expr.AnnotationExpr ann, String attrName) {
         if (ann instanceof com.github.javaparser.ast.expr.NormalAnnotationExpr normal) {
             for (var pair : normal.getPairs()) {
                 if (pair.getNameAsString().equals(attrName)) {
@@ -1763,7 +1763,7 @@ public class KnowledgeGraphBuilder {
         }
         return null;
     }
-    private String extractClassLevelPath(com.github.javaparser.ast.body.ClassOrInterfaceDeclaration clazz) {
+    protected String extractClassLevelPath(com.github.javaparser.ast.body.ClassOrInterfaceDeclaration clazz) {
         for (com.github.javaparser.ast.expr.AnnotationExpr annotation : clazz.getAnnotations()) {
             if (annotation.getNameAsString().equals("RequestMapping")) {
                 return extractPathFromAnnotation(annotation);
@@ -1775,14 +1775,14 @@ public class KnowledgeGraphBuilder {
     /**
      * 提取方法级别的 URI 路径
      */
-    private String extractMethodLevelPath(com.github.javaparser.ast.expr.AnnotationExpr annotation) {
+    protected String extractMethodLevelPath(com.github.javaparser.ast.expr.AnnotationExpr annotation) {
         return extractPathFromAnnotation(annotation);
     }
 
     /**
      * 从注解提取路径值
      */
-    private String extractPathFromAnnotation(com.github.javaparser.ast.expr.AnnotationExpr annotation) {
+    protected String extractPathFromAnnotation(com.github.javaparser.ast.expr.AnnotationExpr annotation) {
         String path = "";
 
         // 尝试从注解中提取路径值
@@ -1809,7 +1809,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 拼接类级别和方法级别的路径
      */
-    private String combinePaths(String classPath, String methodPath) {
+    protected String combinePaths(String classPath, String methodPath) {
         classPath = classPath == null ? "" : classPath;
         methodPath = methodPath == null ? "" : methodPath;
 
@@ -1831,7 +1831,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 根据注解名提取 HTTP 方法
      */
-    private String extractHttpMethod(String annotationName) {
+    protected String extractHttpMethod(String annotationName) {
         return switch (annotationName) {
             case "GetMapping" -> "GET";
             case "PostMapping" -> "POST";
@@ -1845,7 +1845,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 从 @FeignClient 注解提取 serviceName (name/value 属性)
      */
-    private String extractFeignServiceName(com.github.javaparser.ast.body.ClassOrInterfaceDeclaration clazz) {
+    protected String extractFeignServiceName(com.github.javaparser.ast.body.ClassOrInterfaceDeclaration clazz) {
         for (com.github.javaparser.ast.expr.AnnotationExpr annotation : clazz.getAnnotations()) {
             if (!annotation.getNameAsString().equals("FeignClient")) continue;
 
@@ -1867,7 +1867,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 从 @FeignClient 注解提取 path 属性
      */
-    private String extractFeignPath(com.github.javaparser.ast.body.ClassOrInterfaceDeclaration clazz) {
+    protected String extractFeignPath(com.github.javaparser.ast.body.ClassOrInterfaceDeclaration clazz) {
         for (com.github.javaparser.ast.expr.AnnotationExpr annotation : clazz.getAnnotations()) {
             if (!annotation.getNameAsString().equals("FeignClient")) continue;
 
@@ -1892,7 +1892,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 从注解提取 Topic
      */
-    private String extractTopicFromAnnotation(com.github.javaparser.ast.expr.AnnotationExpr annotation) {
+    protected String extractTopicFromAnnotation(com.github.javaparser.ast.expr.AnnotationExpr annotation) {
         if (annotation instanceof com.github.javaparser.ast.expr.SingleMemberAnnotationExpr) {
             com.github.javaparser.ast.expr.SingleMemberAnnotationExpr singleMember =
                 (com.github.javaparser.ast.expr.SingleMemberAnnotationExpr) annotation;
@@ -1914,7 +1914,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 从 @Scheduled 注解提取 cron 表达式
      */
-    private String extractScheduledCron(com.github.javaparser.ast.expr.AnnotationExpr annotation) {
+    protected String extractScheduledCron(com.github.javaparser.ast.expr.AnnotationExpr annotation) {
         if (annotation instanceof com.github.javaparser.ast.expr.NormalAnnotationExpr) {
             com.github.javaparser.ast.expr.NormalAnnotationExpr normalAnnotation =
                 (com.github.javaparser.ast.expr.NormalAnnotationExpr) annotation;
@@ -1930,7 +1930,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 从事件监听注解提取事件类型
      */
-    private String extractEventType(com.github.javaparser.ast.expr.AnnotationExpr annotation) {
+    protected String extractEventType(com.github.javaparser.ast.expr.AnnotationExpr annotation) {
         if (annotation instanceof com.github.javaparser.ast.expr.SingleMemberAnnotationExpr) {
             com.github.javaparser.ast.expr.SingleMemberAnnotationExpr singleMember =
                 (com.github.javaparser.ast.expr.SingleMemberAnnotationExpr) annotation;
@@ -1950,7 +1950,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 从 GlobalCache 转换接口-实现关系到专用表
      */
-    private List<InterfaceImplementation> convertFromGlobalCache(String projectPath) {
+    protected List<InterfaceImplementation> convertFromGlobalCache(String projectPath) {
         List<InterfaceImplementation> impls = new ArrayList<>();
 
         // 1. 直接的 implements 关系
@@ -1999,7 +1999,7 @@ public class KnowledgeGraphBuilder {
     /**
      * BFS 沿继承链向上追溯，收集祖先类直接实现的所有接口
      */
-    private Set<String> resolveAncestorInterfaces(
+    protected Set<String> resolveAncestorInterfaces(
             String className,
             Map<String, Set<String>> extendMap,
             Map<String, Set<String>> implMap,
@@ -2033,7 +2033,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 保存知识图谱生成日志（供增量更新使用）
      */
-    private void saveGenerationLog(String projectPath, int methodCount, int callRelationCount,
+    protected void saveGenerationLog(String projectPath, int methodCount, int callRelationCount,
                                    int entryPointCount, int implCount, long startTime) {
         // Normalize path to ensure consistency
         String normalizedProjectPath = com.huawei.hisi.knowledgegraph.util.ProjectPathResolver.normalize(projectPath);
@@ -2096,7 +2096,7 @@ public class KnowledgeGraphBuilder {
         }
     }
 
-    private void cleanOldData(String projectPath) {
+    protected void cleanOldData(String projectPath) {
         // 1. 清理 Neo4j 核心图数据（方法节点、入口点、调用关系、DataModel、向量和描述）
         log.info("[Neo4j] 清理旧数据: {}", projectPath);
         storageService.cleanProjectData(projectPath);
@@ -2117,7 +2117,7 @@ public class KnowledgeGraphBuilder {
         generationTaskRepository.deleteByProjectPath(projectPath);
     }
 
-    private CombinedTypeSolver buildSolver(List<Path> sourceRoots) {
+    protected CombinedTypeSolver buildSolver(List<Path> sourceRoots) {
         CombinedTypeSolver solver = new CombinedTypeSolver();
         solver.add(new com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver());
         for (Path root : sourceRoots) {
@@ -2126,7 +2126,7 @@ public class KnowledgeGraphBuilder {
         return solver;
     }
 
-    private int calculateComplexity(MethodDeclaration method) {
+    protected int calculateComplexity(MethodDeclaration method) {
         int complexity = 1;
         complexity += method.findAll(com.github.javaparser.ast.stmt.IfStmt.class).size();
         complexity += method.findAll(com.github.javaparser.ast.stmt.ForStmt.class).size();
@@ -2142,7 +2142,7 @@ public class KnowledgeGraphBuilder {
         return complexity;
     }
 
-    private String getMethodClassName(MethodDeclaration method) {
+    protected String getMethodClassName(MethodDeclaration method) {
         return method.findCompilationUnit()
             .map(cu -> {
                 String pkg = cu.getPackageDeclaration()
@@ -2160,7 +2160,7 @@ public class KnowledgeGraphBuilder {
      * 结合项目路径生成唯一 serviceName，避免不同项目同名类冲突
      * 例如: hisi-devtool + com.example.service.UserServiceImpl -> hisi-devtool:User
      */
-    private String extractServiceName(String className, String projectPath) {
+    protected String extractServiceName(String className, String projectPath) {
         if (className == null || className.isEmpty()) {
             return "unknown";
         }
@@ -2181,7 +2181,7 @@ public class KnowledgeGraphBuilder {
      * 从项目路径提取短名称
      * 例如: /path/to/hisi-dev-tool -> hisi-devtool
      */
-    private String extractProjectShortName(String projectPath) {
+    protected String extractProjectShortName(String projectPath) {
         if (projectPath == null || projectPath.isEmpty()) return "default";
         Path p = Paths.get(projectPath);
         String name = p.getFileName() != null ? p.getFileName().toString() : "default";
@@ -2199,7 +2199,7 @@ public class KnowledgeGraphBuilder {
      * - VIRTUAL: 虚方法调用 (待增强)
      * - LAMBDA: Lambda表达式调用 (待增强)
      */
-    private String determineCallType(MethodCallExpr call) {
+    protected String determineCallType(MethodCallExpr call) {
         // 1. 检查是否是构造方法调用 (new ClassName())
         // 构造方法调用在JavaParser中通过 ObjectCreationExpr 表示
         // 方法调用表达式不包含构造方法，这里保留扩展点
@@ -2249,7 +2249,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 从 GlobalCache 构建类继承关系 EXTENDS
      */
-    private List<ClassExtends> buildExtendsRelations(String projectPath) {
+    protected List<ClassExtends> buildExtendsRelations(String projectPath) {
         List<ClassExtends> relations = new ArrayList<>();
 
         Map<String, Set<String>> extendMap = globalCache.getExtendMap();
@@ -2271,7 +2271,7 @@ public class KnowledgeGraphBuilder {
      * 构建方法重写关系 OVERRIDE
      * 遍历所有类，找出子类重写父类的方法
      */
-    private List<MethodOverride> buildOverrideRelations(String projectPath, List<MethodNode> allMethodNodes) {
+    protected List<MethodOverride> buildOverrideRelations(String projectPath, List<MethodNode> allMethodNodes) {
         List<MethodOverride> relations = new ArrayList<>();
 
         Map<String, Set<String>> extendMap = globalCache.getExtendMap();
@@ -2312,7 +2312,7 @@ public class KnowledgeGraphBuilder {
     /**
      * 从 GlobalCache 构建代理类关系 PROXY
      */
-    private List<ProxyRelation> buildProxyRelations(String projectPath) {
+    protected List<ProxyRelation> buildProxyRelations(String projectPath) {
         List<ProxyRelation> relations = new ArrayList<>();
 
         Map<String, String> proxyIndex = globalCache.getProxyIndex();
@@ -2388,7 +2388,7 @@ public class KnowledgeGraphBuilder {
      * 计算方法签名的稳定 hash（基于签名字符串，不依赖 AST 对象身份）
      * 解决两次独立 parseFile 导致 getSignature().hashCode() 不一致的问题
      */
-    private static String signatureHash(String signature) {
+    protected static String signatureHash(String signature) {
         return Integer.toHexString(signature.hashCode());
     }
 }

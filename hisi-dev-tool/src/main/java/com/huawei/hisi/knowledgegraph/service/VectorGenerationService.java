@@ -170,6 +170,11 @@ public class VectorGenerationService {
      */
     @Async("analysisTaskExecutor")
     public void startVectorGeneration(String projectPath) {
+        // 图谱验证模式：跳过 LLM 描述生成和向量生成，节省 token
+        if ("true".equalsIgnoreCase(System.getProperty("kg.vector.skip"))) {
+            log.info("[向量生成] 跳过（kg.vector.skip=true）: projectPath={}", projectPath);
+            return;
+        }
         fileLog("========== [向量生成-双向量] 异步任务开始执行 ========== projectPath=" + projectPath);
         long startTime = System.currentTimeMillis();
 

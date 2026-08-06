@@ -737,7 +737,18 @@ export const knowledgeGraphApi = {
   },
 
   refresh(projectPath: string) {
-    return request.post<{ isNoop: boolean; changedFiles: number; deleted: number; rebuilt: number }>('/knowledge-graph/refresh', {
+    return request.post<{
+      projectPath: string
+      lastCommit: string
+      currentCommit: string
+      changedFiles: number
+      deletedNodes: number
+      rebuiltNodes: number
+      rebuiltEdges: number
+      rebuiltEntryPoints: number
+      vectorsGenerated: number
+      success: boolean
+    }>('/knowledge-graph/refresh', {
       projectPath
     })
   },

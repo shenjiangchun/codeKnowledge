@@ -71,16 +71,16 @@ public class PythonKnowledgeGraphBuilder {
 
     private static final String LANGUAGE = "python";
 
-    private final Neo4jStorageService neo4jStorageService;
-    private final PythonCallGraphResolver pythonCallGraphResolver;
-    private final FastApiRouteScanner fastApiRouteScanner;
-    private final DjangoUrlScanner djangoUrlScanner;
-    private final FlaskRouteScanner flaskRouteScanner;
-    private final PythonHttpCallScanner pythonHttpCallScanner;
-    private final PythonMqCallScanner pythonMqCallScanner;
-    private final CeleryTaskScanner celeryTaskScanner;
-    private final PythonDataModelScanner pythonDataModelScanner;
-    private final Neo4jDataModelNodeRepository neo4jDataModelNodeRepository;
+    public final Neo4jStorageService neo4jStorageService;
+    protected final PythonCallGraphResolver pythonCallGraphResolver;
+    public final FastApiRouteScanner fastApiRouteScanner;
+    public final DjangoUrlScanner djangoUrlScanner;
+    public final FlaskRouteScanner flaskRouteScanner;
+    public final PythonHttpCallScanner pythonHttpCallScanner;
+    public final PythonMqCallScanner pythonMqCallScanner;
+    public final CeleryTaskScanner celeryTaskScanner;
+    public final PythonDataModelScanner pythonDataModelScanner;
+    public final Neo4jDataModelNodeRepository neo4jDataModelNodeRepository;
 
     /**
      * Parse a single Python file and return one {@link MethodNode} per
@@ -264,7 +264,7 @@ public class PythonKnowledgeGraphBuilder {
      *   <li>Creates OVERRIDE edges for methods with the same name in both</li>
      * </ul>
      */
-    private void buildAndSaveInheritanceRelations(List<PyModule> allModules,
+    public void buildAndSaveInheritanceRelations(List<PyModule> allModules,
                                                    List<MethodNode> methodNodes,
                                                    String projectPath) {
         // Index: simple class name -> set of method names (for OVERRIDE detection)
@@ -807,7 +807,7 @@ public class PythonKnowledgeGraphBuilder {
     // Bridge edge builders
     // ------------------------------------------------------------------
 
-    private Map<String, Object> buildHttpBridgeEdge(PythonHttpCall call,
+    public Map<String, Object> buildHttpBridgeEdge(PythonHttpCall call,
                                                     List<PyModule> allModules,
                                                     String projectPath) {
         String callerId = locateCallerNodeId(call.getFilePath(),
@@ -828,7 +828,7 @@ public class PythonKnowledgeGraphBuilder {
         return rel;
     }
 
-    private Map<String, Object> buildMqBridgeEdge(PythonMqCall call,
+    public Map<String, Object> buildMqBridgeEdge(PythonMqCall call,
                                                   List<PyModule> allModules,
                                                   String projectPath) {
         String callerId = locateCallerNodeId(call.getFilePath(),

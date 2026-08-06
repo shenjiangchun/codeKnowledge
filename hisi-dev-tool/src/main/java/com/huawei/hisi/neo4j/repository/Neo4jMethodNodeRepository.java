@@ -798,11 +798,10 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     /**
      * 根据 filePath 和 projectPath 范围删除方法节点（用于增量刷新）
      * 使用 DETACH DELETE 同时移除节点及其所有关系（含向量等节点属性）
-     * 使用 CONTAINS 匹配以处理路径格式差异（正斜杠/反斜杠）
      */
     @Query("""
         MATCH (n:Method)
-        WHERE (n.filePath = $filePath OR n.filePath CONTAINS $filePath OR $filePath CONTAINS n.filePath)
+        WHERE n.filePath = $filePath
           AND n.projectPath = $projectPath
         DETACH DELETE n
         """)
@@ -2139,6 +2138,18 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     void deleteIncomingCallsToDeletedFiles(
         @Param("deletedFilePaths") List<String> deletedFilePaths,
         @Param("projectPath") String projectPath);
+
+    /**
+     * Delete all dispatch-typed CALLS edges for a project.
+     * Used before incremental rebuild of IMPL_DISPATCH / FEIGN_BRIDGE edges.
+     */
+    @Query("""
+        MATCH ()-[c:CALLS]->()
+        WHERE c.projectPath = $projectPath
+          AND c.callType IN ['IMPL_DISPATCH', 'IMPL_DISPATCH_FEIGN', 'FEIGN_BRIDGE']
+        DELETE c
+        """)
+    void deleteDispatchCallsByProject(@Param("projectPath") String projectPath);
 
     /**
      * 根据类名、方法名、签名和项目路径查询 nodeId

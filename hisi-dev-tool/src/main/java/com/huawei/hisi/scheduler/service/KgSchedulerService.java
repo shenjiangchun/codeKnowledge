@@ -1,6 +1,6 @@
 package com.huawei.hisi.scheduler.service;
 
-import com.huawei.hisi.knowledgegraph.service.IncrementalRefreshService;
+import com.huawei.hisi.knowledgegraph.service.IncrementalKnowledgeGraphBuilder;
 import com.huawei.hisi.scheduler.model.KgSchedule;
 import com.huawei.hisi.scheduler.repository.KgScheduleRepository;
 import com.huawei.hisi.service.KnowledgeGraphTaskService;
@@ -23,15 +23,15 @@ public class KgSchedulerService {
     private final KgScheduleRepository repository;
     private final ThreadPoolTaskScheduler taskScheduler;
     private final KnowledgeGraphTaskService knowledgeGraphTaskService;
-    private final IncrementalRefreshService incrementalRefreshService;
+    private final IncrementalKnowledgeGraphBuilder incrementalBuilder;
     private final Map<Long, ScheduledFuture<?>> activeTasks = new ConcurrentHashMap<>();
 
     public KgSchedulerService(KgScheduleRepository repository,
                               KnowledgeGraphTaskService knowledgeGraphTaskService,
-                              IncrementalRefreshService incrementalRefreshService) {
+                              IncrementalKnowledgeGraphBuilder incrementalBuilder) {
         this.repository = repository;
         this.knowledgeGraphTaskService = knowledgeGraphTaskService;
-        this.incrementalRefreshService = incrementalRefreshService;
+        this.incrementalBuilder = incrementalBuilder;
         this.taskScheduler = new ThreadPoolTaskScheduler();
         this.taskScheduler.setPoolSize(2);
         this.taskScheduler.setThreadNamePrefix("kg-scheduler-");
@@ -80,7 +80,7 @@ public class KgSchedulerService {
             if ("FULL".equals(schedule.getTaskType())) {
                 knowledgeGraphTaskService.startTask(schedule.getProjectPath(), Collections.emptyList());
             } else if ("INCREMENTAL".equals(schedule.getTaskType())) {
-                incrementalRefreshService.refresh(schedule.getProjectPath());
+                incrementalBuilder.incrementalRefresh(schedule.getProjectPath());
             } else {
                 log.warn("[KgScheduler] Unknown task type: {}", schedule.getTaskType());
             }
