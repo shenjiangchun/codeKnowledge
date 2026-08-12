@@ -2,7 +2,7 @@
   "mcpServers": {
     "hisi-mcp-server": {
       "command": "node",
-      "args": ["C:/Users/47583/projects/hisi_dev_tool v4.0/hisi-mcp-server/dist/index.js"],
+      "args": ["C:/Users/47583/projects/hisi_dev_tool v5.0/hisi-mcp-server/dist/index.js"],
       "env": {
         "HISI_API_URL": "http://localhost:8080"
       }
