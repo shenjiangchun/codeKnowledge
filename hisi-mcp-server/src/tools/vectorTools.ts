@@ -39,6 +39,10 @@ export const vectorToolDefinitions = [
           type: 'number',
           description: '调用链图遍历深度，默认0。设为0则不进行图遍历，只做向量搜索',
         },
+        threshold: {
+          type: 'number',
+          description: '语义相似度阈值（0~1），默认0.5。越低返回越多，越高越精确',
+        },
         language: {
           type: 'string',
           enum: ['java', 'python'],
@@ -59,6 +63,7 @@ export interface HybridSearchParams {
   projectPath?: string;
   projectPaths?: string[];
   limit?: number;
+  threshold?: number;
   graphDepth?: number;
   language?: 'java' | 'python';
 }
@@ -79,14 +84,14 @@ export class VectorTools {
    * POST /api/search/semantic
    */
   async hybridSearch(params: HybridSearchParams): Promise<unknown> {
-    const { query, projectPath, projectPaths, limit, graphDepth, language } = params;
+    const { query, projectPath, projectPaths, limit, threshold, graphDepth, language } = params;
 
     const body: Record<string, unknown> = {
       query,
       projectPath: projectPath || projectPaths?.[0],
       projectPaths: projectPaths || (projectPath ? [projectPath] : undefined),
       limit: limit ?? 10,
-      threshold: 0.5,
+      threshold: threshold ?? 0.5,
       graphDepth: graphDepth ?? 0,
     };
 
@@ -130,11 +135,14 @@ export class VectorTools {
 
 export const VECTOR_TOOLS = ['hybrid_search'];
 
+let _vecTools: VectorTools | null = null;
+
 export async function handleVectorToolCall(
   toolName: string,
   args: Record<string, unknown>
 ): Promise<unknown> {
-  const tools = new VectorTools();
+  if (!_vecTools) _vecTools = new VectorTools();
+  const tools = _vecTools!
 
   switch (toolName) {
     case 'hybrid_search':

@@ -2,10 +2,12 @@
  * Tools module - aggregates all MCP tool definitions and routes tool calls
  *
  * Tool groups:
- *   - Knowledge Graph (14 tools, prefix kg_)   → knowledgeGraphTools.ts
+ *   - Knowledge Graph (22 tools, prefix kg_)   → knowledgeGraphTools.ts  (+ kg_select_scope in index.ts)
  *   - Hybrid Search   (1 tool)                 → vectorTools.ts
  *   - Log Query       (4 tools, prefix log_)   → logTools.ts
  *   - APM Debug       (6 tools, prefix apm_)   → apmTools.ts
+ *   ─────────────────────────────────────────
+ *   Total: 33 tools registered in index.ts
  */
 
 export {
@@ -27,6 +29,12 @@ export {
   type KgMqChainParams,
   type KgRootEntriesParams,
   type KgCalleesTreeParams,
+  type KgDashboardParams,
+  type KgDsmParams,
+  type KgHotspotsParams,
+  type KgDomainsParams,
+  type KgServiceTopologyParams,
+  type KgBlastRadiusParams,
 } from './knowledgeGraphTools.js';
 
 export {

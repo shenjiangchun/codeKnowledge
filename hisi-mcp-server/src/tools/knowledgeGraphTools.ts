@@ -716,6 +716,12 @@ export const KG_TOOLS = [
   'kg_blast_radius',
 ];
 
+let _kgTools: KnowledgeGraphTools | null = null;
+function getKgTools(): KnowledgeGraphTools {
+  if (!_kgTools) _kgTools = new KnowledgeGraphTools();
+  return _kgTools;
+}
+
 /**
  * Handler function for MCP tool calls
  */
@@ -723,7 +729,7 @@ export async function handleKnowledgeGraphToolCall(
   toolName: string,
   args: Record<string, unknown>
 ): Promise<unknown> {
-  const tools = new KnowledgeGraphTools();
+  const tools = getKgTools();
   const resolved = resolveProjectParams(args);
   const mergedArgs = { ...args, ...resolved };
 

@@ -243,11 +243,14 @@ export class LogTools {
 
 export const LOG_TOOLS = ['log_query', 'log_analyze', 'log_report', 'log_report_status'];
 
+let _logTools: LogTools | null = null;
+
 export async function handleLogToolCall(
   toolName: string,
   args: Record<string, unknown>
 ): Promise<unknown> {
-  const tools = new LogTools();
+  if (!_logTools) _logTools = new LogTools();
+  const tools = _logTools!
 
   switch (toolName) {
     case 'log_query':

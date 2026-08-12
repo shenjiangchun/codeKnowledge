@@ -245,11 +245,14 @@ export const APM_TOOLS = [
   'apm_stop_session',
 ];
 
+let _apmTools: ApmTools | null = null;
+
 export async function handleApmToolCall(
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<unknown> {
-  const tools = new ApmTools();
+  if (!_apmTools) _apmTools = new ApmTools();
+  const tools = _apmTools!
 
   switch (toolName) {
     case 'apm_start_session':
