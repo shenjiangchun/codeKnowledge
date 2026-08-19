@@ -55,6 +55,12 @@ public class KnowledgeGraphTaskServiceImpl implements KnowledgeGraphTaskService 
 
     @Override
     public KnowledgeGraphTask startTask(String rawProjectPath, List<String> excludePaths) {
+        return startTask(rawProjectPath, excludePaths, true, true);
+    }
+
+    @Override
+    public KnowledgeGraphTask startTask(String rawProjectPath, List<String> excludePaths,
+                                        boolean generateVector, boolean generateArchitecture) {
         // Git 校验仍在此处做，队列只管执行
         final String projectPath = com.huawei.hisi.knowledgegraph.util.KnowledgeGraphCommonUtils.normalizePath(rawProjectPath);
         File projectDir = new File(projectPath);
@@ -78,7 +84,7 @@ public class KnowledgeGraphTaskServiceImpl implements KnowledgeGraphTaskService 
         }
 
         // 入队（队列内部处理 PENDING 任务创建和重复检查）
-        return kgGenerationQueue.enqueue(projectPath, excludePaths);
+        return kgGenerationQueue.enqueue(projectPath, excludePaths, generateVector, generateArchitecture);
     }
 
     @Override

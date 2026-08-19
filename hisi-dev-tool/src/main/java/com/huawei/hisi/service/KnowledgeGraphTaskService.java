@@ -24,6 +24,16 @@ public interface KnowledgeGraphTaskService {
     KnowledgeGraphTask startTask(String projectPath, List<String> excludePaths);
 
     /**
+     * 启动知识图谱生成任务（支持屏蔽目录 + 可选后处理）
+     * @param projectPath 项目完整路径
+     * @param excludePaths 屏蔽目录列表
+     * @param generateVector 是否生成描述+向量
+     * @param generateArchitecture 是否运行架构现状聚合
+     */
+    KnowledgeGraphTask startTask(String projectPath, List<String> excludePaths,
+                                 boolean generateVector, boolean generateArchitecture);
+
+    /**
      * 获取单个项目的最新任务状态
      * @param projectPath 项目完整路径
      * @return 任务对象

@@ -273,6 +273,12 @@ public class SQLiteSchemaInitializer {
             )
             """);
 
+        // 定时任务增强字段（幂等：列不存在才加）
+        addColumnIfAbsent("kg_schedule", "git_pull_enabled", "INTEGER DEFAULT 0");
+        addColumnIfAbsent("kg_schedule", "branch", "TEXT");
+        addColumnIfAbsent("kg_schedule", "refresh_description", "INTEGER DEFAULT 0");
+        addColumnIfAbsent("kg_schedule", "refresh_architecture", "INTEGER DEFAULT 0");
+
         jdbcTemplate.execute("""
             CREATE TABLE IF NOT EXISTS sys_user (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -318,6 +324,20 @@ public class SQLiteSchemaInitializer {
         log.info("[SQLite] Created project_name_group table");
 
         log.info("[SQLite] Schema initialization complete - 17 tables ensured");
+    }
+
+    /** 幂等加列：列不存在才 ALTER TABLE ADD COLUMN */
+    private void addColumnIfAbsent(String table, String column, String definition) {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM pragma_table_info(?) WHERE name = ?",
+                Integer.class, table, column);
+            if (count == null || count == 0) {
+                jdbcTemplate.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
+            }
+        } catch (Exception e) {
+            log.warn("[SQLite] addColumnIfAbsent failed: {}.{}", table, column);
+        }
     }
 
     private void migrateGlossaryColumns(JdbcTemplate jdbcTemplate) {
