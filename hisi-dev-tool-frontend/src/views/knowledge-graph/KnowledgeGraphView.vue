@@ -260,6 +260,29 @@
             </template>
           </el-empty>
         </el-tab-pane>
+
+        <!-- ★ Phase 5: 多切面分析平台 — 6 个新切面 -->
+        <el-tab-pane label="架构仪表盘" name="dashboard">
+          <DashboardPanel v-if="activeTab === 'dashboard'" :project-paths="projectPaths" />
+        </el-tab-pane>
+        <el-tab-pane label="热点分析" name="hotspots">
+          <HotspotTreemap v-if="activeTab === 'hotspots'" :project-paths="projectPaths" />
+        </el-tab-pane>
+        <el-tab-pane label="领域划分" name="domains">
+          <DomainBoundaryView v-if="activeTab === 'domains'" :project-paths="projectPaths" />
+        </el-tab-pane>
+        <el-tab-pane label="跨服务拓扑" name="serviceTopo">
+          <CrossServiceTopology v-if="activeTab === 'serviceTopo'" :project-paths="projectPaths" />
+        </el-tab-pane>
+        <el-tab-pane label="构建模块" name="buildModule">
+          <BuildModuleAnalysis v-if="activeTab === 'buildModule'" :project-paths="projectPaths" />
+        </el-tab-pane>
+        <el-tab-pane label="爆炸半径" name="blastRadius">
+          <BlastRadiusView v-if="activeTab === 'blastRadius'" :project-paths="projectPaths" />
+        </el-tab-pane>
+        <el-tab-pane label="生成中心" name="generationCenter">
+          <GenerationCenterPanel v-if="activeTab === 'generationCenter'" :project-paths="projectPaths" />
+        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -540,6 +563,13 @@ import SemanticSearchPanel from './components/SemanticSearchPanel.vue'
 import MethodReferenceGraph from '@/views/call-chain/MethodReferenceGraph.vue'
 import CrossServiceBridgeTab from './components/CrossServiceBridgeTab.vue'
 import GraphExplorerTab from './components/GraphExplorerTab.vue'
+import DashboardPanel from './components/DashboardPanel.vue'
+import HotspotTreemap from './components/HotspotTreemap.vue'
+import DomainBoundaryView from './components/DomainBoundaryView.vue'
+import CrossServiceTopology from './components/CrossServiceTopology.vue'
+import BuildModuleAnalysis from './components/BuildModuleAnalysis.vue'
+import BlastRadiusView from './components/BlastRadiusView.vue'
+import GenerationCenterPanel from './components/GenerationCenterPanel.vue'
 
 const route = useRoute()
 const router = useRouter()

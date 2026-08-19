@@ -796,6 +796,28 @@ public class UnifiedTextService {
 
             } catch (HttpClientErrorException e) {
                 if (e.getStatusCode().value() == 429 && attempt < maxRetries) {
+                    // 如果 prompt 超长，先切半再重试，而不是原样重试
+                    String splitMarker = "\n---\n";
+                    int mid = prompt.length() / 2;
+                    if (prompt.length() > 2000 && prompt.contains(splitMarker)) {
+                        int cut = prompt.lastIndexOf(splitMarker, mid);
+                        if (cut > 0 && prompt.indexOf(splitMarker, cut + 1) > 0) {
+                            String first = prompt.substring(0, cut);
+                            String secondStart = prompt.substring(cut).trim();
+                            String second = secondStart.startsWith("---\n")
+                                    ? "你是专业的代码语义解析专家。\n" + secondStart
+                                    : secondStart;
+                            log.warn("[BATCH-LLM] 限流(429)，切半重试: len={} → {} + {}",
+                                    prompt.length(), first.length(), second.length());
+                            try {
+                                String r1 = generateBatchText(first, useJsonMode);
+                                String r2 = generateBatchText(second, useJsonMode);
+                                return mergeBatchResults(r1, r2);
+                            } catch (RuntimeException re) {
+                                log.error("[BATCH-LLM] 切半重试失败: {}", re.getMessage());
+                            }
+                        }
+                    }
                     long delay = computeRetryDelay(e.getResponseHeaders(), baseDelay, attempt);
                     log.warn("[BATCH-LLM] 限流(429)，重试等待{}ms", delay);
                     sleepQuietly(delay);
@@ -819,6 +841,27 @@ public class UnifiedTextService {
             }
         }
         throw new RuntimeException("批量文本生成失败: 超过最大重试次数");
+    }
+
+    /**
+     * 合并两个 JSON 批处理结果中的 descriptions 数组。
+     */
+    private String mergeBatchResults(String r1, String r2) {
+        try {
+            JsonNode n1 = objectMapper.readTree(r1);
+            JsonNode n2 = objectMapper.readTree(r2);
+            var arr1 = n1.has("descriptions") ? n1.get("descriptions") : n1;
+            var arr2 = n2.has("descriptions") ? n2.get("descriptions") : n2;
+            ArrayNode merged = objectMapper.createArrayNode();
+            if (arr1.isArray()) arr1.forEach(merged::add);
+            if (arr2.isArray()) arr2.forEach(merged::add);
+            ObjectNode result = objectMapper.createObjectNode();
+            result.set("descriptions", merged);
+            return objectMapper.writeValueAsString(result);
+        } catch (Exception e) {
+            log.warn("[BATCH-LLM] merge 失败: {}", e.getMessage());
+            return r1; // 至少返回第一部分
+        }
     }
 
     /**

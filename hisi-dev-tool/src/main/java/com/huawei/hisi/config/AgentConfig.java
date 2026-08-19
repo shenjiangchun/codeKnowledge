@@ -1,6 +1,8 @@
 package com.huawei.hisi.config;
 
 import org.springframework.ai.anthropic.AnthropicChatModel;
+import org.springframework.ai.anthropic.AnthropicChatOptions;
+import org.springframework.ai.anthropic.api.AnthropicApi;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.PromptChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
@@ -36,5 +38,24 @@ public class AgentConfig {
     @Bean
     ChatClient kgChatClient(@Qualifier("openAiChatModel") OpenAiChatModel zhipuModel) {
         return ChatClient.builder(zhipuModel).build();
+    }
+
+    /**
+     * 无记忆 advisor 的干净 ChatClient，专用于聚合管道的批量抽取（如领域业务名词提取）。
+     *
+     * <p>区别于 {@link #agentChatClient}：不挂 {@link PromptChatMemoryAdvisor}，
+     * 因此调用时无需传 conversationId。模型走 anthropic 中转（deepseek-v4-pro-cc），
+     * 配置读 {@code spring.ai.anthropic.*}。maxTokens 调大，避免推理模型思考链吃光预算。
+     */
+    @Bean
+    ChatClient extractionChatClient(AnthropicChatModel anthropicModel) {
+        return ChatClient.builder(anthropicModel)
+                .defaultOptions(AnthropicChatOptions.builder()
+                        .model("deepseek-v4-pro-cc")
+                        .maxTokens(16384)
+                        .temperature(0.1)
+                        .thinking(AnthropicApi.ThinkingType.DISABLED, null)
+                        .build())
+                .build();
     }
 }

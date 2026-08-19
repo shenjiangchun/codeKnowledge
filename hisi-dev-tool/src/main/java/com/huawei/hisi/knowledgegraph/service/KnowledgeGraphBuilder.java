@@ -32,13 +32,17 @@ import com.huawei.hisi.neo4j.model.DataModelNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.SqlNode;
+import com.huawei.hisi.neo4j.model.ClassNode;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jSqlNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jGenerationCheckpointRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jDataModelNodeRepository;
+import com.huawei.hisi.neo4j.repository.Neo4jClassNodeRepository;
+import com.huawei.hisi.knowledgegraph.aggregation.stage.ClassLayerRoleDetector;
 import com.huawei.hisi.knowledgegraph.python.PythonKnowledgeGraphBuilder;
 import com.huawei.hisi.knowledgegraph.util.ProjectLanguageDetector;
 import com.huawei.hisi.knowledgegraph.util.ProjectLanguageDetector.Language;
+import com.huawei.hisi.knowledgegraph.aggregation.AggregationPipeline;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -112,10 +116,15 @@ public class KnowledgeGraphBuilder {
     // Neo4j 数据模型节点 Repository
     protected final Neo4jDataModelNodeRepository neo4jDataModelNodeRepository;
 
+    // 类节点 Repository + 类职责识别器（ClassNode 前置到图谱生成）
+    protected final Neo4jClassNodeRepository neo4jClassNodeRepository;
+    protected final ClassLayerRoleDetector classLayerRoleDetector;
+
     // codegraph sidecar 相关依赖（TS/JS/Vue 走 codegraph 路径）
     protected final CodegraphSidecarService codegraphSidecarService;
     protected final CodegraphSqliteReader codegraphSqliteReader;
     protected final CodegraphToNeo4jTransformer codegraphTransformer;
+    protected final AggregationPipeline aggregationPipeline;
 
     public KnowledgeGraphBuilder(
             CodeAnalysisCoreService coreService,
@@ -137,9 +146,12 @@ public class KnowledgeGraphBuilder {
             Neo4jGenerationCheckpointRepository checkpointRepository,
             JavaDataModelScanner javaDataModelScanner,
             Neo4jDataModelNodeRepository neo4jDataModelNodeRepository,
+            Neo4jClassNodeRepository neo4jClassNodeRepository,
+            ClassLayerRoleDetector classLayerRoleDetector,
             CodegraphSidecarService codegraphSidecarService,
             CodegraphSqliteReader codegraphSqliteReader,
-            CodegraphToNeo4jTransformer codegraphTransformer) {
+            CodegraphToNeo4jTransformer codegraphTransformer,
+            AggregationPipeline aggregationPipeline) {
         this.coreService = coreService;
         this.globalCache = globalCache;
         this.storageService = storageService;
@@ -159,9 +171,12 @@ public class KnowledgeGraphBuilder {
         this.checkpointRepository = checkpointRepository;
         this.javaDataModelScanner = javaDataModelScanner;
         this.neo4jDataModelNodeRepository = neo4jDataModelNodeRepository;
+        this.neo4jClassNodeRepository = neo4jClassNodeRepository;
+        this.classLayerRoleDetector = classLayerRoleDetector;
         this.codegraphSidecarService = codegraphSidecarService;
         this.codegraphSqliteReader = codegraphSqliteReader;
         this.codegraphTransformer = codegraphTransformer;
+        this.aggregationPipeline = aggregationPipeline;
     }
 
     /**
@@ -175,17 +190,28 @@ public class KnowledgeGraphBuilder {
      * 为项目构建知识图谱，支持自定义屏蔽目录
      */
     public Map<String, Object> buildKnowledgeGraph(String projectPath, List<String> excludePaths) {
+        return buildKnowledgeGraph(projectPath, excludePaths, true);
+    }
+
+    /**
+     * 构建知识图谱 + 可选语义向量生成。
+     *
+     * @param generateVector 是否生成描述+向量
+     */
+    public Map<String, Object> buildKnowledgeGraph(String projectPath, List<String> excludePaths,
+                                                   boolean generateVector) {
         if (!generationSemaphore.tryAcquire()) {
             throw new IllegalStateException("知识图谱生成任务正在执行中，请稍后再试（同一时刻仅允许一个项目生成）");
         }
         try {
-            return doBuildKnowledgeGraph(projectPath, excludePaths);
+            return doBuildKnowledgeGraph(projectPath, excludePaths, generateVector);
         } finally {
             generationSemaphore.release();
         }
     }
 
-    protected Map<String, Object> doBuildKnowledgeGraph(String projectPath, List<String> excludePaths) {
+    protected Map<String, Object> doBuildKnowledgeGraph(String projectPath, List<String> excludePaths,
+                                                        boolean generateVector) {
         // 入口规范化：把反斜杠统一成正斜杠，并去尾斜杠，确保 Neo4j 节点的 projectPath
         // 始终使用规范形态。否则同一份代码用 \ 和 / 调两次会产生两套重复节点。
         String rawInput = projectPath;
@@ -193,7 +219,8 @@ public class KnowledgeGraphBuilder {
         if (!java.util.Objects.equals(rawInput, projectPath)) {
             log.info("[KG Build] projectPath normalized: '{}' -> '{}'", rawInput, projectPath);
         }
-        log.info("开始构建知识图谱: {} (excludePaths={})", projectPath, excludePaths);
+        log.info("开始构建知识图谱: {} (excludePaths={}, generateVector={})",
+            projectPath, excludePaths, generateVector);
         long startTime = System.currentTimeMillis();
 
         // 前置校验：必须能获取 git commit hash，否则增量刷新 checkpoint 无法保存
@@ -208,22 +235,23 @@ public class KnowledgeGraphBuilder {
 
         // 如果是Python项目，使用PythonKnowledgeGraphBuilder
         if (language == Language.PYTHON) {
-            return buildPythonKnowledgeGraph(projectPath, excludePaths, startTime);
+            return buildPythonKnowledgeGraph(projectPath, excludePaths, startTime, generateVector);
         }
 
         // 如果是 TypeScript/JavaScript/Vue 项目，走 codegraph sidecar
         if (language == Language.TYPESCRIPT || language == Language.JAVASCRIPT) {
-            return buildCodegraphKnowledgeGraph(projectPath, startTime, language);
+            return buildCodegraphKnowledgeGraph(projectPath, startTime, language, generateVector);
         }
 
         // 否则使用Java知识图谱构建（默认）
-        return buildJavaKnowledgeGraph(projectPath, excludePaths, startTime);
+        return buildJavaKnowledgeGraph(projectPath, excludePaths, startTime, generateVector);
     }
 
     /**
      * Build Python knowledge graph by delegating to PythonKnowledgeGraphBuilder.
      */
-    protected Map<String, Object> buildPythonKnowledgeGraph(String projectPath, List<String> excludePaths, long startTime) {
+    protected Map<String, Object> buildPythonKnowledgeGraph(String projectPath, List<String> excludePaths, long startTime,
+                                                            boolean generateVector) {
         log.info("[KG Build] Building Python knowledge graph...");
 
         // 1. 清理旧数据
@@ -254,8 +282,15 @@ public class KnowledgeGraphBuilder {
         result.put("costTimeMs", endTime - startTime);
 
         // 知识图谱生成完成后，异步启动向量生成
-        log.info("知识图谱生成完成，启动向量生成: {}", projectPath);
-        vectorGenerationService.startVectorGeneration(projectPath);
+        if (generateVector) {
+            log.info("知识图谱生成完成，启动向量生成: {}", projectPath);
+            vectorGenerationService.startVectorGeneration(projectPath);
+        } else {
+            log.info("知识图谱生成完成，跳过描述生成+向量化");
+        }
+
+        // 注意：架构现状聚合（aggregationPipeline）已移至 KgGenerationQueue.waitForVectorCompletion 之后，
+        // 保证「语义&向量」完成后再串行执行，避免与方法描述生成并行。
 
         // 保存生成日志（供增量更新使用）
         try {
@@ -275,7 +310,8 @@ public class KnowledgeGraphBuilder {
      * 不调用 vectorGenerationService / LLMDescriptionService / DataModelScanner 等后处理
      * （TS/JS 后处理是 Phase 2 的工作）。
      */
-    protected Map<String, Object> buildCodegraphKnowledgeGraph(String projectPath, long startTime, Language language) {
+    protected Map<String, Object> buildCodegraphKnowledgeGraph(String projectPath, long startTime, Language language,
+                                                               boolean generateVector) {
         log.info("[KG Build] Building {} knowledge graph via codegraph sidecar...", language);
 
         // 1. 清理旧数据
@@ -317,8 +353,14 @@ public class KnowledgeGraphBuilder {
             result.put("codegraphEdges", db.edges().size());
 
             // 知识图谱生成完成后，异步启动向量生成（与 Java/Python 流程对齐）
-            log.info("[KG Build] codegraph 知识图谱生成完成，启动向量生成: {}", projectPath);
-            vectorGenerationService.startVectorGeneration(projectPath);
+            if (generateVector) {
+                log.info("[KG Build] codegraph 知识图谱生成完成，启动向量生成: {}", projectPath);
+                vectorGenerationService.startVectorGeneration(projectPath);
+            } else {
+                log.info("[KG Build] codegraph 知识图谱生成完成，跳过描述生成+向量化");
+            }
+
+            // 架构现状聚合已移至 KgGenerationQueue（等向量完成后串行执行）
 
             return result;
         } catch (Exception e) {
@@ -330,7 +372,8 @@ public class KnowledgeGraphBuilder {
     /**
      * Build Java knowledge graph (existing logic).
      */
-    protected Map<String, Object> buildJavaKnowledgeGraph(String projectPath, List<String> excludePaths, long startTime) {
+    protected Map<String, Object> buildJavaKnowledgeGraph(String projectPath, List<String> excludePaths, long startTime,
+                                                          boolean generateVector) {
         log.info("[KG Build] Building Java knowledge graph...");
 
         // 1. 清理旧数据
@@ -381,6 +424,8 @@ public class KnowledgeGraphBuilder {
         List<MethodNode> allMethodNodes = new ArrayList<>();
         List<Map<String, Object>> allCallRelations = new ArrayList<>();
         List<EntryPointNode> allEntryPoints = new ArrayList<>();
+        List<ClassNode> allClassNodes = new ArrayList<>();
+        List<String[]> allClassImportRelations = new ArrayList<>();
         Map<String, String> methodSignatureToNodeId = new HashMap<>();
         Map<String, String> methodFullKeyToNodeId = new HashMap<>();
 
@@ -395,6 +440,13 @@ public class KnowledgeGraphBuilder {
             // 扫描方法节点
             List<MethodNode> methodNodes = scanMethodNodes(cu, filePath, projectPath);
             allMethodNodes.addAll(methodNodes);
+
+            // 扫描类节点（前置到图谱生成，全量 AST 建 ClassNode + classRole）
+            List<ClassNode> classNodes = scanClassNodes(cu, filePath, projectPath);
+            allClassNodes.addAll(classNodes);
+
+            // 扫描类级 import 关系
+            allClassImportRelations.addAll(scanClassImportRelations(cu));
 
             // 建立映射
             for (MethodNode node : methodNodes) {
@@ -443,6 +495,39 @@ public class KnowledgeGraphBuilder {
         // 9. 批量保存基础数据到 Neo4j
         log.info("[Neo4j] 保存方法节点: {}", allMethodNodes.size());
         storageService.saveMethodNodes(allMethodNodes);
+        log.info("[Neo4j] 保存类节点: {}", allClassNodes.size());
+        List<Map<String, Object>> classNodeMaps = allClassNodes.stream()
+            .map(c -> {
+                Map<String, Object> m = new HashMap<>();
+                m.put("classId", c.getClassId());
+                m.put("className", c.getClassName());
+                m.put("packageName", c.getPackageName());
+                m.put("projectPath", c.getProjectPath());
+                m.put("filePath", c.getFilePath());
+                m.put("language", c.getLanguage());
+                m.put("classRole", c.getClassRole());
+                m.put("classRoleSource", c.getClassRoleSource());
+                return m;
+            })
+            .collect(java.util.stream.Collectors.toList());
+        if (!classNodeMaps.isEmpty()) {
+            neo4jClassNodeRepository.mergeAll(classNodeMaps);
+        }
+
+        // 保存类级 import 边（source/target 都需是已落库 ClassNode）
+        List<Map<String, Object>> classImportMaps = allClassImportRelations.stream()
+            .map(rel -> {
+                Map<String, Object> m = new HashMap<>();
+                m.put("sourceClassId", projectPath + ":" + rel[0]);
+                m.put("targetClassId", projectPath + ":" + rel[1]);
+                m.put("projectPath", projectPath);
+                return m;
+            })
+            .collect(java.util.stream.Collectors.toList());
+        if (!classImportMaps.isEmpty()) {
+            neo4jClassNodeRepository.createClassImportsRelations(classImportMaps);
+            log.info("[Neo4j] 保存类级 import 边: {}", classImportMaps.size());
+        }
         log.info("[Neo4j] 保存调用关系: {}", allCallRelations.size());
         storageService.saveCallRelations(allCallRelations);
         log.info("[Neo4j] 保存入口点: {}", allEntryPoints.size());
@@ -569,10 +654,7 @@ public class KnowledgeGraphBuilder {
                         javaDataModelScanner.scanUsesModelRelations(cu, projectPath, dataModelClassNames, methodSignatureToNodeId));
                 }
 
-                neo4jDataModelNodeRepository.saveAll(dataModelNodes);
-                if (!usesModelRelations.isEmpty()) {
-                    neo4jDataModelNodeRepository.createUsesModelRelations(usesModelRelations);
-                }
+                storageService.saveDataModels(dataModelNodes, usesModelRelations);
                 dataModelCount = dataModelNodes.size();
                 usesModelCount = usesModelRelations.size();
                 log.info("[KG] 数据模型节点: {}, USES_MODEL 关系: {}", dataModelCount, usesModelCount);
@@ -602,8 +684,14 @@ public class KnowledgeGraphBuilder {
         result.put("usesModelCount", usesModelCount);
 
         // 知识图谱生成完成后，异步启动向量生成
-        log.info("知识图谱生成完成，启动向量生成: {}", projectPath);
-        vectorGenerationService.startVectorGeneration(projectPath);
+        if (generateVector) {
+            log.info("知识图谱生成完成，启动向量生成: {}", projectPath);
+            vectorGenerationService.startVectorGeneration(projectPath);
+        } else {
+            log.info("知识图谱生成完成，跳过描述生成+向量化");
+        }
+
+        // 架构现状聚合已移至 KgGenerationQueue（等向量完成后串行执行）
 
         // 保存生成日志（供增量更新使用）
         try {
@@ -864,6 +952,7 @@ public class KnowledgeGraphBuilder {
                     .projectPath(projectPath)
                     .serviceName(extractServiceName(className, projectPath))
                     .language("java")  // 全量生成也需要设置 language 字段
+                    .packageName(packageName)
                     .build();
 
                 nodes.add(node);
@@ -888,6 +977,7 @@ public class KnowledgeGraphBuilder {
                     .projectPath(projectPath)
                     .serviceName(extractServiceName(className, projectPath))
                     .language("java")  // 全量生成也需要设置 language 字段
+                    .packageName(packageName)
                     .build();
 
                 nodes.add(node);
@@ -918,6 +1008,7 @@ public class KnowledgeGraphBuilder {
                     .projectPath(projectPath)
                     .serviceName(extractServiceName(className, projectPath))
                     .language("java")  // 全量生成也需要设置 language 字段
+                    .packageName(packageName)
                     .build();
 
                 nodes.add(node);
@@ -928,7 +1019,82 @@ public class KnowledgeGraphBuilder {
     }
 
     /**
-     * 为接口继承关系生成合成 MethodNode
+     * 扫描类节点（全量 AST，含 class/interface/enum）。
+     * ClassNode 前置到图谱生成：结构字段 + classRole（注解解析落库）+ classRoleSource。
+     */
+    protected List<ClassNode> scanClassNodes(CompilationUnit cu, String filePath, String projectPath) {
+        List<ClassNode> classNodes = new ArrayList<>();
+        String packageName = cu.getPackageDeclaration()
+            .map(pd -> pd.getNameAsString())
+            .orElse("");
+
+        cu.findAll(com.github.javaparser.ast.body.ClassOrInterfaceDeclaration.class).forEach(clazz -> {
+            String className = packageName.isEmpty()
+                ? clazz.getNameAsString()
+                : packageName + "." + clazz.getNameAsString();
+            List<String> annotations = clazz.getAnnotations().stream()
+                .map(a -> a.getNameAsString())
+                .collect(java.util.stream.Collectors.toList());
+            var detection = classLayerRoleDetector.detectWithSource(annotations, className, packageName);
+            classNodes.add(buildClassNode(projectPath, className, packageName, filePath, detection));
+        });
+
+        cu.findAll(com.github.javaparser.ast.body.EnumDeclaration.class).forEach(enumDecl -> {
+            String className = packageName.isEmpty()
+                ? enumDecl.getNameAsString()
+                : packageName + "." + enumDecl.getNameAsString();
+            classNodes.add(buildClassNode(projectPath, className, packageName, filePath,
+                new ClassLayerRoleDetector.RoleDetection(ClassLayerRoleDetector.MODEL, "NAME")));
+        });
+
+        return classNodes;
+    }
+
+    private ClassNode buildClassNode(String projectPath, String className, String packageName,
+                                     String filePath, ClassLayerRoleDetector.RoleDetection detection) {
+        return ClassNode.builder()
+            .classId(ClassNode.generateClassId(projectPath, className))
+            .className(className)
+            .packageName(packageName)
+            .projectPath(projectPath)
+            .filePath(filePath)
+            .language("java")
+            .classRole(detection.role())
+            .classRoleSource(detection.source())
+            .build();
+    }
+
+    /**
+     * 扫描类级 import 关系（AST 解析 cu.getImports()）。
+     * Java import 是编译单元（文件）级，应用到该文件内所有类。
+     * 返回 [sourceClassName, targetClassName] 列表，target 为被 import 的类全限定名。
+     */
+    protected List<String[]> scanClassImportRelations(CompilationUnit cu) {
+        List<String[]> relations = new ArrayList<>();
+        String packageName = cu.getPackageDeclaration()
+            .map(pd -> pd.getNameAsString())
+            .orElse("");
+
+        // 收集文件级 import（忽略 import * 和 static import）
+        List<String> fileImports = cu.getImports().stream()
+            .filter(imp -> !imp.isAsterisk() && !imp.isStatic())
+            .map(imp -> imp.getNameAsString())
+            .collect(java.util.stream.Collectors.toList());
+
+        // 应用到文件内所有 class/interface（每个类都继承文件 import 列表）
+        cu.findAll(com.github.javaparser.ast.body.ClassOrInterfaceDeclaration.class).forEach(clazz -> {
+            String className = packageName.isEmpty()
+                ? clazz.getNameAsString()
+                : packageName + "." + clazz.getNameAsString();
+            for (String target : fileImports) {
+                relations.add(new String[]{className, target});
+            }
+        });
+        return relations;
+    }
+
+    /**
+     * 为接口继承关系生成合成 MethodNode（解决跨模块接口继承断链问题）。
      *
      * 问题场景: interface B extends interface A（如 FeignClient extends API interface）
      * - A 有方法 m1, m2, m3 → 有 MethodNode(className=A, methodName=m1/m2/m3)
@@ -1015,6 +1181,7 @@ public class KnowledgeGraphBuilder {
                             .framework(template.getFramework())
                             .projectPath(projectPath)
                             .serviceName(extractServiceName(implName, projectPath))
+                            .packageName(implName.contains(".") ? implName.substring(0, implName.lastIndexOf('.')) : "")
                             .build();
 
                         syntheticNodes.add(syntheticNode);

@@ -4,6 +4,8 @@ import com.huawei.hisi.cache.GlobalAnalysisCache;
 import com.huawei.hisi.knowledgegraph.codegraph.CodegraphSidecarService;
 import com.huawei.hisi.knowledgegraph.codegraph.CodegraphSqliteReader;
 import com.huawei.hisi.knowledgegraph.codegraph.CodegraphToNeo4jTransformer;
+import com.huawei.hisi.knowledgegraph.aggregation.AggregationPipeline;
+import com.huawei.hisi.knowledgegraph.aggregation.stage.ClassLayerRoleDetector;
 import com.huawei.hisi.knowledgegraph.repository.GenerationTaskRepository;
 import com.huawei.hisi.knowledgegraph.scanner.JavaDataModelScanner;
 import com.huawei.hisi.knowledgegraph.scanner.MyBatisXmlScanner;
@@ -55,9 +57,12 @@ class KnowledgeGraphBuilderCodegraphDispatchTest {
     @Mock private Neo4jGenerationCheckpointRepository checkpointRepository;
     @Mock private JavaDataModelScanner javaDataModelScanner;
     @Mock private Neo4jDataModelNodeRepository neo4jDataModelNodeRepository;
+    @Mock private Neo4jClassNodeRepository neo4jClassNodeRepository;
+    @Mock private ClassLayerRoleDetector classLayerRoleDetector;
     @Mock private CodegraphSidecarService codegraphSidecarService;
     @Mock private CodegraphSqliteReader codegraphSqliteReader;
     @Mock private CodegraphToNeo4jTransformer codegraphTransformer;
+    @Mock private AggregationPipeline aggregationPipeline;
 
     private KnowledgeGraphBuilder builder;
 
@@ -70,7 +75,9 @@ class KnowledgeGraphBuilderCodegraphDispatchTest {
             proxyClassScanner, myBatisXmlScanner, vectorGenerationService,
             generationTaskRepository, gitStatusService, pythonKnowledgeGraphBuilder,
             checkpointRepository, javaDataModelScanner, neo4jDataModelNodeRepository,
-            codegraphSidecarService, codegraphSqliteReader, codegraphTransformer
+            neo4jClassNodeRepository, classLayerRoleDetector,
+            codegraphSidecarService, codegraphSqliteReader, codegraphTransformer,
+            aggregationPipeline
         );
     }
 

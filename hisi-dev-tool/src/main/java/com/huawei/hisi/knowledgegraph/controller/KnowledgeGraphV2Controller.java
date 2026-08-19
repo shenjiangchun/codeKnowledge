@@ -26,6 +26,7 @@ public class KnowledgeGraphV2Controller {
 
     private final KnowledgeGraphController v1;
     private final Neo4jEntryPointNodeRepository neo4jEntryPointNodeRepository;
+    private final GenerationController generationController;
 
     @GetMapping("/status")
     public ApiResponse<Map<String, Object>> getStatus(
@@ -249,5 +250,164 @@ public class KnowledgeGraphV2Controller {
         result.put("page", page);
         result.put("pageSize", pageSize);
         return ApiResponse.success(result);
+    }
+
+    // ==================== 聚合视图端点（multi-perspective-platform Phase 2） ====================
+
+    @GetMapping("/dashboard")
+    public ApiResponse<Map<String, Object>> getDashboard(
+            @RequestParam List<String> projectPaths,
+            @RequestParam(required = false) String language) {
+        return v1.getDashboard(null, projectPaths, language);
+    }
+
+    @GetMapping("/dsm")
+    public ApiResponse<Map<String, Object>> getDsm(
+            @RequestParam List<String> projectPaths,
+            @RequestParam(required = false) String language,
+            @RequestParam(required = false, defaultValue = "package") String level) {
+        return v1.getDsm(null, projectPaths, language, level);
+    }
+
+    @GetMapping("/dsm/drill-down")
+    public ApiResponse<Map<String, Object>> getDsmDrillDown(
+            @RequestParam List<String> projectPaths,
+            @RequestParam List<String> modules) {
+        return v1.getDsmDrillDown(null, projectPaths, modules);
+    }
+
+    @GetMapping("/hotspots")
+    public ApiResponse<Map<String, Object>> getHotspots(
+            @RequestParam List<String> projectPaths,
+            @RequestParam(required = false) String language,
+            @RequestParam(required = false, defaultValue = "20") int limit) {
+        return v1.getHotspots(null, projectPaths, language, limit);
+    }
+
+    @GetMapping("/domains")
+    public ApiResponse<Map<String, Object>> getDomains(
+            @RequestParam List<String> projectPaths,
+            @RequestParam(required = false) String language) {
+        return v1.getDomains(null, projectPaths, language);
+    }
+
+    @GetMapping("/domains/{domainId}/classes")
+    public ApiResponse<Map<String, Object>> getDomainClasses(
+            @PathVariable String domainId,
+            @RequestParam List<String> projectPaths) {
+        return v1.getDomainClasses(domainId, null, projectPaths);
+    }
+
+    @PostMapping("/architecture-analysis")
+    public ApiResponse<Map<String, Object>> runArchitectureAnalysis(
+            @RequestParam List<String> projectPaths) {
+        return v1.runArchitectureAnalysis(null, projectPaths);
+    }
+
+    @GetMapping("/service-topology")
+    public ApiResponse<Map<String, Object>> getServiceTopology(
+            @RequestParam List<String> projectPaths,
+            @RequestParam(required = false) String language) {
+        return v1.getServiceTopology(null, projectPaths, language);
+    }
+
+    @GetMapping("/blast-radius/{nodeId}")
+    public ApiResponse<Map<String, Object>> getBlastRadius(
+            @PathVariable String nodeId,
+            @RequestParam(defaultValue = "5") int maxDepth,
+            @RequestParam List<String> projectPaths) {
+        return v1.getBlastRadius(nodeId, maxDepth, null, projectPaths);
+    }
+
+    @GetMapping("/module-dependency-graph")
+    public ApiResponse<Map<String, Object>> getModuleDependencyGraph(
+            @RequestParam List<String> projectPaths,
+            @RequestParam String sourceModule,
+            @RequestParam String targetModule) {
+        return v1.getModuleDependencyGraph(null, projectPaths, sourceModule, targetModule);
+    }
+
+    @GetMapping("/domain-dependency-graph")
+    public ApiResponse<Map<String, Object>> getDomainDependencyGraph(
+            @RequestParam List<String> projectPaths,
+            @RequestParam String sourceDomain,
+            @RequestParam String targetDomain) {
+        return v1.getDomainDependencyGraph(null, projectPaths, sourceDomain, targetDomain);
+    }
+
+    @GetMapping("/build-modules")
+    public ApiResponse<Map<String, Object>> getBuildModules(
+            @RequestParam List<String> projectPaths) {
+        return v1.getBuildModules(null, projectPaths);
+    }
+
+    @GetMapping("/build-module-cycles")
+    public ApiResponse<Map<String, Object>> getBuildModuleCycles(
+            @RequestParam List<String> projectPaths) {
+        return v1.getBuildModuleCycles(null, projectPaths);
+    }
+
+    @GetMapping("/build-module-layer-violations")
+    public ApiResponse<Map<String, Object>> getBuildModuleLayerViolations(
+            @RequestParam List<String> projectPaths) {
+        return v1.getBuildModuleLayerViolations(null, projectPaths);
+    }
+
+    @GetMapping("/package-cycles")
+    public ApiResponse<Map<String, Object>> getPackageCycles(
+            @RequestParam List<String> projectPaths) {
+        return v1.getPackageCycles(null, projectPaths);
+    }
+
+    @GetMapping("/package-dependencies")
+    public ApiResponse<Map<String, Object>> getPackageDependencies(
+            @RequestParam List<String> projectPaths) {
+        return v1.getPackageDependencies(null, projectPaths);
+    }
+
+    @GetMapping("/module-cycles")
+    public ApiResponse<Map<String, Object>> getModuleCycles(
+            @RequestParam List<String> projectPaths) {
+        return v1.getModuleCycles(null, projectPaths);
+    }
+
+    @GetMapping("/class-layer-violations")
+    public ApiResponse<Map<String, Object>> getClassLayerViolations(
+            @RequestParam List<String> projectPaths) {
+        return v1.getClassLayerViolations(null, projectPaths);
+    }
+
+    @GetMapping("/class-dependencies")
+    public ApiResponse<Map<String, Object>> getClassDependencies(
+            @RequestParam List<String> projectPaths,
+            @RequestParam(required = false) List<String> packages) {
+        return v1.getClassDependencies(null, projectPaths, packages);
+    }
+
+    @GetMapping("/layer-domain-matrix")
+    public ApiResponse<Map<String, Object>> getLayerDomainMatrix(
+            @RequestParam List<String> projectPaths) {
+        return v1.getLayerDomainMatrix(null, projectPaths);
+    }
+
+    @GetMapping("/class-ego-net")
+    public ApiResponse<Map<String, Object>> getClassEgoNet(
+            @RequestParam List<String> projectPaths,
+            @RequestParam(required = false) List<String> packages) {
+        return v1.getClassEgoNet(null, projectPaths, packages);
+    }
+
+    @PostMapping("/test-suggestions")
+    public ApiResponse<Map<String, Object>> generateTestSuggestions(
+            @RequestParam String nodeId,
+            @RequestParam List<String> projectPaths) {
+        return generationController.generateTestSuggestions(nodeId, null, projectPaths);
+    }
+
+    @PostMapping("/refactor-suggestions")
+    public ApiResponse<Map<String, Object>> generateRefactorSuggestions(
+            @RequestParam String moduleName,
+            @RequestParam List<String> projectPaths) {
+        return generationController.generateRefactorSuggestions(moduleName, null, projectPaths);
     }
 }

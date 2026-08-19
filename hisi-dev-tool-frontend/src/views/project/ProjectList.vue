@@ -227,6 +227,15 @@
                       <el-icon><Collection /></el-icon>
                       描述&amp;向量
                     </el-button>
+                    <el-button
+                      type="warning"
+                      link
+                      @click="handleArchitectureAnalysis(row)"
+                      :loading="analyzingArchitecture.has(normalizePath(row.path))"
+                      :disabled="!appStore.projectDirConfigured"
+                    >
+                      架构现状
+                    </el-button>
                     <GitOperations
                       v-if="hasGit(row) && appStore.projectDirConfigured"
                       :project-path="getProjectPath(row.name)"
@@ -585,6 +594,19 @@
         <el-button @click="resetKgExcludeDefaults">恢复默认</el-button>
         <el-button @click="showKgExcludeDialog = false">取消</el-button>
         <el-button type="primary" @click="saveKgExcludePaths">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 图谱生成后处理勾选弹窗 -->
+    <el-dialog v-model="generateDialogVisible" title="生成知识图谱" width="480px">
+      <div class="kg-exclude-hint">
+        选择图谱生成后是否继续生成以下内容（串行执行）：
+      </div>
+      <el-checkbox v-model="genVector" class="mt-4" style="display:block">语义&amp;向量（生成方法自然语言描述 + 向量）</el-checkbox>
+      <el-checkbox v-model="genArchitecture" class="mt-2" style="display:block">架构现状（领域划分 / DSM / 热点）</el-checkbox>
+      <template #footer>
+        <el-button @click="generateDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="doGenerateKnowledgeGraph">开始生成</el-button>
       </template>
     </el-dialog>
 
@@ -1945,13 +1967,27 @@ onUnmounted(() => {
   stopVectorPolling()
 })
 
-// Generate knowledge graph (async task)
-const handleGenerateKnowledgeGraph = async (row: GitRepositoryInfo) => {
+// Generate knowledge graph (async task) — 弹窗勾选语义向量 / 架构现状
+const generateDialogVisible = ref(false)
+const genVector = ref(true)
+const genArchitecture = ref(true)
+const pendingGenerateRow = ref<GitRepositoryInfo | null>(null)
+
+const handleGenerateKnowledgeGraph = (row: GitRepositoryInfo) => {
   if (!appStore.projectDirConfigured) {
     ElMessage.warning('请先配置项目目录')
     return
   }
+  pendingGenerateRow.value = row
+  genVector.value = true
+  genArchitecture.value = true
+  generateDialogVisible.value = true
+}
 
+const doGenerateKnowledgeGraph = async () => {
+  const row = pendingGenerateRow.value
+  if (!row) return
+  generateDialogVisible.value = false
   const normalizedPath = normalizePath(row.path)
   generatingKnowledgeGraph.value.add(normalizedPath)
 
@@ -1959,7 +1995,7 @@ const handleGenerateKnowledgeGraph = async (row: GitRepositoryInfo) => {
     // 记录防呆时间
     recordGenerateTime(row.path)
     // Start async task
-    const task = await knowledgeGraphApi.startGenerateTask(row.path, kgExcludePaths.value)
+    const task = await knowledgeGraphApi.startGenerateTask(row.path, kgExcludePaths.value, genVector.value, genArchitecture.value)
     if (task) {
       knowledgeGraphTaskStatusMap.value = {
         ...knowledgeGraphTaskStatusMap.value,
@@ -2063,6 +2099,25 @@ const handleGenerateVector = async (row: GitRepositoryInfo) => {
     if (action === 'cancel') {
       doGenerateVector(row, 'incremental')
     }
+  }
+}
+
+// 独立触发架构现状分析（领域划分）
+const analyzingArchitecture = ref(new Set<string>())
+const handleArchitectureAnalysis = async (row: GitRepositoryInfo) => {
+  if (!appStore.projectDirConfigured) {
+    ElMessage.warning('请先配置项目目录')
+    return
+  }
+  const normalizedPath = normalizePath(row.path)
+  analyzingArchitecture.value.add(normalizedPath)
+  try {
+    await knowledgeGraphApi.runArchitectureAnalysis([row.path])
+    ElMessage.success('已开始架构现状分析（领域划分）')
+  } catch (error: any) {
+    ElMessage.error(`架构现状分析失败: ${error.message || error}`)
+  } finally {
+    analyzingArchitecture.value.delete(normalizedPath)
   }
 }
 // ============================================================

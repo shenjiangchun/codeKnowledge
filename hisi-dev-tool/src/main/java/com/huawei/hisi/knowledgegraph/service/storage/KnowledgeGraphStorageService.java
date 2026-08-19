@@ -4,6 +4,7 @@ import com.huawei.hisi.knowledgegraph.model.ClassExtends;
 import com.huawei.hisi.knowledgegraph.model.InterfaceImplementation;
 import com.huawei.hisi.knowledgegraph.model.MethodOverride;
 import com.huawei.hisi.knowledgegraph.model.ProxyRelation;
+import com.huawei.hisi.neo4j.model.DataModelNode;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
 
@@ -138,6 +139,13 @@ public interface KnowledgeGraphStorageService {
      * 根据项目路径查询代理类关系数量
      */
     int countProxyRelations(String projectPath);
+
+    // ==================== 数据模型操作 ====================
+
+    /**
+     * 批量保存数据模型节点 + USES_MODEL 关系
+     */
+    void saveDataModels(List<DataModelNode> dataModelNodes, List<Map<String, Object>> usesModelRelations);
 
     // ==================== 数据清理操作 ====================
 

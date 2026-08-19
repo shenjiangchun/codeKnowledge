@@ -150,4 +150,39 @@ public class MethodNode {
      */
     @Property("codeHash")
     private String codeHash;
+
+    /**
+     * 包名 (从全限定类名提取，如 com.example.service)
+     * 构建时自动提取，迁移 API 可回填历史数据
+     */
+    @Property("packageName")
+    private String packageName;
+
+    /**
+     * 入度 (被多少外部方法调用)
+     * 聚合 Stage 计算，不走 mergeAll
+     */
+    @Property("inDegree")
+    private Integer inDegree;
+
+    /**
+     * 出度 (调用了多少外部方法)
+     * 聚合 Stage 计算，不走 mergeAll
+     */
+    @Property("outDegree")
+    private Integer outDegree;
+
+    /**
+     * 社区检测结果 (Louvain 算法分配的社区 ID)
+     * 聚合 Stage 计算，不走 mergeAll
+     */
+    @Property("communityId")
+    private Integer communityId;
+
+    /**
+     * 综合风险分 (0.0-1.0)
+     * 聚合 Stage 计算：复杂度×0.35 + churn×0.35 + 耦合×0.20 + 循环×0.10
+     */
+    @Property("riskScore")
+    private Double riskScore;
 }

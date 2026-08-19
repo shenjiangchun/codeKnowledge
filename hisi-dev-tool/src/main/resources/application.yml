@@ -33,7 +33,7 @@ spring:
       base-url: ${ZHIPU_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
       chat:
         options:
-          model: ${ZHIPU_TEXT_MODEL:glm-4-flash}
+          model: ${ZHIPU_TEXT_MODEL:GLM-4.7-Flash}
           temperature: 0.1
     retry:
       max-attempts: 3
@@ -71,7 +71,7 @@ embedding:
 text-model:
   api-key: ${TEXT_MODEL_API_KEY:}
   base-url: https://open.bigmodel.cn/api/paas/v4
-  model: GLM-4-FlashX-250414
+  model: GLM-4.7-Flash
   temperature: 0.1
   max-tokens: 200
   timeout: 30000

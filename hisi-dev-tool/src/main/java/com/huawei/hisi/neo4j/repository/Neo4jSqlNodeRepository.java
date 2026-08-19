@@ -342,7 +342,7 @@ public interface Neo4jSqlNodeRepository extends Neo4jRepository<SqlNode, String>
      * 用于 SQL_SNIPPET 查询类型（向量索引可用时）
      */
     @Query("""
-        CALL db.index.vector.queryNodes('sql_vector_index', $topK, $embedding)
+        CALL db.index.vector.queryNodes('sql_node_vector_index', $topK, $embedding)
         YIELD node AS s, score
         WHERE s.projectPath = $projectPath AND score >= $threshold
         RETURN s
@@ -360,7 +360,7 @@ public interface Neo4jSqlNodeRepository extends Neo4jRepository<SqlNode, String>
      * 用于 SQL_SNIPPET 查询类型（向量索引可用时），返回节点和相似度分数
      */
     @Query("""
-        CALL db.index.vector.queryNodes('sql_vector_index', $topK, $embedding)
+        CALL db.index.vector.queryNodes('sql_node_vector_index', $topK, $embedding)
         YIELD node AS s, score
         WHERE s.projectPath = $projectPath AND score >= $threshold
         RETURN s.nodeId as nodeId, s.sqlId as sqlId, s.statementType as statementType,

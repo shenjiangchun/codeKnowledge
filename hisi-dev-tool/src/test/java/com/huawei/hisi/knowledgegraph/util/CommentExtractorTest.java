@@ -380,4 +380,52 @@ class CommentExtractorTest {
         assertNotNull(comments);
         assertTrue(comments.isEmpty());
     }
+
+    // ================== 类注释提取测试（extractClassComment） ==================
+
+    @Test
+    void testExtractClassComment_withJavadoc() throws IOException {
+        String javaCode = """
+            package com.example;
+
+            /**
+             * 订单服务，处理订单的创建与查询
+             */
+            public class OrderService {
+                public void placeOrder() {}
+            }
+            """;
+        Path javaFile = tempDir.resolve("OrderService.java");
+        Files.writeString(javaFile, javaCode);
+
+        String comment = CommentExtractor.extractClassComment(javaFile);
+
+        assertTrue(comment.contains("订单服务"));
+    }
+
+    @Test
+    void testExtractClassComment_noJavadoc() throws IOException {
+        String javaCode = """
+            package com.example;
+
+            public class PlainService {
+                public void doSomething() {}
+            }
+            """;
+        Path javaFile = tempDir.resolve("PlainService.java");
+        Files.writeString(javaFile, javaCode);
+
+        String comment = CommentExtractor.extractClassComment(javaFile);
+
+        assertEquals("", comment);
+    }
+
+    @Test
+    void testExtractClassComment_fileNotExists() {
+        Path nonExistentFile = tempDir.resolve("NonExistent.java");
+
+        String comment = CommentExtractor.extractClassComment(nonExistentFile);
+
+        assertEquals("", comment);
+    }
 }

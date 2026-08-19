@@ -95,19 +95,32 @@ public class IncrementalKnowledgeGraphBuilder {
      * @return refresh result with statistics
      */
     public RefreshResult incrementalRefresh(String projectPath) {
+        return incrementalRefresh(projectPath, false, false);
+    }
+
+    /**
+     * 增量刷新 + 可选后处理。
+     *
+     * @param refreshDescription    是否刷新语义&向量（自然语言描述 + 向量）
+     * @param refreshArchitecture   是否刷新架构现状（DSM/热点/领域全量重归域）
+     */
+    public RefreshResult incrementalRefresh(String projectPath,
+                                            boolean refreshDescription, boolean refreshArchitecture) {
         if (!kgb.generationSemaphore.tryAcquire()) {
             throw new IllegalStateException("知识图谱生成任务正在执行中，请稍后再试（同一时刻仅允许一个项目生成）");
         }
         try {
-            return doIncrementalRefresh(projectPath);
+            return doIncrementalRefresh(projectPath, refreshDescription, refreshArchitecture);
         } finally {
             kgb.generationSemaphore.release();
         }
     }
 
-    private RefreshResult doIncrementalRefresh(String projectPath) {
+    private RefreshResult doIncrementalRefresh(String projectPath,
+                                               boolean refreshDescription, boolean refreshArchitecture) {
         String normalizedPath = PathUtils.normalize(projectPath);
-        log.info("[IncRefresh] Starting incremental refresh: {}", normalizedPath);
+        log.info("[IncRefresh] Starting incremental refresh: {} (refreshDescription={}, refreshArchitecture={})",
+            normalizedPath, refreshDescription, refreshArchitecture);
 
         try {
             // 1. Validate checkpoint
@@ -156,6 +169,24 @@ public class IncrementalKnowledgeGraphBuilder {
             String branch = kgb.gitStatusService.getCurrentBranch(normalizedPath);
             kgb.checkpointRepository.upsertCheckpoint(normalizedPath,
                     currentCommit != null ? currentCommit : "NO_COMMIT", branch);
+
+            // 可选后处理：刷新语义&向量 / 架构现状
+            if (refreshDescription) {
+                try {
+                    log.info("[IncRefresh] 刷新语义&向量: {}", normalizedPath);
+                    kgb.vectorGenerationService.startVectorGeneration(normalizedPath);
+                } catch (Exception e) {
+                    log.warn("[IncRefresh] 刷新语义&向量失败（不阻断）: {}", e.getMessage());
+                }
+            }
+            if (refreshArchitecture) {
+                try {
+                    log.info("[IncRefresh] 刷新架构现状（领域全量重归域）: {}", normalizedPath);
+                    kgb.aggregationPipeline.run(normalizedPath, "FULL", null, null);
+                } catch (Exception e) {
+                    log.warn("[IncRefresh] 刷新架构现状失败（不阻断）: {}", e.getMessage());
+                }
+            }
 
             return result;
         } catch (NoCheckpointException e) {
@@ -520,6 +551,15 @@ public class IncrementalKnowledgeGraphBuilder {
             kgb.vectorGenerationService.startVectorGeneration(projectPath);
         }
 
+        // 聚合管道：增量模式，局部重算（社区全量重跑）
+        try {
+            kgb.aggregationPipeline.run(projectPath, "INCREMENTAL",
+                allRebuiltNodes.stream().map(MethodNode::getNodeId).collect(Collectors.toSet()),
+                javaFiles);
+        } catch (Exception e) {
+            log.warn("[Aggregation] Java 增量聚合异常: {}", e.getMessage());
+        }
+
         // F5. Save generation log
         kgb.saveGenerationLog(projectPath,
                 (int) kgb.neo4jMethodNodeRepository.countByProjectPath(projectPath),
@@ -715,6 +755,14 @@ public class IncrementalKnowledgeGraphBuilder {
         // Phase F: Vector generation
         if (!rebuiltNodes.isEmpty()) {
             kgb.vectorGenerationService.startVectorGeneration(projectPath);
+        }
+
+        try {
+            kgb.aggregationPipeline.run(projectPath, "INCREMENTAL",
+                rebuiltNodes.stream().map(MethodNode::getNodeId).collect(Collectors.toSet()),
+                pythonFiles);
+        } catch (Exception e) {
+            log.warn("[Aggregation] Python 增量聚合异常: {}", e.getMessage());
         }
 
         // Save generation log

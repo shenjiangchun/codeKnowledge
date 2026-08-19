@@ -9,6 +9,7 @@ import com.huawei.hisi.neo4j.model.SqlNode;
 import com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jSqlNodeRepository;
+import com.huawei.hisi.neo4j.repository.Neo4jClassNodeRepository;
 import com.huawei.hisi.neo4j.service.EmbeddingService;
 import com.huawei.hisi.service.AdaptiveBatchController;
 import jakarta.annotation.PostConstruct;
@@ -63,6 +64,8 @@ public class VectorGenerationService {
     private final LLMDescriptionService llmDescriptionService;
     private final EmbeddingService embeddingService;
     private final EntryPointDescriptionService entryPointDescriptionService;
+    private final ClassDescriptionService classDescriptionService;
+    private final Neo4jClassNodeRepository classNodeRepository;
 
     /**
      * 工作线程数。默认 6 = min(embedding.burst=10, text-model.burst=6)，
@@ -97,7 +100,9 @@ public class VectorGenerationService {
                                     GenerationTaskRepository taskRepository,
                                     LLMDescriptionService llmDescriptionService,
                                     EmbeddingService embeddingService,
-                                    EntryPointDescriptionService entryPointDescriptionService) {
+                                    EntryPointDescriptionService entryPointDescriptionService,
+                                    ClassDescriptionService classDescriptionService,
+                                    Neo4jClassNodeRepository classNodeRepository) {
         this.neo4jMethodNodeRepository = neo4jMethodNodeRepository;
         this.neo4jSqlNodeRepository = neo4jSqlNodeRepository;
         this.neo4jEntryPointNodeRepository = neo4jEntryPointNodeRepository;
@@ -105,6 +110,8 @@ public class VectorGenerationService {
         this.llmDescriptionService = llmDescriptionService;
         this.embeddingService = embeddingService;
         this.entryPointDescriptionService = entryPointDescriptionService;
+        this.classDescriptionService = classDescriptionService;
+        this.classNodeRepository = classNodeRepository;
     }
 
     @PostConstruct
@@ -278,7 +285,11 @@ public class VectorGenerationService {
             fileLog("[入口描述] 开始处理入口点描述...");
             processEntryPointDescriptions(projectPath);
 
-            // 6. 完成
+            // 6. 生成类描述和向量（此时方法描述已生成完毕）
+            fileLog("[类描述] 开始处理类描述...");
+            processClassDescriptions(projectPath);
+
+            // 7. 完成
             long totalTime = System.currentTimeMillis() - startTime;
             Optional<GenerationTask> latestTask = taskRepository.findLatestByProjectPathAndType(projectPath, TASK_TYPE);
             if (latestTask.isPresent()) {
@@ -590,6 +601,34 @@ public class VectorGenerationService {
         }
 
         fileLog("[入口描述] 完成: 成功={}, 失败={}", entrySuccess.get(), entryFail.get());
+    }
+
+    /** 生成类描述（聚合方法描述/签名）并对类描述向量化，写入 ClassNode.descriptionEmbedding */
+    private void processClassDescriptions(String projectPath) {
+        try {
+            int generated = classDescriptionService.generateClassDescriptions(projectPath);
+            fileLog("[类描述] 生成类描述数: {}", generated);
+
+            // 对已生成描述的 ClassNode 做向量化
+            var classes = classNodeRepository.findByProjectPath(projectPath);
+            int vectorized = 0;
+            for (var cls : classes) {
+                if (cls.getDescription() == null || cls.getDescription().isBlank()) continue;
+                if (cls.getDescriptionEmbedding() != null) continue;  // 断点续传
+                try {
+                    float[] embedding = embeddingService.generateEmbedding(cls.getDescription());
+                    cls.setDescriptionEmbedding(embedding);
+                    classNodeRepository.save(cls);
+                    vectorized++;
+                } catch (Exception e) {
+                    fileLog("[ERROR] 类向量化失败: classId={}, error={}", cls.getClassId(), e.getMessage());
+                }
+            }
+            fileLog("[类描述] 类向量化完成: {}", vectorized);
+        } catch (Exception e) {
+            fileLog("[ERROR] 类描述处理失败: {}", e.getMessage());
+            log.warn("[ClassDescription] 类描述处理异常: {}", e.getMessage());
+        }
     }
 
     public VectorGenerationTask getTaskStatus(String projectPath) {

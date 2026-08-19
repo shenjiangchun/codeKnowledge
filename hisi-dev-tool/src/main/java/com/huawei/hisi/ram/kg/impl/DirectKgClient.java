@@ -98,6 +98,73 @@ public class DirectKgClient implements KgMcpClient {
         }
     }
 
+    /** 类级语义检索：走 searchType=CLASS，结果从 items（nodeType=Class）转为 Seed */
+    private List<Seed> doClassSearch(String query, List<String> normPaths, int limit) {
+        try {
+            String firstPath = normPaths.isEmpty() ? "" : normPaths.get(0);
+            SearchResult result = hybridSearchService.hybridSearch(
+                    query, firstPath, normPaths, null, limit, 0, "CLASS");
+            if (result == null || result.getItems() == null) {
+                return Collections.emptyList();
+            }
+            return result.getItems().stream()
+                    .filter(i -> "Class".equals(i.getNodeType()))
+                    .limit(limit > 0 ? limit : Long.MAX_VALUE)
+                    .map(i -> new Seed(
+                            i.getClassName(),  // 类检索的 seed 用 className 作标识
+                            0.0,
+                            i.getDescription() != null ? i.getDescription() : i.getClassName()))
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            log.warn("classSearch failed for query='{}', projectPaths={}: {}", query, normPaths, e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    @Override
+    public List<Seed> classSearch(String query, String projectPath, int limit) {
+        String normPath = PathUtils.normalize(projectPath);
+        return doClassSearch(query, List.of(normPath), limit);
+    }
+
+    @Override
+    public List<Seed> classSearch(String query, List<String> projectPaths, int limit) {
+        return doClassSearch(query, normalizePaths(projectPaths), limit);
+    }
+
+    @Override
+    public List<Seed> representativeMethod(String className, String projectPath, int limit) {
+        return representativeMethod(className, List.of(PathUtils.normalize(projectPath)), limit);
+    }
+
+    @Override
+    public List<Seed> representativeMethod(String className, List<String> projectPaths, int limit) {
+        List<String> normPaths = normalizePaths(projectPaths);
+        if (normPaths.isEmpty() || className == null || className.isBlank()) {
+            return Collections.emptyList();
+        }
+        try {
+            // 查该类所有方法，按入度降序取代表方法
+            List<Seed> seeds = new ArrayList<>();
+            for (String path : normPaths) {
+                List<MethodNode> methods = methodNodeRepository.findByProjectPathAndClassName(path, className);
+                methods.stream()
+                    .sorted((a, b) -> Integer.compare(
+                        b.getInDegree() != null ? b.getInDegree() : 0,
+                        a.getInDegree() != null ? a.getInDegree() : 0))
+                    .limit(limit > 0 ? limit : 1)
+                    .forEach(m -> seeds.add(new Seed(
+                        m.getNodeId(),
+                        0.0,
+                        m.getDescription() != null ? m.getDescription() : m.getMethodName())));
+            }
+            return seeds;
+        } catch (Exception e) {
+            log.warn("representativeMethod failed for className='{}': {}", className, e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
     @Override
     public List<Entry> entryPoints(String projectPath, String entryType) {
         String normPath = PathUtils.normalize(projectPath);

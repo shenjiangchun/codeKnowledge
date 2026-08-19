@@ -41,6 +41,7 @@ public class KgGenerationQueue {
     private final KnowledgeGraphBuilder knowledgeGraphBuilder;
     private final IncrementalKnowledgeGraphBuilder incrementalBuilder;
     private final GenerationTaskRepository taskRepository;
+    private final com.huawei.hisi.knowledgegraph.aggregation.AggregationPipeline aggregationPipeline;
 
     private final LinkedBlockingQueue<QueueItem> queue = new LinkedBlockingQueue<>();
     private Thread consumerThread;
@@ -50,16 +51,18 @@ public class KgGenerationQueue {
 
     public KgGenerationQueue(KnowledgeGraphBuilder knowledgeGraphBuilder,
                              IncrementalKnowledgeGraphBuilder incrementalBuilder,
-                             GenerationTaskRepository taskRepository) {
+                             GenerationTaskRepository taskRepository,
+                             com.huawei.hisi.knowledgegraph.aggregation.AggregationPipeline aggregationPipeline) {
         this.knowledgeGraphBuilder = knowledgeGraphBuilder;
         this.incrementalBuilder = incrementalBuilder;
         this.taskRepository = taskRepository;
+        this.aggregationPipeline = aggregationPipeline;
     }
 
     // ==================== 内部队列项 ====================
 
     record QueueItem(String projectPath, List<String> excludePaths, Long taskId,
-                     boolean incremental) {}
+                     boolean incremental, boolean generateVector, boolean generateArchitecture) {}
 
     // ==================== 生命周期 ====================
 
@@ -88,6 +91,14 @@ public class KgGenerationQueue {
      * @return 创建的 KG 任务（PENDING 状态）
      */
     public KnowledgeGraphTask enqueue(String rawProjectPath, List<String> excludePaths) {
+        return enqueue(rawProjectPath, excludePaths, true, true);
+    }
+
+    /**
+     * 单项目入队，可指定是否生成语义向量、是否运行架构现状聚合。
+     */
+    public KnowledgeGraphTask enqueue(String rawProjectPath, List<String> excludePaths,
+                                      boolean generateVector, boolean generateArchitecture) {
         String projectPath = KnowledgeGraphCommonUtils.normalizePath(rawProjectPath);
 
         // 前置校验
@@ -118,7 +129,7 @@ public class KgGenerationQueue {
                 .build();
         genTask = taskRepository.insert(genTask);
 
-        queue.offer(new QueueItem(projectPath, excludePaths, genTask.getId(), false));
+        queue.offer(new QueueItem(projectPath, excludePaths, genTask.getId(), false, generateVector, generateArchitecture));
         log.info("[KG Queue] Enqueued: projectPath={}, taskId={}, queueSize={}",
                 projectPath, genTask.getId(), queue.size());
 
@@ -148,7 +159,7 @@ public class KgGenerationQueue {
                 .build();
         genTask = taskRepository.insert(genTask);
 
-        queue.offer(new QueueItem(projectPath, null, genTask.getId(), true));
+        queue.offer(new QueueItem(projectPath, null, genTask.getId(), true, true, true));
         log.info("[KG Queue] Enqueued incremental: projectPath={}, taskId={}, queueSize={}",
                 projectPath, genTask.getId(), queue.size());
 
@@ -258,8 +269,9 @@ public class KgGenerationQueue {
                 return;
             }
         } else {
-            // 全量构建（内部自动触发异步向量生成）
-            knowledgeGraphBuilder.buildKnowledgeGraph(item.projectPath(), item.excludePaths());
+            // 全量构建（内部自动触发异步向量生成；架构现状聚合在 waitForVectorCompletion 之后串行执行）
+            knowledgeGraphBuilder.buildKnowledgeGraph(item.projectPath(), item.excludePaths(),
+                    item.generateVector());
             taskRepository.updateCompleted(item.taskId(), 0, 0, 0, 0);
         }
 
@@ -269,6 +281,18 @@ public class KgGenerationQueue {
 
         // 等待向量生成完成
         waitForVectorCompletion(item.projectPath());
+
+        // 架构现状聚合：在向量生成（方法描述）完成之后串行执行，保证类描述能用方法描述聚合
+        if (!item.incremental() && item.generateArchitecture()) {
+            log.info("[KG Queue] 向量生成完成，开始架构现状聚合: projectPath={}", item.projectPath());
+            try {
+                aggregationPipeline.run(item.projectPath(), "FULL", null, null);
+                log.info("[KG Queue] 架构现状聚合完成: projectPath={}", item.projectPath());
+            } catch (Exception e) {
+                log.warn("[KG Queue] 架构现状聚合异常（不阻断）: projectPath={}, error={}",
+                    item.projectPath(), e.getMessage());
+            }
+        }
 
         long totalTime = System.currentTimeMillis() - startTime;
         log.info("[KG Queue] Full pipeline completed: projectPath={}, totalCostMs={}",

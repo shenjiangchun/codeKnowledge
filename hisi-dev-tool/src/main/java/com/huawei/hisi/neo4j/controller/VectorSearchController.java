@@ -103,7 +103,8 @@ public class VectorSearchController {
                     paths,
                     request.getLanguage(),
                     request.getLimit(),
-                    request.getGraphDepth()
+                    request.getGraphDepth(),
+                    request.getSearchType()
             );
 
             log.info("搜索完成: totalCount={}, costTimeMs={}",
@@ -333,6 +334,12 @@ public class VectorSearchController {
          */
         private String language;
 
+        /**
+         * 可选: 显式检索类型（METHOD/CLASS/SQL/ENTRY/ALL）
+         * 为空时回退到 QueryTypeDetector 自动检测（向后兼容）。
+         */
+        private String searchType;
+
         public String getQuery() {
             return query;
         }
@@ -379,6 +386,14 @@ public class VectorSearchController {
 
         public void setLanguage(String language) {
             this.language = language;
+        }
+
+        public String getSearchType() {
+            return searchType;
+        }
+
+        public void setSearchType(String searchType) {
+            this.searchType = searchType;
         }
     }
 }

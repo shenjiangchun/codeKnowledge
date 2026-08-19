@@ -4,11 +4,17 @@ import com.huawei.hisi.knowledgegraph.model.ClassExtends;
 import com.huawei.hisi.knowledgegraph.model.InterfaceImplementation;
 import com.huawei.hisi.knowledgegraph.model.MethodOverride;
 import com.huawei.hisi.knowledgegraph.model.ProxyRelation;
+import com.huawei.hisi.neo4j.model.DataModelNode;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
 import com.huawei.hisi.neo4j.repository.Neo4jDataModelNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
+import com.huawei.hisi.neo4j.repository.Neo4jClassNodeRepository;
+import com.huawei.hisi.neo4j.repository.ChurnNodeRepository;
+import com.huawei.hisi.neo4j.repository.ModuleNodeRepository;
+import com.huawei.hisi.neo4j.repository.DomainNodeRepository;
+import com.huawei.hisi.neo4j.repository.AggregationCheckpointRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,6 +39,11 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
     private final Neo4jMethodNodeRepository methodNodeRepository;
     private final Neo4jEntryPointNodeRepository entryPointRepository;
     private final Neo4jDataModelNodeRepository dataModelNodeRepository;
+    private final Neo4jClassNodeRepository classNodeRepository;
+    private final ChurnNodeRepository churnNodeRepository;
+    private final ModuleNodeRepository moduleNodeRepository;
+    private final DomainNodeRepository domainNodeRepository;
+    private final AggregationCheckpointRepository aggregationCheckpointRepository;
 
     // ==================== 方法节点操作 ====================
 
@@ -77,6 +88,7 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
                 map.put("thrownExceptions", n.getThrownExceptions());
                 map.put("caughtExceptions", n.getCaughtExceptions());
                 map.put("language", n.getLanguage());
+                map.put("packageName", n.getPackageName());
                 return map;
             })
             .toList();
@@ -395,6 +407,18 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
     // ==================== 数据清理操作 ====================
 
     @Override
+    @Transactional(transactionManager = "neo4jTransactionManager")
+    public void saveDataModels(List<DataModelNode> dataModelNodes, List<Map<String, Object>> usesModelRelations) {
+        if (dataModelNodes != null && !dataModelNodes.isEmpty()) {
+            dataModelNodeRepository.saveAll(dataModelNodes);
+        }
+        if (usesModelRelations != null && !usesModelRelations.isEmpty()) {
+            dataModelNodeRepository.createUsesModelRelations(usesModelRelations);
+        }
+        log.info("[Neo4j] 保存数据模型: {} 节点, {} 关系", dataModelNodes.size(), usesModelRelations.size());
+    }
+
+    @Override
     public void cleanProjectData(String projectPath) {
         log.info("[Neo4j] 清理项目数据（分批分事务）: {}", projectPath);
         // 清理 DataModel 节点和 USES_MODEL 关系
@@ -423,6 +447,37 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
             totalDeleted += deleted;
         } while (deleted > 0);
         log.info("[Neo4j] 分批删除入口点完成: projectPath={}, 共删除 {} 个", projectPath, totalDeleted);
+        // 清理聚合数据节点（每个独立 try-catch，避免部分失败导致剩余节点遗留）
+        try {
+            long moduleDeleted = moduleNodeRepository.deleteByProjectPath(projectPath);
+            log.info("[Neo4j] 清理 ModuleNode: {}", moduleDeleted);
+        } catch (Exception e) {
+            log.warn("[Neo4j] 清理 ModuleNode 异常: {}", e.getMessage());
+        }
+        try {
+            long churnDeleted = churnNodeRepository.deleteByProjectPath(projectPath);
+            log.info("[Neo4j] 清理 ChurnNode: {}", churnDeleted);
+        } catch (Exception e) {
+            log.warn("[Neo4j] 清理 ChurnNode 异常: {}", e.getMessage());
+        }
+        try {
+            long domainDeleted = domainNodeRepository.deleteByProjectPath(projectPath);
+            log.info("[Neo4j] 清理 DomainNode: {}", domainDeleted);
+        } catch (Exception e) {
+            log.warn("[Neo4j] 清理 DomainNode 异常: {}", e.getMessage());
+        }
+        try {
+            long checkpointDeleted = aggregationCheckpointRepository.deleteByProjectPath(projectPath);
+            log.info("[Neo4j] 清理 AggregationCheckpoint: {}", checkpointDeleted);
+        } catch (Exception e) {
+            log.warn("[Neo4j] 清理 AggregationCheckpoint 异常: {}", e.getMessage());
+        }
+        try {
+            classNodeRepository.detachDeleteByProjectPath(projectPath);
+            log.info("[Neo4j] 清理 ClassNode 完成");
+        } catch (Exception e) {
+            log.warn("[Neo4j] 清理 ClassNode 异常: {}", e.getMessage());
+        }
     }
 
 }
