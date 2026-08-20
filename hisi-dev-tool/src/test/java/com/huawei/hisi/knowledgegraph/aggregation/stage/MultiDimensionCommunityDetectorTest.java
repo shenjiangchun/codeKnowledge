@@ -14,6 +14,9 @@ import org.neo4j.driver.SessionConfig;
 import org.neo4j.driver.Value;
 import org.neo4j.driver.Values;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 
 import java.util.*;
 
@@ -77,8 +80,26 @@ class MultiDimensionCommunityDetectorTest {
         when(extractionChatClient.prompt()).thenReturn(reqSpec);
         when(reqSpec.user(anyString())).thenReturn(reqSpec);
         when(reqSpec.call()).thenReturn(callSpec);
-        when(callSpec.entity(MultiDimensionCommunityDetector.DomainGrouping.class))
-            .thenReturn(new MultiDimensionCommunityDetector.DomainGrouping(domains));
+        // 模拟中转把思考散文（thinking 块）与 JSON（text 块）拆成两个 Generation，thinking 在前
+        String json = toJson(domains);
+        ChatResponse chatResponse = new ChatResponse(List.of(
+            new Generation(new AssistantMessage("用户要求将类按业务领域分类…（思考散文）")),
+            new Generation(new AssistantMessage(json))));
+        when(callSpec.chatResponse()).thenReturn(chatResponse);
+    }
+
+    private static String toJson(List<MultiDimensionCommunityDetector.DomainClassList> domains) {
+        StringBuilder sb = new StringBuilder("{\"domains\":[");
+        for (int i = 0; i < domains.size(); i++) {
+            if (i > 0) sb.append(',');
+            sb.append("{\"domainName\":\"").append(domains.get(i).domainName()).append("\",\"classNames\":[");
+            for (int j = 0; j < domains.get(i).classNames().size(); j++) {
+                if (j > 0) sb.append(',');
+                sb.append('"').append(domains.get(i).classNames().get(j)).append('"');
+            }
+            sb.append("]}");
+        }
+        return sb.append("]}").toString();
     }
 
     @Test

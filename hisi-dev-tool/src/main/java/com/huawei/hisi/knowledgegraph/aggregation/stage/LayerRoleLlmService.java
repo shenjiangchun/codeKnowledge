@@ -1,6 +1,7 @@
 package com.huawei.hisi.knowledgegraph.aggregation.stage;
 
 import com.fasterxml.jackson.annotation.JsonClassDescription;
+import com.huawei.hisi.knowledgegraph.aggregation.llm.RobustJsonExtractor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -69,11 +70,13 @@ public class LayerRoleLlmService {
             List<Map<String, String>> batch = items.subList(start, end);
             try {
                 String userPrompt = buildBatchPrompt(batch);
-                RoleGrouping grouping = extractionChatClient.prompt()
-                        .system(SYSTEM_PROMPT)
-                        .user(userPrompt)
-                        .call()
-                        .entity(RoleGrouping.class);
+                RoleGrouping grouping = RobustJsonExtractor.extract(
+                        extractionChatClient.prompt()
+                                .system(SYSTEM_PROMPT)
+                                .user(userPrompt)
+                                .call()
+                                .chatResponse(),
+                        RoleGrouping.class);
                 if (grouping != null && grouping.items() != null) {
                     for (RoleItem item : grouping.items()) {
                         results.add(new RoleResult(item.name(), normalizeRole(item.role())));
