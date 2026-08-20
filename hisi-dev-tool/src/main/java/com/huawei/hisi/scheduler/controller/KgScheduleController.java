@@ -20,10 +20,16 @@ public class KgScheduleController {
     private final KgScheduleRepository repository;
     private final KgSchedulerService schedulerService;
 
-    public record CreateRequest(String projectPath, String cronExpression, String taskType) {}
-    public record UpdateRequest(String projectPath, String cronExpression, String taskType, Boolean enabled) {}
+    public record CreateRequest(String projectPath, String cronExpression, String taskType,
+                                Boolean gitPullEnabled, String branch,
+                                Boolean refreshDescription, Boolean refreshArchitecture) {}
+    public record UpdateRequest(String projectPath, String cronExpression, String taskType, Boolean enabled,
+                                Boolean gitPullEnabled, String branch,
+                                Boolean refreshDescription, Boolean refreshArchitecture) {}
     public record ScheduleResponse(Long id, String projectPath, String cronExpression, String taskType,
-                                   boolean enabled, Long lastRunAt, Long nextRunAt) {}
+                                   boolean enabled, boolean gitPullEnabled, String branch,
+                                   boolean refreshDescription, boolean refreshArchitecture,
+                                   Long lastRunAt, Long nextRunAt) {}
 
     @GetMapping
     public ApiResponse<List<ScheduleResponse>> list() {
@@ -47,6 +53,10 @@ public class KgScheduleController {
                 .cronExpression(request.cronExpression())
                 .taskType(request.taskType())
                 .enabled(true)
+                .gitPullEnabled(Boolean.TRUE.equals(request.gitPullEnabled()))
+                .branch(request.branch() != null ? request.branch() : "")
+                .refreshDescription(Boolean.TRUE.equals(request.refreshDescription()))
+                .refreshArchitecture(Boolean.TRUE.equals(request.refreshArchitecture()))
                 .build();
             KgSchedule saved = repository.insert(schedule);
             schedulerService.registerTask(saved);
@@ -71,6 +81,10 @@ public class KgScheduleController {
             if (request.cronExpression() != null) existing.setCronExpression(request.cronExpression());
             if (request.taskType() != null) existing.setTaskType(request.taskType());
             if (request.enabled() != null) existing.setEnabled(request.enabled());
+            if (request.gitPullEnabled() != null) existing.setGitPullEnabled(request.gitPullEnabled());
+            if (request.branch() != null) existing.setBranch(request.branch());
+            if (request.refreshDescription() != null) existing.setRefreshDescription(request.refreshDescription());
+            if (request.refreshArchitecture() != null) existing.setRefreshArchitecture(request.refreshArchitecture());
 
             repository.update(existing);
             schedulerService.reRegisterTask(existing);
@@ -103,7 +117,8 @@ public class KgScheduleController {
 
     private ScheduleResponse toResponse(KgSchedule s) {
         return new ScheduleResponse(s.getId(), s.getProjectPath(), s.getCronExpression(),
-            s.getTaskType(), s.isEnabled(), s.getLastRunAt(), s.getNextRunAt());
+            s.getTaskType(), s.isEnabled(), s.isGitPullEnabled(), s.getBranch(),
+            s.isRefreshDescription(), s.isRefreshArchitecture(), s.getLastRunAt(), s.getNextRunAt());
     }
 
     private void validateCreate(CreateRequest request) {

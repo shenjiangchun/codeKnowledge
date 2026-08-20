@@ -458,6 +458,14 @@
                       <el-icon><Collection /></el-icon>
                       描述&amp;向量
                     </el-button>
+                    <el-button
+                      type="warning"
+                      link
+                      @click="handleRemoteArchitectureAnalysis(row)"
+                      :disabled="row.cloneStatus !== 'CLONED'"
+                    >
+                      架构现状
+                    </el-button>
                     <el-button type="info" link @click="openScheduleDialog(row)">定时任务配置</el-button>
                     <el-button type="danger" link @click="handleDeleteRemote(row)">删除</el-button>
                   </template>
@@ -666,6 +674,17 @@
             <el-radio value="FULL">全量</el-radio>
             <el-radio value="INCREMENTAL">增量</el-radio>
           </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="scheduleForm.taskType === 'INCREMENTAL'" label="拉取最新">
+          <el-switch v-model="scheduleForm.gitPullEnabled" />
+          <span class="schedule-hint">增量执行前 git pull 最新代码</span>
+        </el-form-item>
+        <el-form-item v-if="scheduleForm.taskType === 'INCREMENTAL' && scheduleForm.gitPullEnabled" label="分支">
+          <el-input v-model="scheduleForm.branch" placeholder="留空跟随仓库当前分支" />
+        </el-form-item>
+        <el-form-item v-if="scheduleForm.taskType === 'INCREMENTAL'" label="刷新勾选">
+          <el-checkbox v-model="scheduleForm.refreshDescription">语义&amp;向量</el-checkbox>
+          <el-checkbox v-model="scheduleForm.refreshArchitecture">架构现状</el-checkbox>
         </el-form-item>
         <el-form-item v-if="scheduleEditId !== null" label="启用">
           <el-switch v-model="scheduleForm.enabled" />
@@ -2615,6 +2634,10 @@ const handleRemoteGenerateKg = (row: RemoteProject) => {
   handleGenerateKnowledgeGraph({ name: row.name, path: row.localPath } as GitRepositoryInfo)
 }
 
+const handleRemoteArchitectureAnalysis = (row: RemoteProject) => {
+  handleArchitectureAnalysis({ name: row.name, path: row.localPath } as GitRepositoryInfo)
+}
+
 const handleRemoteGenerateVector = (row: RemoteProject) => {
   // 远端项目不需要本地项目目录，直接走选择流程
   const fakeRow = { name: row.name, path: row.localPath } as GitRepositoryInfo
@@ -2646,24 +2669,32 @@ const scheduleLoading = ref(false)
 const scheduleForm = ref({
   cronExpression: '',
   taskType: 'FULL' as 'FULL' | 'INCREMENTAL',
-  enabled: true
+  enabled: true,
+  gitPullEnabled: false,
+  branch: '',
+  refreshDescription: false,
+  refreshArchitecture: false
 })
 
 const openScheduleDialog = async (row: RemoteProject) => {
   scheduleProjectPath.value = row.localPath
   scheduleEditId.value = null
-  scheduleForm.value = { cronExpression: '', taskType: 'FULL', enabled: true }
+  scheduleForm.value = { cronExpression: '', taskType: 'FULL', enabled: true, gitPullEnabled: false, branch: '', refreshDescription: false, refreshArchitecture: false }
   showScheduleDialog.value = true
 
   try {
-    const schedules = await listKgSchedules() as unknown as Array<{ id: number; projectPath: string; cronExpression: string; taskType: 'FULL' | 'INCREMENTAL'; enabled: boolean }>
+    const schedules = await listKgSchedules() as unknown as Array<{ id: number; projectPath: string; cronExpression: string; taskType: 'FULL' | 'INCREMENTAL'; enabled: boolean; gitPullEnabled: boolean; branch: string; refreshDescription: boolean; refreshArchitecture: boolean }>
     const match = schedules.find(s => normalizePath(s.projectPath) === normalizePath(row.localPath))
     if (match) {
       scheduleEditId.value = match.id
       scheduleForm.value = {
         cronExpression: match.cronExpression,
         taskType: match.taskType,
-        enabled: match.enabled
+        enabled: match.enabled,
+        gitPullEnabled: match.gitPullEnabled,
+        branch: match.branch || '',
+        refreshDescription: match.refreshDescription,
+        refreshArchitecture: match.refreshArchitecture
       }
     }
   } catch {
@@ -2683,14 +2714,22 @@ const handleScheduleSubmit = async () => {
         projectPath: scheduleProjectPath.value,
         cronExpression: scheduleForm.value.cronExpression.trim(),
         taskType: scheduleForm.value.taskType,
-        enabled: scheduleForm.value.enabled
+        enabled: scheduleForm.value.enabled,
+        gitPullEnabled: scheduleForm.value.gitPullEnabled,
+        branch: scheduleForm.value.branch,
+        refreshDescription: scheduleForm.value.refreshDescription,
+        refreshArchitecture: scheduleForm.value.refreshArchitecture
       })
       ElMessage.success('定时任务已更新')
     } else {
       await createKgSchedule({
         projectPath: scheduleProjectPath.value,
         cronExpression: scheduleForm.value.cronExpression.trim(),
-        taskType: scheduleForm.value.taskType
+        taskType: scheduleForm.value.taskType,
+        gitPullEnabled: scheduleForm.value.gitPullEnabled,
+        branch: scheduleForm.value.branch,
+        refreshDescription: scheduleForm.value.refreshDescription,
+        refreshArchitecture: scheduleForm.value.refreshArchitecture
       })
       ElMessage.success('定时任务已创建')
     }
@@ -2706,6 +2745,12 @@ const handleScheduleSubmit = async () => {
 <style scoped>
 .guidance-alert {
   margin-bottom: 16px;
+}
+
+.schedule-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #909399;
 }
 
 .card-header {
