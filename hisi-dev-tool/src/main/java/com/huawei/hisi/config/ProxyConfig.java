@@ -82,7 +82,7 @@ public class ProxyConfig {
     @Bean
     @Primary
     public RestTemplate restTemplate() {
-        RestTemplate rt = buildRestTemplate();
+        RestTemplate rt = buildRestTemplate(30000, 300000);
         restTemplateRef.set(rt);
         return rt;
     }
@@ -106,7 +106,7 @@ public class ProxyConfig {
         this.disableSslVerification = disableSslVerification;
 
         // 重建 RestTemplate
-        RestTemplate newRt = buildRestTemplate();
+        RestTemplate newRt = buildRestTemplate(30000, 300000);
         restTemplateRef.set(newRt);
 
         log.info("[Proxy] 代理配置已更新: enabled={}, host={}, port={}, type={}, disableSsl={}",
@@ -132,11 +132,14 @@ public class ProxyConfig {
 
     // ==================== 内部方法 ====================
 
-    private RestTemplate buildRestTemplate() {
+    /**
+     * 构建带代理配置与指定超时的 RestTemplate。
+     * 供需要不同超时的调用方复用（如 rerank 需短超时，LLM 需长超时），共享同一套代理/SSL 逻辑。
+     */
+    public RestTemplate buildRestTemplate(int connectTimeoutMs, int readTimeoutMs) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(30000);
-        // 读超时 300s：GLM-4.7-flashX 推理模型思考链可能较长
-        factory.setReadTimeout(300000);
+        factory.setConnectTimeout(connectTimeoutMs);
+        factory.setReadTimeout(readTimeoutMs);
 
         if (enabled && host != null && !host.isBlank() && port > 0) {
             Proxy.Type proxyType = "SOCKS".equalsIgnoreCase(type) ? Proxy.Type.SOCKS : Proxy.Type.HTTP;

@@ -37,7 +37,7 @@ export const vectorToolDefinitions = [
         },
         graphDepth: {
           type: 'number',
-          description: '调用链图遍历深度，默认0。设为0则不进行图遍历，只做向量搜索',
+          description: '调用链图遍历深度，默认0。注意：多路召回（v2）路径下固定为0不做图扩展，仅查询退化为单路检索时此参数才生效',
         },
         language: {
           type: 'string',

@@ -32,13 +32,19 @@ public class RerankService {
 
     private static final Logger log = LoggerFactory.getLogger(RerankService.class);
 
+    /** rerank 连接超时（毫秒）。 */
+    private static final int CONNECT_TIMEOUT_MS = 3000;
+    /** rerank 读超时（毫秒）。rerank 是精排，须快速返回，独立于共享 RestTemplate 的 300s LLM 超时。 */
+    private static final int READ_TIMEOUT_MS = 5000;
+
     private final RerankProperties properties;
-    private final ProxyConfig proxyConfig;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final RestTemplate rerankRestTemplate;
 
     public RerankService(RerankProperties properties, ProxyConfig proxyConfig) {
         this.properties = properties;
-        this.proxyConfig = proxyConfig;
+        // 复用 ProxyConfig 的代理/SSL 逻辑，但使用独立短超时，避免共享 300s LLM 读超时拖垮检索请求
+        this.rerankRestTemplate = proxyConfig.buildRestTemplate(CONNECT_TIMEOUT_MS, READ_TIMEOUT_MS);
     }
 
     /**
@@ -81,8 +87,7 @@ public class RerankService {
             String url = properties.getBaseUrl() + "/rerank";
             HttpEntity<String> entity = new HttpEntity<>(objectMapper.writeValueAsString(requestBody), headers);
 
-            RestTemplate rt = proxyConfig.getCurrentRestTemplate();
-            ResponseEntity<String> response = rt.exchange(url, HttpMethod.POST, entity, String.class);
+            ResponseEntity<String> response = rerankRestTemplate.exchange(url, HttpMethod.POST, entity, String.class);
 
             Map<String, Double> scores = parseScores(response.getBody(), candidates);
             long costMs = System.currentTimeMillis() - start;

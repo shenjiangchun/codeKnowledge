@@ -36,7 +36,8 @@ class RerankServiceTest {
 
         restTemplate = Mockito.mock(RestTemplate.class);
         proxyConfig = Mockito.mock(ProxyConfig.class);
-        Mockito.when(proxyConfig.getCurrentRestTemplate()).thenReturn(restTemplate);
+        Mockito.when(proxyConfig.buildRestTemplate(Mockito.anyInt(), Mockito.anyInt()))
+                .thenReturn(restTemplate);
 
         rerankService = new RerankService(properties, proxyConfig);
     }
