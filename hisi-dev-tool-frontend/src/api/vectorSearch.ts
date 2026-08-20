@@ -69,11 +69,6 @@ export interface VectorSearchResponse {
 }
 
 export const vectorSearchApi = {
-  /** @deprecated 使用 searchV2 替代，支持分词多路召回和 RRF 融合 */
-  search(params: VectorSearchRequest): Promise<VectorSearchResponse> {
-    return request.post('/vector-search', params)
-  },
-
   /** 多路召回 + RRF 融合搜索（v2），返回 subQueries 和 rrfScores */
   searchV2(params: VectorSearchRequest): Promise<VectorSearchResponse> {
     return request.post('/vector-search/v2', params)

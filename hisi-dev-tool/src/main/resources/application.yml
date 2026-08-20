@@ -304,6 +304,12 @@ search:
     dual-channel-threshold: 0.7
     # 专用通道必选词过滤开关
     required-word-filter-enabled: true
+  # 外部 rerank 精排（OpenAI 兼容 /rerank 端点），默认关闭
+  rerank:
+    enabled: false
+    base-url: ${RERANK_BASE_URL:}
+    model: ${RERANK_MODEL:}
+    api-key: ${RERANK_API_KEY:}
 
 anthropic:
   api-key: ${ANTHROPIC_API_KEY:}

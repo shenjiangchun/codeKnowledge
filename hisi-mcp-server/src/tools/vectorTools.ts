@@ -2,7 +2,7 @@
  * Hybrid Search Tool for MCP Server
  * Provides semantic code search backed by the Spring Boot search API.
  *
- * hybrid_search → POST /api/search/semantic (keyword + vector + graph traversal, RRF fusion)
+ * hybrid_search → POST /api/search/semantic/v2 (multi-query recall + weighted RRF fusion)
  */
 
 import { ApiClient, getApiClient } from '../client/apiClient.js';
@@ -39,10 +39,6 @@ export const vectorToolDefinitions = [
           type: 'number',
           description: '调用链图遍历深度，默认0。设为0则不进行图遍历，只做向量搜索',
         },
-        threshold: {
-          type: 'number',
-          description: '语义相似度阈值（0~1），默认0.5。越低返回越多，越高越精确',
-        },
         language: {
           type: 'string',
           enum: ['java', 'python'],
@@ -63,7 +59,6 @@ export interface HybridSearchParams {
   projectPath?: string;
   projectPaths?: string[];
   limit?: number;
-  threshold?: number;
   graphDepth?: number;
   language?: 'java' | 'python';
 }
@@ -80,18 +75,17 @@ export class VectorTools {
   }
 
   /**
-   * 三层混合检索
-   * POST /api/search/semantic
+   * 三层混合检索（多路召回 + 加权 RRF 融合）
+   * POST /api/search/semantic/v2
    */
   async hybridSearch(params: HybridSearchParams): Promise<unknown> {
-    const { query, projectPath, projectPaths, limit, threshold, graphDepth, language } = params;
+    const { query, projectPath, projectPaths, limit, graphDepth, language } = params;
 
     const body: Record<string, unknown> = {
       query,
       projectPath: projectPath || projectPaths?.[0],
       projectPaths: projectPaths || (projectPath ? [projectPath] : undefined),
       limit: limit ?? 10,
-      threshold: threshold ?? 0.5,
       graphDepth: graphDepth ?? 0,
     };
 
@@ -99,7 +93,7 @@ export class VectorTools {
       body.filters = { language };
     }
 
-    const result = (await this.client.post('/api/search/semantic', body)) as {
+    const result = (await this.client.post('/api/search/semantic/v2', body)) as {
       results?: unknown[];
       total?: number;
     } & Record<string, unknown>;

@@ -1,0 +1,81 @@
+{
+  "schema_version": "delivery-handoff/v1",
+  "family_version": "delivery-family/1.3",
+  "type": "delivery-handoff",
+  "handoff_id": "semantic-search-rerank-execute-verify-20260820T102719",
+  "previous_handoff_id": null,
+  "generated_at": "2026-08-20T10:27:19Z",
+  "stage": "delivery-execute-verify",
+  "source_revision": {
+    "repo_head": "3c1b9f7a880b1a376c1b00a3f192b0e1247c8c04",
+    "artifact_revision": "sha256:51370e583e7c0e627f857380e05f3fb757ab26464e5376d1cee86a170f32bd80",
+    "state_observed_at": "2026-08-20T10:27:19Z"
+  },
+  "state_source": {
+    "kind": "openspec_change",
+    "label": "change #semantic-search-rerank",
+    "anchor": "openspec/changes/semantic-search-rerank"
+  },
+  "capability_snapshot": {
+    "memory": "ok",
+    "openspec": "initialized",
+    "superpowers": "loaded"
+  },
+  "capability_bindings": {
+    "openspec": {},
+    "memory": {},
+    "superpowers": {},
+    "subagents": {}
+  },
+  "presentation_capability": {
+    "mode": "markdown",
+    "source": "unknown"
+  },
+  "gate_status": {
+    "status": "pass",
+    "summary": "新鲜验证 + 独立审查（code-reviewer）通过；归档移交 OpenSpec",
+    "evidence": [
+      "mvn test: 1168 pass 0 fail; tsc: no errors; validate: valid"
+    ],
+    "approved_by": "shenjiangchun",
+    "approved_at": "2026-08-20T10:27:19Z",
+    "binds_to_revision": "sha256:51370e583e7c0e627f857380e05f3fb757ab26464e5376d1cee86a170f32bd80",
+    "accepted_warning_ids": []
+  },
+  "evidence_mode": "full",
+  "next_skill": null,
+  "next_action": "openspec archive semantic-search-rerank",
+  "required_inputs": [],
+  "stop_condition": "",
+  "stage_payload": {
+    "overall_status": "verified",
+    "task_status": [],
+    "current_failures_or_blocks": [],
+    "artifact_backflow": "none",
+    "alignment_backflow": null,
+    "fresh_verification_evidence": [
+      "mvn test: 1168 pass 0 fail; tsc: no errors; validate: valid"
+    ],
+    "spec_coherence": "pass",
+    "code_review": {
+      "status": "pass",
+      "mode": "independent",
+      "independent_review": "required_pass",
+      "reviewer": "code-reviewer",
+      "findings": []
+    },
+    "archive": {
+      "status": "deferred_to_openspec",
+      "reason": "execute-verify must not sync/archive"
+    },
+    "asset_writeback": []
+  },
+  "presentation": {
+    "schema": "delivery-presentation/v1",
+    "from_task": "实施·验证",
+    "to_task": "OpenSpec 归档",
+    "summary": "verified；归档移交 OpenSpec（本技能不执行 archive）",
+    "evidence": [],
+    "continue_prompt": "openspec archive semantic-search-rerank"
+  }
+}

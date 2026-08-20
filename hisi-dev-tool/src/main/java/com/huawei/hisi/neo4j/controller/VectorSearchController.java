@@ -6,7 +6,6 @@ import com.huawei.hisi.neo4j.model.SearchException;
 import com.huawei.hisi.neo4j.model.SearchResult;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.neo4j.service.EmbeddingService;
-import com.huawei.hisi.neo4j.service.HybridSearchService;
 import com.huawei.hisi.neo4j.service.MultiQueryHybridSearchService;
 import com.huawei.hisi.utils.PathUtils;
 import jakarta.validation.Valid;
@@ -37,97 +36,17 @@ public class VectorSearchController {
      */
     private static final int MIN_QUERY_LENGTH = 2;
 
-    private final HybridSearchService hybridSearchService;
     private final MultiQueryHybridSearchService multiQueryHybridSearchService;
     private final Neo4jMethodNodeRepository methodNodeRepository;
     private final EmbeddingService embeddingService;
 
     public VectorSearchController(
-            HybridSearchService hybridSearchService,
             MultiQueryHybridSearchService multiQueryHybridSearchService,
             Neo4jMethodNodeRepository methodNodeRepository,
             EmbeddingService embeddingService) {
-        this.hybridSearchService = hybridSearchService;
         this.multiQueryHybridSearchService = multiQueryHybridSearchService;
         this.methodNodeRepository = methodNodeRepository;
         this.embeddingService = embeddingService;
-    }
-
-    /**
-     * 执行混合检索（旧版，不含多路召回+RRF）
-     *
-     * @deprecated 使用 {@link #searchV2(SearchRequest)} 替代，支持分词多路召回和 RRF 融合
-     * @param request 搜索请求
-     * @return 搜索结果
-     */
-    @Deprecated
-    @PostMapping
-    public ResponseEntity<ApiResponse<SearchResult>> search(@Valid @RequestBody SearchRequest request) {
-        // 路径规范化：统一转为正斜杠形式（项目约定）。
-        // 防止 Windows 反斜杠路径与正斜杠路径在 Neo4j 中作为两份独立数据匹配。
-        String normalizedProjectPath = PathUtils.normalize(request.getProjectPath());
-        List<String> normalizedProjectPaths;
-        if (request.getProjectPaths() != null && !request.getProjectPaths().isEmpty()) {
-            normalizedProjectPaths = new ArrayList<>(request.getProjectPaths().size());
-            for (String p : request.getProjectPaths()) {
-                String n = PathUtils.normalize(p);
-                if (n != null && !n.isBlank()) {
-                    normalizedProjectPaths.add(n);
-                }
-            }
-        } else {
-            normalizedProjectPaths = null;
-        }
-
-        log.info("收到搜索请求: query={}, projectPath={}, projectPaths={}, language={}, limit={}, graphDepth={}",
-                request.getQuery(), normalizedProjectPath, normalizedProjectPaths, request.getLanguage(),
-                request.getLimit(), request.getGraphDepth());
-
-        // 1. 查询长度校验
-        if (request.getQuery() == null || request.getQuery().trim().length() < MIN_QUERY_LENGTH) {
-            return buildErrorResponse(SearchErrorCode.QUERY_TOO_SHORT);
-        }
-
-        try {
-            // 2. 解析项目路径列表（已规范化）
-            List<String> paths = normalizedProjectPaths != null && !normalizedProjectPaths.isEmpty()
-                    ? normalizedProjectPaths
-                    : normalizedProjectPath != null && !normalizedProjectPath.isBlank()
-                            ? List.of(normalizedProjectPath)
-                            : List.of();
-
-            // 3. 执行搜索
-            SearchResult result = hybridSearchService.hybridSearch(
-                    request.getQuery(),
-                    normalizedProjectPath,
-                    paths,
-                    request.getLanguage(),
-                    request.getLimit(),
-                    request.getGraphDepth(),
-                    request.getSearchType()
-            );
-
-            log.info("搜索完成: totalCount={}, costTimeMs={}",
-                    result.getTotalCount(), result.getCostTimeMs());
-
-            return ResponseEntity.ok(ApiResponse.success(result));
-
-        } catch (SearchException e) {
-            // 3. 搜索异常处理（包含 EMBEDDING_SERVICE_UNAVAILABLE, GRAPH_SERVICE_ERROR 等错误码）
-            log.warn("搜索异常: errorCode={}, message={}", e.getErrorCode(), e.getMessage());
-            return buildErrorResponse(e.getErrorCode());
-
-        } catch (IllegalArgumentException e) {
-            // 4. 参数异常处理
-            log.warn("搜索请求参数无效: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(ApiResponse.error(400, e.getMessage()));
-
-        } catch (Exception e) {
-            // 5. 其他未知异常
-            log.error("搜索失败: {}", e.getMessage(), e);
-            return buildErrorResponse(SearchErrorCode.UNKNOWN_ERROR);
-        }
     }
 
     /**
