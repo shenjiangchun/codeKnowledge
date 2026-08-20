@@ -10,6 +10,7 @@ import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -48,10 +49,11 @@ public class AgentConfig {
      * 配置读 {@code spring.ai.anthropic.*}。maxTokens 调大，避免推理模型思考链吃光预算。
      */
     @Bean
-    ChatClient extractionChatClient(AnthropicChatModel anthropicModel) {
+    ChatClient extractionChatClient(AnthropicChatModel anthropicModel,
+                                    @Value("${spring.ai.anthropic.chat.options.model:claude-sonnet-4-20250514}") String model) {
         return ChatClient.builder(anthropicModel)
                 .defaultOptions(AnthropicChatOptions.builder()
-                        .model("deepseek-v4-pro-cc")
+                        .model(model)
                         .maxTokens(16384)
                         .temperature(0.1)
                         .thinking(AnthropicApi.ThinkingType.DISABLED, null)
