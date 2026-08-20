@@ -10,6 +10,7 @@ import org.mockito.MockitoAnnotations;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.Result;
 import org.neo4j.driver.Session;
+import org.neo4j.driver.SessionConfig;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -29,8 +30,8 @@ class ModuleStatsAggregatorTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        aggregator = new ModuleStatsAggregator(methodNodeRepository, moduleNodeRepository, driver);
-        lenient().when(driver.session()).thenReturn(session);
+        aggregator = new ModuleStatsAggregator(methodNodeRepository, moduleNodeRepository, driver, SessionConfig.forDatabase("neo4j"));
+        lenient().when(driver.session(any(SessionConfig.class))).thenReturn(session);
         lenient().when(session.run(anyString(), anyMap())).thenReturn(mock(Result.class));
     }
 

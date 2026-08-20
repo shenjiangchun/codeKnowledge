@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.Session;
+import org.neo4j.driver.SessionConfig;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -27,6 +28,7 @@ public class FreeLayerRoleResolver {
     private final Neo4jClassNodeRepository neo4jClassNodeRepository;
     private final LayerRoleLlmService layerRoleLlmService;
     private final Driver neo4jDriver;
+    private final SessionConfig neo4jSessionConfig;
 
     /**
      * 补全游离节点层级。
@@ -58,7 +60,7 @@ public class FreeLayerRoleResolver {
 
         // 2. 包级游离节点（layerRole = UNKNOWN 或 null）
         List<String> freePackages = new ArrayList<>();
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             var recs = session.run(
                 "MATCH (m:ModuleNode {level: 'package', projectPath: $path})\n" +
                 "WHERE m.layerRole IS NULL OR m.layerRole = 'UNKNOWN'\n" +
@@ -77,7 +79,7 @@ public class FreeLayerRoleResolver {
                 items.add(item);
             }
             var pkgResults = layerRoleLlmService.resolveRoles(items);
-            try (Session session = neo4jDriver.session()) {
+            try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
                 for (var rr : pkgResults) {
                     session.run(
                         "MATCH (m:ModuleNode {level: 'package', projectPath: $path, moduleName: $name})\n" +
@@ -91,7 +93,7 @@ public class FreeLayerRoleResolver {
     }
 
     private String buildClassDeps(String projectPath, String className) {
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             var recs = session.run(
                 "MATCH (c:Class {projectPath: $path, className: $cls})-[h:HAS_METHOD]->(m:Method)-[r:CALLS]->(m2:Method)<-[h2:HAS_METHOD]-(c2:Class)\n" +
                 "RETURN collect(DISTINCT c2.className) AS deps",
@@ -105,7 +107,7 @@ public class FreeLayerRoleResolver {
     }
 
     private String buildPackageDeps(String projectPath, String packageName) {
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             var recs = session.run(
                 "MATCH (m:ModuleNode {level: 'package', projectPath: $path, moduleName: $pkg})-[d:DEPENDS_ON]->(m2:ModuleNode)\n" +
                 "RETURN collect(DISTINCT m2.moduleName) AS deps",

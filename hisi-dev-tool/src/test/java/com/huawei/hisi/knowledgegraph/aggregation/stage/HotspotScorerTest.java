@@ -10,6 +10,7 @@ import org.neo4j.driver.Driver;
 import org.neo4j.driver.Record;
 import org.neo4j.driver.Result;
 import org.neo4j.driver.Session;
+import org.neo4j.driver.SessionConfig;
 import org.neo4j.driver.Values;
 
 import java.util.*;
@@ -28,8 +29,8 @@ class HotspotScorerTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        scorer = new HotspotScorer(driver, checkpointManager);
-        lenient().when(driver.session()).thenReturn(session);
+        scorer = new HotspotScorer(driver, SessionConfig.forDatabase("neo4j"), checkpointManager);
+        lenient().when(driver.session(any(SessionConfig.class))).thenReturn(session);
         lenient().when(session.run(anyString(), anyMap())).thenReturn(mock(Result.class));
     }
 

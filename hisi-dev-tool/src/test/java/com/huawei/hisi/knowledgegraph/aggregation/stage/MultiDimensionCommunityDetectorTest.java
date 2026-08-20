@@ -10,6 +10,7 @@ import org.neo4j.driver.Driver;
 import org.neo4j.driver.Record;
 import org.neo4j.driver.Result;
 import org.neo4j.driver.Session;
+import org.neo4j.driver.SessionConfig;
 import org.neo4j.driver.Value;
 import org.neo4j.driver.Values;
 import org.springframework.ai.chat.client.ChatClient;
@@ -32,8 +33,8 @@ class MultiDimensionCommunityDetectorTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        detector = new MultiDimensionCommunityDetector(driver, communityDetector, checkpointManager, extractionChatClient);
-        lenient().when(driver.session()).thenReturn(session);
+        detector = new MultiDimensionCommunityDetector(driver, SessionConfig.forDatabase("neo4j"), communityDetector, checkpointManager, extractionChatClient);
+        lenient().when(driver.session(any(SessionConfig.class))).thenReturn(session);
         Result result = mock(Result.class);
         org.neo4j.driver.summary.ResultSummary summary = mock(org.neo4j.driver.summary.ResultSummary.class);
         org.neo4j.driver.summary.SummaryCounters counters = mock(org.neo4j.driver.summary.SummaryCounters.class);

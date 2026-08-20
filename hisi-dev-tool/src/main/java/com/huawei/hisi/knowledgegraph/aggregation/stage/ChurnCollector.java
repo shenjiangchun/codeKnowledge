@@ -13,6 +13,7 @@ import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import org.eclipse.jgit.treewalk.filter.PathFilter;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.Session;
+import org.neo4j.driver.SessionConfig;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
@@ -30,6 +31,7 @@ import java.util.*;
 public class ChurnCollector {
 
     private final Driver neo4jDriver;
+    private final SessionConfig neo4jSessionConfig;
     private final AggregationCheckpointManager checkpointManager;
 
     public void collect(String projectPath, List<String> changedFiles) {
@@ -84,7 +86,7 @@ public class ChurnCollector {
                     }
 
                     // 直接通过 Driver MERGE，避免 Spring Data Repository 的 transactionManager 不可用
-                    try (Session s = neo4jDriver.session()) {
+                    try (Session s = neo4jDriver.session(neo4jSessionConfig)) {
                         s.run(
                             "MERGE (c:ChurnNode {nodeId: $id})\n" +
                             "SET c.filePath = $fp,\n" +
@@ -144,7 +146,7 @@ public class ChurnCollector {
 
     private Set<String> collectAllTrackedFiles(String projectPath) {
         Set<String> files = new HashSet<>();
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             var records = session.run(
                 "MATCH (m:Method {projectPath: $path})\n" +
                 "WHERE m.filePath IS NOT NULL\n" +

@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.Session;
+import org.neo4j.driver.SessionConfig;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -15,6 +16,7 @@ import java.util.*;
 public class CommunityDetector {
 
     private final Driver neo4jDriver;
+    private final SessionConfig neo4jSessionConfig;
     private final AggregationCheckpointManager checkpointManager;
 
     private static final double MODULARITY_THRESHOLD = 1e-6;
@@ -48,7 +50,7 @@ public class CommunityDetector {
         Map<String, Integer> nodeIndex = new LinkedHashMap<>();
         List<Edge> edges = new ArrayList<>();
 
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             var records = session.run(
                 "MATCH (a:Method {projectPath: $projectPath})-[r:CALLS]->(b:Method {projectPath: $projectPath})\n" +
                 "WHERE a.nodeId IS NOT NULL AND b.nodeId IS NOT NULL\n" +
@@ -320,7 +322,7 @@ public class CommunityDetector {
 
     private Map<String, Integer> loadPreviousCommunity(String projectPath) {
         Map<String, Integer> prev = new LinkedHashMap<>();
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             var records = session.run(
                 "MATCH (m:Method {projectPath: $projectPath})\n" +
                 "WHERE m.communityId IS NOT NULL\n" +
@@ -335,7 +337,7 @@ public class CommunityDetector {
     }
 
     private void writeCommunityIds(String projectPath, Map<String, Integer> communities) {
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             for (var entry : communities.entrySet()) {
                 session.run(
                     "MATCH (m:Method {nodeId: $nodeId, projectPath: $projectPath})\n" +

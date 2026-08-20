@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonClassDescription;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.Session;
+import org.neo4j.driver.SessionConfig;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -26,6 +27,7 @@ import java.util.*;
 public class MultiDimensionCommunityDetector {
 
     private final Driver neo4jDriver;
+    private final SessionConfig neo4jSessionConfig;
     private final CommunityDetector communityDetector;
     private final AggregationCheckpointManager checkpointManager;
     /** 领域归纳用干净的 extractionChatClient（无 advisor，走 anthropic 中转 deepseek） */
@@ -33,10 +35,12 @@ public class MultiDimensionCommunityDetector {
 
     public MultiDimensionCommunityDetector(
             Driver neo4jDriver,
+            SessionConfig neo4jSessionConfig,
             CommunityDetector communityDetector,
             AggregationCheckpointManager checkpointManager,
             @Qualifier("extractionChatClient") ChatClient extractionChatClient) {
         this.neo4jDriver = neo4jDriver;
+        this.neo4jSessionConfig = neo4jSessionConfig;
         this.communityDetector = communityDetector;
         this.checkpointManager = checkpointManager;
         this.extractionChatClient = extractionChatClient;
@@ -83,7 +87,7 @@ public class MultiDimensionCommunityDetector {
 
     private Map<String, List<String>> loadClassMethods(String projectPath) {
         Map<String, List<String>> methodsByClass = new LinkedHashMap<>();
-        try (Session s = neo4jDriver.session()) {
+        try (Session s = neo4jDriver.session(neo4jSessionConfig)) {
             var r = s.run(
                 "MATCH (m:Method {projectPath: $path})\n" +
                 "WHERE m.className IS NOT NULL\n" +
@@ -255,7 +259,7 @@ public class MultiDimensionCommunityDetector {
 
     private Map<String, Integer> loadCommunityByClass(String projectPath) {
         Map<String, Integer> communityByClass = new LinkedHashMap<>();
-        try (Session s = neo4jDriver.session()) {
+        try (Session s = neo4jDriver.session(neo4jSessionConfig)) {
             var r = s.run(
                 "MATCH (m:Method {projectPath: $path})\n" +
                 "WHERE m.className IS NOT NULL AND m.communityId IS NOT NULL\n" +
@@ -274,7 +278,7 @@ public class MultiDimensionCommunityDetector {
     private void writeDomains(String projectPath, List<DomainClassList> domains,
                               Map<String, Integer> communityByClass,
                               Map<String, List<String>> methodsByClass) {
-        try (Session s = neo4jDriver.session()) {
+        try (Session s = neo4jDriver.session(neo4jSessionConfig)) {
             for (DomainClassList domain : domains) {
                 if (domain.classNames() == null || domain.classNames().isEmpty()) continue;
                 List<String> classes = new ArrayList<>(new LinkedHashSet<>(domain.classNames()));
@@ -337,7 +341,7 @@ public class MultiDimensionCommunityDetector {
     }
 
     private void cleanupOldDomainNodes(String projectPath) {
-        try (Session s = neo4jDriver.session()) {
+        try (Session s = neo4jDriver.session(neo4jSessionConfig)) {
             s.run(
                 "MATCH (d:DomainNode {projectPath: $path}) DETACH DELETE d",
                 Map.of("path", projectPath));

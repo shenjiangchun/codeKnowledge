@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.Session;
+import org.neo4j.driver.SessionConfig;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -27,6 +28,7 @@ import java.util.stream.Collectors;
 public class HotspotScorer {
 
     private final Driver neo4jDriver;
+    private final SessionConfig neo4jSessionConfig;
     private final AggregationCheckpointManager checkpointManager;
 
     private static final int MAX_RETRIES = 3;
@@ -87,7 +89,7 @@ public class HotspotScorer {
                 f -> f, f -> churnByFile.getOrDefault(f, 0))));
         Map<String, Double> inDegreeNorms = RiskScoreCalculator.percentileRank(fileInDegree);
 
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             for (String file : byFile.keySet()) {
                 double score = RiskScoreCalculator.calculate(
                     fileComplexity.get(file),
@@ -126,7 +128,7 @@ public class HotspotScorer {
                 "       coalesce(m.inDegree, 0) AS inDegree";
         }
 
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             var records = session.run(cypher, params);
             while (records.hasNext()) {
                 var r = records.next();
@@ -142,7 +144,7 @@ public class HotspotScorer {
 
     private Map<String, Integer> loadChurnByFile(String projectPath) {
         Map<String, Integer> churn = new HashMap<>();
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             var records = session.run(
                 "MATCH (c:ChurnNode {projectPath: $projectPath})\n" +
                 "RETURN c.filePath AS filePath, coalesce(c.commitCount90d, 0) AS cnt",
@@ -159,7 +161,7 @@ public class HotspotScorer {
 
     private Set<String> detectCycleNodes(String projectPath) {
         Map<String, List<String>> adjList = new HashMap<>();
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             var records = session.run(
                 "MATCH (a:Method {projectPath: $projectPath})-[r:CALLS]->(b:Method {projectPath: $projectPath})\n" +
                 "RETURN a.nodeId AS source, b.nodeId AS target",

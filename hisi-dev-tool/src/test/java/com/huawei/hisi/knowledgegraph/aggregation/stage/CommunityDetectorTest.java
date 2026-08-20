@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CommunityDetectorTest {
 
     /** runLouvain 是纯函数（不依赖 neo4jDriver/checkpointManager），构造时传 null 即可 */
-    private final CommunityDetector detector = new CommunityDetector(null, null);
+    private final CommunityDetector detector = new CommunityDetector(null, null, null);
 
     @Test
     @DisplayName("稀疏多簇图（40 簇弱连接）→ 社区数被压到 <= 目标上限")

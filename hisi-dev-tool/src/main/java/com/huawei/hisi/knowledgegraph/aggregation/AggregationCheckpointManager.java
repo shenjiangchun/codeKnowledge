@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.Session;
+import org.neo4j.driver.SessionConfig;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -17,9 +18,10 @@ import java.util.Optional;
 public class AggregationCheckpointManager {
 
     private final Driver neo4jDriver;
+    private final SessionConfig neo4jSessionConfig;
 
     public void markSuccess(String projectPath, String stageName, String dataHash) {
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             session.run(
                 "MERGE (a:AggregationCheckpoint {checkpointId: $id})\n" +
                 "SET a.projectPath = $path,\n" +
@@ -38,7 +40,7 @@ public class AggregationCheckpointManager {
 
     public void markFailed(String projectPath, String stageName, String errorMessage) {
         String lastSuccess = getLastSuccessTimestamp(projectPath, stageName);
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             session.run(
                 "MERGE (a:AggregationCheckpoint {checkpointId: $id})\n" +
                 "SET a.projectPath = $path,\n" +
@@ -55,7 +57,7 @@ public class AggregationCheckpointManager {
     }
 
     public String getLastSuccessTimestamp(String projectPath, String stageName) {
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             var r = session.run(
                 "MATCH (a:AggregationCheckpoint {projectPath: $path, stageName: $stage})\n" +
                 "WHERE a.status = 'SUCCESS'\n" +
@@ -66,7 +68,7 @@ public class AggregationCheckpointManager {
     }
 
     public boolean isStageSuccessful(String projectPath, String stageName) {
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             var r = session.run(
                 "MATCH (a:AggregationCheckpoint {projectPath: $path, stageName: $stage})\n" +
                 "RETURN a.status AS status",
@@ -76,7 +78,7 @@ public class AggregationCheckpointManager {
     }
 
     public Optional<String> getCheckpointDataHash(String projectPath, String stageName) {
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             var r = session.run(
                 "MATCH (a:AggregationCheckpoint {projectPath: $path, stageName: $stage})\n" +
                 "RETURN a.dataHash AS hash, a.status AS status",

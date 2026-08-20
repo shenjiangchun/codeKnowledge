@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.Session;
+import org.neo4j.driver.SessionConfig;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -25,6 +26,7 @@ public class BuildModuleDependencyAggregator {
 
     private final PomDependencyParser pomDependencyParser;
     private final Driver neo4jDriver;
+    private final SessionConfig neo4jSessionConfig;
 
     public void aggregate(String projectPath) {
         List<PomDependencyParser.BuildModuleInfo> modules = pomDependencyParser.parse(projectPath);
@@ -33,7 +35,7 @@ public class BuildModuleDependencyAggregator {
             return;
         }
 
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             // 幂等覆盖：先删该项目旧的 build-module 节点
             session.run(
                 "MATCH (m:ModuleNode {level: 'build-module', projectPath: $projectPath}) DETACH DELETE m",

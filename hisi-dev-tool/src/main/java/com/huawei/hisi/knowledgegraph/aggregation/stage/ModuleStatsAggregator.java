@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.Session;
+import org.neo4j.driver.SessionConfig;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -19,6 +20,7 @@ public class ModuleStatsAggregator {
     private final Neo4jMethodNodeRepository methodNodeRepository;
     private final ModuleNodeRepository moduleNodeRepository;
     private final Driver neo4jDriver;
+    private final SessionConfig neo4jSessionConfig;
 
     public void aggregate(String projectPath, Set<String> dirtyPackageNames) {
         boolean isFull = (dirtyPackageNames == null || dirtyPackageNames.isEmpty());
@@ -41,7 +43,7 @@ public class ModuleStatsAggregator {
             "MATCH (m:Method {projectPath: $projectPath})\n" +
             "WHERE m.packageName = mod.moduleName\n" +
             "MERGE (mod)-[:CONTAINS]->(m)";
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             session.run(cypher, Map.of("projectPath", projectPath));
         }
     }
@@ -60,7 +62,7 @@ public class ModuleStatsAggregator {
             "    WHEN last = 'dto' OR last = 'model' OR last = 'entity' OR last = 'vo' OR last = 'domain' THEN 'MODEL'\n" +
             "    WHEN last = 'util' OR last = 'common' OR last = 'config' OR last = 'constant' THEN 'UTILITY'\n" +
             "    ELSE 'UNKNOWN' END";
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             session.run(cypher, Map.of("projectPath", projectPath));
         }
     }
@@ -123,7 +125,7 @@ public class ModuleStatsAggregator {
             params.put("dirtyPackages", new ArrayList<>(dirtyPackageNames));
         }
 
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             session.run(cypher, params);
         }
     }
@@ -156,7 +158,7 @@ public class ModuleStatsAggregator {
                 "SET m.inDegree = inDeg, m.outDegree = outDeg";
         }
 
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             session.run(cypher, params);
         }
     }
@@ -190,7 +192,7 @@ public class ModuleStatsAggregator {
                 "SET d.weight = weight, d.bridgeTypes = bridgeTypes";
         }
 
-        try (Session session = neo4jDriver.session()) {
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             session.run(cypher, params);
         }
     }
