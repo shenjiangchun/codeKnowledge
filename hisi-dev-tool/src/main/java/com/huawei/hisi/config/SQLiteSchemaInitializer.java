@@ -265,7 +265,7 @@ public class SQLiteSchemaInitializer {
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_path    TEXT    NOT NULL,
                 cron_expression TEXT    NOT NULL,
-                task_type       TEXT    NOT NULL,
+                build_mode      TEXT    NOT NULL DEFAULT 'REUSE',
                 enabled         INTEGER DEFAULT 1,
                 last_run_at     INTEGER,
                 next_run_at     INTEGER,
@@ -278,6 +278,10 @@ public class SQLiteSchemaInitializer {
         addColumnIfAbsent("kg_schedule", "branch", "TEXT");
         addColumnIfAbsent("kg_schedule", "refresh_description", "INTEGER DEFAULT 0");
         addColumnIfAbsent("kg_schedule", "refresh_architecture", "INTEGER DEFAULT 0");
+
+        // build_mode 迁移：老库 task_type(FULL/INCREMENTAL) → build_mode(REUSE/INCREMENTAL)
+        addColumnIfAbsent("kg_schedule", "build_mode", "TEXT DEFAULT 'REUSE'");
+        migrateKgScheduleBuildMode();
 
         jdbcTemplate.execute("""
             CREATE TABLE IF NOT EXISTS sys_user (
@@ -337,6 +341,22 @@ public class SQLiteSchemaInitializer {
             }
         } catch (Exception e) {
             log.warn("[SQLite] addColumnIfAbsent failed: {}.{}", table, column);
+        }
+    }
+
+    /** 老库 task_type → build_mode 回填；新库无 task_type 列时 UPDATE 抛错忽略 */
+    private void migrateKgScheduleBuildMode() {
+        try {
+            jdbcTemplate.execute("""
+                UPDATE kg_schedule SET build_mode = CASE task_type
+                    WHEN 'INCREMENTAL' THEN 'INCREMENTAL'
+                    ELSE 'REUSE'
+                END
+                WHERE (build_mode IS NULL OR build_mode = '') AND task_type IS NOT NULL
+                """);
+            log.info("[SQLite] Migrated kg_schedule: task_type → build_mode");
+        } catch (Exception ignored) {
+            // task_type 列不存在（新库），忽略
         }
     }
 

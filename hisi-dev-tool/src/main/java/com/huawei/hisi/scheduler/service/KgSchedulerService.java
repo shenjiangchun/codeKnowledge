@@ -1,5 +1,6 @@
 package com.huawei.hisi.scheduler.service;
 
+import com.huawei.hisi.knowledgegraph.service.BuildMode;
 import com.huawei.hisi.knowledgegraph.service.IncrementalKnowledgeGraphBuilder;
 import com.huawei.hisi.scheduler.model.KgSchedule;
 import com.huawei.hisi.scheduler.repository.KgScheduleRepository;
@@ -77,25 +78,25 @@ public class KgSchedulerService {
     }
 
     private void executeTask(KgSchedule schedule) {
-        log.info("[KgScheduler] Executing {} KG task for {}", schedule.getTaskType(), schedule.getProjectPath());
+        log.info("[KgScheduler] Executing {} KG task for {}", schedule.getBuildMode(), schedule.getProjectPath());
         try {
             if (schedule.isGitPullEnabled()) {
                 gitPull(schedule);
             }
-            if ("FULL".equals(schedule.getTaskType())) {
-                knowledgeGraphTaskService.startTask(schedule.getProjectPath(), Collections.emptyList(),
-                        schedule.isRefreshDescription(), schedule.isRefreshArchitecture());
-            } else if ("INCREMENTAL".equals(schedule.getTaskType())) {
+            BuildMode buildMode = BuildMode.fromString(schedule.getBuildMode());
+            if (BuildMode.INCREMENTAL.equals(buildMode)) {
                 incrementalBuilder.incrementalRefresh(schedule.getProjectPath(),
                         schedule.isRefreshDescription(), schedule.isRefreshArchitecture());
             } else {
-                log.warn("[KgScheduler] Unknown task type: {}", schedule.getTaskType());
+                // REUSE / WIPE：走全量生成，refreshDescription→generateVector，refreshArchitecture→generateArchitecture
+                knowledgeGraphTaskService.startTask(schedule.getProjectPath(), Collections.emptyList(),
+                        schedule.isRefreshDescription(), schedule.isRefreshArchitecture(), buildMode);
             }
             long now = System.currentTimeMillis() / 1000;
             repository.updateLastRunAt(schedule.getId(), now);
-            log.info("[KgScheduler] Completed {} KG task for {}", schedule.getTaskType(), schedule.getProjectPath());
+            log.info("[KgScheduler] Completed {} KG task for {}", schedule.getBuildMode(), schedule.getProjectPath());
         } catch (Exception e) {
-            log.error("[KgScheduler] Failed {} KG task for {}", schedule.getTaskType(), schedule.getProjectPath(), e);
+            log.error("[KgScheduler] Failed {} KG task for {}", schedule.getBuildMode(), schedule.getProjectPath(), e);
         }
     }
 

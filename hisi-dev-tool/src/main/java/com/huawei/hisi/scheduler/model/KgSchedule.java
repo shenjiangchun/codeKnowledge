@@ -13,7 +13,9 @@ public class KgSchedule {
     private Long id;
     private String projectPath;
     private String cronExpression;
-    private String taskType; // FULL or INCREMENTAL
+    /** 构建模式：INCREMENTAL / REUSE / WIPE */
+    @Builder.Default
+    private String buildMode = "REUSE";
     @Builder.Default
     private boolean enabled = true;
     /** 增量执行前是否 git pull 拉最新分支代码 */

@@ -676,20 +676,21 @@
         <el-form-item label="Cron表达式" required>
           <el-input v-model="scheduleForm.cronExpression" placeholder="例如: 0 0 2 * * ? (每天凌晨2点)" />
         </el-form-item>
-        <el-form-item label="任务类型">
-          <el-radio-group v-model="scheduleForm.taskType">
-            <el-radio value="FULL">全量</el-radio>
-            <el-radio value="INCREMENTAL">增量</el-radio>
-          </el-radio-group>
+        <el-form-item label="构建模式">
+          <el-select v-model="scheduleForm.buildMode" style="width: 100%">
+            <el-option label="增量" value="INCREMENTAL" />
+            <el-option label="全量-复用" value="REUSE" />
+            <el-option label="全量-全删" value="WIPE" />
+          </el-select>
         </el-form-item>
-        <el-form-item v-if="scheduleForm.taskType === 'INCREMENTAL'" label="拉取最新">
+        <el-form-item label="拉取最新">
           <el-switch v-model="scheduleForm.gitPullEnabled" />
-          <span class="schedule-hint">增量执行前 git pull 最新代码</span>
+          <span class="schedule-hint">执行前 git pull 最新代码</span>
         </el-form-item>
-        <el-form-item v-if="scheduleForm.taskType === 'INCREMENTAL' && scheduleForm.gitPullEnabled" label="分支">
+        <el-form-item v-if="scheduleForm.gitPullEnabled" label="分支">
           <el-input v-model="scheduleForm.branch" placeholder="留空跟随仓库当前分支" />
         </el-form-item>
-        <el-form-item v-if="scheduleForm.taskType === 'INCREMENTAL'" label="刷新勾选">
+        <el-form-item v-if="scheduleForm.buildMode === 'INCREMENTAL'" label="刷新勾选">
           <el-checkbox v-model="scheduleForm.refreshDescription">语义&amp;向量</el-checkbox>
           <el-checkbox v-model="scheduleForm.refreshArchitecture">架构现状</el-checkbox>
         </el-form-item>
@@ -1866,7 +1867,7 @@ const loadCommitsForRemote = async (localPath: string) => {
 const handleRefreshProjectRemote = async (row: RemoteProject) => {
   try {
     const res = await knowledgeGraphApi.refresh(row.localPath)
-    if (res.isNoop) {
+    if (res.changedFiles === 0) {
       ElMessage.info('无变更，图谱已是最新')
     } else {
       ElMessage.success(`刷新完成：${res.changedFiles} 个文件变更`)
@@ -2307,10 +2308,10 @@ async function handleCrossServiceBuild() {
 async function handleRefreshProject(project: { path: string }) {
   try {
     const res = await knowledgeGraphApi.refresh(project.path)
-    if (res.isNoop) {
+    if (res.changedFiles === 0) {
       ElMessage.info('无变更，图谱已是最新')
     } else {
-      ElMessage.success(`刷新完成：${res.changedFiles} 个文件变更，${res.deleted} 个节点删除，${res.rebuilt} 个节点重建`)
+      ElMessage.success(`刷新完成：${res.changedFiles} 个文件变更，${res.deletedNodes} 个节点删除，${res.rebuiltNodes} 个节点重建`)
       // 刷新后重新加载图谱状态
       await loadAllKnowledgeGraphStatuses()
     }
@@ -2687,7 +2688,7 @@ const scheduleEditId = ref<number | null>(null)
 const scheduleLoading = ref(false)
 const scheduleForm = ref({
   cronExpression: '',
-  taskType: 'FULL' as 'FULL' | 'INCREMENTAL',
+  buildMode: 'REUSE' as 'INCREMENTAL' | 'REUSE' | 'WIPE',
   enabled: true,
   gitPullEnabled: false,
   branch: '',
@@ -2698,17 +2699,17 @@ const scheduleForm = ref({
 const openScheduleDialog = async (row: RemoteProject) => {
   scheduleProjectPath.value = row.localPath
   scheduleEditId.value = null
-  scheduleForm.value = { cronExpression: '', taskType: 'FULL', enabled: true, gitPullEnabled: false, branch: '', refreshDescription: false, refreshArchitecture: false }
+  scheduleForm.value = { cronExpression: '', buildMode: 'REUSE', enabled: true, gitPullEnabled: false, branch: '', refreshDescription: false, refreshArchitecture: false }
   showScheduleDialog.value = true
 
   try {
-    const schedules = await listKgSchedules() as unknown as Array<{ id: number; projectPath: string; cronExpression: string; taskType: 'FULL' | 'INCREMENTAL'; enabled: boolean; gitPullEnabled: boolean; branch: string; refreshDescription: boolean; refreshArchitecture: boolean }>
+    const schedules = await listKgSchedules() as unknown as Array<{ id: number; projectPath: string; cronExpression: string; buildMode: 'INCREMENTAL' | 'REUSE' | 'WIPE'; enabled: boolean; gitPullEnabled: boolean; branch: string; refreshDescription: boolean; refreshArchitecture: boolean }>
     const match = schedules.find(s => normalizePath(s.projectPath) === normalizePath(row.localPath))
     if (match) {
       scheduleEditId.value = match.id
       scheduleForm.value = {
         cronExpression: match.cronExpression,
-        taskType: match.taskType,
+        buildMode: match.buildMode,
         enabled: match.enabled,
         gitPullEnabled: match.gitPullEnabled,
         branch: match.branch || '',
@@ -2732,7 +2733,7 @@ const handleScheduleSubmit = async () => {
       await updateKgSchedule(scheduleEditId.value, {
         projectPath: scheduleProjectPath.value,
         cronExpression: scheduleForm.value.cronExpression.trim(),
-        taskType: scheduleForm.value.taskType,
+        buildMode: scheduleForm.value.buildMode,
         enabled: scheduleForm.value.enabled,
         gitPullEnabled: scheduleForm.value.gitPullEnabled,
         branch: scheduleForm.value.branch,
@@ -2744,7 +2745,7 @@ const handleScheduleSubmit = async () => {
       await createKgSchedule({
         projectPath: scheduleProjectPath.value,
         cronExpression: scheduleForm.value.cronExpression.trim(),
-        taskType: scheduleForm.value.taskType,
+        buildMode: scheduleForm.value.buildMode,
         gitPullEnabled: scheduleForm.value.gitPullEnabled,
         branch: scheduleForm.value.branch,
         refreshDescription: scheduleForm.value.refreshDescription,

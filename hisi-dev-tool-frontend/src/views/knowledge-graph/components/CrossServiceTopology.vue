@@ -61,9 +61,10 @@ function renderGraph() {
   if (W < 50 || H < 50) return  // 容器还没展开（tab 未激活），等 ResizeObserver 触发
 
   const buildOption = (w: number, h: number) => {
+    const dataVal = data.value!
     const visible = visibleServices.value
     const visibleNames = new Set(visible.map(s => s.name))
-    const links = data.value.edges
+    const links = dataVal.edges
       .filter(e => visibleNames.has(e.source) && visibleNames.has(e.target))
       .map(e => ({ source: e.source, target: e.target, value: e.weight, type: e.type }))
     const pos = gridPositions(visible.length, w, h)

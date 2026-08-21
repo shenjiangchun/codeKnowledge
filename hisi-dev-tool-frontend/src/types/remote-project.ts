@@ -43,7 +43,7 @@ export interface KgSchedule {
   id: number
   projectPath: string
   cronExpression: string
-  taskType: 'FULL' | 'INCREMENTAL'
+  buildMode: 'INCREMENTAL' | 'REUSE' | 'WIPE'
   enabled: boolean
   gitPullEnabled: boolean
   branch: string
@@ -56,7 +56,7 @@ export interface KgSchedule {
 export interface CreateKgScheduleRequest {
   projectPath: string
   cronExpression: string
-  taskType: 'FULL' | 'INCREMENTAL'
+  buildMode: 'INCREMENTAL' | 'REUSE' | 'WIPE'
   gitPullEnabled?: boolean
   branch?: string
   refreshDescription?: boolean
@@ -66,7 +66,7 @@ export interface CreateKgScheduleRequest {
 export interface UpdateKgScheduleRequest {
   projectPath: string
   cronExpression: string
-  taskType: 'FULL' | 'INCREMENTAL'
+  buildMode: 'INCREMENTAL' | 'REUSE' | 'WIPE'
   enabled: boolean
   gitPullEnabled: boolean
   branch: string

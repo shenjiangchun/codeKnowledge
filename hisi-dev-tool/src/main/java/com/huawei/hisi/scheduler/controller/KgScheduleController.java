@@ -20,13 +20,13 @@ public class KgScheduleController {
     private final KgScheduleRepository repository;
     private final KgSchedulerService schedulerService;
 
-    public record CreateRequest(String projectPath, String cronExpression, String taskType,
+    public record CreateRequest(String projectPath, String cronExpression, String buildMode,
                                 Boolean gitPullEnabled, String branch,
                                 Boolean refreshDescription, Boolean refreshArchitecture) {}
-    public record UpdateRequest(String projectPath, String cronExpression, String taskType, Boolean enabled,
+    public record UpdateRequest(String projectPath, String cronExpression, String buildMode, Boolean enabled,
                                 Boolean gitPullEnabled, String branch,
                                 Boolean refreshDescription, Boolean refreshArchitecture) {}
-    public record ScheduleResponse(Long id, String projectPath, String cronExpression, String taskType,
+    public record ScheduleResponse(Long id, String projectPath, String cronExpression, String buildMode,
                                    boolean enabled, boolean gitPullEnabled, String branch,
                                    boolean refreshDescription, boolean refreshArchitecture,
                                    Long lastRunAt, Long nextRunAt) {}
@@ -51,7 +51,7 @@ public class KgScheduleController {
             KgSchedule schedule = KgSchedule.builder()
                 .projectPath(request.projectPath())
                 .cronExpression(request.cronExpression())
-                .taskType(request.taskType())
+                .buildMode(request.buildMode())
                 .enabled(true)
                 .gitPullEnabled(Boolean.TRUE.equals(request.gitPullEnabled()))
                 .branch(request.branch() != null ? request.branch() : "")
@@ -79,7 +79,7 @@ public class KgScheduleController {
 
             if (request.projectPath() != null) existing.setProjectPath(request.projectPath());
             if (request.cronExpression() != null) existing.setCronExpression(request.cronExpression());
-            if (request.taskType() != null) existing.setTaskType(request.taskType());
+            if (request.buildMode() != null) existing.setBuildMode(request.buildMode());
             if (request.enabled() != null) existing.setEnabled(request.enabled());
             if (request.gitPullEnabled() != null) existing.setGitPullEnabled(request.gitPullEnabled());
             if (request.branch() != null) existing.setBranch(request.branch());
@@ -117,7 +117,7 @@ public class KgScheduleController {
 
     private ScheduleResponse toResponse(KgSchedule s) {
         return new ScheduleResponse(s.getId(), s.getProjectPath(), s.getCronExpression(),
-            s.getTaskType(), s.isEnabled(), s.isGitPullEnabled(), s.getBranch(),
+            s.getBuildMode(), s.isEnabled(), s.isGitPullEnabled(), s.getBranch(),
             s.isRefreshDescription(), s.isRefreshArchitecture(), s.getLastRunAt(), s.getNextRunAt());
     }
 
@@ -128,11 +128,12 @@ public class KgScheduleController {
         if (request.cronExpression() == null || request.cronExpression().isBlank()) {
             throw new IllegalArgumentException("Cron expression is required");
         }
-        if (request.taskType() == null || request.taskType().isBlank()) {
-            throw new IllegalArgumentException("Task type is required");
+        if (request.buildMode() == null || request.buildMode().isBlank()) {
+            throw new IllegalArgumentException("Build mode is required");
         }
-        if (!"FULL".equals(request.taskType()) && !"INCREMENTAL".equals(request.taskType())) {
-            throw new IllegalArgumentException("Task type must be FULL or INCREMENTAL");
+        if (!"INCREMENTAL".equals(request.buildMode()) && !"REUSE".equals(request.buildMode())
+                && !"WIPE".equals(request.buildMode())) {
+            throw new IllegalArgumentException("Build mode must be INCREMENTAL, REUSE or WIPE");
         }
     }
 }

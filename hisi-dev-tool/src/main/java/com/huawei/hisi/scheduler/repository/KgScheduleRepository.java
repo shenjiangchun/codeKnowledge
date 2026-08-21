@@ -24,7 +24,7 @@ public class KgScheduleRepository {
             .id(rs.getLong("id"))
             .projectPath(rs.getString("project_path"))
             .cronExpression(rs.getString("cron_expression"))
-            .taskType(rs.getString("task_type"))
+            .buildMode(rs.getString("build_mode"))
             .enabled(rs.getInt("enabled") == 1)
             .gitPullEnabled(rs.getInt("git_pull_enabled") == 1)
             .branch(rs.getString("branch"))
@@ -58,12 +58,12 @@ public class KgScheduleRepository {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(
-                "INSERT INTO kg_schedule (project_path, cron_expression, task_type, enabled, git_pull_enabled, branch, refresh_description, refresh_architecture) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO kg_schedule (project_path, cron_expression, build_mode, enabled, git_pull_enabled, branch, refresh_description, refresh_architecture) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS
             );
             ps.setString(1, schedule.getProjectPath());
             ps.setString(2, schedule.getCronExpression());
-            ps.setString(3, schedule.getTaskType());
+            ps.setString(3, schedule.getBuildMode());
             ps.setInt(4, schedule.isEnabled() ? 1 : 0);
             ps.setInt(5, schedule.isGitPullEnabled() ? 1 : 0);
             ps.setString(6, schedule.getBranch());
@@ -81,10 +81,10 @@ public class KgScheduleRepository {
 
     public int update(KgSchedule schedule) {
         return jdbcTemplate.update(
-            "UPDATE kg_schedule SET project_path = ?, cron_expression = ?, task_type = ?, enabled = ?, " +
+            "UPDATE kg_schedule SET project_path = ?, cron_expression = ?, build_mode = ?, enabled = ?, " +
             "git_pull_enabled = ?, branch = ?, refresh_description = ?, refresh_architecture = ? WHERE id = ?",
             schedule.getProjectPath(), schedule.getCronExpression(),
-            schedule.getTaskType(), schedule.isEnabled() ? 1 : 0,
+            schedule.getBuildMode(), schedule.isEnabled() ? 1 : 0,
             schedule.isGitPullEnabled() ? 1 : 0, schedule.getBranch(),
             schedule.isRefreshDescription() ? 1 : 0, schedule.isRefreshArchitecture() ? 1 : 0,
             schedule.getId()
