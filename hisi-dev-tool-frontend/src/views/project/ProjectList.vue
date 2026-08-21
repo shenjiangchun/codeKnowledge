@@ -606,15 +606,22 @@
     </el-dialog>
 
     <!-- 图谱生成后处理勾选弹窗 -->
-    <el-dialog v-model="generateDialogVisible" title="生成知识图谱" width="480px">
+    <el-dialog v-model="generateDialogVisible" :title="pendingGenerateRow ? '生成知识图谱' : '批量生成知识图谱'" width="480px">
       <div class="kg-exclude-hint">
         选择图谱生成后是否继续生成以下内容（串行执行）：
       </div>
       <el-checkbox v-model="genVector" class="mt-4" style="display:block">语义&amp;向量（生成方法自然语言描述 + 向量）</el-checkbox>
       <el-checkbox v-model="genArchitecture" class="mt-2" style="display:block">架构现状（领域划分 / DSM / 热点）</el-checkbox>
+      <div class="mt-3">
+        <span style="font-size: 13px; color: #606266;">构建模式：</span>
+        <el-select v-model="genBuildMode" style="width: 160px">
+          <el-option label="全量-复用" value="reuse" />
+          <el-option label="全量-全删" value="wipe" />
+        </el-select>
+      </div>
       <template #footer>
         <el-button @click="generateDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="doGenerateKnowledgeGraph">开始生成</el-button>
+        <el-button type="primary" @click="pendingGenerateRow ? doGenerateKnowledgeGraph() : doBatchGenerateKG()">开始生成</el-button>
       </template>
     </el-dialog>
 
@@ -1990,7 +1997,10 @@ onUnmounted(() => {
 const generateDialogVisible = ref(false)
 const genVector = ref(true)
 const genArchitecture = ref(true)
+// 构建模式：reuse（全量-复用）/ wipe（全量-全删）。增量走独立入口，不在此下拉。
+const genBuildMode = ref<'reuse' | 'wipe'>('reuse')
 const pendingGenerateRow = ref<GitRepositoryInfo | null>(null)
+const pendingBatchPaths = ref<string[]>([])
 
 const handleGenerateKnowledgeGraph = (row: GitRepositoryInfo) => {
   if (!appStore.projectDirConfigured) {
@@ -2014,7 +2024,7 @@ const doGenerateKnowledgeGraph = async () => {
     // 记录防呆时间
     recordGenerateTime(row.path)
     // Start async task
-    const task = await knowledgeGraphApi.startGenerateTask(row.path, kgExcludePaths.value, genVector.value, genArchitecture.value)
+    const task = await knowledgeGraphApi.startGenerateTask(row.path, kgExcludePaths.value, genVector.value, genArchitecture.value, genBuildMode.value)
     if (task) {
       knowledgeGraphTaskStatusMap.value = {
         ...knowledgeGraphTaskStatusMap.value,
@@ -2219,22 +2229,12 @@ const handleBatchGenerateKGRemote = async () => {
     ElMessage.warning('请先勾选已克隆的项目')
     return
   }
-  const paths = selectedRemoteClonedProjects.value.map((p: RemoteProject) => normalizePath(p.localPath))
-  batchGeneratingKG.value = true
-  try {
-    const tasks = await knowledgeGraphApi.startGenerateTaskBatch(paths, kgExcludePaths.value.length > 0 ? kgExcludePaths.value : undefined)
-    if (tasks && tasks.length > 0) {
-      for (const task of tasks) {
-        knowledgeGraphTaskStatusMap.value[normalizePath(task.projectPath)] = task
-      }
-      ElMessage.success(`已入队 ${tasks.length} 个项目`)
-      startKgPolling()
-    }
-  } catch {
-    ElMessage.error('批量生成入队失败')
-  } finally {
-    batchGeneratingKG.value = false
-  }
+  // 弹窗勾选后处理项，确认后批量入队
+  pendingGenerateRow.value = null
+  pendingBatchPaths.value = selectedRemoteClonedProjects.value.map((p: RemoteProject) => normalizePath(p.localPath))
+  genVector.value = true
+  genArchitecture.value = true
+  generateDialogVisible.value = true
 }
 
 const selectedProjectsWithKg = computed(() =>
@@ -2251,10 +2251,27 @@ async function handleBatchGenerateKG() {
     ElMessage.warning('请先在表格中勾选项目')
     return
   }
-  const paths = selectedProjects.value.map((p: any) => normalizePath(p.path))
+  // 弹窗勾选后处理项（语义&向量 / 架构现状），确认后批量入队
+  pendingGenerateRow.value = null
+  pendingBatchPaths.value = selectedProjects.value.map((p: any) => normalizePath(p.path))
+  genVector.value = true
+  genArchitecture.value = true
+  generateDialogVisible.value = true
+}
+
+const doBatchGenerateKG = async () => {
+  generateDialogVisible.value = false
+  const paths = pendingBatchPaths.value
+  if (paths.length === 0) return
   batchGeneratingKG.value = true
   try {
-    const tasks = await knowledgeGraphApi.startGenerateTaskBatch(paths, kgExcludePaths.value.length > 0 ? kgExcludePaths.value : undefined)
+    const tasks = await knowledgeGraphApi.startGenerateTaskBatch(
+      paths,
+      kgExcludePaths.value.length > 0 ? kgExcludePaths.value : undefined,
+      genVector.value,
+      genArchitecture.value,
+      genBuildMode.value
+    )
     if (tasks && tasks.length > 0) {
       // 更新任务状态 map
       for (const task of tasks) {
@@ -2352,27 +2369,29 @@ interface RemoteGroupedProjects {
   projects: RemoteProject[]
 }
 const groupedRemoteProjects = computed<RemoteGroupedProjects[]>(() => {
-  const result: RemoteGroupedProjects[] = []
-  const assigned = new Set<number>()
+  // 单次遍历分组（避免 O(n²)：原实现外层 groupMap × 内层 filter 全表扫）。
+  // 归属以 groupId 为准（groupName 仅作展示名，缺 groupName 时回退 groupId），
+  // 保证「有 groupId 无 groupName」的项目仍归入其分组，与原 filter 逻辑等价。
+  const groupProjectsMap = new Map<string, { appId: string; appName: string; projects: RemoteProject[] }>()
+  const ungrouped: RemoteProject[] = []
 
-  // 按分组归类（使用 groupId 和 groupName）
-  const groupMap = new Map<string, { appId: string; appName: string }>()
   remoteProjects.value.forEach(p => {
-    if (p.groupId && p.groupName) {
-      groupMap.set(p.groupId, { appId: p.groupId, appName: p.groupName })
+    if (p.groupId) {
+      let bucket = groupProjectsMap.get(p.groupId)
+      if (!bucket) {
+        bucket = { appId: p.groupId, appName: p.groupName || p.groupId, projects: [] }
+        groupProjectsMap.set(p.groupId, bucket)
+      }
+      bucket.projects.push(p)
+    } else {
+      ungrouped.push(p)
     }
   })
 
-  for (const [groupId, groupInfo] of groupMap) {
-    const matched = remoteProjects.value.filter(p => p.groupId === groupId)
-    if (matched.length > 0) {
-      result.push({ group: groupInfo, projects: matched })
-      matched.forEach(p => assigned.add(p.id))
-    }
+  const result: RemoteGroupedProjects[] = []
+  for (const [, bucket] of groupProjectsMap) {
+    result.push({ group: { appId: bucket.appId, appName: bucket.appName }, projects: bucket.projects })
   }
-
-  // 未分组项目
-  const ungrouped = remoteProjects.value.filter(p => !assigned.has(p.id))
   if (ungrouped.length > 0) {
     result.push({ group: null, projects: ungrouped })
   }

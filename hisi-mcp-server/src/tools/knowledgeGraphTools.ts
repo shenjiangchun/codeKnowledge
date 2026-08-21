@@ -42,7 +42,7 @@ const commonOptionalProperties = {
   },
   language: {
     type: 'string' as const,
-    enum: ['java', 'python'],
+    enum: ['java', 'python', 'typescript'],
     description: '编程语言过滤（不传则查询全部语言）',
   },
 };
@@ -426,6 +426,28 @@ export const knowledgeGraphToolDefinitions = [
       required: ['nodeId', 'projectPaths'],
     },
   },
+  {
+    name: 'kg_api_consumers',
+    description: '查某后端接口（EntryPoint）的前端调用方列表。沿 INVOKES_API 边反向，返回调用该接口的前端 ApiClient（url/sourceFile/componentName）。用于回答「改这个后端接口会影响哪些前端组件」。需要 entryId。',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        entryId: { type: 'string', description: '后端入口点 ID（EntryPoint.entryId）' },
+      },
+      required: ['entryId'],
+    },
+  },
+  {
+    name: 'kg_backend_deps',
+    description: '查某前端 ApiClient 调用的后端接口列表。沿 INVOKES_API 边正向，返回该前端调用点命中的后端 EntryPoint（entryId/entryKey/entryType）。用于回答「这个前端组件调用了哪些后端接口」。需要 apiClientId。',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        apiClientId: { type: 'string', description: '前端 API 调用点 ID（ApiClient.apiClientId）' },
+      },
+      required: ['apiClientId'],
+    },
+  },
 ];
 
 // ============================================================================
@@ -685,6 +707,12 @@ export class KnowledgeGraphTools {
       this.buildQueryParams(base, params)
     );
   }
+  async apiConsumers(params: { entryId: string }): Promise<unknown> {
+    return this.client.get('/api/v2/knowledge-graph/api-consumers', { entryId: params.entryId });
+  }
+  async backendDeps(params: { apiClientId: string }): Promise<unknown> {
+    return this.client.get('/api/v2/knowledge-graph/backend-deps', { apiClientId: params.apiClientId });
+  }
 }
 
 // ============================================================================
@@ -714,6 +742,8 @@ export const KG_TOOLS = [
   'kg_domains',
   'kg_service_topology',
   'kg_blast_radius',
+  'kg_api_consumers',
+  'kg_backend_deps',
 ];
 
 let _kgTools: KnowledgeGraphTools | null = null;
@@ -776,6 +806,10 @@ export async function handleKnowledgeGraphToolCall(
       return tools.serviceTopology(mergedArgs as unknown as KgServiceTopologyParams);
     case 'kg_blast_radius':
       return tools.blastRadius(mergedArgs as unknown as KgBlastRadiusParams);
+    case 'kg_api_consumers':
+      return tools.apiConsumers({ entryId: String(args.entryId ?? '') });
+    case 'kg_backend_deps':
+      return tools.backendDeps({ apiClientId: String(args.apiClientId ?? '') });
     default:
       throw new Error(`Unknown knowledge graph tool: ${toolName}`);
   }

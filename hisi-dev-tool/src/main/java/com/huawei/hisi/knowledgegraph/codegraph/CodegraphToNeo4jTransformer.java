@@ -1,6 +1,7 @@
 package com.huawei.hisi.knowledgegraph.codegraph;
 
 import com.huawei.hisi.knowledgegraph.service.storage.Neo4jStorageService;
+import com.huawei.hisi.neo4j.model.ComponentNode;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
@@ -71,6 +72,7 @@ public class CodegraphToNeo4jTransformer {
 
         // 1. 节点转换
         List<MethodNode> methodNodes = new ArrayList<>();
+        List<ComponentNode> componentNodes = new ArrayList<>();
         Set<String> methodNodeIds = new LinkedHashSet<>();
         Map<String, EntryPointNode> entryPointsById = new LinkedHashMap<>();
         Map<String, String> nodeKindById = new LinkedHashMap<>();
@@ -84,10 +86,11 @@ public class CodegraphToNeo4jTransformer {
                 language = node.language();
             }
             switch (node.kind()) {
-                case "function", "method", "component" -> {
+                case "function", "method" -> {
                     methodNodes.add(toMethodNode(node, projectPath, service));
                     methodNodeIds.add(node.id());
                 }
+                case "component" -> componentNodes.add(toComponentNode(node, projectPath, service));
                 case "route" -> entryPointsById.put(node.id(), toEntryPoint(node, projectPath, service));
                 case "class", "struct", "interface", "trait", "protocol" -> {
                     log.debug("跳过 Class-like 节点 kind={} id={}", node.kind(), node.id());
@@ -131,7 +134,9 @@ public class CodegraphToNeo4jTransformer {
                         methodNodeIds.add(ep.getEntryId());
                         callsRelations.add(toCallsRelation(edge, projectPath));
                     } else if ("route".equals(srcKind) || "file".equals(srcKind)
-                            || "module".equals(srcKind) || "namespace".equals(srcKind)) {
+                            || "module".equals(srcKind) || "namespace".equals(srcKind)
+                            || "component".equals(srcKind)) {
+                        // component 已映射为 Component 节点（非 Method），其调用边由 T2 的 INVOKES 边接管，跳过 CALLS
                         log.debug("跳过 calls 边：caller 非 Method kind={} src={} tgt={}",
                                 srcKind, edge.source(), edge.target());
                         skippedEdges++;
@@ -165,6 +170,9 @@ public class CodegraphToNeo4jTransformer {
         if (!methodNodes.isEmpty()) {
             neo4jStorageService.saveMethodNodes(methodNodes);
         }
+        if (!componentNodes.isEmpty()) {
+            neo4jStorageService.saveComponentNodes(componentNodes);
+        }
         if (!entryPointsById.isEmpty()) {
             neo4jStorageService.saveEntryPoints(new ArrayList<>(entryPointsById.values()));
         }
@@ -182,14 +190,15 @@ public class CodegraphToNeo4jTransformer {
         }
 
         int totalSkipped = skippedNodes + skippedEdges;
-        log.info("codegraph→Neo4j 转换完成 projectPath={} language={} methods={} entryPoints={} "
+        log.info("codegraph→Neo4j 转换完成 projectPath={} language={} methods={} components={} entryPoints={} "
                         + "calls={} contains={} imports={} references={} skipped={}",
-                projectPath, language, methodNodes.size(), entryPointsById.size(),
+                projectPath, language, methodNodes.size(), componentNodes.size(), entryPointsById.size(),
                 callsRelations.size(), containsRelations.size(),
                 importsRelations.size(), referencesRelations.size(), totalSkipped);
 
         return new TransformResult(
                 methodNodes.size(),
+                componentNodes.size(),
                 entryPointsById.size(),
                 callsRelations.size(),
                 containsRelations.size(),
@@ -199,7 +208,7 @@ public class CodegraphToNeo4jTransformer {
         );
     }
 
-    /** codegraph node → hisi MethodNode（function/method/component 共用） */
+    /** codegraph node → hisi MethodNode（function/method 共用） */
     private MethodNode toMethodNode(CodegraphSqliteReader.CodegraphNode node, String projectPath, String serviceName) {
         return MethodNode.builder()
                 .nodeId(node.id())
@@ -215,6 +224,19 @@ public class CodegraphToNeo4jTransformer {
                 .projectPath(projectPath)
                 .description(node.docstring())
                 .comment(null)
+                .build();
+    }
+
+    /** codegraph component node → hisi ComponentNode（前端组件，不再抹平为 Method） */
+    private ComponentNode toComponentNode(CodegraphSqliteReader.CodegraphNode node, String projectPath, String serviceName) {
+        return ComponentNode.builder()
+                .componentId(ComponentNode.generateComponentId(projectPath, node.name()))
+                .componentName(node.name())
+                .filePath(node.filePath())
+                .projectPath(projectPath)
+                .language(node.language())
+                .framework("unknown")
+                .description(node.docstring())
                 .build();
     }
 
@@ -324,6 +346,7 @@ public class CodegraphToNeo4jTransformer {
      * 转换结果统计。
      *
      * @param methodsSaved       写入的 Method 节点数
+     * @param componentsSaved    写入的 Component 节点数
      * @param entryPointsSaved   写入的 EntryPoint 节点数
      * @param callsRelations     CALLS 关系数
      * @param containsRelations  CONTAINS 关系数
@@ -333,6 +356,7 @@ public class CodegraphToNeo4jTransformer {
      */
     public record TransformResult(
             int methodsSaved,
+            int componentsSaved,
             int entryPointsSaved,
             int callsRelations,
             int containsRelations,
@@ -344,7 +368,7 @@ public class CodegraphToNeo4jTransformer {
          * 空结果（用于 db 为空时直接返回，避免 NPE）。
          */
         public static TransformResult empty() {
-            return new TransformResult(0, 0, 0, 0, 0, 0, 0);
+            return new TransformResult(0, 0, 0, 0, 0, 0, 0, 0);
         }
     }
 }

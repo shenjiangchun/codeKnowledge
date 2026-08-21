@@ -3,8 +3,8 @@
 ## Purpose
 TBD - created by archiving change multi-perspective-platform. Update Purpose after archive.
 ## Requirements
-### Requirement: 聚合管道在构建完成后自动运行
-系统 MUST在 KnowledgeGraphBuilder.buildKnowledgeGraph() 和 IncrementalKnowledgeGraphBuilder.incrementalRefresh() 完成后，自动运行聚合管道 6 个 Stage。
+### Requirement: 聚合管道受队列编排与 generateArchitecture 门控
+系统 MUST 通过 KgGenerationQueue 消费循环在向量生成完成后串行编排聚合管道，且仅当任务勾选 generateArchitecture（架构现状）时才运行聚合（generateArchitecture=false 时不运行）。聚合触发点已从 buildKnowledgeGraph 内部移到队列消费循环。
 
 #### Scenario: Java 全量构建后触发全量聚合
 - 前提：用户发起 POST /api/knowledge-graph/tasks/generate

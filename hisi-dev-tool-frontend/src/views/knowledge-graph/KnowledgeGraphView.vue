@@ -126,7 +126,16 @@
             >
               查看缺失
             </el-button>
-            <!-- 全量生成按钮 -->
+            <!-- 全量生成按钮 + 构建模式选择 -->
+            <el-select
+              v-model="buildMode"
+              size="default"
+              style="width: 150px"
+              :disabled="isGenerating || isInCooldown"
+            >
+              <el-option label="全量-复用" value="reuse" />
+              <el-option label="全量-全删" value="wipe" />
+            </el-select>
             <el-button
               type="primary"
               :loading="isGenerating"
@@ -282,6 +291,9 @@
         </el-tab-pane>
         <el-tab-pane label="生成中心" name="generationCenter">
           <GenerationCenterPanel v-if="activeTab === 'generationCenter'" :project-paths="projectPaths" />
+        </el-tab-pane>
+        <el-tab-pane label="前后端跨层" name="frontendBackend">
+          <FrontendBackendTab v-if="activeTab === 'frontendBackend'" />
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -570,6 +582,7 @@ import CrossServiceTopology from './components/CrossServiceTopology.vue'
 import BuildModuleAnalysis from './components/BuildModuleAnalysis.vue'
 import BlastRadiusView from './components/BlastRadiusView.vue'
 import GenerationCenterPanel from './components/GenerationCenterPanel.vue'
+import FrontendBackendTab from './components/FrontendBackendTab.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -763,6 +776,8 @@ const vectorStatus = ref<VectorGenerationTask | null>(null)
 const gitStatus = ref<GitStatus | null>(null)
 const isGenerating = ref(false)
 const isGeneratingVector = ref(false)
+// 构建模式：incremental / reuse（全量-复用）/ wipe（全量-全删）
+const buildMode = ref<'incremental' | 'reuse' | 'wipe'>('reuse')
 const missingInfo = ref<MissingEmbeddingInfo | null>(null)
 const isRefreshingMissing = ref(false)
 const showMissingDrawer = ref(false)
@@ -1075,7 +1090,7 @@ const handleFullGenerate = async () => {
     recordGenerateTime()
     isGenerating.value = true
     ElMessage.info('已启动知识图谱生成任务，请稍候...')
-    await knowledgeGraphApi.startGenerateTask(projectPath.value)
+    await knowledgeGraphApi.startGenerateTask(projectPath.value, undefined, true, true, buildMode.value)
     ElMessage.success('知识图谱生成任务已启动')
     // 立即刷新状态并开始轮询
     startPolling()

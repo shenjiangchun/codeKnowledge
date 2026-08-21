@@ -122,7 +122,8 @@ public class KnowledgeGraphController {
             @RequestParam String projectPath,
             @RequestParam(required = false) String excludePaths,
             @RequestParam(required = false, defaultValue = "true") boolean generateVector,
-            @RequestParam(required = false, defaultValue = "true") boolean generateArchitecture) {
+            @RequestParam(required = false, defaultValue = "true") boolean generateArchitecture,
+            @RequestParam(required = false, defaultValue = "reuse") String buildMode) {
         projectPath = normalizePath(projectPath);
         List<String> excludeList = null;
         if (excludePaths != null && !excludePaths.isBlank()) {
@@ -132,7 +133,8 @@ public class KnowledgeGraphController {
                     .collect(Collectors.toList());
         }
         try {
-            KnowledgeGraphTask task = taskService.startTask(projectPath, excludeList, generateVector, generateArchitecture);
+            KnowledgeGraphTask task = taskService.startTask(projectPath, excludeList, generateVector,
+                    generateArchitecture, com.huawei.hisi.knowledgegraph.service.BuildMode.fromString(buildMode));
             return ResponseEntity.ok(task);
         } catch (IllegalArgumentException e) {
             Map<String, Object> error = new HashMap<>();
@@ -203,6 +205,11 @@ public class KnowledgeGraphController {
         List<String> projectPaths = (List<String>) request.get("projectPaths");
         @SuppressWarnings("unchecked")
         List<String> excludePaths = (List<String>) request.get("excludePaths");
+        String buildMode = request.get("buildMode") != null
+                ? request.get("buildMode").toString()
+                : "reuse";
+        boolean generateVector = !(request.get("generateVector") instanceof Boolean b) || b;
+        boolean generateArchitecture = !(request.get("generateArchitecture") instanceof Boolean b) || b;
 
         if (projectPaths == null || projectPaths.isEmpty()) {
             Map<String, Object> error = new HashMap<>();
@@ -219,7 +226,9 @@ public class KnowledgeGraphController {
                 .collect(Collectors.toList());
 
         try {
-            List<KnowledgeGraphTask> tasks = kgGenerationQueue.enqueueBatch(projectPaths, excludePaths);
+            List<KnowledgeGraphTask> tasks = kgGenerationQueue.enqueueBatch(projectPaths, excludePaths,
+                    generateVector, generateArchitecture,
+                    com.huawei.hisi.knowledgegraph.service.BuildMode.fromString(buildMode));
             return ResponseEntity.ok(tasks);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
@@ -413,8 +422,10 @@ public class KnowledgeGraphController {
         // 入口规范化（与 startTask 保持一致），避免再产生分隔符不一致的脏数据。
         projectPath = normalizePath(projectPath);
 
+        String buildMode = request.getOrDefault("buildMode", "reuse");
         try {
-            Map<String, Object> result = knowledgeGraphBuilder.buildKnowledgeGraph(projectPath);
+            Map<String, Object> result = knowledgeGraphBuilder.buildKnowledgeGraph(projectPath, null, true,
+                    com.huawei.hisi.knowledgegraph.service.BuildMode.fromString(buildMode));
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.error("生成知识图谱失败", e);
@@ -536,30 +547,95 @@ public class KnowledgeGraphController {
             log.info("[KG Batch Status] projectPaths empty, returning empty list");
             return ApiResponse.success(batchResult);
         }
-        for (String path : projectPaths) {
-            if (path == null || path.isBlank()) {
-                continue;
+
+        // 规范化路径（去空、去重）
+        List<String> paths = projectPaths.stream()
+                .filter(p -> p != null && !p.isBlank())
+                .map(ProjectPathResolver::normalize)
+                .distinct()
+                .collect(Collectors.toList());
+        if (paths.isEmpty()) {
+            return ApiResponse.success(batchResult);
+        }
+
+        // 每指标一次 IN + GROUP BY 查询（3 次 Neo4j 往返，替代原循环 N×8 次）
+        Map<String, Long> methodCounts = new HashMap<>();
+        Map<String, Long> relationCounts = new HashMap<>();
+        Map<String, Long> entryCounts = new HashMap<>();
+        boolean countQueryFailed = false;
+        try {
+            for (Map<String, Object> row : neo4jMethodNodeRepository.countByProjectPathsGrouped(paths)) {
+                methodCounts.put(String.valueOf(row.get("projectPath")), toLong(row.get("cnt")));
             }
-            String normalized = ProjectPathResolver.normalize(path);
-            try {
-                ApiResponse<Map<String, Object>> single = getStatus(normalized, null);
-                Map<String, Object> data = single.getData();
-                if (data == null) {
-                    data = new HashMap<>();
+        } catch (Exception e) {
+            countQueryFailed = true;
+            log.warn("[KG Batch Status] grouped method count failed: {}", e.getMessage());
+        }
+        try {
+            for (Map<String, Object> row : neo4jMethodNodeRepository.countCallRelationsByProjectPathsGrouped(paths)) {
+                relationCounts.put(String.valueOf(row.get("projectPath")), toLong(row.get("cnt")));
+            }
+        } catch (Exception e) {
+            countQueryFailed = true;
+            log.warn("[KG Batch Status] grouped relation count failed: {}", e.getMessage());
+        }
+        try {
+            for (Map<String, Object> row : neo4jEntryPointNodeRepository.countByProjectPathsGrouped(paths)) {
+                entryCounts.put(String.valueOf(row.get("projectPath")), toLong(row.get("cnt")));
+            }
+        } catch (Exception e) {
+            countQueryFailed = true;
+            log.warn("[KG Batch Status] grouped entry point count failed: {}", e.getMessage());
+        }
+
+        // 批量查询任务状态（1 次 SQLite，判断 generated/not_generated）
+        Map<String, KnowledgeGraphTask> latestTaskByPath = new HashMap<>();
+        try {
+            List<KnowledgeGraphTask> tasks = taskService.getTaskStatus(paths);
+            if (tasks != null) {
+                for (KnowledgeGraphTask t : tasks) {
+                    if (t != null && t.getProjectPath() != null) {
+                        latestTaskByPath.put(normalizePath(t.getProjectPath()), t);
+                    }
                 }
-                // 确保返回值带 projectPath，便于前端按 path 索引
-                data.putIfAbsent("projectPath", normalized);
-                batchResult.add(data);
-            } catch (Exception e) {
-                log.warn("[KG Batch Status] Failed to query status for path={}: {}", normalized, e.getMessage());
-                Map<String, Object> errorEntry = new HashMap<>();
-                errorEntry.put("projectPath", normalized);
-                errorEntry.put("status", "error");
-                errorEntry.put("error", e.getMessage());
-                batchResult.add(errorEntry);
             }
+        } catch (Exception e) {
+            log.warn("[KG Batch Status] batch task status failed: {}", e.getMessage());
+        }
+
+        for (String path : paths) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("projectPath", path);
+            long methodCount = methodCounts.getOrDefault(path, 0L);
+            long relationCount = relationCounts.getOrDefault(path, 0L);
+            long entryCount = entryCounts.getOrDefault(path, 0L);
+
+            KnowledgeGraphTask task = latestTaskByPath.get(path);
+            String status;
+            if (task != null) {
+                status = task.getStatus().toLowerCase();
+            } else if (countQueryFailed) {
+                // 计数查询失败时无法确定是否已生成，标记 unknown 而非「未生成」，避免误导
+                status = "unknown";
+            } else if (methodCount > 0 || relationCount > 0 || entryCount > 0) {
+                status = "generated";
+            } else {
+                status = "not_generated";
+            }
+
+            item.put("status", status);
+            item.put("methodNodeCount", methodCount);
+            item.put("callRelationCount", relationCount);
+            item.put("entryPointCount", entryCount);
+            batchResult.add(item);
         }
         return ApiResponse.success(batchResult);
+    }
+
+    private long toLong(Object v) {
+        if (v instanceof Number n) return n.longValue();
+        if (v == null) return 0L;
+        try { return Long.parseLong(v.toString()); } catch (NumberFormatException e) { return 0L; }
     }
 
     /**

@@ -43,6 +43,12 @@ public interface Neo4jServiceNodeRepository extends Neo4jRepository<ServiceNode,
     void deleteByServiceId(String serviceId);
 
     /**
+     * 按项目路径删除所有服务节点（DETACH DELETE 连带清理 HAS_METHOD / HAS_ENTRY 边）。
+     */
+    @Query("MATCH (s:Service {projectPath: $projectPath}) DETACH DELETE s")
+    void deleteByProjectPath(@Param("projectPath") String projectPath);
+
+    /**
      * 查询服务包含的所有方法节点
      */
     @Query("""

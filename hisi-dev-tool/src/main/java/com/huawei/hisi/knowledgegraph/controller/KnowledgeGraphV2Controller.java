@@ -6,6 +6,7 @@ import com.huawei.hisi.knowledgegraph.model.CallChainGraphResponse;
 import com.huawei.hisi.model.ApiResponse;
 import com.huawei.hisi.neo4j.model.ServiceEntryGroup;
 import com.huawei.hisi.neo4j.model.SqlNode;
+import com.huawei.hisi.neo4j.repository.Neo4jApiClientNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +27,7 @@ public class KnowledgeGraphV2Controller {
 
     private final KnowledgeGraphController v1;
     private final Neo4jEntryPointNodeRepository neo4jEntryPointNodeRepository;
+    private final Neo4jApiClientNodeRepository neo4jApiClientNodeRepository;
     private final GenerationController generationController;
 
     @GetMapping("/status")
@@ -409,5 +411,29 @@ public class KnowledgeGraphV2Controller {
             @RequestParam String moduleName,
             @RequestParam List<String> projectPaths) {
         return generationController.generateRefactorSuggestions(moduleName, null, projectPaths);
+    }
+
+    /**
+     * 查某后端接口（EntryPoint）的前端调用方列表（沿 INVOKES_API 边反向）。
+     */
+    @GetMapping("/api-consumers")
+    public ApiResponse<Map<String, Object>> getApiConsumers(@RequestParam String entryId) {
+        List<Map<String, Object>> consumers = neo4jApiClientNodeRepository.findApiConsumersByEntryId(entryId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("entryId", entryId);
+        result.put("consumers", consumers);
+        return ApiResponse.success(result);
+    }
+
+    /**
+     * 查某前端 ApiClient 调用的后端接口列表（沿 INVOKES_API 边正向）。
+     */
+    @GetMapping("/backend-deps")
+    public ApiResponse<Map<String, Object>> getBackendDeps(@RequestParam String apiClientId) {
+        List<Map<String, Object>> deps = neo4jApiClientNodeRepository.findBackendDepsByApiClientId(apiClientId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("apiClientId", apiClientId);
+        result.put("deps", deps);
+        return ApiResponse.success(result);
     }
 }

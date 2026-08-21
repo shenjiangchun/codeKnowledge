@@ -200,18 +200,32 @@ public class KnowledgeGraphBuilder {
      */
     public Map<String, Object> buildKnowledgeGraph(String projectPath, List<String> excludePaths,
                                                    boolean generateVector) {
+        return buildKnowledgeGraph(projectPath, excludePaths, generateVector, BuildMode.REUSE);
+    }
+
+    /**
+     * 构建知识图谱 + 可选语义向量生成 + 构建模式。
+     *
+     * @param buildMode 构建模式（REUSE / WIPE）。INCREMENTAL 由 {@code IncrementalKnowledgeGraphBuilder} 单独处理，不经此方法。
+     */
+    public Map<String, Object> buildKnowledgeGraph(String projectPath, List<String> excludePaths,
+                                                   boolean generateVector, BuildMode buildMode) {
+        if (buildMode == BuildMode.INCREMENTAL) {
+            throw new IllegalArgumentException(
+                "全量构建入口不接受 INCREMENTAL 模式，请改用增量刷新入口（IncrementalKnowledgeGraphBuilder）");
+        }
         if (!generationSemaphore.tryAcquire()) {
             throw new IllegalStateException("知识图谱生成任务正在执行中，请稍后再试（同一时刻仅允许一个项目生成）");
         }
         try {
-            return doBuildKnowledgeGraph(projectPath, excludePaths, generateVector);
+            return doBuildKnowledgeGraph(projectPath, excludePaths, generateVector, buildMode);
         } finally {
             generationSemaphore.release();
         }
     }
 
     protected Map<String, Object> doBuildKnowledgeGraph(String projectPath, List<String> excludePaths,
-                                                        boolean generateVector) {
+                                                        boolean generateVector, BuildMode buildMode) {
         // 入口规范化：把反斜杠统一成正斜杠，并去尾斜杠，确保 Neo4j 节点的 projectPath
         // 始终使用规范形态。否则同一份代码用 \ 和 / 调两次会产生两套重复节点。
         String rawInput = projectPath;
@@ -219,8 +233,8 @@ public class KnowledgeGraphBuilder {
         if (!java.util.Objects.equals(rawInput, projectPath)) {
             log.info("[KG Build] projectPath normalized: '{}' -> '{}'", rawInput, projectPath);
         }
-        log.info("开始构建知识图谱: {} (excludePaths={}, generateVector={})",
-            projectPath, excludePaths, generateVector);
+        log.info("开始构建知识图谱: {} (excludePaths={}, generateVector={}, buildMode={})",
+            projectPath, excludePaths, generateVector, buildMode);
         long startTime = System.currentTimeMillis();
 
         // 前置校验：必须能获取 git commit hash，否则增量刷新 checkpoint 无法保存
@@ -233,6 +247,13 @@ public class KnowledgeGraphBuilder {
         Language language = ProjectLanguageDetector.detectLanguage(projectPath);
         log.info("[KG Build] Detected language: {}", language);
 
+        // 非 Java 项目暂不支持 REUSE 复用，降级为 WIPE 全删全插
+        if (buildMode == BuildMode.REUSE && language != Language.JAVA) {
+            log.warn("[KG Build] 项目 {} (language={}) 暂不支持复用模式，已降级为全量-全删 (WIPE)",
+                projectPath, language);
+            buildMode = BuildMode.WIPE;
+        }
+
         // 如果是Python项目，使用PythonKnowledgeGraphBuilder
         if (language == Language.PYTHON) {
             return buildPythonKnowledgeGraph(projectPath, excludePaths, startTime, generateVector);
@@ -244,7 +265,7 @@ public class KnowledgeGraphBuilder {
         }
 
         // 否则使用Java知识图谱构建（默认）
-        return buildJavaKnowledgeGraph(projectPath, excludePaths, startTime, generateVector);
+        return buildJavaKnowledgeGraph(projectPath, excludePaths, startTime, generateVector, buildMode);
     }
 
     /**
@@ -373,11 +394,15 @@ public class KnowledgeGraphBuilder {
      * Build Java knowledge graph (existing logic).
      */
     protected Map<String, Object> buildJavaKnowledgeGraph(String projectPath, List<String> excludePaths, long startTime,
-                                                          boolean generateVector) {
+                                                          boolean generateVector, BuildMode buildMode) {
         log.info("[KG Build] Building Java knowledge graph...");
 
-        // 1. 清理旧数据
-        cleanOldData(projectPath);
+        // 1. 清理旧数据（REUSE 保留 Method 节点，WIPE 全删全插）
+        if (buildMode == BuildMode.REUSE) {
+            cleanOldDataForReuse(projectPath);
+        } else {
+            cleanOldData(projectPath);
+        }
 
         // 2. 构建类型解析器（复用调用链分析的逻辑）
         List<Path> sourceRoots = coreService.findSourceRoots(Paths.get(projectPath));
@@ -493,8 +518,12 @@ public class KnowledgeGraphBuilder {
         }
 
         // 9. 批量保存基础数据到 Neo4j
-        log.info("[Neo4j] 保存方法节点: {}", allMethodNodes.size());
-        storageService.saveMethodNodes(allMethodNodes);
+        log.info("[Neo4j] 保存方法节点: {} (buildMode={})", allMethodNodes.size(), buildMode);
+        if (buildMode == BuildMode.REUSE) {
+            storageService.saveMethodNodesForReuse(allMethodNodes, projectPath);
+        } else {
+            storageService.saveMethodNodes(allMethodNodes);
+        }
         log.info("[Neo4j] 保存类节点: {}", allClassNodes.size());
         List<Map<String, Object>> classNodeMaps = allClassNodes.stream()
             .map(c -> {
@@ -939,6 +968,7 @@ public class KnowledgeGraphBuilder {
                     signatureHash(method.getSignature().toString());
                 String nodeId = projectPath + ":" + methodId;
 
+                String methodBody = coreService.compressMethodBody(method);
                 MethodNode node = MethodNode.builder()
                     .nodeId(nodeId)
                     .className(className)
@@ -948,7 +978,9 @@ public class KnowledgeGraphBuilder {
                     .startLine(method.getBegin().map(p -> p.line).orElse(0))
                     .endLine(method.getEnd().map(p -> p.line).orElse(0))
                     .complexity(calculateComplexity(method))
-                    .methodBody(coreService.compressMethodBody(method))
+                    .methodBody(methodBody)
+                    .codeHash(MethodNode.computeCodeHash(className, method.getNameAsString(),
+                        method.getSignature().toString(), null, methodBody))
                     .projectPath(projectPath)
                     .serviceName(extractServiceName(className, projectPath))
                     .language("java")  // 全量生成也需要设置 language 字段
@@ -974,6 +1006,8 @@ public class KnowledgeGraphBuilder {
                     .endLine(ctor.getEnd().map(p -> p.line).orElse(0))
                     .complexity(1)
                     .methodBody("")
+                    .codeHash(MethodNode.computeCodeHash(className, "<init>",
+                        ctor.getSignature().toString(), null, ""))
                     .projectPath(projectPath)
                     .serviceName(extractServiceName(className, projectPath))
                     .language("java")  // 全量生成也需要设置 language 字段
@@ -995,6 +1029,7 @@ public class KnowledgeGraphBuilder {
                     signatureHash(method.getSignature().toString());
                 String nodeId = projectPath + ":" + methodId;
 
+                String methodBody = coreService.compressMethodBody(method);
                 MethodNode node = MethodNode.builder()
                     .nodeId(nodeId)
                     .className(className)
@@ -1004,7 +1039,9 @@ public class KnowledgeGraphBuilder {
                     .startLine(method.getBegin().map(p -> p.line).orElse(0))
                     .endLine(method.getEnd().map(p -> p.line).orElse(0))
                     .complexity(calculateComplexity(method))
-                    .methodBody(coreService.compressMethodBody(method))
+                    .methodBody(methodBody)
+                    .codeHash(MethodNode.computeCodeHash(className, method.getNameAsString(),
+                        method.getSignature().toString(), null, methodBody))
                     .projectPath(projectPath)
                     .serviceName(extractServiceName(className, projectPath))
                     .language("java")  // 全量生成也需要设置 language 字段
@@ -1177,6 +1214,8 @@ public class KnowledgeGraphBuilder {
                             .endLine(template.getEndLine())
                             .complexity(template.getComplexity())
                             .methodBody(template.getMethodBody())
+                            .codeHash(MethodNode.computeCodeHash(implName, template.getMethodName(),
+                                template.getSignature(), null, template.getMethodBody()))
                             .language(template.getLanguage())
                             .framework(template.getFramework())
                             .projectPath(projectPath)
@@ -2278,6 +2317,31 @@ public class KnowledgeGraphBuilder {
             sqlTotal += sqlDeleted;
         } while (sqlDeleted > 0);
         log.info("[Neo4j] 分批删除 SQL 节点完成: projectPath={}, 共删除 {} 个", projectPath, sqlTotal);
+
+        // 3. 清理向量生成任务状态
+        log.info("[SQLite] 清理生成任务状态: {}", projectPath);
+        generationTaskRepository.deleteByProjectPath(projectPath);
+    }
+
+    /**
+     * 全量-复用（REUSE）清理：删边 + 删非 Method 节点 + 删 SQL 节点，但保留 Method 节点。
+     * 与 {@link #cleanOldData} 的唯一差异是底层清理保留 Method 节点（供 codeHash 复用判定）。
+     */
+    protected void cleanOldDataForReuse(String projectPath) {
+        // 1. 清理核心图数据（删边 + 删非 Method 节点，保留 Method）
+        log.info("[Neo4j] 全量-复用清理旧数据（保留 Method）: {}", projectPath);
+        storageService.cleanProjectDataForReuse(projectPath);
+
+        // 2. 清理 Neo4j SQL 节点和 EXECUTES_SQL 关系（SQL 非 Method，删了重建）
+        log.info("[Neo4j] 全量-复用清理 SQL 节点和 EXECUTES_SQL 关系: {}", projectPath);
+        neo4jSqlNodeRepository.deleteExecutesSqlRelationsByProjectPath(projectPath);
+        long sqlDeleted;
+        int sqlTotal = 0;
+        do {
+            sqlDeleted = neo4jSqlNodeRepository.deleteByProjectPathBatch(projectPath, 2000);
+            sqlTotal += sqlDeleted;
+        } while (sqlDeleted > 0);
+        log.info("[Neo4j] 全量-复用分批删除 SQL 节点完成: projectPath={}, 共删除 {} 个", projectPath, sqlTotal);
 
         // 3. 清理向量生成任务状态
         log.info("[SQLite] 清理生成任务状态: {}", projectPath);

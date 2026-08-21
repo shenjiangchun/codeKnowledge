@@ -39,6 +39,9 @@ public class Neo4jInitializer {
         "CREATE CONSTRAINT domainNode_domainId_unique IF NOT EXISTS FOR (d:DomainNode) REQUIRE d.domainId IS UNIQUE",
         "CREATE CONSTRAINT churnNode_nodeId_unique IF NOT EXISTS FOR (c:ChurnNode) REQUIRE c.nodeId IS UNIQUE",
         "CREATE CONSTRAINT classNode_classId_unique IF NOT EXISTS FOR (c:Class) REQUIRE c.classId IS UNIQUE",
+        "CREATE CONSTRAINT component_componentId_unique IF NOT EXISTS FOR (c:Component) REQUIRE c.componentId IS UNIQUE",
+        "CREATE CONSTRAINT apiClient_apiClientId_unique IF NOT EXISTS FOR (a:ApiClient) REQUIRE a.apiClientId IS UNIQUE",
+        "CREATE CONSTRAINT frontendRoute_frontendRouteId_unique IF NOT EXISTS FOR (r:FrontendRoute) REQUIRE r.frontendRouteId IS UNIQUE",
         "CREATE CONSTRAINT aggCheckpoint_checkpointId_unique IF NOT EXISTS FOR (a:AggregationCheckpoint) REQUIRE a.checkpointId IS UNIQUE"
     );
 
@@ -97,6 +100,13 @@ public class Neo4jInitializer {
         // ClassNode 索引
         "CREATE INDEX classNode_classId_index IF NOT EXISTS FOR (c:Class) ON (c.classId)",
         "CREATE INDEX classNode_projectPath_index IF NOT EXISTS FOR (c:Class) ON (c.projectPath)",
+        // ComponentNode 索引
+        "CREATE INDEX component_projectPath_index IF NOT EXISTS FOR (c:Component) ON (c.projectPath)",
+        // ApiClientNode 索引
+        "CREATE INDEX apiClient_projectPath_index IF NOT EXISTS FOR (a:ApiClient) ON (a.projectPath)",
+        "CREATE INDEX apiClient_url_index IF NOT EXISTS FOR (a:ApiClient) ON (a.url)",
+        // FrontendRouteNode 索引
+        "CREATE INDEX frontendRoute_projectPath_index IF NOT EXISTS FOR (r:FrontendRoute) ON (r.projectPath)",
         // AggregationCheckpoint 索引
         "CREATE INDEX aggCheckpoint_checkpointId_index IF NOT EXISTS FOR (a:AggregationCheckpoint) ON (a.checkpointId)",
         "CREATE INDEX aggCheckpoint_projectPath_index IF NOT EXISTS FOR (a:AggregationCheckpoint) ON (a.projectPath)"

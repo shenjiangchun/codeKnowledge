@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("CodegraphToNeo4jTransformer")
@@ -77,6 +78,24 @@ class CodegraphToNeo4jTransformerTest {
         var result = transformer.transform(db, "/proj", "svc");
         assertThat(result.methodsSaved()).isEqualTo(1);
         verify(neo4jStorageService).saveMethodNodes(any());
+    }
+
+    @Test
+    @DisplayName("transform converts component nodes to ComponentNodes, not MethodNodes")
+    void transform_componentNode_savesComponentNode_notMethod() {
+        var node = new CodegraphSqliteReader.CodegraphNode(
+            "c1", "component", "MyComponent", null, "/path/MyComponent.vue",
+            "typescript", 10, 20, 1, 5, "a vue component", null, "public",
+            true, false, false, false, null, null, null, 1000L
+        );
+        var db = new CodegraphSqliteReader.CodegraphDb(List.of(node), List.of(), List.of());
+        var result = transformer.transform(db, "/proj", "svc");
+        // component 不再作为 Method 保存
+        assertThat(result.methodsSaved()).isEqualTo(0);
+        verify(neo4jStorageService, never()).saveMethodNodes(any());
+        // component 作为 Component 保存
+        assertThat(result.componentsSaved()).isEqualTo(1);
+        verify(neo4jStorageService).saveComponentNodes(any());
     }
 
     @Test

@@ -95,7 +95,7 @@ class KnowledgeGraphBuilderCodegraphDispatchTest {
             .thenReturn(new CodegraphSidecarService.CodegraphRunResult(0, "ok", "/tmp/codegraph.db"));
         when(codegraphSqliteReader.readAll("/tmp/codegraph.db")).thenReturn(db);
         when(codegraphTransformer.transform(any(), anyString(), anyString()))
-            .thenReturn(new CodegraphToNeo4jTransformer.TransformResult(1, 0, 0, 0, 0, 0, 0));
+            .thenReturn(new CodegraphToNeo4jTransformer.TransformResult(1, 0, 0, 0, 0, 0, 0, 0));
         when(neo4jMethodNodeRepository.countByProjectPath(anyString())).thenReturn(1L);
         when(neo4jEntryPointNodeRepository.countByProjectPath(anyString())).thenReturn(0L);
         when(neo4jMethodNodeRepository.countCallRelationsByProjectPath(anyString())).thenReturn(0L);

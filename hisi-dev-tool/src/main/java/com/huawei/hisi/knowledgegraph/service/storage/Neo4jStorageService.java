@@ -6,11 +6,18 @@ import com.huawei.hisi.knowledgegraph.model.MethodOverride;
 import com.huawei.hisi.knowledgegraph.model.ProxyRelation;
 import com.huawei.hisi.neo4j.model.DataModelNode;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
+import com.huawei.hisi.neo4j.model.ComponentNode;
+import com.huawei.hisi.neo4j.model.ApiClientNode;
+import com.huawei.hisi.neo4j.model.FrontendRouteNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
 import com.huawei.hisi.neo4j.repository.Neo4jDataModelNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository;
+import com.huawei.hisi.neo4j.repository.Neo4jComponentNodeRepository;
+import com.huawei.hisi.neo4j.repository.Neo4jApiClientNodeRepository;
+import com.huawei.hisi.neo4j.repository.Neo4jFrontendRouteNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jClassNodeRepository;
+import com.huawei.hisi.neo4j.repository.Neo4jServiceNodeRepository;
 import com.huawei.hisi.neo4j.repository.ChurnNodeRepository;
 import com.huawei.hisi.neo4j.repository.ModuleNodeRepository;
 import com.huawei.hisi.neo4j.repository.DomainNodeRepository;
@@ -21,6 +28,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,7 +47,11 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
     private final Neo4jMethodNodeRepository methodNodeRepository;
     private final Neo4jEntryPointNodeRepository entryPointRepository;
     private final Neo4jDataModelNodeRepository dataModelNodeRepository;
+    private final Neo4jComponentNodeRepository componentNodeRepository;
+    private final Neo4jApiClientNodeRepository apiClientNodeRepository;
+    private final Neo4jFrontendRouteNodeRepository frontendRouteNodeRepository;
     private final Neo4jClassNodeRepository classNodeRepository;
+    private final Neo4jServiceNodeRepository serviceNodeRepository;
     private final ChurnNodeRepository churnNodeRepository;
     private final ModuleNodeRepository moduleNodeRepository;
     private final DomainNodeRepository domainNodeRepository;
@@ -89,11 +101,192 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
                 map.put("caughtExceptions", n.getCaughtExceptions());
                 map.put("language", n.getLanguage());
                 map.put("packageName", n.getPackageName());
+                map.put("codeHash", n.getCodeHash());
                 return map;
             })
             .toList();
         methodNodeRepository.mergeAll(nodeMaps);
         log.info("[Neo4j] MERGE 方法节点: {} 个 (去重前: {} 个)", deduplicatedNodes.size(), nodes.size());
+    }
+
+    @Override
+    @Transactional(transactionManager = "neo4jTransactionManager")
+    public void saveComponentNodes(List<ComponentNode> nodes) {
+        if (nodes == null || nodes.isEmpty()) {
+            return;
+        }
+        // 去重 - 同一个 componentId 只保留一个
+        Map<String, ComponentNode> uniqueNodes = new LinkedHashMap<>();
+        for (ComponentNode node : nodes) {
+            uniqueNodes.putIfAbsent(node.getComponentId(), node);
+        }
+        List<ComponentNode> deduplicatedNodes = new ArrayList<>(uniqueNodes.values());
+
+        // Convert to Map format for mergeAll
+        List<Map<String, Object>> nodeMaps = deduplicatedNodes.stream()
+            .map(n -> {
+                Map<String, Object> map = new LinkedHashMap<>();
+                map.put("componentId", n.getComponentId());
+                map.put("componentName", n.getComponentName());
+                map.put("filePath", n.getFilePath());
+                map.put("projectPath", n.getProjectPath());
+                map.put("language", n.getLanguage());
+                map.put("framework", n.getFramework());
+                map.put("description", n.getDescription());
+                return map;
+            })
+            .toList();
+        componentNodeRepository.mergeAll(nodeMaps);
+        log.info("[Neo4j] MERGE 组件节点: {} 个 (去重前: {} 个)", deduplicatedNodes.size(), nodes.size());
+    }
+
+    @Override
+    @Transactional(transactionManager = "neo4jTransactionManager")
+    public void saveApiClientNodes(List<ApiClientNode> nodes) {
+        if (nodes == null || nodes.isEmpty()) {
+            return;
+        }
+        Map<String, ApiClientNode> uniqueNodes = new LinkedHashMap<>();
+        for (ApiClientNode node : nodes) {
+            uniqueNodes.putIfAbsent(node.getApiClientId(), node);
+        }
+        List<Map<String, Object>> nodeMaps = uniqueNodes.values().stream()
+            .map(n -> {
+                Map<String, Object> map = new LinkedHashMap<>();
+                map.put("apiClientId", n.getApiClientId());
+                map.put("method", n.getMethod());
+                map.put("url", n.getUrl());
+                map.put("sourceFile", n.getSourceFile());
+                map.put("componentName", n.getComponentName());
+                map.put("projectPath", n.getProjectPath());
+                map.put("language", n.getLanguage());
+                return map;
+            })
+            .toList();
+        apiClientNodeRepository.mergeAll(nodeMaps);
+        log.info("[Neo4j] MERGE API 调用点节点: {} 个", nodeMaps.size());
+    }
+
+    @Override
+    @Transactional(transactionManager = "neo4jTransactionManager")
+    public void saveFrontendRouteNodes(List<FrontendRouteNode> nodes) {
+        if (nodes == null || nodes.isEmpty()) {
+            return;
+        }
+        Map<String, FrontendRouteNode> uniqueNodes = new LinkedHashMap<>();
+        for (FrontendRouteNode node : nodes) {
+            uniqueNodes.putIfAbsent(node.getFrontendRouteId(), node);
+        }
+        List<Map<String, Object>> nodeMaps = uniqueNodes.values().stream()
+            .map(n -> {
+                Map<String, Object> map = new LinkedHashMap<>();
+                map.put("frontendRouteId", n.getFrontendRouteId());
+                map.put("path", n.getPath());
+                map.put("name", n.getName());
+                map.put("componentName", n.getComponentName());
+                map.put("projectPath", n.getProjectPath());
+                return map;
+            })
+            .toList();
+        frontendRouteNodeRepository.mergeAll(nodeMaps);
+        log.info("[Neo4j] MERGE 前端路由节点: {} 个", nodeMaps.size());
+    }
+
+    @Override
+    @Transactional(transactionManager = "neo4jTransactionManager")
+    public void saveMethodNodesForReuse(List<MethodNode> nodes, String projectPath) {
+        if (nodes == null) {
+            nodes = List.of();
+        }
+        // 兜底默认值（与 saveMethodNodes 对齐）
+        nodes.forEach(n -> {
+            if (n.getLanguage() == null) n.setLanguage("java");
+        });
+
+        // 去重
+        Map<String, MethodNode> uniqueNodes = new LinkedHashMap<>();
+        for (MethodNode node : nodes) {
+            uniqueNodes.putIfAbsent(node.getNodeId(), node);
+        }
+        List<MethodNode> deduplicatedNodes = new ArrayList<>(uniqueNodes.values());
+
+        // 查询现有节点 codeHash 映射（nodeId -> codeHash）
+        Map<String, String> existingCodeHash = new HashMap<>();
+        if (projectPath != null) {
+            methodNodeRepository.findCodeHashByProjectPath(projectPath).forEach(p -> {
+                if (p.nodeId() != null) {
+                    existingCodeHash.put(p.nodeId(), p.codeHash());
+                }
+            });
+        }
+
+        // 分组：codeHash 命中（复用向量） vs 未命中（重算）
+        List<MethodNode> hitNodes = new ArrayList<>();
+        List<MethodNode> missNodes = new ArrayList<>();
+        for (MethodNode node : deduplicatedNodes) {
+            String oldHash = existingCodeHash.get(node.getNodeId());
+            String newHash = node.getCodeHash();
+            if (oldHash != null && oldHash.equals(newHash)) {
+                hitNodes.add(node);
+            } else {
+                missNodes.add(node);
+            }
+        }
+
+        // 命中 → mergeAllReuseHit（不碰 description/embedding）
+        if (!hitNodes.isEmpty()) {
+            methodNodeRepository.mergeAllReuseHit(hitNodes.stream().map(this::toNodeMap).toList());
+            log.info("[Neo4j][Reuse] 复用命中 {} 个方法节点（向量保留）", hitNodes.size());
+        }
+        // 未命中 → mergeAll（覆盖结构字段），并显式清空向量触发重算
+        if (!missNodes.isEmpty()) {
+            methodNodeRepository.mergeAll(missNodes.stream().map(this::toNodeMap).toList());
+            List<String> missNodeIds = missNodes.stream().map(MethodNode::getNodeId).toList();
+            methodNodeRepository.clearEmbeddingsByNodeIds(missNodeIds);
+            log.info("[Neo4j][Reuse] 未命中 {} 个方法节点（向量重算）", missNodes.size());
+        }
+
+        // 孤儿清理：删除「不在本轮 nodeId 集合内」的历史 Method 节点。
+        // 空列表（源码清空/解析失败到 0 方法）→ 全删；非空 → 差集删孤儿。
+        if (projectPath != null) {
+            if (deduplicatedNodes.isEmpty()) {
+                methodNodeRepository.deleteByProjectPath(projectPath);
+                log.info("[Neo4j][Reuse] 本轮 0 方法，全量删除历史 Method 节点");
+            } else {
+                List<String> currentNodeIds = deduplicatedNodes.stream()
+                        .map(MethodNode::getNodeId)
+                        .toList();
+                methodNodeRepository.deleteOrphansByProjectPathAndNotInNodeIds(projectPath, currentNodeIds);
+            }
+        }
+        log.info("[Neo4j][Reuse] 保存方法节点完成: 命中 {} / 未命中 {} / 去重前 {}",
+                hitNodes.size(), missNodes.size(), nodes.size());
+    }
+
+    /**
+     * 将 MethodNode 转为 mergeAll 用的 Map（含 description 字段，供 WIPE/未命中路径覆盖）。
+     */
+    private Map<String, Object> toNodeMap(MethodNode n) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("nodeId", n.getNodeId());
+        map.put("className", n.getClassName());
+        map.put("methodName", n.getMethodName());
+        map.put("signature", n.getSignature());
+        map.put("description", n.getDescription());
+        map.put("filePath", n.getFilePath());
+        map.put("startLine", n.getStartLine());
+        map.put("endLine", n.getEndLine());
+        map.put("complexity", n.getComplexity());
+        map.put("methodBody", n.getMethodBody());
+        map.put("projectPath", n.getProjectPath());
+        map.put("serviceName", n.getServiceName());
+        map.put("comment", n.getComment());
+        map.put("thrownExceptions", n.getThrownExceptions());
+        map.put("caughtExceptions", n.getCaughtExceptions());
+        map.put("language", n.getLanguage());
+        map.put("packageName", n.getPackageName());
+        map.put("codeHash", n.getCodeHash());
+        return map;
     }
 
     @Override
@@ -478,6 +671,70 @@ public class Neo4jStorageService implements KnowledgeGraphStorageService {
         } catch (Exception e) {
             log.warn("[Neo4j] 清理 ClassNode 异常: {}", e.getMessage());
         }
+    }
+
+    /**
+     * 全量-复用（REUSE）清理：删边 + 删非 Method 节点，保留 Method 节点。
+     * 与 {@link #cleanProjectData} 的差异只有两点：
+     * ① 显式删除 CALLS 边（cleanProjectData 靠 DETACH DELETE Method 连带删，REUSE 保留 Method 故需显式删）；
+     * ② 不删除 Method 节点。
+     */
+    @Override
+    @Transactional(transactionManager = "neo4jTransactionManager")
+    public void cleanProjectDataForReuse(String projectPath) {
+        log.info("[Neo4j] 全量-复用清理（保留 Method 节点）: {}", projectPath);
+        // 清理 DataModel 节点和 USES_MODEL 关系
+        try {
+            dataModelNodeRepository.deleteUsesModelRelationsByProjectPath(projectPath);
+            dataModelNodeRepository.deleteByProjectPath(projectPath);
+        } catch (Exception e) {
+            log.warn("[Neo4j] 清理 DataModel 数据异常: {}", e.getMessage());
+        }
+        // 清理关系（IMPLEMENTS / EXTENDS / OVERRIDE / PROXY / CALLS）
+        methodNodeRepository.deleteImplementsRelationsByProjectPath(projectPath);
+        methodNodeRepository.deleteExtendsRelationsByProjectPath(projectPath);
+        methodNodeRepository.deleteOverrideRelationsByProjectPath(projectPath);
+        methodNodeRepository.deleteProxyRelationsByProjectPath(projectPath);
+        methodNodeRepository.deleteCallRelationsByProjectPath(projectPath);
+        // 分批清理入口点（EntryPoint 非 Method，需删除重建）
+        long deleted;
+        do {
+            deleted = entryPointRepository.deleteByProjectPathBatch(projectPath, 1000);
+        } while (deleted > 0);
+        log.info("[Neo4j] 全量-复用清理入口点完成: projectPath={}", projectPath);
+        // 清理聚合数据节点（非 Method 节点，删了重建）
+        try {
+            moduleNodeRepository.deleteByProjectPath(projectPath);
+        } catch (Exception e) {
+            log.warn("[Neo4j] 清理 ModuleNode 异常: {}", e.getMessage());
+        }
+        try {
+            churnNodeRepository.deleteByProjectPath(projectPath);
+        } catch (Exception e) {
+            log.warn("[Neo4j] 清理 ChurnNode 异常: {}", e.getMessage());
+        }
+        try {
+            domainNodeRepository.deleteByProjectPath(projectPath);
+        } catch (Exception e) {
+            log.warn("[Neo4j] 清理 DomainNode 异常: {}", e.getMessage());
+        }
+        try {
+            aggregationCheckpointRepository.deleteByProjectPath(projectPath);
+        } catch (Exception e) {
+            log.warn("[Neo4j] 清理 AggregationCheckpoint 异常: {}", e.getMessage());
+        }
+        try {
+            classNodeRepository.detachDeleteByProjectPath(projectPath);
+        } catch (Exception e) {
+            log.warn("[Neo4j] 清理 ClassNode 异常: {}", e.getMessage());
+        }
+        try {
+            serviceNodeRepository.deleteByProjectPath(projectPath);
+        } catch (Exception e) {
+            log.warn("[Neo4j] 清理 ServiceNode 异常: {}", e.getMessage());
+        }
+        // 注意：不删除 Method 节点 —— 保留其 description/embedding 供 codeHash 复用判定
+        log.info("[Neo4j] 全量-复用清理完成（Method 节点保留）: {}", projectPath);
     }
 
 }

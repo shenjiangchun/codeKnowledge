@@ -423,21 +423,25 @@ export const knowledgeGraphApi = {
   // 任务管理接口（V1，写操作保持 projectPath）
   // ============================================================
 
-  startGenerateTask(projectPath: string, excludePaths?: string[], generateVector = true, generateArchitecture = true) {
+  startGenerateTask(projectPath: string, excludePaths?: string[], generateVector = true, generateArchitecture = true, buildMode = 'reuse') {
     const params: Record<string, string> = { projectPath }
     if (excludePaths && excludePaths.length > 0) {
       params.excludePaths = excludePaths.join(',')
     }
     params.generateVector = String(generateVector)
     params.generateArchitecture = String(generateArchitecture)
+    params.buildMode = buildMode
     return request.post<KnowledgeGraphTask>('/knowledge-graph/tasks/generate', null, { params })
   },
 
   /** 批量入队：多项目排队生成，完整完成一个再做下一个 */
-  startGenerateTaskBatch(projectPaths: string[], excludePaths?: string[]) {
+  startGenerateTaskBatch(projectPaths: string[], excludePaths?: string[], generateVector = true, generateArchitecture = true, buildMode = 'reuse') {
     return request.post<KnowledgeGraphTask[]>('/knowledge-graph/tasks/generate-batch', {
       projectPaths,
-      excludePaths: excludePaths || undefined
+      excludePaths: excludePaths || undefined,
+      generateVector,
+      generateArchitecture,
+      buildMode
     })
   },
 

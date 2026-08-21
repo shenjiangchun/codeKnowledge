@@ -137,6 +137,17 @@ public interface Neo4jEntryPointNodeRepository extends Neo4jRepository<EntryPoin
     long countByProjectPaths(@org.springframework.data.repository.query.Param("projectPaths") java.util.List<String> projectPaths);
 
     /**
+     * [批量聚合] 按 projectPath 分组统计入口点数量。
+     * 用于批量状态查询，避免对每个项目单独跑一次 Neo4j 往返。
+     */
+    @Query("""
+        MATCH (entry:EntryPoint)
+        WHERE entry.projectPath IN $projectPaths
+        RETURN entry.projectPath AS projectPath, count(entry) AS cnt
+        """)
+    java.util.List<java.util.Map<String, Object>> countByProjectPathsGrouped(@org.springframework.data.repository.query.Param("projectPaths") java.util.List<String> projectPaths);
+
+    /**
      * 查询入口点关联的方法节点ID
      * 通过 methodNodeId 字段关联，而非 Neo4j 关系
      */
