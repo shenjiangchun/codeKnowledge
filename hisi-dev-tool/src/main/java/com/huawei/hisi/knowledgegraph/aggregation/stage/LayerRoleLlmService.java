@@ -1,9 +1,8 @@
 package com.huawei.hisi.knowledgegraph.aggregation.stage;
 
 import com.fasterxml.jackson.annotation.JsonClassDescription;
+import com.huawei.hisi.knowledgegraph.aggregation.llm.DeepseekJsonClient;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -16,17 +15,17 @@ import java.util.Map;
  * <p>三级回退（注解/类名/包名 或 包名 CASE）仍无法识别的节点，批量分批调用 LLM，
  * 输入「节点名 + 依赖结构」，LLM 判断其架构层级（CONTROLLER/SERVICE/REPOSITORY/MODEL/UTILITY/UNKNOWN）。
  *
- * <p>LLM 后端走 {@code extractionChatClient}（Spring AI AnthropicChatModel → anthropic 中转 deepseek），
- * 与领域归纳（{@link MultiDimensionCommunityDetector}）同一条链路，避开智谱 GLM-4.7-Flash 的全局限流。
+ * <p>LLM 后端走 {@link DeepseekJsonClient}（deepseek 网关 OpenAI 链路 + json_object 强制），
+ * 与领域归纳（{@link MultiDimensionCommunityDetector}）同一条链路。
  */
 @Slf4j
 @Service
 public class LayerRoleLlmService {
 
-    private final ChatClient extractionChatClient;
+    private final DeepseekJsonClient deepseekJsonClient;
 
-    public LayerRoleLlmService(@Qualifier("extractionChatClient") ChatClient extractionChatClient) {
-        this.extractionChatClient = extractionChatClient;
+    public LayerRoleLlmService(DeepseekJsonClient deepseekJsonClient) {
+        this.deepseekJsonClient = deepseekJsonClient;
     }
 
     private static final String SYSTEM_PROMPT = """
@@ -87,11 +86,7 @@ public class LayerRoleLlmService {
     private RoleGrouping resolveBatchWithRetry(List<Map<String, String>> batch) {
         for (int depsMaxLength : DEPS_MAX_LENGTH_LEVELS) {
             String userPrompt = buildBatchPrompt(batch, depsMaxLength);
-            RoleGrouping grouping = extractionChatClient.prompt()
-                    .system(SYSTEM_PROMPT)
-                    .user(userPrompt)
-                    .call()
-                    .entity(RoleGrouping.class);
+            RoleGrouping grouping = deepseekJsonClient.chatJson(SYSTEM_PROMPT, userPrompt, RoleGrouping.class);
             if (grouping != null && grouping.items() != null && !grouping.items().isEmpty()) {
                 return grouping;
             }
@@ -114,7 +109,8 @@ public class LayerRoleLlmService {
             }
             sb.append("  依赖: ").append(deps).append("\n");
         }
-        sb.append("\n请按相同顺序，为每个节点判断层级，层级只能是 CONTROLLER/SERVICE/REPOSITORY/MODEL/UTILITY/UNKNOWN。");
+        sb.append("\n请按相同顺序，为每个节点判断层级，层级只能是 CONTROLLER/SERVICE/REPOSITORY/MODEL/UTILITY/UNKNOWN。")
+          .append("\n只输出一个 JSON 对象，格式：{\"items\":[{\"name\":\"节点名\",\"role\":\"层级\"}]}，不要 markdown 不要数组不要解释。");
         return sb.toString();
     }
 

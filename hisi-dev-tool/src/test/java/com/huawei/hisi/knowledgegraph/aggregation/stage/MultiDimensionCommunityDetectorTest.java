@@ -1,6 +1,7 @@
 package com.huawei.hisi.knowledgegraph.aggregation.stage;
 
 import com.huawei.hisi.knowledgegraph.aggregation.AggregationCheckpointManager;
+import com.huawei.hisi.knowledgegraph.aggregation.llm.DeepseekJsonClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,10 +14,6 @@ import org.neo4j.driver.Session;
 import org.neo4j.driver.SessionConfig;
 import org.neo4j.driver.Value;
 import org.neo4j.driver.Values;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.Generation;
 
 import java.util.*;
 
@@ -29,14 +26,14 @@ class MultiDimensionCommunityDetectorTest {
     @Mock private Driver driver;
     @Mock private CommunityDetector communityDetector;
     @Mock private AggregationCheckpointManager checkpointManager;
-    @Mock private ChatClient extractionChatClient;
+    @Mock private DeepseekJsonClient deepseekJsonClient;
     @Mock private Session session;
     private MultiDimensionCommunityDetector detector;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        detector = new MultiDimensionCommunityDetector(driver, SessionConfig.forDatabase("neo4j"), communityDetector, checkpointManager, extractionChatClient);
+        detector = new MultiDimensionCommunityDetector(driver, SessionConfig.forDatabase("neo4j"), communityDetector, checkpointManager, deepseekJsonClient);
         lenient().when(driver.session(any(SessionConfig.class))).thenReturn(session);
         Result result = mock(Result.class);
         org.neo4j.driver.summary.ResultSummary summary = mock(org.neo4j.driver.summary.ResultSummary.class);
@@ -75,49 +72,14 @@ class MultiDimensionCommunityDetectorTest {
     }
 
     private void stubLlm(List<MultiDimensionCommunityDetector.DomainClassList> domains) {
-        ChatClient.ChatClientRequestSpec reqSpec = mock(ChatClient.ChatClientRequestSpec.class);
-        ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
-        when(extractionChatClient.prompt()).thenReturn(reqSpec);
-        when(reqSpec.user(anyString())).thenReturn(reqSpec);
-        when(reqSpec.call()).thenReturn(callSpec);
-        // 模拟中转把思考散文（thinking 块）与 JSON（text 块）拆成两个 Generation，thinking 在前
-        String json = toJson(domains);
-        ChatResponse chatResponse = new ChatResponse(List.of(
-            new Generation(new AssistantMessage("用户要求将类按业务领域分类…（思考散文）")),
-            new Generation(new AssistantMessage(json))));
-        when(callSpec.chatResponse()).thenReturn(chatResponse);
+        when(deepseekJsonClient.chatJson(isNull(), anyString(), eq(MultiDimensionCommunityDetector.DomainGrouping.class)))
+            .thenReturn(new MultiDimensionCommunityDetector.DomainGrouping(domains));
     }
 
-    /** 首次返回截断 JSON（提取失败），第二次返回完整 JSON —— 验证压缩上下文重试 */
+    /** 首次返回 null（模拟截断导致反序列化失败），第二次返回完整结果 —— 验证压缩上下文重试 */
     private void stubLlmTruncatedThenSuccess(List<MultiDimensionCommunityDetector.DomainClassList> domains) {
-        ChatClient.ChatClientRequestSpec reqSpec = mock(ChatClient.ChatClientRequestSpec.class);
-        ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
-        when(extractionChatClient.prompt()).thenReturn(reqSpec);
-        when(reqSpec.user(anyString())).thenReturn(reqSpec);
-        when(reqSpec.call()).thenReturn(callSpec);
-        // 第一次：JSON 未闭合（截断），RobustJsonExtractor 提取失败返回 null
-        ChatResponse truncated = new ChatResponse(List.of(
-            new Generation(new AssistantMessage("思考散文")),
-            new Generation(new AssistantMessage("{\"domains\":[{\"domainName\":\"订单\",\"classNames\":[\"com.huawei.hisi.order.OrderService\""))));
-        // 第二次：完整 JSON
-        ChatResponse complete = new ChatResponse(List.of(
-            new Generation(new AssistantMessage("思考散文")),
-            new Generation(new AssistantMessage(toJson(domains)))));
-        when(callSpec.chatResponse()).thenReturn(truncated, complete);
-    }
-
-    private static String toJson(List<MultiDimensionCommunityDetector.DomainClassList> domains) {
-        StringBuilder sb = new StringBuilder("{\"domains\":[");
-        for (int i = 0; i < domains.size(); i++) {
-            if (i > 0) sb.append(',');
-            sb.append("{\"domainName\":\"").append(domains.get(i).domainName()).append("\",\"classNames\":[");
-            for (int j = 0; j < domains.get(i).classNames().size(); j++) {
-                if (j > 0) sb.append(',');
-                sb.append('"').append(domains.get(i).classNames().get(j)).append('"');
-            }
-            sb.append("]}");
-        }
-        return sb.append("]}").toString();
+        when(deepseekJsonClient.chatJson(isNull(), anyString(), eq(MultiDimensionCommunityDetector.DomainGrouping.class)))
+            .thenReturn(null, new MultiDimensionCommunityDetector.DomainGrouping(domains));
     }
 
     @Test
@@ -151,7 +113,8 @@ class MultiDimensionCommunityDetectorTest {
         Result classResult = resultOf(List.of(
             row("cls", "com.huawei.hisi.order.OrderService", "method", "placeOrder", "desc", "下单", "sig", "")));
         when(session.run(contains("m.className IS NOT NULL"), anyMap())).thenReturn(classResult);
-        when(extractionChatClient.prompt()).thenThrow(new RuntimeException("LLM 欠费"));
+        when(deepseekJsonClient.chatJson(isNull(), anyString(), eq(MultiDimensionCommunityDetector.DomainGrouping.class)))
+            .thenThrow(new RuntimeException("LLM 欠费"));
 
         detector.detect("/test");
 

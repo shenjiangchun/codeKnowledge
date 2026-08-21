@@ -1,13 +1,12 @@
 package com.huawei.hisi.knowledgegraph.aggregation.stage;
 
 import com.huawei.hisi.knowledgegraph.aggregation.AggregationCheckpointManager;
+import com.huawei.hisi.knowledgegraph.aggregation.llm.DeepseekJsonClient;
 import com.fasterxml.jackson.annotation.JsonClassDescription;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.Session;
 import org.neo4j.driver.SessionConfig;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -30,20 +29,20 @@ public class MultiDimensionCommunityDetector {
     private final SessionConfig neo4jSessionConfig;
     private final CommunityDetector communityDetector;
     private final AggregationCheckpointManager checkpointManager;
-    /** 领域归纳用干净的 extractionChatClient（无 advisor，走 anthropic 中转 deepseek） */
-    private final ChatClient extractionChatClient;
+    /** 领域归纳用 deepseek 网关 OpenAI 链路（json_object 强制），替代 anthropic 中转 deepseek */
+    private final DeepseekJsonClient deepseekJsonClient;
 
     public MultiDimensionCommunityDetector(
             Driver neo4jDriver,
             SessionConfig neo4jSessionConfig,
             CommunityDetector communityDetector,
             AggregationCheckpointManager checkpointManager,
-            @Qualifier("extractionChatClient") ChatClient extractionChatClient) {
+            DeepseekJsonClient deepseekJsonClient) {
         this.neo4jDriver = neo4jDriver;
         this.neo4jSessionConfig = neo4jSessionConfig;
         this.communityDetector = communityDetector;
         this.checkpointManager = checkpointManager;
-        this.extractionChatClient = extractionChatClient;
+        this.deepseekJsonClient = deepseekJsonClient;
     }
 
     /** 每个类传给 LLM 的方法数上限（压缩上下文时逐级递减：5 → 2 → 0，0 表示只保留类名） */
@@ -203,7 +202,7 @@ public class MultiDimensionCommunityDetector {
     }
 
     private DomainGrouping callLlm(String prompt) {
-        return extractionChatClient.prompt().user(prompt).call().entity(DomainGrouping.class);
+        return deepseekJsonClient.chatJson(null, prompt, DomainGrouping.class);
     }
 
     /**
@@ -258,6 +257,8 @@ public class MultiDimensionCommunityDetector {
         }
 
         prompt.append("\n类列表（格式：完整类名: 方法描述列表）：\n").append(sb);
+        prompt.append("\n只输出一个 JSON 对象，格式：{\"domains\":[{\"domainName\":\"领域名\",\"classNames\":[\"完整类名\"]}]}，")
+             .append("不要 markdown 不要数组不要解释。");
         return prompt.toString();
     }
 
