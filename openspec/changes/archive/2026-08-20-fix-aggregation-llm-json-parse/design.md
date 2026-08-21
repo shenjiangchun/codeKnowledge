@@ -41,6 +41,12 @@
 - 关键事实（反编译 Spring AI 1.1.8 证实）：`.content()` 和 `.entity()` 都只调 `getResult()`（= `getResults().get(0)`，即第一个 Generation）。而 `AnthropicChatModel` 把 thinking 块和 text 块各建一个 Generation、thinking 排第一。所以 `.content()` / `.entity()` 拿到的是 thinking 散文，不是 JSON——这是本 bug 的直接机制。
 - 因此必须用 `.chatResponse()` 拿全列表，遍历跳过 thinking 块。
 
+**D4：模式 A（超限截断）的兜底 = 压缩上下文重试**
+
+- 鲁棒提取只能救「JSON 完整但被散文污染」（模式 B），救不了「JSON 被 max_tokens 截断成残缺」（模式 A，残缺 JSON 无法解析）。
+- 决策：两条调用链各加「逐级压缩 prompt 上下文 + 重试」。`MultiDimensionCommunityDetector` 每类方法描述数 `5 → 2 → 0`（仅类名）；`LayerRoleLlmService` 依赖描述长度 `不截断 → 200 → 0`（省略依赖）。任一级成功即返回，全部失败才走既有降级。
+- 关键事实：`finish_reason=length` 时输出 token 预算耗尽，缩小输入上下文可让 LLM 在更少输出下产出完整 JSON；`extractionChatClient` 的 `maxTokens` 亦从硬编码 16384 改为配置注入（`spring.ai.anthropic.chat.options.max-tokens`），避免推理模型思考链吃光预算。
+
 ## Risks / Trade-offs
 
 - [提取到错误 JSON 片段（多个候选时选错）] → 候选按「包含目标字段」优先评分：`DomainGrouping` 要求含 `domains`，`RoleGrouping` 要求含 `items`；实际由「解析成功 + 非 null」作为通过标准，取第一个成功解析的候选。

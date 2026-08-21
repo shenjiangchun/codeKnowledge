@@ -88,6 +88,24 @@ class MultiDimensionCommunityDetectorTest {
         when(callSpec.chatResponse()).thenReturn(chatResponse);
     }
 
+    /** 首次返回截断 JSON（提取失败），第二次返回完整 JSON —— 验证压缩上下文重试 */
+    private void stubLlmTruncatedThenSuccess(List<MultiDimensionCommunityDetector.DomainClassList> domains) {
+        ChatClient.ChatClientRequestSpec reqSpec = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
+        when(extractionChatClient.prompt()).thenReturn(reqSpec);
+        when(reqSpec.user(anyString())).thenReturn(reqSpec);
+        when(reqSpec.call()).thenReturn(callSpec);
+        // 第一次：JSON 未闭合（截断），RobustJsonExtractor 提取失败返回 null
+        ChatResponse truncated = new ChatResponse(List.of(
+            new Generation(new AssistantMessage("思考散文")),
+            new Generation(new AssistantMessage("{\"domains\":[{\"domainName\":\"订单\",\"classNames\":[\"com.huawei.hisi.order.OrderService\""))));
+        // 第二次：完整 JSON
+        ChatResponse complete = new ChatResponse(List.of(
+            new Generation(new AssistantMessage("思考散文")),
+            new Generation(new AssistantMessage(toJson(domains)))));
+        when(callSpec.chatResponse()).thenReturn(truncated, complete);
+    }
+
     private static String toJson(List<MultiDimensionCommunityDetector.DomainClassList> domains) {
         StringBuilder sb = new StringBuilder("{\"domains\":[");
         for (int i = 0; i < domains.size(); i++) {
@@ -141,5 +159,24 @@ class MultiDimensionCommunityDetectorTest {
         verify(session, never()).run(contains("BELONGS_TO"), anyMap());
         verify(session, never()).run(contains("DETACH DELETE d"), anyMap());
         verify(checkpointManager).markSuccess(eq("/test"), eq("Community"), contains("semantic-degraded"));
+    }
+
+    @Test
+    @DisplayName("LLM 首次返回截断 JSON → 压缩上下文重试 → 第二次成功产出领域")
+    void llmTruncated_thenRetrySucceeds() {
+        Result classResult = resultOf(List.of(
+            row("cls", "com.huawei.hisi.order.OrderService", "method", "placeOrder", "desc", "处理订单下单", "sig", "OrderRequest"),
+            row("cls", "com.huawei.hisi.order.OrderController", "method", "createOrder", "desc", null, "sig", "OrderRequest")));
+        when(session.run(contains("m.className IS NOT NULL"), anyMap())).thenReturn(classResult);
+        Result emptyCommunity = resultOf(List.of());
+        when(session.run(contains("communityId IS NOT NULL"), anyMap())).thenReturn(emptyCommunity);
+
+        stubLlmTruncatedThenSuccess(List.of(
+            new MultiDimensionCommunityDetector.DomainClassList("订单",
+                List.of("com.huawei.hisi.order.OrderService", "com.huawei.hisi.order.OrderController"))));
+
+        detector.detect("/test");
+
+        verify(checkpointManager).markSuccess(eq("/test"), eq("Community"), contains("domains=1"));
     }
 }

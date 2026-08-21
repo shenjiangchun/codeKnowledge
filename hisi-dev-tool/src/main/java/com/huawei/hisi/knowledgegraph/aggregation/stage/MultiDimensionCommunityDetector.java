@@ -47,8 +47,8 @@ public class MultiDimensionCommunityDetector {
         this.extractionChatClient = extractionChatClient;
     }
 
-    /** 每个类传给 LLM 的方法数上限，控制 prompt 长度 */
-    private static final int METHODS_PER_CLASS = 5;
+    /** 每个类传给 LLM 的方法数上限（压缩上下文时逐级递减：5 → 2 → 0，0 表示只保留类名） */
+    private static final int[] METHODS_PER_CLASS_LEVELS = {5, 2, 0};
     /** 单块类数阈值：超过则分块归纳，避免输出 JSON 超 maxTokens 被截断 */
     private static final int CLASSES_PER_BATCH = 120;
     /** 每块传给下一轮的已有领域代表类数（用于跨块领域归并，避免领域分裂） */
@@ -138,14 +138,13 @@ public class MultiDimensionCommunityDetector {
     /** 单次全局归纳（类数少时） */
     private List<DomainClassList> extractDomainsSingle(Map<String, List<String>> methodsByClass) {
         try {
-            String prompt = buildPrompt(methodsByClass, List.of());
-            DomainGrouping grouping = callLlm(prompt);
-            if (grouping == null || grouping.domains() == null) {
+            List<DomainClassList> domains = extractDomainsWithRetry(methodsByClass, List.of());
+            if (domains.isEmpty()) {
                 log.warn("[Aggregation] LLM 领域归纳返回空");
                 return List.of();
             }
-            logCoverage(methodsByClass, grouping.domains());
-            return grouping.domains();
+            logCoverage(methodsByClass, domains);
+            return domains;
         } catch (Exception e) {
             log.warn("[Aggregation] LLM 领域归纳失败: {}", e.getMessage());
             return List.of();
@@ -168,15 +167,13 @@ public class MultiDimensionCommunityDetector {
 
                 // 传上一轮的「领域名 + 代表类」给 LLM，使新块类能并入已有领域
                 List<DomainClassList> accumulated = toRepresentativeDomainList(domainToClasses);
-                String prompt = buildPrompt(batchMap, accumulated);
-
-                DomainGrouping grouping = callLlm(prompt);
-                if (grouping == null || grouping.domains() == null) {
+                List<DomainClassList> domains = extractDomainsWithRetry(batchMap, accumulated);
+                if (domains.isEmpty()) {
                     log.warn("[Aggregation] 分块 {} 归纳返回空，跳过", start / CLASSES_PER_BATCH);
                     continue;
                 }
                 // 代码侧累积：新块类并入对应领域（已有领域追加，新领域新建）
-                for (DomainClassList d : grouping.domains()) {
+                for (DomainClassList d : domains) {
                     if (d.classNames() == null || d.classNames().isEmpty()) continue;
                     domainToClasses.computeIfAbsent(d.domainName(), k -> new ArrayList<>())
                         .addAll(d.classNames());
@@ -212,16 +209,37 @@ public class MultiDimensionCommunityDetector {
             DomainGrouping.class);
     }
 
-    /** 组装 prompt：类列表（含方法描述）+ 可选已有领域上下文 */
-    private String buildPrompt(Map<String, List<String>> methodsByClass, List<DomainClassList> accumulatedDomains) {
+    /**
+     * 压缩上下文重试：从「每个类最多 5 个方法描述」逐级降到「只保留类名」，
+     * 每降一级重试一次，最多 {@code METHODS_PER_CLASS_LEVELS.length} 次。
+     * 用于应对 JSON 输出被 maxTokens 截断导致提取失败的情况。
+     */
+    private List<DomainClassList> extractDomainsWithRetry(Map<String, List<String>> methodsByClass,
+                                                          List<DomainClassList> accumulatedDomains) {
+        for (int methodsPerClass : METHODS_PER_CLASS_LEVELS) {
+            String prompt = buildPrompt(methodsByClass, accumulatedDomains, methodsPerClass);
+            DomainGrouping grouping = callLlm(prompt);
+            if (grouping != null && grouping.domains() != null && !grouping.domains().isEmpty()) {
+                return grouping.domains();
+            }
+            log.warn("[Aggregation] LLM 归纳返回空（methodsPerClass={}），压缩上下文重试", methodsPerClass);
+        }
+        return List.of();
+    }
+
+    /** 组装 prompt：类列表（含方法描述）+ 可选已有领域上下文。methodsPerClass 控制每个类附带的方法描述数。 */
+    private String buildPrompt(Map<String, List<String>> methodsByClass, List<DomainClassList> accumulatedDomains,
+                               int methodsPerClass) {
         StringBuilder sb = new StringBuilder();
         for (var entry : methodsByClass.entrySet()) {
             sb.append(entry.getKey()).append(": ");
             List<String> methods = entry.getValue();
-            List<String> head = methods.subList(0, Math.min(METHODS_PER_CLASS, methods.size()));
-            sb.append(String.join("; ", head));
-            if (methods.size() > METHODS_PER_CLASS) {
-                sb.append(" 等 ").append(methods.size()).append(" 个方法");
+            if (methodsPerClass > 0) {
+                List<String> head = methods.subList(0, Math.min(methodsPerClass, methods.size()));
+                sb.append(String.join("; ", head));
+                if (methods.size() > methodsPerClass) {
+                    sb.append(" 等 ").append(methods.size()).append(" 个方法");
+                }
             }
             sb.append('\n');
         }

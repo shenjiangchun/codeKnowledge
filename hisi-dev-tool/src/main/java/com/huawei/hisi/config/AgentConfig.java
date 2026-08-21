@@ -50,11 +50,12 @@ public class AgentConfig {
      */
     @Bean
     ChatClient extractionChatClient(AnthropicChatModel anthropicModel,
-                                    @Value("${spring.ai.anthropic.chat.options.model:claude-sonnet-4-20250514}") String model) {
+                                    @Value("${spring.ai.anthropic.chat.options.model:claude-sonnet-4-20250514}") String model,
+                                    @Value("${spring.ai.anthropic.chat.options.max-tokens:16384}") int maxTokens) {
         return ChatClient.builder(anthropicModel)
                 .defaultOptions(AnthropicChatOptions.builder()
                         .model(model)
-                        .maxTokens(16384)
+                        .maxTokens(maxTokens)
                         .temperature(0.1)
                         .thinking(AnthropicApi.ThinkingType.DISABLED, null)
                         .build())

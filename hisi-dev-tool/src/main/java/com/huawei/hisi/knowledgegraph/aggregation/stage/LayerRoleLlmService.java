@@ -45,6 +45,8 @@ public class LayerRoleLlmService {
 
     /** 每批处理的节点数 */
     private static final int BATCH_SIZE = 20;
+    /** 压缩上下文时依赖描述最大长度逐级递减（-1 表示不截断，0 表示省略依赖） */
+    private static final int[] DEPS_MAX_LENGTH_LEVELS = {-1, 200, 0};
 
     /** LLM 层级判断结果 */
     public record RoleResult(String name, String role) {}
@@ -69,14 +71,7 @@ public class LayerRoleLlmService {
             int end = Math.min(start + BATCH_SIZE, items.size());
             List<Map<String, String>> batch = items.subList(start, end);
             try {
-                String userPrompt = buildBatchPrompt(batch);
-                RoleGrouping grouping = RobustJsonExtractor.extract(
-                        extractionChatClient.prompt()
-                                .system(SYSTEM_PROMPT)
-                                .user(userPrompt)
-                                .call()
-                                .chatResponse(),
-                        RoleGrouping.class);
+                RoleGrouping grouping = resolveBatchWithRetry(batch);
                 if (grouping != null && grouping.items() != null) {
                     for (RoleItem item : grouping.items()) {
                         results.add(new RoleResult(item.name(), normalizeRole(item.role())));
@@ -91,12 +86,38 @@ public class LayerRoleLlmService {
         return results;
     }
 
-    private String buildBatchPrompt(List<Map<String, String>> batch) {
+    /** 压缩上下文重试：依赖描述逐级截断，每降一级重试一次，最多 {@code DEPS_MAX_LENGTH_LEVELS.length} 次。 */
+    private RoleGrouping resolveBatchWithRetry(List<Map<String, String>> batch) {
+        for (int depsMaxLength : DEPS_MAX_LENGTH_LEVELS) {
+            String userPrompt = buildBatchPrompt(batch, depsMaxLength);
+            RoleGrouping grouping = RobustJsonExtractor.extract(
+                    extractionChatClient.prompt()
+                            .system(SYSTEM_PROMPT)
+                            .user(userPrompt)
+                            .call()
+                            .chatResponse(),
+                    RoleGrouping.class);
+            if (grouping != null && grouping.items() != null && !grouping.items().isEmpty()) {
+                return grouping;
+            }
+            log.warn("[LayerRoleLlm] 批量补全返回空（depsMaxLength={}），压缩上下文重试", depsMaxLength);
+        }
+        return null;
+    }
+
+    private String buildBatchPrompt(List<Map<String, String>> batch, int depsMaxLength) {
         StringBuilder sb = new StringBuilder();
         sb.append("请为以下模块/类判断架构层级：\n");
         for (Map<String, String> item : batch) {
             sb.append("- 名称: ").append(item.get("name")).append("\n");
-            sb.append("  依赖: ").append(item.getOrDefault("deps", "无")).append("\n");
+            String deps = item.getOrDefault("deps", "无");
+            if (depsMaxLength == 0) {
+                continue; // 省略依赖描述
+            }
+            if (depsMaxLength > 0 && deps.length() > depsMaxLength) {
+                deps = deps.substring(0, depsMaxLength) + "...";
+            }
+            sb.append("  依赖: ").append(deps).append("\n");
         }
         sb.append("\n请按相同顺序，为每个节点输出「名称:层级」，层级只能是 CONTROLLER/SERVICE/REPOSITORY/MODEL/UTILITY/UNKNOWN。");
         return sb.toString();
