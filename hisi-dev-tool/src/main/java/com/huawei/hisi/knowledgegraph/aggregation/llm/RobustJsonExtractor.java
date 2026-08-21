@@ -2,6 +2,7 @@ package com.huawei.hisi.knowledgegraph.aggregation.llm;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 
@@ -15,6 +16,7 @@ import org.springframework.ai.chat.model.Generation;
  * <p>本工具遍历所有 Generation，对每个文本块做「fence 剥离 + 平衡括号候选提取 + 严格/宽松两级解析」，
  * 跳过思考散文块，从 text 块中抠出目标 JSON 并反序列化为目标类型。
  */
+@Slf4j
 public final class RobustJsonExtractor {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -35,8 +37,10 @@ public final class RobustJsonExtractor {
      */
     public static <T> T extract(ChatResponse response, Class<T> type) {
         if (response == null || response.getResults() == null) {
+            log.warn("[RobustJsonExtract] 响应为空或 generations 为空, type={}", type.getSimpleName());
             return null;
         }
+        int genCount = response.getResults().size();
         for (Generation generation : response.getResults()) {
             if (generation == null || generation.getOutput() == null) {
                 continue;
@@ -49,6 +53,17 @@ public final class RobustJsonExtractor {
             if (result != null) {
                 return result;
             }
+        }
+        // 提取失败诊断：记 generations 数 + 每块 length + 前 N 字符，不打印完整 raw（对齐 spec 隐私约束）
+        log.warn("[RobustJsonExtract] 提取失败 type={}, generations={}", type.getSimpleName(), genCount);
+        for (int i = 0; i < response.getResults().size(); i++) {
+            Generation g = response.getResults().get(i);
+            String text = (g != null && g.getOutput() != null) ? g.getOutput().getText() : null;
+            String preview = (text == null || text.isBlank())
+                ? "<blank>"
+                : text.substring(0, Math.min(200, text.length())).replace("\n", "\\n");
+            log.warn("[RobustJsonExtract] gen[{}] length={}, preview={}",
+                i, (text == null ? 0 : text.length()), preview);
         }
         return null;
     }
