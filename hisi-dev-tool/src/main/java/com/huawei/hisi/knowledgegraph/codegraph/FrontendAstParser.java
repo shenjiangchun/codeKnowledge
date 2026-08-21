@@ -3,6 +3,7 @@ package com.huawei.hisi.knowledgegraph.codegraph;
 import com.huawei.hisi.neo4j.model.ApiClientNode;
 import com.huawei.hisi.neo4j.model.FrontendRouteNode;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -30,6 +31,7 @@ import java.util.stream.Stream;
  * 故采用轻量正则实现（极简优先）。</p>
  */
 @Slf4j
+@Component
 public class FrontendAstParser {
 
     /** request.get/post/put/delete/patch<T>('<url>'|`<url>`) 与 fetch('<url>'|`<url>`) */
