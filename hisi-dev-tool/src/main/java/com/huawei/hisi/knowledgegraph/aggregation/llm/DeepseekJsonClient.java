@@ -40,9 +40,15 @@ public class DeepseekJsonClient {
         String effective = (baseUrl == null || baseUrl.isBlank())
                 ? "http://1.95.145.190:8888" : baseUrl.trim();
         if (effective.endsWith("/")) effective = effective.substring(0, effective.length() - 1);
-        this.apiUrl = effective + "/v1/chat/completions";
+        // 对齐 AnthropicHttpClient 的拼接规则：base-url 已含 /v1 时不再重复拼
+        if (effective.endsWith("/v1")) {
+            this.apiUrl = effective + "/chat/completions";
+        } else {
+            this.apiUrl = effective + "/v1/chat/completions";
+        }
         this.apiKey = apiKey;
         this.model = model;
+        log.info("[DeepseekJson] apiUrl={} model={}", this.apiUrl, this.model);
     }
 
     /**
