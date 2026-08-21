@@ -1,7 +1,6 @@
 package com.huawei.hisi.knowledgegraph.aggregation.stage;
 
 import com.fasterxml.jackson.annotation.JsonClassDescription;
-import com.huawei.hisi.knowledgegraph.aggregation.llm.RobustJsonExtractor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -39,8 +38,6 @@ public class LayerRoleLlmService {
         - MODEL：数据模型层（dto/entity/model/po/vo/domain 对象）
         - UTILITY：工具/基础设施层（util/config/common/constant/helper/scanner/parser/agent 等）
         - UNKNOWN：确实无法判断
-
-        只返回层名（CONTROLLER/SERVICE/REPOSITORY/MODEL/UTILITY/UNKNOWN 之一），不要解释。
         """;
 
     /** 每批处理的节点数 */
@@ -90,13 +87,11 @@ public class LayerRoleLlmService {
     private RoleGrouping resolveBatchWithRetry(List<Map<String, String>> batch) {
         for (int depsMaxLength : DEPS_MAX_LENGTH_LEVELS) {
             String userPrompt = buildBatchPrompt(batch, depsMaxLength);
-            RoleGrouping grouping = RobustJsonExtractor.extract(
-                    extractionChatClient.prompt()
-                            .system(SYSTEM_PROMPT)
-                            .user(userPrompt)
-                            .call()
-                            .chatResponse(),
-                    RoleGrouping.class);
+            RoleGrouping grouping = extractionChatClient.prompt()
+                    .system(SYSTEM_PROMPT)
+                    .user(userPrompt)
+                    .call()
+                    .entity(RoleGrouping.class);
             if (grouping != null && grouping.items() != null && !grouping.items().isEmpty()) {
                 return grouping;
             }
@@ -119,7 +114,7 @@ public class LayerRoleLlmService {
             }
             sb.append("  依赖: ").append(deps).append("\n");
         }
-        sb.append("\n请按相同顺序，为每个节点输出「名称:层级」，层级只能是 CONTROLLER/SERVICE/REPOSITORY/MODEL/UTILITY/UNKNOWN。");
+        sb.append("\n请按相同顺序，为每个节点判断层级，层级只能是 CONTROLLER/SERVICE/REPOSITORY/MODEL/UTILITY/UNKNOWN。");
         return sb.toString();
     }
 

@@ -1,7 +1,6 @@
 package com.huawei.hisi.knowledgegraph.aggregation.stage;
 
 import com.huawei.hisi.knowledgegraph.aggregation.AggregationCheckpointManager;
-import com.huawei.hisi.knowledgegraph.aggregation.llm.RobustJsonExtractor;
 import com.fasterxml.jackson.annotation.JsonClassDescription;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Driver;
@@ -204,9 +203,7 @@ public class MultiDimensionCommunityDetector {
     }
 
     private DomainGrouping callLlm(String prompt) {
-        return RobustJsonExtractor.extract(
-            extractionChatClient.prompt().user(prompt).call().chatResponse(),
-            DomainGrouping.class);
+        return extractionChatClient.prompt().user(prompt).call().entity(DomainGrouping.class);
     }
 
     /**
