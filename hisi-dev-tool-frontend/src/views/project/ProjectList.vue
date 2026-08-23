@@ -2134,6 +2134,39 @@ const handleGenerateVector = async (row: GitRepositoryInfo) => {
 
 // 独立触发架构现状分析（领域划分）
 const analyzingArchitecture = ref(new Set<string>())
+let archAnalysisTimer: ReturnType<typeof setInterval> | null = null
+
+const stopArchAnalysisPolling = () => {
+  if (archAnalysisTimer) {
+    clearInterval(archAnalysisTimer)
+    archAnalysisTimer = null
+  }
+}
+
+const startArchAnalysisPolling = (paths: string[]) => {
+  if (archAnalysisTimer) return
+  archAnalysisTimer = setInterval(async () => {
+    try {
+      const tasks = await knowledgeGraphApi.getArchAnalysisStatus(paths)
+      const running = (tasks || []).filter(t => t.status === 'PENDING' || t.status === 'RUNNING')
+      if (running.length > 0) return
+
+      stopArchAnalysisPolling()
+      paths.forEach(p => analyzingArchitecture.value.delete(normalizePath(p)))
+      const failed = (tasks || []).filter(t => t.status === 'FAILED')
+      if (failed.length > 0) {
+        ElMessage.error(`架构现状分析失败: ${failed[0].errorMessage || '未知错误'}`)
+      } else {
+        ElMessage.success('架构现状分析（领域划分）已完成')
+      }
+    } catch (e) {
+      stopArchAnalysisPolling()
+      paths.forEach(p => analyzingArchitecture.value.delete(normalizePath(p)))
+      console.error('Failed to poll architecture analysis status:', e)
+    }
+  }, 5000)
+}
+
 const handleArchitectureAnalysis = async (row: GitRepositoryInfo) => {
   if (!appStore.projectDirConfigured) {
     ElMessage.warning('请先配置项目目录')
@@ -2143,11 +2176,11 @@ const handleArchitectureAnalysis = async (row: GitRepositoryInfo) => {
   analyzingArchitecture.value.add(normalizedPath)
   try {
     await knowledgeGraphApi.runArchitectureAnalysis([row.path])
-    ElMessage.success('已开始架构现状分析（领域划分）')
+    ElMessage.success('已提交架构现状分析（领域划分），后台执行中')
+    startArchAnalysisPolling([row.path])
   } catch (error: any) {
-    ElMessage.error(`架构现状分析失败: ${error.message || error}`)
-  } finally {
     analyzingArchitecture.value.delete(normalizedPath)
+    ElMessage.error(`架构现状分析提交失败: ${error.message || error}`)
   }
 }
 // ============================================================

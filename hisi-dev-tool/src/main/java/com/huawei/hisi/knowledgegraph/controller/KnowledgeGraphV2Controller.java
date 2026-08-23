@@ -3,6 +3,7 @@ package com.huawei.hisi.knowledgegraph.controller;
 import com.huawei.hisi.knowledgegraph.model.BridgeRelation;
 import com.huawei.hisi.knowledgegraph.model.BridgeStats;
 import com.huawei.hisi.knowledgegraph.model.CallChainGraphResponse;
+import com.huawei.hisi.knowledgegraph.model.GenerationTask;
 import com.huawei.hisi.model.ApiResponse;
 import com.huawei.hisi.neo4j.model.ServiceEntryGroup;
 import com.huawei.hisi.neo4j.model.SqlNode;
@@ -304,6 +305,12 @@ public class KnowledgeGraphV2Controller {
     public ApiResponse<Map<String, Object>> runArchitectureAnalysis(
             @RequestParam List<String> projectPaths) {
         return v1.runArchitectureAnalysis(null, projectPaths);
+    }
+
+    @GetMapping("/architecture-analysis/status")
+    public ApiResponse<List<GenerationTask>> getArchitectureAnalysisStatus(
+            @RequestParam List<String> projectPaths) {
+        return v1.getArchitectureAnalysisStatus(null, projectPaths);
     }
 
     @GetMapping("/service-topology")

@@ -825,7 +825,10 @@ export const knowledgeGraphApi = {
     return request.get<{ domainId: string; classes: DomainClass[] }>(`/v2/knowledge-graph/domains/${encodeURIComponent(domainId)}/classes`, { params: { projectPaths } })
   },
   runArchitectureAnalysis(projectPaths: string[]) {
-    return request.post<{ results: { projectPath: string; status: string; error?: string }[] }>('/v2/knowledge-graph/architecture-analysis', null, { params: { projectPaths } })
+    return request.post<{ results: { projectPath: string; taskId: number; status: string }[] }>('/v2/knowledge-graph/architecture-analysis', null, { params: { projectPaths } })
+  },
+  getArchAnalysisStatus(projectPaths: string[]) {
+    return request.get<ArchAnalysisTask[]>('/v2/knowledge-graph/architecture-analysis/status', { params: { projectPaths } })
   },
   getServiceTopology(projectPaths: string[], language?: string) {
     return request.get<ServiceTopology>('/v2/knowledge-graph/service-topology', { params: { projectPaths, language } })
@@ -938,6 +941,17 @@ export interface HotspotItem {
 export interface DomainItem { id: string; name: string; confidence: number; methodCount: number; classCount: number }
 export interface DomainEdge { source: string; target: string; weight: number }
 export interface DomainClass { id: string; className: string; methodCount: number; description?: string }
+export interface ArchAnalysisTask {
+  id: number
+  taskType: string
+  projectPath: string
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
+  progress: number
+  totalCount: number
+  successCount: number
+  failCount: number
+  errorMessage?: string
+}
 export interface ServiceTopology {
   services: { name: string; methodCount: number; language: string; framework: string }[]
   edges: { source: string; target: string; type: string; weight: number }[]

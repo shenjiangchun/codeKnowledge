@@ -1,8 +1,6 @@
 package com.huawei.hisi.knowledgegraph.controller;
 
 import com.huawei.hisi.knowledgegraph.util.ProjectPathResolver;
-import com.huawei.hisi.knowledgegraph.aggregation.stage.MultiDimensionCommunityDetector;
-import com.huawei.hisi.knowledgegraph.aggregation.stage.DomainNameGenerator;
 import com.huawei.hisi.knowledgegraph.aggregation.stage.LayeredRuleEngine;
 import com.huawei.hisi.knowledgegraph.aggregation.stage.BuildModuleGraphAssembler;
 import com.huawei.hisi.knowledgegraph.aggregation.stage.ModuleLayerRuleEngine;
@@ -10,7 +8,6 @@ import com.huawei.hisi.knowledgegraph.aggregation.stage.TarjanSccDetector;
 import com.huawei.hisi.knowledgegraph.aggregation.stage.CycleClassifier;
 import com.huawei.hisi.knowledgegraph.aggregation.stage.ClassLayerViolationDetector;
 import com.huawei.hisi.knowledgegraph.aggregation.stage.ClassLayerRoleDetector;
-import com.huawei.hisi.knowledgegraph.aggregation.stage.FreeLayerRoleResolver;
 import com.huawei.hisi.knowledgegraph.model.BridgeRelation;
 import com.huawei.hisi.knowledgegraph.model.BridgeStats;
 import com.huawei.hisi.knowledgegraph.model.CallChainGraphResponse;
@@ -25,6 +22,7 @@ import com.huawei.hisi.knowledgegraph.repository.GenerationTaskRepository;
 import com.huawei.hisi.knowledgegraph.scanner.MyBatisXmlScanner;
 import com.huawei.hisi.knowledgegraph.service.GitStatusService;
 import com.huawei.hisi.knowledgegraph.service.IncrementalUpdateService;
+import com.huawei.hisi.knowledgegraph.service.ArchitectureAnalysisService;
 import com.huawei.hisi.knowledgegraph.service.DtoSchemaResolver;
 import com.huawei.hisi.knowledgegraph.service.KgGenerationQueue;
 import com.huawei.hisi.knowledgegraph.service.KnowledgeGraphBuilder;
@@ -92,9 +90,6 @@ public class KnowledgeGraphController {
     // DTO schema resolver (parameter form schema for APM debug)
     private final DtoSchemaResolver dtoSchemaResolver;
 
-    // 领域划分 stage（架构现状分析的独立触发入口）
-    private final MultiDimensionCommunityDetector multiDimensionCommunityDetector;
-    private final DomainNameGenerator domainNameGenerator;
     private final LayeredRuleEngine layeredRuleEngine;
 
     // 构建模块级依赖分析（查询时内存拼边 + 分层规则）
@@ -107,7 +102,7 @@ public class KnowledgeGraphController {
     private final CycleClassifier cycleClassifier;
     private final ClassLayerViolationDetector classLayerViolationDetector;
     private final Neo4jClassNodeRepository neo4jClassNodeRepository;
-    private final FreeLayerRoleResolver freeLayerRoleResolver;
+    private final ArchitectureAnalysisService architectureAnalysisService;
 
     // ============================================================
     // 任务管理接口（异步生成）
@@ -3495,7 +3490,7 @@ public class KnowledgeGraphController {
     }
 
     /**
-     * 独立触发架构现状分析（领域划分）：直接执行 LLM 全局归纳 + BELONGS_TO 边，不重新生成图谱。
+     * 独立触发架构现状分析（领域划分）：异步串行执行，立即返回 taskId，前端轮询状态。
      */
     @PostMapping("/architecture-analysis")
     public ApiResponse<Map<String, Object>> runArchitectureAnalysis(
@@ -3506,29 +3501,26 @@ public class KnowledgeGraphController {
 
         List<Map<String, Object>> results = new ArrayList<>();
         for (String path : paths) {
+            Long taskId = architectureAnalysisService.submit(path);
             Map<String, Object> r = new HashMap<>();
             r.put("projectPath", path);
-            try {
-                multiDimensionCommunityDetector.detect(path);
-                domainNameGenerator.generate(path, false);
-                r.put("status", "success");
-            } catch (Exception e) {
-                log.warn("[ArchitectureAnalysis] 失败: {} - {}", path, e.getMessage());
-                r.put("status", "failed");
-                r.put("error", e.getMessage());
-            }
-            // LLM 补全游离节点层级（类级 + 包级），与 pipeline Stage 7 同逻辑
-            try {
-                int resolved = freeLayerRoleResolver.resolve(path);
-                r.put("freeLayerResolved", resolved);
-            } catch (Exception e) {
-                log.warn("[ArchitectureAnalysis] LLM 层级补全失败: {} - {}", path, e.getMessage());
-            }
+            r.put("taskId", taskId);
+            r.put("status", "PENDING");
             results.add(r);
         }
         Map<String, Object> result = new HashMap<>();
         result.put("results", results);
         return ApiResponse.success(result);
+    }
+
+    /** 查询架构现状分析任务状态（批量，每项目最新一条）。 */
+    @GetMapping("/architecture-analysis/status")
+    public ApiResponse<List<GenerationTask>> getArchitectureAnalysisStatus(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.success(List.of());
+        return ApiResponse.success(generationTaskRepository.findLatestByProjectPaths(paths, "ARCH_ANALYSIS"));
     }
 
     @GetMapping("/service-topology")
