@@ -97,15 +97,19 @@ TBD - created by archiving change package-layer-architecture-dashboard. Update P
 
 ### Requirement: 包级依赖图按层级分框 + 违规连线标红
 
-系统 SHALL 在包级依赖图中，将节点按 `layerRole` 分层排布，每层画一个**包框 + 层级名称**（层级名称与层色一致，层列表从后端返回的 layerRole 动态派生，不硬编码枚举）。**反向依赖**（`layered` 类型）与**跨层循环依赖环**内边 SHALL 标红加粗，区别于普通依赖边；**同层循环依赖环**（`SAME_LAYER`，技术债）不标红。
+系统 SHALL 在包级依赖图中，将节点按 `layerRole` 分层排布，每层画一个**包框 + 层级名称**（层级名称与层色一致，层列表从后端返回的 layerRole 动态派生，不硬编码枚举）。**反向依赖**（`layered` 类型）与**跨层循环依赖环内的反向边**（下层依赖上层，如 service → controller）SHALL 标红加粗，区别于普通依赖边；跨层环内的**正向边**（上层依赖下层，如 controller → service）与**同层循环依赖环**（`SAME_LAYER`，技术债）不标红。
 
 #### Scenario: 层级框与名称动态派生
 - **WHEN** 后端返回的 layerRole 集合含未知层名（如历史 `DATA`）
 - **THEN** 系统自动为该层画框 + 名称，不将其误丢到 UNKNOWN 层
 
 #### Scenario: 违规连线标红
-- **WHEN** 包级依赖图中存在反向依赖边或跨层循环依赖环内边
+- **WHEN** 包级依赖图中存在反向依赖边，或跨层循环依赖环内存在反向边（下层→上层）
 - **THEN** 系统将该边标红加粗，hover 提示「违规依赖」，点击可下钻类级
+
+#### Scenario: 跨层环正向边不标红
+- **WHEN** 跨层循环依赖环内存在正向边（上层依赖下层，如 controller → service）
+- **THEN** 系统不将其标红（正向依赖不算违规）
 
 #### Scenario: 同层环不标红
 - **WHEN** 包级依赖图存在同层循环依赖环（技术债）

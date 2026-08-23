@@ -62,18 +62,31 @@ function cycleNodeKeys(): Set<string> {
   return s
 }
 
-// 违规依赖边集合（分层违规 + 跨层循环依赖环内边），用于标红连线。
-// 同层循环依赖（SAME_LAYER，技术债）不标红——只反向依赖和跨层环才是坏味道。
+// 违规依赖边集合（分层违规 + 跨层循环依赖环内的反向边），用于标红连线。
+// 同层循环依赖（SAME_LAYER，技术债）不标红；跨层环内只标红反向边（下层→上层），
+// 正向边（上层→下层）和同层边不算违规。
 function violationEdges(): Set<string> {
   const s = new Set<string>()
   for (const r of dashboard.value?.risks ?? []) {
     if (r.type === 'layered') s.add(r.source + '→' + r.target)
   }
+  // moduleName → 层级序号（0=最高层 CONTROLLER，越大越下层）
+  const rankByModule = new Map<string, number>()
+  for (const n of packageGraph.value?.nodes ?? []) {
+    const idx = LAYER_BIAS.indexOf(n.layerRole)
+    if (idx >= 0) rankByModule.set(n.moduleName, idx)
+  }
   for (const cyc of packageCycles.value) {
     if (cyc.level !== 'CROSS_LAYER') continue
     const cs = new Set(cyc.nodes)
     for (const e of packageGraph.value?.edges ?? []) {
-      if (cs.has(e.source) && cs.has(e.target)) s.add(e.source + '→' + e.target)
+      if (!cs.has(e.source) || !cs.has(e.target)) continue
+      const srcRank = rankByModule.get(e.source) ?? -1
+      const tgtRank = rankByModule.get(e.target) ?? -1
+      // 反向边：source 层级比 target 低（rank 更大），即下层依赖上层
+      if (srcRank >= 0 && tgtRank >= 0 && srcRank > tgtRank) {
+        s.add(e.source + '→' + e.target)
+      }
     }
   }
   return s
