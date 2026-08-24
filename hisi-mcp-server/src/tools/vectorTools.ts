@@ -2,7 +2,7 @@
  * Hybrid Search Tool for MCP Server
  * Provides semantic code search backed by the Spring Boot search API.
  *
- * hybrid_search → POST /api/search/semantic (keyword + vector + graph traversal, RRF fusion)
+ * hybrid_search → POST /api/search/semantic/v2 (multi-query recall + weighted RRF fusion)
  */
 
 import { ApiClient, getApiClient } from '../client/apiClient.js';
@@ -37,7 +37,7 @@ export const vectorToolDefinitions = [
         },
         graphDepth: {
           type: 'number',
-          description: '调用链图遍历深度，默认0。设为0则不进行图遍历，只做向量搜索',
+          description: '调用链图遍历深度，默认0。注意：多路召回（v2）路径下固定为0不做图扩展，仅查询退化为单路检索时此参数才生效',
         },
         language: {
           type: 'string',
@@ -75,8 +75,8 @@ export class VectorTools {
   }
 
   /**
-   * 三层混合检索
-   * POST /api/search/semantic
+   * 三层混合检索（多路召回 + 加权 RRF 融合）
+   * POST /api/search/semantic/v2
    */
   async hybridSearch(params: HybridSearchParams): Promise<unknown> {
     const { query, projectPath, projectPaths, limit, graphDepth, language } = params;
@@ -86,7 +86,6 @@ export class VectorTools {
       projectPath: projectPath || projectPaths?.[0],
       projectPaths: projectPaths || (projectPath ? [projectPath] : undefined),
       limit: limit ?? 10,
-      threshold: 0.5,
       graphDepth: graphDepth ?? 0,
     };
 
@@ -94,7 +93,7 @@ export class VectorTools {
       body.filters = { language };
     }
 
-    const result = (await this.client.post('/api/search/semantic', body)) as {
+    const result = (await this.client.post('/api/search/semantic/v2', body)) as {
       results?: unknown[];
       total?: number;
     } & Record<string, unknown>;
@@ -130,11 +129,14 @@ export class VectorTools {
 
 export const VECTOR_TOOLS = ['hybrid_search'];
 
+let _vecTools: VectorTools | null = null;
+
 export async function handleVectorToolCall(
   toolName: string,
   args: Record<string, unknown>
 ): Promise<unknown> {
-  const tools = new VectorTools();
+  if (!_vecTools) _vecTools = new VectorTools();
+  const tools = _vecTools!
 
   switch (toolName) {
     case 'hybrid_search':

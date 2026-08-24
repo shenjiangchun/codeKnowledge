@@ -1,6 +1,13 @@
 package com.huawei.hisi.knowledgegraph.controller;
 
 import com.huawei.hisi.knowledgegraph.util.ProjectPathResolver;
+import com.huawei.hisi.knowledgegraph.aggregation.stage.LayeredRuleEngine;
+import com.huawei.hisi.knowledgegraph.aggregation.stage.BuildModuleGraphAssembler;
+import com.huawei.hisi.knowledgegraph.aggregation.stage.ModuleLayerRuleEngine;
+import com.huawei.hisi.knowledgegraph.aggregation.stage.TarjanSccDetector;
+import com.huawei.hisi.knowledgegraph.aggregation.stage.CycleClassifier;
+import com.huawei.hisi.knowledgegraph.aggregation.stage.ClassLayerViolationDetector;
+import com.huawei.hisi.knowledgegraph.aggregation.stage.ClassLayerRoleDetector;
 import com.huawei.hisi.knowledgegraph.model.BridgeRelation;
 import com.huawei.hisi.knowledgegraph.model.BridgeStats;
 import com.huawei.hisi.knowledgegraph.model.CallChainGraphResponse;
@@ -15,6 +22,7 @@ import com.huawei.hisi.knowledgegraph.repository.GenerationTaskRepository;
 import com.huawei.hisi.knowledgegraph.scanner.MyBatisXmlScanner;
 import com.huawei.hisi.knowledgegraph.service.GitStatusService;
 import com.huawei.hisi.knowledgegraph.service.IncrementalUpdateService;
+import com.huawei.hisi.knowledgegraph.service.ArchitectureAnalysisService;
 import com.huawei.hisi.knowledgegraph.service.DtoSchemaResolver;
 import com.huawei.hisi.knowledgegraph.service.KgGenerationQueue;
 import com.huawei.hisi.knowledgegraph.service.KnowledgeGraphBuilder;
@@ -23,16 +31,21 @@ import com.huawei.hisi.model.KnowledgeGraphTask;
 import com.huawei.hisi.neo4j.model.MethodNode;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
 import com.huawei.hisi.neo4j.model.SqlNode;
+import com.huawei.hisi.neo4j.model.ModuleNode;
+import com.huawei.hisi.neo4j.model.ClassNode;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jSqlNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jDataModelNodeRepository;
+import com.huawei.hisi.neo4j.repository.ModuleNodeRepository;
+import com.huawei.hisi.neo4j.repository.Neo4jClassNodeRepository;
 import com.huawei.hisi.service.KnowledgeGraphTaskService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.SessionConfig;
 import org.neo4j.driver.Record;
+import org.neo4j.driver.Result;
 import org.neo4j.driver.Session;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -77,6 +90,20 @@ public class KnowledgeGraphController {
     // DTO schema resolver (parameter form schema for APM debug)
     private final DtoSchemaResolver dtoSchemaResolver;
 
+    private final LayeredRuleEngine layeredRuleEngine;
+
+    // 构建模块级依赖分析（查询时内存拼边 + 分层规则）
+    private final ModuleNodeRepository moduleNodeRepository;
+    private final BuildModuleGraphAssembler buildModuleGraphAssembler;
+    private final ModuleLayerRuleEngine moduleLayerRuleEngine;
+
+    // 包级 + 类级双粒度架构分析
+    private final TarjanSccDetector tarjanSccDetector;
+    private final CycleClassifier cycleClassifier;
+    private final ClassLayerViolationDetector classLayerViolationDetector;
+    private final Neo4jClassNodeRepository neo4jClassNodeRepository;
+    private final ArchitectureAnalysisService architectureAnalysisService;
+
     // ============================================================
     // 任务管理接口（异步生成）
     // ============================================================
@@ -88,7 +115,10 @@ public class KnowledgeGraphController {
     @PostMapping("/tasks/generate")
     public ResponseEntity<?> startTask(
             @RequestParam String projectPath,
-            @RequestParam(required = false) String excludePaths) {
+            @RequestParam(required = false) String excludePaths,
+            @RequestParam(required = false, defaultValue = "true") boolean generateVector,
+            @RequestParam(required = false, defaultValue = "true") boolean generateArchitecture,
+            @RequestParam(required = false, defaultValue = "reuse") String buildMode) {
         projectPath = normalizePath(projectPath);
         List<String> excludeList = null;
         if (excludePaths != null && !excludePaths.isBlank()) {
@@ -98,7 +128,8 @@ public class KnowledgeGraphController {
                     .collect(Collectors.toList());
         }
         try {
-            KnowledgeGraphTask task = taskService.startTask(projectPath, excludeList);
+            KnowledgeGraphTask task = taskService.startTask(projectPath, excludeList, generateVector,
+                    generateArchitecture, com.huawei.hisi.knowledgegraph.service.BuildMode.fromString(buildMode));
             return ResponseEntity.ok(task);
         } catch (IllegalArgumentException e) {
             Map<String, Object> error = new HashMap<>();
@@ -169,6 +200,11 @@ public class KnowledgeGraphController {
         List<String> projectPaths = (List<String>) request.get("projectPaths");
         @SuppressWarnings("unchecked")
         List<String> excludePaths = (List<String>) request.get("excludePaths");
+        String buildMode = request.get("buildMode") != null
+                ? request.get("buildMode").toString()
+                : "reuse";
+        boolean generateVector = !(request.get("generateVector") instanceof Boolean b) || b;
+        boolean generateArchitecture = !(request.get("generateArchitecture") instanceof Boolean b) || b;
 
         if (projectPaths == null || projectPaths.isEmpty()) {
             Map<String, Object> error = new HashMap<>();
@@ -185,7 +221,9 @@ public class KnowledgeGraphController {
                 .collect(Collectors.toList());
 
         try {
-            List<KnowledgeGraphTask> tasks = kgGenerationQueue.enqueueBatch(projectPaths, excludePaths);
+            List<KnowledgeGraphTask> tasks = kgGenerationQueue.enqueueBatch(projectPaths, excludePaths,
+                    generateVector, generateArchitecture,
+                    com.huawei.hisi.knowledgegraph.service.BuildMode.fromString(buildMode));
             return ResponseEntity.ok(tasks);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
@@ -379,8 +417,10 @@ public class KnowledgeGraphController {
         // 入口规范化（与 startTask 保持一致），避免再产生分隔符不一致的脏数据。
         projectPath = normalizePath(projectPath);
 
+        String buildMode = request.getOrDefault("buildMode", "reuse");
         try {
-            Map<String, Object> result = knowledgeGraphBuilder.buildKnowledgeGraph(projectPath);
+            Map<String, Object> result = knowledgeGraphBuilder.buildKnowledgeGraph(projectPath, null, true,
+                    com.huawei.hisi.knowledgegraph.service.BuildMode.fromString(buildMode));
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.error("生成知识图谱失败", e);
@@ -502,30 +542,95 @@ public class KnowledgeGraphController {
             log.info("[KG Batch Status] projectPaths empty, returning empty list");
             return ApiResponse.success(batchResult);
         }
-        for (String path : projectPaths) {
-            if (path == null || path.isBlank()) {
-                continue;
+
+        // 规范化路径（去空、去重）
+        List<String> paths = projectPaths.stream()
+                .filter(p -> p != null && !p.isBlank())
+                .map(ProjectPathResolver::normalize)
+                .distinct()
+                .collect(Collectors.toList());
+        if (paths.isEmpty()) {
+            return ApiResponse.success(batchResult);
+        }
+
+        // 每指标一次 IN + GROUP BY 查询（3 次 Neo4j 往返，替代原循环 N×8 次）
+        Map<String, Long> methodCounts = new HashMap<>();
+        Map<String, Long> relationCounts = new HashMap<>();
+        Map<String, Long> entryCounts = new HashMap<>();
+        boolean countQueryFailed = false;
+        try {
+            for (Map<String, Object> row : neo4jMethodNodeRepository.countByProjectPathsGrouped(paths)) {
+                methodCounts.put(String.valueOf(row.get("projectPath")), toLong(row.get("cnt")));
             }
-            String normalized = ProjectPathResolver.normalize(path);
-            try {
-                ApiResponse<Map<String, Object>> single = getStatus(normalized, null);
-                Map<String, Object> data = single.getData();
-                if (data == null) {
-                    data = new HashMap<>();
+        } catch (Exception e) {
+            countQueryFailed = true;
+            log.warn("[KG Batch Status] grouped method count failed: {}", e.getMessage());
+        }
+        try {
+            for (Map<String, Object> row : neo4jMethodNodeRepository.countCallRelationsByProjectPathsGrouped(paths)) {
+                relationCounts.put(String.valueOf(row.get("projectPath")), toLong(row.get("cnt")));
+            }
+        } catch (Exception e) {
+            countQueryFailed = true;
+            log.warn("[KG Batch Status] grouped relation count failed: {}", e.getMessage());
+        }
+        try {
+            for (Map<String, Object> row : neo4jEntryPointNodeRepository.countByProjectPathsGrouped(paths)) {
+                entryCounts.put(String.valueOf(row.get("projectPath")), toLong(row.get("cnt")));
+            }
+        } catch (Exception e) {
+            countQueryFailed = true;
+            log.warn("[KG Batch Status] grouped entry point count failed: {}", e.getMessage());
+        }
+
+        // 批量查询任务状态（1 次 SQLite，判断 generated/not_generated）
+        Map<String, KnowledgeGraphTask> latestTaskByPath = new HashMap<>();
+        try {
+            List<KnowledgeGraphTask> tasks = taskService.getTaskStatus(paths);
+            if (tasks != null) {
+                for (KnowledgeGraphTask t : tasks) {
+                    if (t != null && t.getProjectPath() != null) {
+                        latestTaskByPath.put(normalizePath(t.getProjectPath()), t);
+                    }
                 }
-                // 确保返回值带 projectPath，便于前端按 path 索引
-                data.putIfAbsent("projectPath", normalized);
-                batchResult.add(data);
-            } catch (Exception e) {
-                log.warn("[KG Batch Status] Failed to query status for path={}: {}", normalized, e.getMessage());
-                Map<String, Object> errorEntry = new HashMap<>();
-                errorEntry.put("projectPath", normalized);
-                errorEntry.put("status", "error");
-                errorEntry.put("error", e.getMessage());
-                batchResult.add(errorEntry);
             }
+        } catch (Exception e) {
+            log.warn("[KG Batch Status] batch task status failed: {}", e.getMessage());
+        }
+
+        for (String path : paths) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("projectPath", path);
+            long methodCount = methodCounts.getOrDefault(path, 0L);
+            long relationCount = relationCounts.getOrDefault(path, 0L);
+            long entryCount = entryCounts.getOrDefault(path, 0L);
+
+            KnowledgeGraphTask task = latestTaskByPath.get(path);
+            String status;
+            if (task != null) {
+                status = task.getStatus().toLowerCase();
+            } else if (countQueryFailed) {
+                // 计数查询失败时无法确定是否已生成，标记 unknown 而非「未生成」，避免误导
+                status = "unknown";
+            } else if (methodCount > 0 || relationCount > 0 || entryCount > 0) {
+                status = "generated";
+            } else {
+                status = "not_generated";
+            }
+
+            item.put("status", status);
+            item.put("methodNodeCount", methodCount);
+            item.put("callRelationCount", relationCount);
+            item.put("entryPointCount", entryCount);
+            batchResult.add(item);
         }
         return ApiResponse.success(batchResult);
+    }
+
+    private long toLong(Object v) {
+        if (v instanceof Number n) return n.longValue();
+        if (v == null) return 0L;
+        try { return Long.parseLong(v.toString()); } catch (NumberFormatException e) { return 0L; }
     }
 
     /**
@@ -1545,6 +1650,9 @@ public class KnowledgeGraphController {
         map.put("signature", node.getSignature());
         map.put("filePath", node.getFilePath());
         map.put("description", node.getDescription());
+        map.put("serviceName", node.getServiceName());
+        map.put("language", node.getLanguage());
+        map.put("framework", node.getFramework());
         return map;
     }
 
@@ -1573,6 +1681,9 @@ public class KnowledgeGraphController {
                 result.put("methodBody", node.getMethodBody());
                 result.put("projectPath", node.getProjectPath());
                 result.put("description", node.getDescription());
+                result.put("serviceName", node.getServiceName());
+                result.put("language", node.getLanguage());
+                result.put("framework", node.getFramework());
                 return ApiResponse.success(result);
             })
             .orElse(ApiResponse.error(404, "未找到方法: " + nodeId));
@@ -1605,6 +1716,9 @@ public class KnowledgeGraphController {
             map.put("filePath", node.getFilePath());
             map.put("complexity", node.getComplexity());
             map.put("description", node.getDescription());
+            map.put("serviceName", node.getServiceName());
+            map.put("language", node.getLanguage());
+            map.put("framework", node.getFramework());
             results.add(map);
         }
         return ApiResponse.success(results);
@@ -2438,5 +2552,1089 @@ public class KnowledgeGraphController {
         result.put("totalEdges", edgeList.size());
 
         return result;
+    }
+
+    // ==================== 聚合视图端点（multi-perspective-platform Phase 2） ====================
+
+    @GetMapping("/dashboard")
+    public ApiResponse<Map<String, Object>> getDashboard(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths,
+            @RequestParam(required = false) String language) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
+            // 领域列表：读 DomainNode（技术耦合 + LLM 业务语义检测结果，非包名切片）
+            var domainRecs = session.run(
+                "MATCH (d:DomainNode) WHERE d.projectPath IN $paths\n" +
+                "RETURN d.domainId AS domainId, d.domainName AS domainName,\n" +
+                "       d.confidence AS confidence, d.methodCount AS methodCount,\n" +
+                "       d.classCount AS classCount\n" +
+                "ORDER BY d.methodCount DESC",
+                Map.of("paths", paths));
+
+            List<Map<String, Object>> domains = new ArrayList<>();
+            while (domainRecs.hasNext()) {
+                var r = domainRecs.next();
+                Map<String, Object> d = new HashMap<>();
+                d.put("domainId", r.get("domainId").asString());
+                d.put("name", r.get("domainName").asString("未命名"));
+                d.put("confidence", r.get("confidence").asDouble(0.0));
+                d.put("methodCount", r.get("methodCount").asInt(0));
+                d.put("classCount", r.get("classCount").asInt(0));
+                domains.add(d);
+            }
+
+            // 领域间依赖：读 INTERACTS_WITH 关系（领域粒度）
+            var depRecs = session.run(
+                "MATCH (d1:DomainNode)-[x:INTERACTS_WITH]->(d2:DomainNode)\n" +
+                "WHERE d1.projectPath IN $paths\n" +
+                "RETURN d1.domainId AS source, d2.domainId AS target, coalesce(x.weight, 0) AS weight",
+                Map.of("paths", paths));
+
+            List<Map<String, Object>> interactions = new ArrayList<>();
+            while (depRecs.hasNext()) {
+                var r = depRecs.next();
+                Map<String, Object> dep = new HashMap<>();
+                dep.put("source", r.get("source").asString());
+                dep.put("target", r.get("target").asString());
+                dep.put("weight", r.get("weight").asInt(0));
+                interactions.add(dep);
+            }
+
+            // 循环依赖检测：双向 interactions
+            Map<String, String> domainNameMap = new HashMap<>();
+            for (Map<String, Object> dom : domains) {
+                domainNameMap.put((String) dom.get("domainId"), (String) dom.get("name"));
+            }
+            Set<String> reported = new HashSet<>();
+            List<Map<String, Object>> risks = new ArrayList<>();
+            int cyclicDependencyCount = 0;
+            for (Map<String, Object> dep : interactions) {
+                String src = (String) dep.get("source");
+                String tgt = (String) dep.get("target");
+                boolean reverse = interactions.stream().anyMatch(d ->
+                    d.get("source").equals(tgt) && d.get("target").equals(src));
+                if (reverse && !reported.contains(src + "↔" + tgt) && !reported.contains(tgt + "↔" + src)) {
+                    reported.add(src + "↔" + tgt);
+                    Map<String, Object> risk = new HashMap<>();
+                    risk.put("severity", "HIGH");
+                    risk.put("type", "cyclic");
+                    risk.put("source", src);
+                    risk.put("target", tgt);
+                    risk.put("message", domainNameMap.getOrDefault(src, src) + " ↔ "
+                        + domainNameMap.getOrDefault(tgt, tgt) + " 存在循环依赖");
+                    risks.add(risk);
+                    cyclicDependencyCount++;
+                }
+            }
+
+            // 文件级热点 Top 5（ChurnNode.riskScore + 文件最大复杂度 + layerRole）
+            var hotRecs = session.run(
+                "MATCH (c:ChurnNode) WHERE c.projectPath IN $paths AND c.riskScore IS NOT NULL\n" +
+                "OPTIONAL MATCH (m:Method {projectPath: c.projectPath}) WHERE m.filePath = c.filePath\n" +
+                "WITH c, max(coalesce(m.complexity, 0)) AS maxComplexity,\n" +
+                "     split(toLower(coalesce(collect(DISTINCT m.packageName)[0], '')), '.')[-1] AS last\n" +
+                "RETURN c.filePath AS filePath, coalesce(c.commitCount90d, 0) AS commitCount90d,\n" +
+                "       c.riskScore AS riskScore, maxComplexity AS complexity,\n" +
+                "       CASE WHEN last = 'controller' OR last = 'handler' THEN 'CONTROLLER'\n" +
+                "            WHEN last = 'service' THEN 'SERVICE'\n" +
+                "            WHEN last = 'repository' OR last = 'dao' OR last = 'mapper' THEN 'REPOSITORY'\n" +
+                "            WHEN last = 'dto' OR last = 'model' OR last = 'entity' THEN 'MODEL'\n" +
+                "            WHEN last = 'util' OR last = 'config' THEN 'UTILITY'\n" +
+                "            ELSE 'UNKNOWN' END AS layerRole\n" +
+                "ORDER BY c.riskScore DESC LIMIT 5",
+                Map.of("paths", paths));
+
+            List<Map<String, Object>> hotspots = new ArrayList<>();
+            while (hotRecs.hasNext()) {
+                var r = hotRecs.next();
+                Map<String, Object> h = new HashMap<>();
+                h.put("filePath", r.get("filePath").asString(""));
+                h.put("commitCount90d", r.get("commitCount90d").asInt(0));
+                h.put("riskScore", r.get("riskScore").asDouble(0));
+                h.put("complexity", r.get("complexity").asInt(0));
+                h.put("layerRole", r.get("layerRole").asString("UNKNOWN"));
+                hotspots.add(h);
+            }
+
+            // 分层违规检测：读 ModuleNode.layerRole + DEPENDS_ON 边，用分层规则引擎判定违规
+            int layeredViolationsCount = 0;
+            try {
+                Map<String, String> moduleLayers = new HashMap<>();
+                List<String[]> depends = new ArrayList<>();
+                var layerRecs = session.run(
+                    "MATCH (m:ModuleNode) WHERE m.projectPath IN $paths\n" +
+                    "RETURN m.moduleName AS name, m.layerRole AS layerRole",
+                    Map.of("paths", paths));
+                while (layerRecs.hasNext()) {
+                    var r = layerRecs.next();
+                    moduleLayers.put(r.get("name").asString(), r.get("layerRole").asString("UNKNOWN"));
+                }
+                var depRecs2 = session.run(
+                    "MATCH (m1:ModuleNode)-[d:DEPENDS_ON]->(m2:ModuleNode)\n" +
+                    "WHERE m1.projectPath IN $paths\n" +
+                    "RETURN m1.moduleName AS src, m2.moduleName AS tgt",
+                    Map.of("paths", paths));
+                while (depRecs2.hasNext()) {
+                    var r = depRecs2.next();
+                    depends.add(new String[]{ r.get("src").asString(), r.get("tgt").asString() });
+                }
+                List<LayeredRuleEngine.Violation> violations = layeredRuleEngine.detect(moduleLayers, depends);
+                layeredViolationsCount = violations.size();
+                for (LayeredRuleEngine.Violation v : violations) {
+                    Map<String, Object> risk = new HashMap<>();
+                    risk.put("severity", "MEDIUM");
+                    risk.put("type", "layered");
+                    risk.put("source", v.sourceModule());
+                    risk.put("target", v.targetModule());
+                    risk.put("message", v.reason());
+                    risks.add(risk);
+                }
+            } catch (Exception e) {
+                log.warn("[Dashboard] 分层违规检测失败: {}", e.getMessage());
+            }
+
+            Map<String, Object> kpis = new HashMap<>();
+            kpis.put("totalMethods", domains.stream().mapToInt(d -> (int) d.get("methodCount")).sum());
+            kpis.put("totalDomains", domains.size());
+            kpis.put("cyclicDependencies", cyclicDependencyCount);
+            kpis.put("layeredViolations", layeredViolationsCount);
+            kpis.put("avgCoupling", interactions.isEmpty() ? 0.0
+                : Math.round(interactions.stream().mapToInt(d -> (int) d.get("weight")).average().orElse(0) * 10.0) / 10.0);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("domains", domains);
+            result.put("interactions", interactions);
+            result.put("kpis", kpis);
+            result.put("risks", risks);
+            result.put("hotspots", hotspots);
+            return ApiResponse.success(result);
+        }
+    }
+
+    /**
+     * 查询两个模块（包）之间的方法级依赖子图。
+     * 用于架构仪表盘"分层违规"下钻：sourceModule → targetModule 的直接调用关系。
+     */
+    @GetMapping("/module-dependency-graph")
+    public ApiResponse<Map<String, Object>> getModuleDependencyGraph(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths,
+            @RequestParam String sourceModule,
+            @RequestParam String targetModule) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+        if (sourceModule == null || sourceModule.isBlank()
+            || targetModule == null || targetModule.isBlank()) {
+            return ApiResponse.error(400, "sourceModule and targetModule required");
+        }
+
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
+            var recs = session.run(
+                "MATCH (caller:Method)-[r:CALLS]->(callee:Method)\n" +
+                "WHERE caller.projectPath IN $paths AND callee.projectPath IN $paths\n" +
+                "  AND caller.packageName = $sourceModule AND callee.packageName = $targetModule\n" +
+                "RETURN caller.nodeId AS srcId, caller.methodName AS srcName, caller.className AS srcClass,\n" +
+                "       caller.signature AS srcSignature, caller.filePath AS srcFile, caller.startLine AS srcLine,\n" +
+                "       callee.nodeId AS tgtId, callee.methodName AS tgtName, callee.className AS tgtClass,\n" +
+                "       callee.signature AS tgtSignature, callee.filePath AS tgtFile, callee.startLine AS tgtLine,\n" +
+                "       r.callType AS callType, r.callLine AS callLine\n" +
+                "ORDER BY srcClass, tgtClass",
+                Map.of("paths", paths, "sourceModule", sourceModule, "targetModule", targetModule));
+
+            return ApiResponse.success(collectGraphResult(recs));
+        }
+    }
+
+    /**
+     * 查询两个领域之间的方法级依赖子图（双向）。
+     * 用于架构仪表盘"循环依赖"下钻：复用三层结构 Domain-[:BELONGS_TO]->Class-[:HAS_METHOD]->Method。
+     */
+    @GetMapping("/domain-dependency-graph")
+    public ApiResponse<Map<String, Object>> getDomainDependencyGraph(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths,
+            @RequestParam String sourceDomain,
+            @RequestParam String targetDomain) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+        if (sourceDomain == null || sourceDomain.isBlank()
+            || targetDomain == null || targetDomain.isBlank()) {
+            return ApiResponse.error(400, "sourceDomain and targetDomain required");
+        }
+
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
+            var recs = session.run(
+                "MATCH (a:Method)-[r:CALLS]->(b:Method)\n" +
+                "WHERE a.projectPath IN $paths AND b.projectPath IN $paths\n" +
+                "MATCH (da:DomainNode)-[:BELONGS_TO]->(:Class)-[:HAS_METHOD]->(a)\n" +
+                "MATCH (db:DomainNode)-[:BELONGS_TO]->(:Class)-[:HAS_METHOD]->(b)\n" +
+                "WHERE da.domainId IN [$sourceDomain, $targetDomain]\n" +
+                "  AND db.domainId IN [$sourceDomain, $targetDomain]\n" +
+                "  AND da.domainId <> db.domainId\n" +
+                "RETURN a.nodeId AS srcId, a.methodName AS srcName, a.className AS srcClass,\n" +
+                "       a.signature AS srcSignature, a.filePath AS srcFile, a.startLine AS srcLine,\n" +
+                "       b.nodeId AS tgtId, b.methodName AS tgtName, b.className AS tgtClass,\n" +
+                "       b.signature AS tgtSignature, b.filePath AS tgtFile, b.startLine AS tgtLine,\n" +
+                "       r.callType AS callType, r.callLine AS callLine\n" +
+                "ORDER BY srcClass, tgtClass",
+                Map.of("paths", paths, "sourceDomain", sourceDomain, "targetDomain", targetDomain));
+            return ApiResponse.success(collectGraphResult(recs));
+        }
+    }
+
+    /** 将 src/tgt 列查询结果收集为 {nodes, edges} 图结构（边去重）。 */
+    private Map<String, Object> collectGraphResult(Result recs) {
+        Map<String, GraphNode> nodeMap = new LinkedHashMap<>();
+        Set<String> edgeKeys = new LinkedHashSet<>();
+        List<GraphEdge> edges = new ArrayList<>();
+        while (recs.hasNext()) {
+            var r = recs.next();
+            String srcId = r.get("srcId").asString();
+            String tgtId = r.get("tgtId").asString();
+
+            nodeMap.computeIfAbsent(srcId, k -> GraphNode.builder()
+                .id(srcId)
+                .name(r.get("srcName").asString(""))
+                .className(r.get("srcClass").asString(""))
+                .depth(0)
+                .inCycle(false)
+                .callType("DIRECT")
+                .signature(r.get("srcSignature").isNull() ? null : r.get("srcSignature").asString())
+                .filePath(r.get("srcFile").isNull() ? null : r.get("srcFile").asString())
+                .startLine(r.get("srcLine").isNull() ? null : r.get("srcLine").asInt())
+                .build());
+            nodeMap.computeIfAbsent(tgtId, k -> GraphNode.builder()
+                .id(tgtId)
+                .name(r.get("tgtName").asString(""))
+                .className(r.get("tgtClass").asString(""))
+                .depth(1)
+                .inCycle(false)
+                .callType("DIRECT")
+                .signature(r.get("tgtSignature").isNull() ? null : r.get("tgtSignature").asString())
+                .filePath(r.get("tgtFile").isNull() ? null : r.get("tgtFile").asString())
+                .startLine(r.get("tgtLine").isNull() ? null : r.get("tgtLine").asInt())
+                .build());
+
+            String edgeKey = srcId + "->" + tgtId;
+            if (edgeKeys.add(edgeKey)) {
+                edges.add(GraphEdge.builder()
+                    .source(srcId)
+                    .target(tgtId)
+                    .callType(r.get("callType").asString("DIRECT"))
+                    .callLine(r.get("callLine").isNull() ? null : r.get("callLine").asInt())
+                    .isCycleEdge(false)
+                    .build());
+            }
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("nodes", new ArrayList<>(nodeMap.values()));
+        result.put("edges", edges);
+        return result;
+    }
+
+    @GetMapping("/build-modules")
+    public ApiResponse<Map<String, Object>> getBuildModules(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+
+        List<ModuleNode> modules = moduleNodeRepository.findBuildModulesByProjectPaths(paths);
+        var graph = buildModuleGraphAssembler.assemble(modules);
+
+        List<Map<String, Object>> nodes = modules.stream().map(m -> {
+            Map<String, Object> n = new HashMap<>();
+            n.put("moduleName", m.getModuleName());
+            n.put("groupId", m.getGroupId());
+            n.put("artifactId", m.getArtifactId());
+            n.put("version", m.getVersion());
+            n.put("projectPath", m.getProjectPath());
+            return n;
+        }).collect(Collectors.toList());
+
+        List<Map<String, Object>> edges = graph.edges().stream().map(e -> {
+            Map<String, Object> ed = new HashMap<>();
+            ed.put("source", e.source());
+            ed.put("target", e.target());
+            return ed;
+        }).collect(Collectors.toList());
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("nodes", nodes);
+        result.put("edges", edges);
+        return ApiResponse.success(result);
+    }
+
+    @GetMapping("/build-module-cycles")
+    public ApiResponse<Map<String, Object>> getBuildModuleCycles(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+
+        List<ModuleNode> modules = moduleNodeRepository.findBuildModulesByProjectPaths(paths);
+        var graph = buildModuleGraphAssembler.assemble(modules);
+        List<TarjanSccDetector.Edge> edges = graph.edges().stream()
+            .map(e -> new TarjanSccDetector.Edge(e.source(), e.target()))
+            .collect(Collectors.toList());
+        var clusters = tarjanSccDetector.detect(edges);
+        var classified = cycleClassifier.classifyModuleCycles(clusters);
+
+        List<Map<String, Object>> items = classified.stream().map(c -> {
+            Map<String, Object> item = new HashMap<>();
+            item.put("nodes", c.nodes());
+            item.put("level", c.level());
+            item.put("message", c.message());
+            return item;
+        }).collect(Collectors.toList());
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("cycles", items);
+        result.put("cycleCount", items.size());
+        return ApiResponse.success(result);
+    }
+
+    @GetMapping("/build-module-layer-violations")
+    public ApiResponse<Map<String, Object>> getBuildModuleLayerViolations(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+
+        List<ModuleNode> modules = moduleNodeRepository.findBuildModulesByProjectPaths(paths);
+        var graph = buildModuleGraphAssembler.assemble(modules);
+        List<ModuleLayerRuleEngine.Violation> violations = moduleLayerRuleEngine.detect(graph.edges(), modules);
+
+        List<Map<String, Object>> items = violations.stream().map(v -> {
+            Map<String, Object> item = new HashMap<>();
+            item.put("source", v.source());
+            item.put("target", v.target());
+            item.put("type", v.type());
+            item.put("sourceLayer", v.sourceLayer());
+            item.put("targetLayer", v.targetLayer());
+            item.put("message", v.message());
+            return item;
+        }).collect(Collectors.toList());
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("violations", items);
+        return ApiResponse.success(result);
+    }
+
+    @GetMapping("/package-dependencies")
+    public ApiResponse<Map<String, Object>> getPackageDependencies(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+
+        List<Map<String, Object>> nodes = new ArrayList<>();
+        List<Map<String, Object>> edges = new ArrayList<>();
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
+            var nodeRecs = session.run(
+                "MATCH (m:ModuleNode {level: 'package'}) WHERE m.projectPath IN $paths\n" +
+                "RETURN m.moduleName AS name, m.layerRole AS layerRole, coalesce(m.methodCount, 0) AS methodCount",
+                Map.of("paths", paths));
+            while (nodeRecs.hasNext()) {
+                var r = nodeRecs.next();
+                Map<String, Object> n = new HashMap<>();
+                n.put("moduleName", r.get("name").asString());
+                n.put("layerRole", r.get("layerRole").asString("UNKNOWN"));
+                n.put("methodCount", r.get("methodCount").asInt(0));
+                nodes.add(n);
+            }
+            var edgeRecs = session.run(
+                "MATCH (m1:ModuleNode {level: 'package'})-[d:DEPENDS_ON]->(m2:ModuleNode {level: 'package'})\n" +
+                "WHERE m1.projectPath IN $paths\n" +
+                "RETURN m1.moduleName AS src, m2.moduleName AS tgt, coalesce(d.weight, 0) AS weight",
+                Map.of("paths", paths));
+            while (edgeRecs.hasNext()) {
+                var r = edgeRecs.next();
+                Map<String, Object> e = new HashMap<>();
+                e.put("source", r.get("src").asString());
+                e.put("target", r.get("tgt").asString());
+                e.put("weight", r.get("weight").asInt(0));
+                edges.add(e);
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("nodes", nodes);
+        result.put("edges", edges);
+        return ApiResponse.success(result);
+    }
+
+    @GetMapping("/package-cycles")
+    public ApiResponse<Map<String, Object>> getPackageCycles(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+
+        // 读包级 DEPENDS_ON 边 + layerRole
+        Map<String, String> layerRoleByModule = new LinkedHashMap<>();
+        List<TarjanSccDetector.Edge> edges = new ArrayList<>();
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
+            var layerRecs = session.run(
+                "MATCH (m:ModuleNode {level: 'package'}) WHERE m.projectPath IN $paths\n" +
+                "RETURN m.moduleName AS name, m.layerRole AS layerRole",
+                Map.of("paths", paths));
+            while (layerRecs.hasNext()) {
+                var r = layerRecs.next();
+                layerRoleByModule.put(r.get("name").asString(), r.get("layerRole").asString("UNKNOWN"));
+            }
+            var edgeRecs = session.run(
+                "MATCH (m1:ModuleNode {level: 'package'})-[d:DEPENDS_ON]->(m2:ModuleNode {level: 'package'})\n" +
+                "WHERE m1.projectPath IN $paths\n" +
+                "RETURN m1.moduleName AS src, m2.moduleName AS tgt",
+                Map.of("paths", paths));
+            while (edgeRecs.hasNext()) {
+                var r = edgeRecs.next();
+                edges.add(new TarjanSccDetector.Edge(r.get("src").asString(), r.get("tgt").asString()));
+            }
+        }
+
+        var clusters = tarjanSccDetector.detect(edges);
+        var classified = cycleClassifier.classifyPackageCycles(clusters, layerRoleByModule);
+
+        List<Map<String, Object>> items = classified.stream().map(c -> {
+            Map<String, Object> item = new HashMap<>();
+            item.put("nodes", c.nodes());
+            item.put("level", c.level());
+            item.put("message", c.message());
+            return item;
+        }).collect(Collectors.toList());
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("cycles", items);
+        result.put("cycleCount", items.size());
+        return ApiResponse.success(result);
+    }
+
+    @GetMapping("/module-cycles")
+    public ApiResponse<Map<String, Object>> getModuleCycles(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+
+        List<ModuleNode> modules = moduleNodeRepository.findBuildModulesByProjectPaths(paths);
+        var graph = buildModuleGraphAssembler.assemble(modules);
+        List<TarjanSccDetector.Edge> edges = graph.edges().stream()
+            .map(e -> new TarjanSccDetector.Edge(e.source(), e.target()))
+            .collect(Collectors.toList());
+        var clusters = tarjanSccDetector.detect(edges);
+        var classified = cycleClassifier.classifyModuleCycles(clusters);
+
+        List<Map<String, Object>> items = classified.stream().map(c -> {
+            Map<String, Object> item = new HashMap<>();
+            item.put("nodes", c.nodes());
+            item.put("level", c.level());
+            item.put("message", c.message());
+            return item;
+        }).collect(Collectors.toList());
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("cycles", items);
+        result.put("cycleCount", items.size());
+        return ApiResponse.success(result);
+    }
+
+    @GetMapping("/class-layer-violations")
+    public ApiResponse<Map<String, Object>> getClassLayerViolations(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+
+        // 读所有 ClassNode 的 classRole
+        Map<String, String> roleByClass = new LinkedHashMap<>();
+        List<ClassNode> classNodes = neo4jClassNodeRepository.findByProjectPathIn(paths);
+        for (ClassNode c : classNodes) {
+            roleByClass.put(c.getClassName(),
+                c.getClassRole() == null ? ClassLayerRoleDetector.UNKNOWN : c.getClassRole());
+        }
+
+        // 类级调用依赖：HAS_METHOD -> CALLS -> HAS_METHOD 间接聚合
+        List<TarjanSccDetector.Edge> classEdges = new ArrayList<>();
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
+            var recs = session.run(
+                "MATCH (c1:Class {projectPath: $path})-[h1:HAS_METHOD]->(m1:Method)-[r:CALLS]->(m2:Method)<-[h2:HAS_METHOD]-(c2:Class)\n" +
+                "WHERE c1.projectPath IN $paths AND c2.projectPath IN $paths\n" +
+                "  AND c1.className <> c2.className\n" +
+                "RETURN DISTINCT c1.className AS src, c2.className AS tgt",
+                Map.of("paths", paths, "path", paths.get(0)));
+            while (recs.hasNext()) {
+                var r = recs.next();
+                classEdges.add(new TarjanSccDetector.Edge(r.get("src").asString(), r.get("tgt").asString()));
+            }
+        }
+
+        var violations = classLayerViolationDetector.detect(classEdges, roleByClass);
+        List<Map<String, Object>> items = violations.stream().map(v -> {
+            Map<String, Object> item = new HashMap<>();
+            item.put("source", v.source());
+            item.put("target", v.target());
+            item.put("sourceRole", v.sourceRole());
+            item.put("targetRole", v.targetRole());
+            item.put("message", v.message());
+            return item;
+        }).collect(Collectors.toList());
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("violations", items);
+        return ApiResponse.success(result);
+    }
+
+    @GetMapping("/class-dependencies")
+    public ApiResponse<Map<String, Object>> getClassDependencies(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths,
+            @RequestParam(required = false) List<String> packages) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+
+        List<Map<String, Object>> nodes = new ArrayList<>();
+        List<Map<String, Object>> edges = new ArrayList<>();
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
+            // 类节点（按包过滤，若指定 packages）
+            String classCypher = packages == null || packages.isEmpty()
+                ? "MATCH (c:Class) WHERE c.projectPath IN $paths RETURN c.className AS name, c.classRole AS role, c.classRoleSource AS roleSource, c.packageName AS pkg"
+                : "MATCH (c:Class) WHERE c.projectPath IN $paths AND c.packageName IN $packages RETURN c.className AS name, c.classRole AS role, c.classRoleSource AS roleSource, c.packageName AS pkg";
+            var classRecs = session.run(classCypher,
+                packages == null || packages.isEmpty()
+                    ? Map.of("paths", paths)
+                    : Map.of("paths", paths, "packages", packages));
+            while (classRecs.hasNext()) {
+                var r = classRecs.next();
+                Map<String, Object> n = new HashMap<>();
+                n.put("className", r.get("name").asString());
+                n.put("classRole", r.get("role").asString(ClassLayerRoleDetector.UNKNOWN));
+                n.put("classRoleSource", r.get("roleSource").asString("UNKNOWN"));
+                n.put("packageName", r.get("pkg").asString(""));
+                nodes.add(n);
+            }
+
+            // 类级调用依赖（HAS_METHOD -> CALLS -> HAS_METHOD）
+            String edgeCypher = packages == null || packages.isEmpty()
+                ? "MATCH (c1:Class {projectPath: $path})-[h1:HAS_METHOD]->(m1:Method)-[r:CALLS]->(m2:Method)<-[h2:HAS_METHOD]-(c2:Class)\n" +
+                  "WHERE c1.projectPath IN $paths AND c2.projectPath IN $paths AND c1.className <> c2.className\n" +
+                  "RETURN DISTINCT c1.className AS src, c2.className AS tgt"
+                : "MATCH (c1:Class {projectPath: $path})-[h1:HAS_METHOD]->(m1:Method)-[r:CALLS]->(m2:Method)<-[h2:HAS_METHOD]-(c2:Class)\n" +
+                  "WHERE c1.projectPath IN $paths AND c2.projectPath IN $paths AND c1.className <> c2.className\n" +
+                  "  AND c1.packageName IN $packages AND c2.packageName IN $packages\n" +
+                  "RETURN DISTINCT c1.className AS src, c2.className AS tgt";
+            var edgeRecs = session.run(edgeCypher,
+                packages == null || packages.isEmpty()
+                    ? Map.of("paths", paths, "path", paths.get(0))
+                    : Map.of("paths", paths, "path", paths.get(0), "packages", packages));
+            while (edgeRecs.hasNext()) {
+                var r = edgeRecs.next();
+                Map<String, Object> e = new HashMap<>();
+                e.put("source", r.get("src").asString());
+                e.put("target", r.get("tgt").asString());
+                edges.add(e);
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("nodes", nodes);
+        result.put("edges", edges);
+        return ApiResponse.success(result);
+    }
+
+    @GetMapping("/class-ego-net")
+    public ApiResponse<Map<String, Object>> getClassEgoNet(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths,
+            @RequestParam(required = false) List<String> packages) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+        if (packages == null || packages.isEmpty()) return ApiResponse.error(400, "packages required");
+
+        // 中心类（中心包内所有类）+ 一跳邻居类（依赖/被依赖），均带所在包
+        Map<String, Map<String, Object>> nodeByName = new LinkedHashMap<>();
+        List<Map<String, Object>> nodes = new ArrayList<>();
+        List<Map<String, Object>> edges = new ArrayList<>();
+        Set<String> centerClasses = new LinkedHashSet<>();
+
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
+            // 1. 中心包内所有类
+            var centerRecs = session.run(
+                "MATCH (c:Class) WHERE c.projectPath IN $paths AND c.packageName IN $packages\n" +
+                "RETURN c.className AS name, c.classRole AS role, c.classRoleSource AS roleSource, c.packageName AS pkg\n" +
+                "ORDER BY name",
+                Map.of("paths", paths, "packages", packages));
+            while (centerRecs.hasNext()) {
+                var r = centerRecs.next();
+                String name = r.get("name").asString();
+                centerClasses.add(name);
+                Map<String, Object> n = new HashMap<>();
+                n.put("className", name);
+                n.put("classRole", r.get("role").asString("UNKNOWN"));
+                n.put("classRoleSource", r.get("roleSource").asString("UNKNOWN"));
+                n.put("packageName", r.get("pkg").asString(""));
+                n.put("center", true);
+                nodes.add(n);
+                nodeByName.put(name, n);
+            }
+
+            // 2. 涉及中心类的调用边（中心类 ↔ 中心类 或 中心类 ↔ 邻居类）
+            var edgeRecs = session.run(
+                "MATCH (c1:Class)-[:HAS_METHOD]->(m1:Method)-[:CALLS]->(m2:Method)<-[:HAS_METHOD]-(c2:Class)\n" +
+                "WHERE c1.projectPath IN $paths AND c2.projectPath IN $paths AND c1.className <> c2.className\n" +
+                "  AND (c1.packageName IN $packages OR c2.packageName IN $packages)\n" +
+                "RETURN DISTINCT c1.className AS src, c2.className AS tgt",
+                Map.of("paths", paths, "packages", packages));
+            Set<String> neighborClasses = new LinkedHashSet<>();
+            while (edgeRecs.hasNext()) {
+                var r = edgeRecs.next();
+                String src = r.get("src").asString();
+                String tgt = r.get("tgt").asString();
+                Map<String, Object> e = new HashMap<>();
+                e.put("source", src);
+                e.put("target", tgt);
+                edges.add(e);
+                if (!centerClasses.contains(src)) neighborClasses.add(src);
+                if (!centerClasses.contains(tgt)) neighborClasses.add(tgt);
+            }
+
+            // 3. 邻居类节点（带所在包）
+            if (!neighborClasses.isEmpty()) {
+                var neighborRecs = session.run(
+                    "MATCH (c:Class) WHERE c.projectPath IN $paths AND c.className IN $names\n" +
+                    "RETURN c.className AS name, c.classRole AS role, c.classRoleSource AS roleSource, c.packageName AS pkg\n" +
+                    "ORDER BY name",
+                    Map.of("paths", paths, "names", new ArrayList<>(neighborClasses)));
+                while (neighborRecs.hasNext()) {
+                    var r = neighborRecs.next();
+                    String name = r.get("name").asString();
+                    if (nodeByName.containsKey(name)) continue;
+                    Map<String, Object> n = new HashMap<>();
+                    n.put("className", name);
+                    n.put("classRole", r.get("role").asString("UNKNOWN"));
+                    n.put("classRoleSource", r.get("roleSource").asString("UNKNOWN"));
+                    n.put("packageName", r.get("pkg").asString(""));
+                    n.put("center", false);
+                    nodes.add(n);
+                    nodeByName.put(name, n);
+                }
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("nodes", nodes);
+        result.put("edges", edges);
+        return ApiResponse.success(result);
+    }
+
+    @GetMapping("/layer-domain-matrix")
+    public ApiResponse<Map<String, Object>> getLayerDomainMatrix(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+
+        List<Map<String, Object>> classes = new ArrayList<>();
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
+            var recs = session.run(
+                "MATCH (c:Class) WHERE c.projectPath IN $paths\n" +
+                "OPTIONAL MATCH (d:DomainNode)-[:BELONGS_TO]->(c) WHERE d.projectPath IN $paths\n" +
+                "RETURN c.className AS className,\n" +
+                "       coalesce(c.classRole, 'UNKNOWN') AS classRole,\n" +
+                "       coalesce(d.domainName, '未归属') AS domainName\n" +
+                "ORDER BY classRole, domainName, className",
+                Map.of("paths", paths));
+            while (recs.hasNext()) {
+                var r = recs.next();
+                Map<String, Object> item = new HashMap<>();
+                item.put("className", r.get("className").asString());
+                item.put("classRole", r.get("classRole").asString("UNKNOWN"));
+                item.put("domainName", r.get("domainName").asString("未归属"));
+                classes.add(item);
+            }
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("classes", classes);
+        return ApiResponse.success(result);
+    }
+
+    @GetMapping("/dsm")
+    public ApiResponse<Map<String, Object>> getDsm(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths,
+            @RequestParam(required = false) String language,
+            @RequestParam(required = false, defaultValue = "package") String level) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
+            var records = session.run(
+                "MATCH (mod:ModuleNode) WHERE mod.projectPath IN $paths\n" +
+                "OPTIONAL MATCH (mod)-[d:DEPENDS_ON]->(target:ModuleNode)\n" +
+                "RETURN mod.moduleName AS name, target.moduleName AS targetName,\n" +
+                "       d.weight AS weight, d.bridgeTypes AS bridgeTypes\n" +
+                "ORDER BY name, targetName",
+                Map.of("paths", paths));
+
+            Map<String, Integer> indexMap = new LinkedHashMap<>();
+            List<Map<String, Object>> cells = new ArrayList<>();
+            while (records.hasNext()) {
+                var r = records.next();
+                String src = r.get("name").asString();
+                String tgt = r.get("targetName").asString(null);
+                indexMap.putIfAbsent(src, indexMap.size());
+                if (tgt != null) {
+                    indexMap.putIfAbsent(tgt, indexMap.size());
+                    Map<String, Object> cell = new HashMap<>();
+                    cell.put("sourceIdx", indexMap.get(src));
+                    cell.put("targetIdx", indexMap.get(tgt));
+                    cell.put("weight", r.get("weight").asInt(0));
+                    cells.add(cell);
+                }
+            }
+
+            List<String> labels = new ArrayList<>(indexMap.keySet());
+            Map<String, Object> result = new HashMap<>();
+            result.put("modules", labels);
+            result.put("cells", cells);
+            result.put("level", level);
+            return ApiResponse.success(result);
+        }
+    }
+
+    /**
+     * DSM 下钻：勾选若干模块（包），返回这些包内部类之间的依赖矩阵（类粒度）。
+     * 通过 ModuleNode -[:CONTAINS]-> Method 边定位包内方法，再按 className 聚合类间 CALLS。
+     */
+    @GetMapping("/dsm/drill-down")
+    public ApiResponse<Map<String, Object>> getDsmDrillDown(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths,
+            @RequestParam List<String> modules) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+        if (modules == null || modules.isEmpty()) return ApiResponse.error(400, "modules required");
+
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
+            var records = session.run(
+                "MATCH (m1:Method {projectPath: $projectPath})-[r:CALLS]->(m2:Method {projectPath: $projectPath})\n" +
+                "WHERE m1.packageName IN $modules AND m2.packageName IN $modules\n" +
+                "  AND m1.className <> m2.className\n" +
+                "RETURN m1.className AS src, m2.className AS tgt, count(r) AS weight\n" +
+                "ORDER BY src, tgt",
+                Map.of("projectPath", paths.get(0), "modules", modules));
+
+            Map<String, Integer> indexMap = new LinkedHashMap<>();
+            List<Map<String, Object>> cells = new ArrayList<>();
+            while (records.hasNext()) {
+                var r = records.next();
+                String src = r.get("src").asString();
+                String tgt = r.get("tgt").asString();
+                indexMap.putIfAbsent(src, indexMap.size());
+                indexMap.putIfAbsent(tgt, indexMap.size());
+                Map<String, Object> cell = new HashMap<>();
+                cell.put("sourceIdx", indexMap.get(src));
+                cell.put("targetIdx", indexMap.get(tgt));
+                cell.put("weight", r.get("weight").asInt(0));
+                cells.add(cell);
+            }
+
+            List<String> labels = new ArrayList<>(indexMap.keySet());
+            Map<String, Object> result = new HashMap<>();
+            result.put("modules", labels);
+            result.put("cells", cells);
+            result.put("level", "class");
+            return ApiResponse.success(result);
+        }
+    }
+
+    @GetMapping("/hotspots")
+    public ApiResponse<Map<String, Object>> getHotspots(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths,
+            @RequestParam(required = false) String language,
+            @RequestParam(required = false, defaultValue = "20") int limit) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
+            var records = session.run(
+                "MATCH (c:ChurnNode) WHERE c.projectPath IN $paths AND c.riskScore IS NOT NULL\n" +
+                "OPTIONAL MATCH (m:Method {projectPath: c.projectPath}) WHERE m.filePath = c.filePath\n" +
+                "WITH c, max(coalesce(m.complexity, 0)) AS maxComplexity,\n" +
+                "     split(toLower(coalesce(collect(DISTINCT m.packageName)[0], '')), '.')[-1] AS last\n" +
+                "RETURN c.filePath AS filePath, coalesce(c.commitCount90d, 0) AS commitCount90d,\n" +
+                "       c.riskScore AS riskScore, maxComplexity AS complexity,\n" +
+                "       CASE WHEN last = 'controller' OR last = 'handler' THEN 'CONTROLLER'\n" +
+                "            WHEN last = 'service' THEN 'SERVICE'\n" +
+                "            WHEN last = 'repository' OR last = 'dao' OR last = 'mapper' THEN 'REPOSITORY'\n" +
+                "            WHEN last = 'dto' OR last = 'model' OR last = 'entity' THEN 'MODEL'\n" +
+                "            WHEN last = 'util' OR last = 'config' THEN 'UTILITY'\n" +
+                "            ELSE 'UNKNOWN' END AS layerRole\n" +
+                "ORDER BY c.riskScore DESC LIMIT $limit",
+                Map.of("paths", paths, "limit", (long) limit));
+
+            List<Map<String, Object>> hotspots = new ArrayList<>();
+            while (records.hasNext()) {
+                var r = records.next();
+                Map<String, Object> item = new HashMap<>();
+                item.put("filePath", r.get("filePath").asString(""));
+                item.put("commitCount90d", r.get("commitCount90d").asInt(0));
+                item.put("complexity", r.get("complexity").asInt(0));
+                item.put("riskScore", r.get("riskScore").asDouble(0));
+                item.put("layerRole", r.get("layerRole").asString("UNKNOWN"));
+                hotspots.add(item);
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("hotspots", hotspots);
+            result.put("total", hotspots.size());
+            return ApiResponse.success(result);
+        }
+    }
+
+    @GetMapping("/domains")
+    public ApiResponse<Map<String, Object>> getDomains(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths,
+            @RequestParam(required = false) String language) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
+            var domainRecs = session.run(
+                "MATCH (d:DomainNode) WHERE d.projectPath IN $paths\n" +
+                "OPTIONAL MATCH (d)-[x:INTERACTS_WITH]->(t:DomainNode)\n" +
+                "RETURN d.domainId AS id, d.domainName AS name, d.confidence AS confidence,\n" +
+                "       d.methodCount AS methodCount, d.classCount AS classCount,\n" +
+                "       collect({target: t.domainId, weight: x.weight}) AS interactions\n" +
+                "ORDER BY d.domainName",
+                Map.of("paths", paths));
+
+            List<Map<String, Object>> domains = new ArrayList<>();
+            List<Map<String, Object>> interactions = new ArrayList<>();
+            Set<String> seenEdges = new HashSet<>();
+            while (domainRecs.hasNext()) {
+                var r = domainRecs.next();
+                String id = r.get("id").asString();
+                Map<String, Object> d = new HashMap<>();
+                d.put("id", id);
+                d.put("name", r.get("name").asString("未命名"));
+                d.put("confidence", r.get("confidence").asDouble(0.0));
+                d.put("methodCount", r.get("methodCount").asInt(0));
+                d.put("classCount", r.get("classCount").asInt(0));
+                domains.add(d);
+
+                // 提取领域间交互边（INTERACTS_WITH）
+                for (Object o : r.get("interactions").asList()) {
+                    if (!(o instanceof org.neo4j.driver.Value v)) continue;
+                    String tgt = v.get("target").asString(null);
+                    if (tgt == null) continue;
+                    String key = id + "->" + tgt;
+                    if (!seenEdges.add(key)) continue;
+                    Map<String, Object> edge = new HashMap<>();
+                    edge.put("source", id);
+                    edge.put("target", tgt);
+                    edge.put("weight", v.get("weight").asInt(0));
+                    interactions.add(edge);
+                }
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("domains", domains);
+            result.put("interactions", interactions);
+            return ApiResponse.success(result);
+        }
+    }
+
+    /**
+     * 领域下钻：返回某领域下的实体类节点列表（通过 Domain -[:BELONGS_TO]-> Class 遍历）。
+     * DTO 保持 className/methodCount/description 结构不变。
+     */
+    @GetMapping("/domains/{domainId}/classes")
+    public ApiResponse<Map<String, Object>> getDomainClasses(
+            @PathVariable String domainId,
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
+            var recs = session.run(
+                "MATCH (d:DomainNode {domainId: $domainId})-[:BELONGS_TO]->(c:Class)\n" +
+                "WHERE d.projectPath IN $paths\n" +
+                "RETURN c.classId AS classId, c.className AS className,\n" +
+                "       coalesce(c.methodCount, 0) AS methodCount, c.description AS description\n" +
+                "ORDER BY methodCount DESC, className",
+                Map.of("domainId", domainId, "paths", paths));
+            List<Map<String, Object>> classes = new ArrayList<>();
+            while (recs.hasNext()) {
+                var r = recs.next();
+                Map<String, Object> cls = new HashMap<>();
+                String className = r.get("className").asString();
+                cls.put("id", className);           // 虚拟类节点标识（与 classId 的 className 部分一致）
+                cls.put("className", className);
+                cls.put("methodCount", r.get("methodCount").asInt(0));
+                cls.put("description", r.get("description").asString(null));
+                classes.add(cls);
+            }
+            Map<String, Object> result = new HashMap<>();
+            result.put("domainId", domainId);
+            result.put("classes", classes);
+            return ApiResponse.success(result);
+        }
+    }
+
+    /**
+     * 独立触发架构现状分析（领域划分）：异步串行执行，立即返回 taskId，前端轮询状态。
+     */
+    @PostMapping("/architecture-analysis")
+    public ApiResponse<Map<String, Object>> runArchitectureAnalysis(
+            @RequestParam String projectPath,
+            @RequestParam(required = false) List<String> projectPaths) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (String path : paths) {
+            Long taskId = architectureAnalysisService.submit(path);
+            Map<String, Object> r = new HashMap<>();
+            r.put("projectPath", path);
+            r.put("taskId", taskId);
+            r.put("status", "PENDING");
+            results.add(r);
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("results", results);
+        return ApiResponse.success(result);
+    }
+
+    /** 查询架构现状分析任务状态（批量，每项目最新一条）。 */
+    @GetMapping("/architecture-analysis/status")
+    public ApiResponse<List<GenerationTask>> getArchitectureAnalysisStatus(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.success(List.of());
+        return ApiResponse.success(generationTaskRepository.findLatestByProjectPaths(paths, "ARCH_ANALYSIS"));
+    }
+
+    @GetMapping("/service-topology")
+    public ApiResponse<Map<String, Object>> getServiceTopology(
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths,
+            @RequestParam(required = false) String language) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
+            var svcRecs = session.run(
+                "MATCH (m:Method) WHERE m.projectPath IN $paths AND m.serviceName IS NOT NULL\n" +
+                "WITH m.serviceName AS svc, count(m) AS methodCount,\n" +
+                "   collect(DISTINCT m.language)[0] AS lang, collect(DISTINCT m.framework)[0] AS fw\n" +
+                "RETURN svc, methodCount, lang, fw",
+                Map.of("paths", paths));
+
+            List<Map<String, Object>> services = new ArrayList<>();
+            while (svcRecs.hasNext()) {
+                var r = svcRecs.next();
+                Map<String, Object> s = new HashMap<>();
+                s.put("name", r.get("svc").asString());
+                s.put("methodCount", r.get("methodCount").asInt(0));
+                s.put("language", r.get("lang").asString("java"));
+                s.put("framework", r.get("fw").asString(""));
+                services.add(s);
+            }
+
+            var edgeRecs = session.run(
+                "MATCH (a:Method)-[r:CALLS]->(b:Method)\n" +
+                "WHERE a.projectPath IN $paths AND b.projectPath IN $paths\n" +
+                "  AND a.serviceName IS NOT NULL AND b.serviceName IS NOT NULL\n" +
+                "  AND a.serviceName <> b.serviceName AND r.bridgeType IS NOT NULL\n" +
+                "RETURN a.serviceName AS source, b.serviceName AS target,\n" +
+                "       r.bridgeType AS type, count(r) AS weight",
+                Map.of("paths", paths));
+
+            List<Map<String, Object>> edges = new ArrayList<>();
+            while (edgeRecs.hasNext()) {
+                var r = edgeRecs.next();
+                Map<String, Object> e = new HashMap<>();
+                e.put("source", r.get("source").asString());
+                e.put("target", r.get("target").asString());
+                e.put("type", r.get("type").asString());
+                e.put("weight", r.get("weight").asInt(0));
+                edges.add(e);
+            }
+
+            // 单体项目无跨服务桥接边（edges 为空）时，services 也是「类名伪装的服务」，无展示意义。
+            // 直接返回空 services，让前端显示「单体架构，无跨服务依赖」空态。
+            if (edges.isEmpty()) {
+                services = List.of();
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("services", services);
+            result.put("edges", edges);
+            return ApiResponse.success(result);
+        }
+    }
+
+    @GetMapping("/blast-radius/{nodeId}")
+    public ApiResponse<Map<String, Object>> getBlastRadius(
+            @PathVariable String nodeId,
+            @RequestParam(defaultValue = "5") int maxDepth,
+            @RequestParam(required = false) String projectPath,
+            @RequestParam(required = false) List<String> projectPaths) {
+        List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
+        if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+
+        Map<String, Object> result = new HashMap<>();
+        try {
+            var node = neo4jMethodNodeRepository.findByNodeId(nodeId);
+            if (node.isEmpty()) return ApiResponse.error(404, "Method not found: " + nodeId);
+            MethodNode m = node.get();
+
+            Map<String, Object> center = new HashMap<>();
+            center.put("nodeId", m.getNodeId());
+            center.put("className", m.getClassName());
+            center.put("methodName", m.getMethodName());
+            result.put("centerNode", center);
+
+            // 下游调用链 (maxDepth from repo already capped)
+            var callees = neo4jMethodNodeRepository.findCalleesUpToDepth(nodeId, Math.min(maxDepth, 10));
+            result.put("downstream", Map.of("totalAffectedMethods", callees.size(), "maxDepth", maxDepth));
+
+            // 上游调用者
+            var callers = neo4jMethodNodeRepository.findCallersUpToDepth(nodeId, Math.min(maxDepth, 10));
+            result.put("upstream", Map.of("totalCallers", callers.size(), "maxDepth", maxDepth));
+
+            // 受影响入口点 — 从调用者中匹配 EntryPoint
+            int entryCount = 0;
+            if (!callers.isEmpty()) {
+                entryCount = (int) callers.stream()
+                    .filter(c -> c.getNodeId() != null)
+                    .count();
+            }
+            result.put("affectedEntryPoints", entryCount);
+
+            Map<String, Object> riskSummary = new HashMap<>();
+            int totalImpact = callees.size() + callers.size();
+            riskSummary.put("overallRisk", totalImpact > 100 ? "HIGH" : totalImpact > 30 ? "MEDIUM" : "LOW");
+            riskSummary.put("reasons", List.of(
+                "影响 " + callees.size() + " 个下游方法",
+                "被 " + callers.size() + " 个上游调用者依赖",
+                "涉及约 " + entryCount + " 个上游入口点"
+            ));
+            result.put("riskSummary", riskSummary);
+            result.put("suggestedTests", List.of());
+
+            return ApiResponse.success(result);
+        } catch (Exception e) {
+            return ApiResponse.error(500, "Blast radius query failed: " + e.getMessage());
+        }
     }
 }

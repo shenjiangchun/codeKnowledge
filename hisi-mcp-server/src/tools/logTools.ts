@@ -112,7 +112,7 @@ export const logToolDefinitions = [
   },
   {
     name: 'log_report',
-    description: '获取日志分析报告详情，包含根因分析、修复建议和代码片段',
+    description: '获取日志分析报告详情，包含根因分析、修复建议和代码片段。传入 log_analyze 返回的 reportId。若报告仍在处理中，先调用 log_report_status 确认完成。',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -243,11 +243,14 @@ export class LogTools {
 
 export const LOG_TOOLS = ['log_query', 'log_analyze', 'log_report', 'log_report_status'];
 
+let _logTools: LogTools | null = null;
+
 export async function handleLogToolCall(
   toolName: string,
   args: Record<string, unknown>
 ): Promise<unknown> {
-  const tools = new LogTools();
+  if (!_logTools) _logTools = new LogTools();
+  const tools = _logTools!
 
   switch (toolName) {
     case 'log_query':

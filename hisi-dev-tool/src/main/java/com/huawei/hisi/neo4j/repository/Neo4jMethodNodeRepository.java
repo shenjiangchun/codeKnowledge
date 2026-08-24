@@ -117,6 +117,17 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     long countByProjectPaths(@Param("projectPaths") List<String> projectPaths);
 
     /**
+     * [批量聚合] 按 projectPath 分组统计方法节点数量（一次查询返回每项目计数）。
+     * 用于批量状态查询，避免对每个项目单独跑一次 Neo4j 往返。
+     */
+    @Query("""
+        MATCH (m:Method)
+        WHERE m.projectPath IN $projectPaths
+        RETURN m.projectPath AS projectPath, count(m) AS cnt
+        """)
+    List<Map<String, Object>> countByProjectPathsGrouped(@Param("projectPaths") List<String> projectPaths);
+
+    /**
      * [诊断] 统计项目下拥有 descriptionEmbedding 的方法节点数量
      */
     @Query("""
@@ -659,6 +670,20 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     long clearDescriptionsAndEmbeddings(@Param("projectPath") String projectPath);
 
     /**
+     * 按 nodeId 批量清空 description / descriptionEmbedding / codeEmbedding。
+     * 用于全量-复用（REUSE）未命中分支：codeHash 变化的方法需重算向量，先显式清空旧向量，
+     * 使 {@code VectorGenerationService} 断点续传（descriptionEmbedding == null）能捞起重算。
+     */
+    @Query("""
+        UNWIND $nodeIds AS nodeId
+        MATCH (m:Method {nodeId: nodeId})
+        SET m.description = null,
+            m.descriptionEmbedding = null,
+            m.codeEmbedding = null
+        """)
+    void clearEmbeddingsByNodeIds(@Param("nodeIds") List<String> nodeIds);
+
+    /**
      * 统计项目的描述数量
      */
     @Query("""
@@ -798,11 +823,10 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     /**
      * 根据 filePath 和 projectPath 范围删除方法节点（用于增量刷新）
      * 使用 DETACH DELETE 同时移除节点及其所有关系（含向量等节点属性）
-     * 使用 CONTAINS 匹配以处理路径格式差异（正斜杠/反斜杠）
      */
     @Query("""
         MATCH (n:Method)
-        WHERE (n.filePath = $filePath OR n.filePath CONTAINS $filePath OR $filePath CONTAINS n.filePath)
+        WHERE n.filePath = $filePath
           AND n.projectPath = $projectPath
         DETACH DELETE n
         """)
@@ -1943,6 +1967,17 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     long countCallRelationsByProjectPaths(@Param("projectPaths") List<String> projectPaths);
 
     /**
+     * [批量聚合] 按 projectPath 分组统计调用关系数量。
+     * 用于批量状态查询，避免对每个项目单独跑一次 Neo4j 往返。
+     */
+    @Query("""
+        MATCH (caller:Method)-[r:CALLS]->(callee:Method)
+        WHERE caller.projectPath IN $projectPaths
+        RETURN caller.projectPath AS projectPath, COUNT(r) AS cnt
+        """)
+    List<Map<String, Object>> countCallRelationsByProjectPathsGrouped(@Param("projectPaths") List<String> projectPaths);
+
+    /**
      * 批量按桥接类型统计多个项目的调用关系数量
      */
     @Query("""
@@ -2141,6 +2176,29 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
         @Param("projectPath") String projectPath);
 
     /**
+     * Delete all dispatch-typed CALLS edges for a project.
+     * Used before incremental rebuild of IMPL_DISPATCH / FEIGN_BRIDGE edges.
+     */
+    @Query("""
+        MATCH ()-[c:CALLS]->()
+        WHERE c.projectPath = $projectPath
+          AND c.callType IN ['IMPL_DISPATCH', 'IMPL_DISPATCH_FEIGN', 'FEIGN_BRIDGE']
+        DELETE c
+        """)
+    void deleteDispatchCallsByProject(@Param("projectPath") String projectPath);
+
+    /**
+     * 删除项目下所有 CALLS 边（caller 属于该项目）。
+     * 用于全量-复用（REUSE）构建：删边保留 Method 节点，再全量重建边。
+     * CALLS 边本身无 projectPath 属性，按 caller 端点的 projectPath 匹配。
+     */
+    @Query("""
+        MATCH (a:Method {projectPath: $projectPath})-[r:CALLS]->(b:Method)
+        DELETE r
+        """)
+    void deleteCallRelationsByProjectPath(@Param("projectPath") String projectPath);
+
+    /**
      * 根据类名、方法名、签名和项目路径查询 nodeId
      * 用于增量刷新时跨文件调用关系的 callee nodeId 查询
      */
@@ -2213,7 +2271,63 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
             m.comment = n.comment,
             m.thrownExceptions = n.thrownExceptions,
             m.caughtExceptions = n.caughtExceptions,
-            m.language = n.language
+            m.language = n.language,
+            m.packageName = n.packageName,
+            m.codeHash = n.codeHash
         """)
     void mergeAll(@Param("nodes") List<Map<String, Object>> nodes);
+
+    /**
+     * 查询项目下所有 Method 的 nodeId + codeHash 投影（用于全量-复用 codeHash 命中判定）。
+     * 只取两个字段，避免加载 methodBody 等大字段。
+     */
+    @Query("""
+        MATCH (m:Method {projectPath: $projectPath})
+        RETURN m.nodeId AS nodeId, m.codeHash AS codeHash
+        """)
+    List<CodeHashProjection> findCodeHashByProjectPath(@Param("projectPath") String projectPath);
+
+    /**
+     * codeHash 投影 DTO。
+     */
+    record CodeHashProjection(String nodeId, String codeHash) {}
+
+    /**
+     * 批量 MERGE 保存方法节点（全量-复用命中分支）：仅更新结构字段 + codeHash，
+     * 不触碰 description / descriptionEmbedding / codeEmbedding，从而复用历史向量。
+     */
+    @Query("""
+        UNWIND $nodes AS n
+        MERGE (m:Method {nodeId: n.nodeId})
+        SET m.className = n.className,
+            m.methodName = n.methodName,
+            m.signature = n.signature,
+            m.filePath = n.filePath,
+            m.startLine = n.startLine,
+            m.endLine = n.endLine,
+            m.complexity = n.complexity,
+            m.methodBody = n.methodBody,
+            m.projectPath = n.projectPath,
+            m.serviceName = n.serviceName,
+            m.comment = n.comment,
+            m.thrownExceptions = n.thrownExceptions,
+            m.caughtExceptions = n.caughtExceptions,
+            m.language = n.language,
+            m.packageName = n.packageName,
+            m.codeHash = n.codeHash
+        """)
+    void mergeAllReuseHit(@Param("nodes") List<Map<String, Object>> nodes);
+
+    /**
+     * 删除项目下「不在给定 nodeId 集合内」的历史 Method 节点（孤儿清理）。
+     * 用于全量-复用构建末尾：源码已删除或逻辑已变更（nodeId 变化）的节点，其向量已失效，当场删除。
+     */
+    @Query("""
+        MATCH (m:Method {projectPath: $projectPath})
+        WHERE NOT m.nodeId IN $nodeIds
+        DETACH DELETE m
+        """)
+    void deleteOrphansByProjectPathAndNotInNodeIds(
+        @Param("projectPath") String projectPath,
+        @Param("nodeIds") List<String> nodeIds);
 }

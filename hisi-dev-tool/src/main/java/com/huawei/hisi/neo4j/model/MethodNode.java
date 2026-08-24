@@ -142,4 +142,73 @@ public class MethodNode {
      */
     @Property("codeEmbedding")
     private float[] codeEmbedding;
+
+    /**
+     * 代码指纹 (SHA-256，用于全量-复用构建模式的节点复用判定)
+     * 计算方式: SHA-256({@code className.methodName(signature)\ncomment\nmethodBody})
+     * comment 为 null 时按空串参与；null 表示「未指纹」（向后兼容，首次复用构建回填）。
+     */
+    @Property("codeHash")
+    private String codeHash;
+
+    /**
+     * 包名 (从全限定类名提取，如 com.example.service)
+     * 构建时自动提取，迁移 API 可回填历史数据
+     */
+    @Property("packageName")
+    private String packageName;
+
+    /**
+     * 入度 (被多少外部方法调用)
+     * 聚合 Stage 计算，不走 mergeAll
+     */
+    @Property("inDegree")
+    private Integer inDegree;
+
+    /**
+     * 出度 (调用了多少外部方法)
+     * 聚合 Stage 计算，不走 mergeAll
+     */
+    @Property("outDegree")
+    private Integer outDegree;
+
+    /**
+     * 社区检测结果 (Louvain 算法分配的社区 ID)
+     * 聚合 Stage 计算，不走 mergeAll
+     */
+    @Property("communityId")
+    private Integer communityId;
+
+    /**
+     * 综合风险分 (0.0-1.0)
+     * 聚合 Stage 计算：复杂度×0.35 + churn×0.35 + 耦合×0.20 + 循环×0.10
+     */
+    @Property("riskScore")
+    private Double riskScore;
+
+    /**
+     * 计算方法的代码指纹（SHA-256，64 位小写十六进制）。
+     *
+     * <p>计算输入：{@code className.methodName(signature)} + {@code "\n"} + {@code comment} + {@code "\n"} + {@code methodBody}。
+     * comment 为 null 时按空串参与，保证同一方法在注释缺失/变更前后的 hash 稳定可比。
+     * methodBody 为构建侧压缩后的方法体（已去注释），故注释变更的敏感性由 {@code comment} 参数单独承载。
+     *
+     * @return 64 位小写十六进制 SHA-256 摘要；各入参为 null 时按空串处理
+     */
+    public static String computeCodeHash(String className, String methodName, String signature,
+                                         String comment, String methodBody) {
+        String c = className == null ? "" : className;
+        String m = methodName == null ? "" : methodName;
+        String s = signature == null ? "" : signature;
+        String cmt = comment == null ? "" : comment;
+        String body = methodBody == null ? "" : methodBody;
+        String input = c + "." + m + "(" + s + ")\n" + cmt + "\n" + body;
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 算法不可用", e);
+        }
+    }
 }

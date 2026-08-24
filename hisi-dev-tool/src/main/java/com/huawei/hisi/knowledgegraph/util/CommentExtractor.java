@@ -62,6 +62,35 @@ public final class CommentExtractor {
     }
 
     /**
+     * 从 Java 源文件提取类级 Javadoc 注释。
+     *
+     * @param javaFile Java 源文件路径
+     * @return 类声明前的 Javadoc 描述（无则返回空字符串）
+     */
+    public static String extractClassComment(Path javaFile) {
+        if (javaFile == null || !Files.exists(javaFile)) {
+            return "";
+        }
+
+        try {
+            String content = Files.readString(javaFile);
+            CompilationUnit cu = StaticJavaParser.parse(content);
+
+            // 取第一个类/接口声明的 Javadoc
+            Optional<ClassOrInterfaceDeclaration> firstClass =
+                cu.findFirst(ClassOrInterfaceDeclaration.class);
+            if (firstClass.isEmpty()) {
+                return "";
+            }
+            Optional<JavadocComment> javadoc = firstClass.get().getJavadocComment();
+            return javadoc.map(CommentExtractor::parseJavadoc).orElse("");
+        } catch (Exception e) {
+            logger.error("Failed to extract class comment: {}", javaFile, e);
+            return "";
+        }
+    }
+
+    /**
      * 从方法声明提取注释
      *
      * @param method 方法声明

@@ -126,16 +126,33 @@ public class ProjectOverviewNode implements DagNode {
         java.util.List<Seed> allMethods = new java.util.ArrayList<>();
         for (String keyword : searchKeywords) {
             try {
-                List<Seed> found = kgClient.hybridSearch(keyword, projectPaths, 10);
-                for (Seed s : found) {
-                    if (!seenNodeIds.contains(s.nodeId())) {
-                        seenNodeIds.add(s.nodeId());
-                        allMethods.add(s);
+                // 先类检索定位业务类
+                List<Seed> classSeeds = kgClient.classSearch(keyword, projectPaths, 10);
+                if (classSeeds.isEmpty()) {
+                    // 类检索空 → 回退方法检索
+                    log.debug("[RAM][ProjectOverviewNode] classSearch 空，回退 hybridSearch: keyword='{}'", keyword);
+                    List<Seed> found = kgClient.hybridSearch(keyword, projectPaths, 10);
+                    for (Seed s : found) {
+                        if (!seenNodeIds.contains(s.nodeId())) {
+                            seenNodeIds.add(s.nodeId());
+                            allMethods.add(s);
+                        }
+                    }
+                } else {
+                    // 类检索命中 → 每个类取入度最高的代表方法
+                    for (Seed cls : classSeeds) {
+                        List<Seed> reps = kgClient.representativeMethod(cls.nodeId(), projectPaths, 1);
+                        for (Seed rep : reps) {
+                            if (!seenNodeIds.contains(rep.nodeId())) {
+                                seenNodeIds.add(rep.nodeId());
+                                allMethods.add(rep);
+                            }
+                        }
                     }
                 }
-                log.debug("[RAM][ProjectOverviewNode] keyword '{}' found {} methods", keyword, found.size());
+                log.debug("[RAM][ProjectOverviewNode] keyword '{}' found {} methods", keyword, allMethods.size());
             } catch (Exception e) {
-                log.debug("[RAM][ProjectOverviewNode] hybridSearch for '{}' failed: {}", keyword, e.getMessage());
+                log.debug("[RAM][ProjectOverviewNode] search for '{}' failed: {}", keyword, e.getMessage());
             }
         }
         ctx.coreMethods = allMethods.stream().limit(20).toList();

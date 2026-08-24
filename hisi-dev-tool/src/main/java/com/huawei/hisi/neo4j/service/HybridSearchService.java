@@ -1,6 +1,7 @@
 package com.huawei.hisi.neo4j.service;
 
 import com.huawei.hisi.neo4j.model.*;
+import com.huawei.hisi.neo4j.repository.Neo4jClassNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository.CalleeWithRelationBySource;
@@ -80,6 +81,7 @@ public class HybridSearchService {
     private final Neo4jMethodNodeRepository methodNodeRepository;
     private final Neo4jSqlNodeRepository sqlNodeRepository;
     private final Neo4jEntryPointNodeRepository entryPointRepository;
+    private final Neo4jClassNodeRepository classNodeRepository;
     private final EmbeddingService embeddingService;
     private final QueryTypeDetector queryTypeDetector;
     private final Neo4jVectorIndexService vectorIndexService;
@@ -91,6 +93,7 @@ public class HybridSearchService {
             Neo4jMethodNodeRepository methodNodeRepository,
             Neo4jSqlNodeRepository sqlNodeRepository,
             Neo4jEntryPointNodeRepository entryPointRepository,
+            Neo4jClassNodeRepository classNodeRepository,
             EmbeddingService embeddingService,
             QueryTypeDetector queryTypeDetector,
             Neo4jVectorIndexService vectorIndexService,
@@ -100,6 +103,7 @@ public class HybridSearchService {
         this.methodNodeRepository = methodNodeRepository;
         this.sqlNodeRepository = sqlNodeRepository;
         this.entryPointRepository = entryPointRepository;
+        this.classNodeRepository = classNodeRepository;
         this.embeddingService = embeddingService;
         this.queryTypeDetector = queryTypeDetector;
         this.vectorIndexService = vectorIndexService;
@@ -147,6 +151,15 @@ public class HybridSearchService {
      */
     public SearchResult hybridSearch(String query, String projectPath, List<String> projectPaths, String language,
                                       Integer limit, Integer graphDepth) {
+        return hybridSearchInternal(query, projectPath, projectPaths, language, limit, graphDepth);
+    }
+
+    /**
+     * 混合检索入口（支持显式 searchType 传参）。
+     * searchType 为 CLASS 时走类级检索（ClassNode.descriptionEmbedding）；null 时回退自动检测。
+     */
+    public SearchResult hybridSearch(String query, String projectPath, List<String> projectPaths, String language,
+                                      Integer limit, Integer graphDepth, String searchType) {
         // 参数校验
         if (query == null || query.trim().isEmpty()) {
             throw new IllegalArgumentException("查询不能为空");
@@ -155,9 +168,68 @@ public class HybridSearchService {
             throw new IllegalArgumentException("项目路径不能为空");
         }
 
-        // projectPaths 解析：未传入时退化为 projectPath（单项目模式）
         final List<String> effectiveProjectPaths = resolveProjectPaths(projectPath, projectPaths);
-        // 使用默认值填充可选参数
+        int effectiveLimit = limit != null ? limit : DEFAULT_TOP_K;
+
+        // 显式 CLASS 检索：走 ClassNode 向量索引
+        if (searchType != null && "CLASS".equalsIgnoreCase(searchType)) {
+            return classSearch(query, effectiveProjectPaths, effectiveLimit);
+        }
+
+        // 其余类型 / null 走原有自动检测逻辑
+        return hybridSearchInternal(query, projectPath, projectPaths, language, limit, graphDepth);
+    }
+
+    /**
+     * 类级语义检索：通过 ClassNode.descriptionEmbedding 向量索引检索类节点。
+     * 结果通过 SearchResult.items 返回（nodeType="Class"），results 字段留空。
+     */
+    private SearchResult classSearch(String query, List<String> projectPaths, int limit) {
+        long startTime = System.currentTimeMillis();
+        try {
+            float[] queryEmbedding = embeddingService.generateEmbedding(query);
+            List<Double> embeddingList = new ArrayList<>();
+            for (float v : queryEmbedding) embeddingList.add((double) v);
+
+            var classes = classNodeRepository.findByDescriptionVectorIndex(projectPaths, embeddingList, 0.0, limit);
+            List<SearchResultItem> items = new ArrayList<>();
+            for (var cls : classes) {
+                SearchResultItem item = SearchResultItem.builder()
+                    .nodeId(cls.getClassId())
+                    .nodeType("Class")
+                    .className(cls.getClassName())
+                    .description(cls.getDescription())
+                    .build();
+                items.add(item);
+            }
+            return SearchResult.builder()
+                .query(query)
+                .queryType(QueryType.CLASS_NAME)
+                .results(Collections.emptyList())
+                .items(items)
+                .totalCount(items.size())
+                .costTimeMs(System.currentTimeMillis() - startTime)
+                .suggestions(Collections.emptyList())
+                .build();
+        } catch (Exception e) {
+            log.warn("[ClassSearch] 类级检索失败: {}", e.getMessage());
+            return SearchResult.builder()
+                .query(query)
+                .queryType(QueryType.CLASS_NAME)
+                .results(Collections.emptyList())
+                .items(Collections.emptyList())
+                .totalCount(0)
+                .costTimeMs(System.currentTimeMillis() - startTime)
+                .searchTips("类级检索异常: " + e.getMessage())
+                .suggestions(Collections.emptyList())
+                .build();
+        }
+    }
+
+    /** 原有自动检测逻辑的方法体（6 参数入口） */
+    private SearchResult hybridSearchInternal(String query, String projectPath, List<String> projectPaths,
+                                              String language, Integer limit, Integer graphDepth) {
+        final List<String> effectiveProjectPaths = resolveProjectPaths(projectPath, projectPaths);
         int effectiveLimit = limit != null ? limit : DEFAULT_TOP_K;
         int effectiveGraphDepth = graphDepth != null ? graphDepth : DEFAULT_GRAPH_DEPTH;
 

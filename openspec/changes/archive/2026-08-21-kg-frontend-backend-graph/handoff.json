@@ -1,0 +1,81 @@
+{
+  "schema_version": "delivery-handoff/v1",
+  "family_version": "delivery-family/1.3",
+  "type": "delivery-handoff",
+  "handoff_id": "kg-frontend-backend-graph-execute-verify-20260820T131412",
+  "previous_handoff_id": null,
+  "generated_at": "2026-08-20T13:14:12Z",
+  "stage": "delivery-execute-verify",
+  "source_revision": {
+    "repo_head": "3685acdc008f183c8011a495fc5c47448fdaf953",
+    "artifact_revision": "sha256:aa7f4a72b76b20d7b835a8b193f88187ffcb06871b1c0b542401041832d02fd9",
+    "state_observed_at": "2026-08-20T13:14:12Z"
+  },
+  "state_source": {
+    "kind": "openspec_change",
+    "label": "change #kg-frontend-backend-graph",
+    "anchor": "openspec/changes/kg-frontend-backend-graph"
+  },
+  "capability_snapshot": {
+    "memory": "ok",
+    "openspec": "initialized",
+    "superpowers": "loaded"
+  },
+  "capability_bindings": {
+    "openspec": {},
+    "memory": {},
+    "superpowers": {},
+    "subagents": {}
+  },
+  "presentation_capability": {
+    "mode": "markdown",
+    "source": "unknown"
+  },
+  "gate_status": {
+    "status": "pass",
+    "summary": "新鲜验证 + 独立审查（code-reviewer-a58bfc6bb0c8704ea）通过；归档移交 OpenSpec",
+    "evidence": [
+      "mvn -pl hisi-dev-tool test -Dtest='CodegraphToNeo4jTransformerTest,FrontendAstParserTest,FrontendBackendLinkerTest,UrlNormalizerTest,FrontendGraphOrchestratorTest,FrontendProjectDiscovererTest': 31 passed"
+    ],
+    "approved_by": "用户",
+    "approved_at": "2026-08-20T13:14:12Z",
+    "binds_to_revision": "sha256:aa7f4a72b76b20d7b835a8b193f88187ffcb06871b1c0b542401041832d02fd9",
+    "accepted_warning_ids": []
+  },
+  "evidence_mode": "full",
+  "next_skill": null,
+  "next_action": "openspec archive kg-frontend-backend-graph",
+  "required_inputs": [],
+  "stop_condition": "",
+  "stage_payload": {
+    "overall_status": "verified",
+    "task_status": [],
+    "current_failures_or_blocks": [],
+    "artifact_backflow": "none",
+    "alignment_backflow": null,
+    "fresh_verification_evidence": [
+      "mvn -pl hisi-dev-tool test -Dtest='CodegraphToNeo4jTransformerTest,FrontendAstParserTest,FrontendBackendLinkerTest,UrlNormalizerTest,FrontendGraphOrchestratorTest,FrontendProjectDiscovererTest': 31 passed"
+    ],
+    "spec_coherence": "pass",
+    "code_review": {
+      "status": "pass",
+      "mode": "independent",
+      "independent_review": "required_pass",
+      "reviewer": "code-reviewer-a58bfc6bb0c8704ea",
+      "findings": []
+    },
+    "archive": {
+      "status": "deferred_to_openspec",
+      "reason": "execute-verify must not sync/archive"
+    },
+    "asset_writeback": []
+  },
+  "presentation": {
+    "schema": "delivery-presentation/v1",
+    "from_task": "实施·验证",
+    "to_task": "OpenSpec 归档",
+    "summary": "verified；归档移交 OpenSpec（本技能不执行 archive）",
+    "evidence": [],
+    "continue_prompt": "openspec archive kg-frontend-backend-graph"
+  }
+}

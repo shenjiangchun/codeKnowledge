@@ -265,13 +265,23 @@ public class SQLiteSchemaInitializer {
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_path    TEXT    NOT NULL,
                 cron_expression TEXT    NOT NULL,
-                task_type       TEXT    NOT NULL,
+                build_mode      TEXT    NOT NULL DEFAULT 'REUSE',
                 enabled         INTEGER DEFAULT 1,
                 last_run_at     INTEGER,
                 next_run_at     INTEGER,
                 created_at      INTEGER DEFAULT (strftime('%s','now'))
             )
             """);
+
+        // 定时任务增强字段（幂等：列不存在才加）
+        addColumnIfAbsent("kg_schedule", "git_pull_enabled", "INTEGER DEFAULT 0");
+        addColumnIfAbsent("kg_schedule", "branch", "TEXT");
+        addColumnIfAbsent("kg_schedule", "refresh_description", "INTEGER DEFAULT 0");
+        addColumnIfAbsent("kg_schedule", "refresh_architecture", "INTEGER DEFAULT 0");
+
+        // build_mode 迁移：老库 task_type(FULL/INCREMENTAL) → build_mode(REUSE/INCREMENTAL)
+        addColumnIfAbsent("kg_schedule", "build_mode", "TEXT DEFAULT 'REUSE'");
+        migrateKgScheduleBuildMode();
 
         jdbcTemplate.execute("""
             CREATE TABLE IF NOT EXISTS sys_user (
@@ -318,6 +328,36 @@ public class SQLiteSchemaInitializer {
         log.info("[SQLite] Created project_name_group table");
 
         log.info("[SQLite] Schema initialization complete - 17 tables ensured");
+    }
+
+    /** 幂等加列：列不存在才 ALTER TABLE ADD COLUMN */
+    private void addColumnIfAbsent(String table, String column, String definition) {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM pragma_table_info(?) WHERE name = ?",
+                Integer.class, table, column);
+            if (count == null || count == 0) {
+                jdbcTemplate.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
+            }
+        } catch (Exception e) {
+            log.warn("[SQLite] addColumnIfAbsent failed: {}.{}", table, column);
+        }
+    }
+
+    /** 老库 task_type → build_mode 回填；新库无 task_type 列时 UPDATE 抛错忽略 */
+    private void migrateKgScheduleBuildMode() {
+        try {
+            jdbcTemplate.execute("""
+                UPDATE kg_schedule SET build_mode = CASE task_type
+                    WHEN 'INCREMENTAL' THEN 'INCREMENTAL'
+                    ELSE 'REUSE'
+                END
+                WHERE (build_mode IS NULL OR build_mode = '') AND task_type IS NOT NULL
+                """);
+            log.info("[SQLite] Migrated kg_schedule: task_type → build_mode");
+        } catch (Exception ignored) {
+            // task_type 列不存在（新库），忽略
+        }
     }
 
     private void migrateGlossaryColumns(JdbcTemplate jdbcTemplate) {

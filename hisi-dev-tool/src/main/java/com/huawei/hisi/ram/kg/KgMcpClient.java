@@ -21,6 +21,18 @@ public interface KgMcpClient {
 
     List<Seed> hybridSearch(String query, List<String> projectPaths, int limit);
 
+    /** 类级语义检索（searchType=CLASS），返回类描述作为 Seed。 */
+    List<Seed> classSearch(String query, String projectPath, int limit);
+
+    /** Multi-project overload: class search across all given project paths. */
+    List<Seed> classSearch(String query, List<String> projectPaths, int limit);
+
+    /** 取某类的代表方法（入度最高）作为 Seed，返回 method nodeId 形式的 seed。 */
+    List<Seed> representativeMethod(String className, String projectPath, int limit);
+
+    /** Multi-project overload: representative method across all given project paths. */
+    List<Seed> representativeMethod(String className, List<String> projectPaths, int limit);
+
     List<Entry> entryPoints(String projectPath, String entryType);
 
     /** Multi-project overload: entry points across all given project paths. */

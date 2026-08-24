@@ -67,9 +67,18 @@ public class AgentTools {
      * Returns a list of matching methods with nodeId, summary, and similarity score.
      */
     public List<Map<String, Object>> hybridSearch(String projectPath, String query, Integer limit) {
+        return hybridSearch(projectPath, query, limit, null);
+    }
+
+    public List<Map<String, Object>> hybridSearch(String projectPath, String query, Integer limit, String searchType) {
         if (kgClient == null) return errorList("KG not available");
         int n = limit != null ? limit : 10;
-        var seeds = kgClient.hybridSearch(query, projectPath, n);
+        List<com.huawei.hisi.ram.kg.dto.Seed> seeds;
+        if (searchType != null && "CLASS".equalsIgnoreCase(searchType)) {
+            seeds = kgClient.classSearch(query, projectPath, n);
+        } else {
+            seeds = kgClient.hybridSearch(query, projectPath, n);
+        }
         return seeds.stream()
                 .map(s -> Map.<String, Object>of(
                         "nodeId", s.nodeId(),
@@ -300,12 +309,13 @@ public class AgentTools {
 
     // ──────────────────── @Tool wrappers (Spring AI 1.1.x) ────────────────────
 
-    @Tool(name = "hybrid_search", description = "语义搜索项目代码。输入自然语言查询，返回最相关的方法列表（nodeId、摘要、相似度分数）。")
+    @Tool(name = "hybrid_search", description = "语义搜索项目代码。输入自然语言查询，返回最相关的方法列表（nodeId、摘要、相似度分数）。searchType 可选 CLASS 检索类。")
     public List<Map<String, Object>> hybridSearchTool(
             @ToolParam(description = "自然语言查询") String query,
             @ToolParam(description = "最多结果数，默认10") Integer limit,
+            @ToolParam(description = "检索类型: METHOD/CLASS，缺省自动检测") String searchType,
             ToolContext context) {
-        return hybridSearch(projectPath(context), query, limit);
+        return hybridSearch(projectPath(context), query, limit, searchType);
     }
 
     @Tool(name = "load_method_bodies", description = "加载指定方法的源码。输入 nodeId 列表（从 hybrid_search 结果获得）。")

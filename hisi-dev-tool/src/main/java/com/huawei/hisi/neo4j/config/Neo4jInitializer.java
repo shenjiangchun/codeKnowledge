@@ -32,9 +32,17 @@ public class Neo4jInitializer {
     private static final List<String> UNIQUE_CONSTRAINTS = List.of(
         "CREATE CONSTRAINT method_nodeId_unique IF NOT EXISTS FOR (m:Method) REQUIRE m.nodeId IS UNIQUE",
         "CREATE CONSTRAINT entryPoint_entryId_unique IF NOT EXISTS FOR (e:EntryPoint) REQUIRE e.entryId IS UNIQUE",
-        "CREATE CONSTRAINT service_name_unique IF NOT EXISTS FOR (s:Service) REQUIRE s.name IS UNIQUE",
+        "CREATE CONSTRAINT service_serviceId_unique IF NOT EXISTS FOR (s:Service) REQUIRE s.serviceId IS UNIQUE",
         "CREATE CONSTRAINT log_chunk_nodeId_unique IF NOT EXISTS FOR (l:LogChunk) REQUIRE l.nodeId IS UNIQUE",
-        "CREATE CONSTRAINT sql_nodeId_unique IF NOT EXISTS FOR (s:Sql) REQUIRE s.nodeId IS UNIQUE"
+        "CREATE CONSTRAINT sql_nodeId_unique IF NOT EXISTS FOR (s:Sql) REQUIRE s.nodeId IS UNIQUE",
+        "CREATE CONSTRAINT moduleNode_moduleId_unique IF NOT EXISTS FOR (m:ModuleNode) REQUIRE m.moduleId IS UNIQUE",
+        "CREATE CONSTRAINT domainNode_domainId_unique IF NOT EXISTS FOR (d:DomainNode) REQUIRE d.domainId IS UNIQUE",
+        "CREATE CONSTRAINT churnNode_nodeId_unique IF NOT EXISTS FOR (c:ChurnNode) REQUIRE c.nodeId IS UNIQUE",
+        "CREATE CONSTRAINT classNode_classId_unique IF NOT EXISTS FOR (c:Class) REQUIRE c.classId IS UNIQUE",
+        "CREATE CONSTRAINT component_componentId_unique IF NOT EXISTS FOR (c:Component) REQUIRE c.componentId IS UNIQUE",
+        "CREATE CONSTRAINT apiClient_apiClientId_unique IF NOT EXISTS FOR (a:ApiClient) REQUIRE a.apiClientId IS UNIQUE",
+        "CREATE CONSTRAINT frontendRoute_frontendRouteId_unique IF NOT EXISTS FOR (r:FrontendRoute) REQUIRE r.frontendRouteId IS UNIQUE",
+        "CREATE CONSTRAINT aggCheckpoint_checkpointId_unique IF NOT EXISTS FOR (a:AggregationCheckpoint) REQUIRE a.checkpointId IS UNIQUE"
     );
 
     /**
@@ -66,6 +74,8 @@ public class Neo4jInitializer {
         "CREATE INDEX method_serviceName_index IF NOT EXISTS FOR (m:Method) ON (m.serviceName)",
         "CREATE INDEX method_startLine_index IF NOT EXISTS FOR (m:Method) ON (m.startLine)",
         "CREATE INDEX method_complexity_index IF NOT EXISTS FOR (m:Method) ON (m.complexity)",
+        "CREATE INDEX method_codeHash_index IF NOT EXISTS FOR (m:Method) ON (m.codeHash)",
+        "CREATE INDEX method_packageName_index IF NOT EXISTS FOR (m:Method) ON (m.packageName)",
         // EntryPoint 节点索引
         "CREATE INDEX entryPoint_projectPath_index IF NOT EXISTS FOR (e:EntryPoint) ON (e.projectPath)",
         "CREATE INDEX entryPoint_entryKey_index IF NOT EXISTS FOR (e:EntryPoint) ON (e.entryKey)",
@@ -75,7 +85,31 @@ public class Neo4jInitializer {
         // codegraph sidecar 新增关系索引（CONTAINS / IMPORTS / REFERENCES）
         "CREATE INDEX contains_projectPath_index IF NOT EXISTS FOR ()-[r:CONTAINS]-() ON (r.projectPath)",
         "CREATE INDEX imports_projectPath_index IF NOT EXISTS FOR ()-[r:IMPORTS]-() ON (r.projectPath)",
-        "CREATE INDEX references_projectPath_index IF NOT EXISTS FOR ()-[r:REFERENCES]-() ON (r.projectPath)"
+        "CREATE INDEX references_projectPath_index IF NOT EXISTS FOR ()-[r:REFERENCES]-() ON (r.projectPath)",
+        // ModuleNode 索引
+        "CREATE INDEX moduleNode_moduleId_index IF NOT EXISTS FOR (m:ModuleNode) ON (m.moduleId)",
+        "CREATE INDEX moduleNode_moduleName_index IF NOT EXISTS FOR (m:ModuleNode) ON (m.moduleName)",
+        "CREATE INDEX moduleNode_level_index IF NOT EXISTS FOR (m:ModuleNode) ON (m.level)",
+        "CREATE INDEX moduleNode_projectPath_index IF NOT EXISTS FOR (m:ModuleNode) ON (m.projectPath)",
+        // ChurnNode 索引
+        "CREATE INDEX churnNode_filePath_index IF NOT EXISTS FOR (c:ChurnNode) ON (c.filePath)",
+        "CREATE INDEX churnNode_projectPath_index IF NOT EXISTS FOR (c:ChurnNode) ON (c.projectPath)",
+        // DomainNode 索引
+        "CREATE INDEX domainNode_domainId_index IF NOT EXISTS FOR (d:DomainNode) ON (d.domainId)",
+        "CREATE INDEX domainNode_projectPath_index IF NOT EXISTS FOR (d:DomainNode) ON (d.projectPath)",
+        // ClassNode 索引
+        "CREATE INDEX classNode_classId_index IF NOT EXISTS FOR (c:Class) ON (c.classId)",
+        "CREATE INDEX classNode_projectPath_index IF NOT EXISTS FOR (c:Class) ON (c.projectPath)",
+        // ComponentNode 索引
+        "CREATE INDEX component_projectPath_index IF NOT EXISTS FOR (c:Component) ON (c.projectPath)",
+        // ApiClientNode 索引
+        "CREATE INDEX apiClient_projectPath_index IF NOT EXISTS FOR (a:ApiClient) ON (a.projectPath)",
+        "CREATE INDEX apiClient_url_index IF NOT EXISTS FOR (a:ApiClient) ON (a.url)",
+        // FrontendRouteNode 索引
+        "CREATE INDEX frontendRoute_projectPath_index IF NOT EXISTS FOR (r:FrontendRoute) ON (r.projectPath)",
+        // AggregationCheckpoint 索引
+        "CREATE INDEX aggCheckpoint_checkpointId_index IF NOT EXISTS FOR (a:AggregationCheckpoint) ON (a.checkpointId)",
+        "CREATE INDEX aggCheckpoint_projectPath_index IF NOT EXISTS FOR (a:AggregationCheckpoint) ON (a.projectPath)"
     );
 
     /**
@@ -87,7 +121,9 @@ public class Neo4jInitializer {
         "CREATE VECTOR INDEX method_description_vector_index IF NOT EXISTS FOR (m:Method) ON m.descriptionEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}",
         "CREATE VECTOR INDEX method_code_vector_index IF NOT EXISTS FOR (m:Method) ON m.codeEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}",
         // SQL 向量索引
-        "CREATE VECTOR INDEX sql_vector_index IF NOT EXISTS FOR (s:SQL) ON s.sqlEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}",
+        "CREATE VECTOR INDEX sql_node_vector_index IF NOT EXISTS FOR (s:Sql) ON s.sqlEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}",
+        // ClassNode 向量索引（类级语义检索）
+        "CREATE VECTOR INDEX classNode_description_vector_index IF NOT EXISTS FOR (c:Class) ON c.descriptionEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}",
         // EntryPoint 向量索引（双向量：brief + detailed）
         "CREATE VECTOR INDEX entry_point_brief_vector_index IF NOT EXISTS FOR (e:EntryPoint) ON e.briefEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}",
         "CREATE VECTOR INDEX entry_point_detailed_vector_index IF NOT EXISTS FOR (e:EntryPoint) ON e.detailedEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}",
@@ -105,7 +141,9 @@ public class Neo4jInitializer {
         "DROP INDEX method_pub_path IF EXISTS",
         "DROP INDEX entrypoint_pub_path IF EXISTS",
         "DROP INDEX sql_pub_path IF EXISTS",
-        "DROP INDEX service_pub_path IF EXISTS"
+        "DROP INDEX service_pub_path IF EXISTS",
+        "DROP INDEX sql_vector_index IF EXISTS",
+        "DROP CONSTRAINT service_name_unique IF EXISTS"
     );
 
     /**

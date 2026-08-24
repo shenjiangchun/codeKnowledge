@@ -4,7 +4,11 @@ import com.huawei.hisi.knowledgegraph.model.ClassExtends;
 import com.huawei.hisi.knowledgegraph.model.InterfaceImplementation;
 import com.huawei.hisi.knowledgegraph.model.MethodOverride;
 import com.huawei.hisi.knowledgegraph.model.ProxyRelation;
+import com.huawei.hisi.neo4j.model.DataModelNode;
 import com.huawei.hisi.neo4j.model.EntryPointNode;
+import com.huawei.hisi.neo4j.model.ComponentNode;
+import com.huawei.hisi.neo4j.model.ApiClientNode;
+import com.huawei.hisi.neo4j.model.FrontendRouteNode;
 import com.huawei.hisi.neo4j.model.MethodNode;
 
 import java.util.List;
@@ -27,6 +31,27 @@ public interface KnowledgeGraphStorageService {
      * 批量保存方法节点
      */
     void saveMethodNodes(List<MethodNode> nodes);
+
+    /**
+     * 批量保存前端组件节点（ComponentNode）
+     */
+    void saveComponentNodes(List<ComponentNode> nodes);
+
+    /**
+     * 批量保存前端 API 调用点节点（ApiClientNode）
+     */
+    void saveApiClientNodes(List<ApiClientNode> nodes);
+
+    /**
+     * 批量保存前端路由节点（FrontendRouteNode）
+     */
+    void saveFrontendRouteNodes(List<FrontendRouteNode> nodes);
+
+    /**
+     * 全量-复用（REUSE）模式保存方法节点：codeHash 命中复用向量，未命中重算，并清理孤儿节点。
+     * projectPath 必填（供空 nodes 场景下的全量孤儿清理使用）。
+     */
+    void saveMethodNodesForReuse(List<MethodNode> nodes, String projectPath);
 
     /**
      * 根据项目路径查询方法节点数量
@@ -139,11 +164,24 @@ public interface KnowledgeGraphStorageService {
      */
     int countProxyRelations(String projectPath);
 
+    // ==================== 数据模型操作 ====================
+
+    /**
+     * 批量保存数据模型节点 + USES_MODEL 关系
+     */
+    void saveDataModels(List<DataModelNode> dataModelNodes, List<Map<String, Object>> usesModelRelations);
+
     // ==================== 数据清理操作 ====================
 
     /**
      * 清理项目的所有知识图谱数据
      */
     void cleanProjectData(String projectPath);
+
+    /**
+     * 全量-复用（REUSE）模式的清理：删除所有边 + 删除所有非 Method 节点，但保留 Method 节点。
+     * 保留 Method 节点使其 description/embedding 得以被 codeHash 复用判定。
+     */
+    void cleanProjectDataForReuse(String projectPath);
 
 }

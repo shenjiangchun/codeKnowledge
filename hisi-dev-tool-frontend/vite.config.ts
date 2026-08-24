@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'node:path'
+import { ServerResponse } from 'node:http'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -19,6 +20,13 @@ export default defineConfig({
         changeOrigin: true,
         selfHandleResponse: true,
         configure: (proxy) => {
+          proxy.on('error', (err, _req, res) => {
+            const msg = `[Proxy] ${err.message}`
+            if (res instanceof ServerResponse) {
+              res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' })
+              res.end(JSON.stringify({ code: 502, message: msg }))
+            }
+          })
           proxy.on('proxyRes', (proxyRes, _req, res) => {
             // SSE streams: pipe directly without buffering
             if (proxyRes.headers['content-type']?.includes('text/event-stream')) {

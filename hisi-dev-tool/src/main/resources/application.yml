@@ -28,12 +28,13 @@ spring:
         options:
           model: ${ANTHROPIC_MODEL:claude-sonnet-4-20250514}
           temperature: 0.3
+          max-tokens: 32768
     openai:
       api-key: ${ZHIPU_API_KEY:sk-placeholder}
       base-url: ${ZHIPU_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
       chat:
         options:
-          model: ${ZHIPU_TEXT_MODEL:glm-4-flash}
+          model: ${ZHIPU_TEXT_MODEL:GLM-4.7-Flash}
           temperature: 0.1
     retry:
       max-attempts: 3
@@ -71,9 +72,9 @@ embedding:
 text-model:
   api-key: ${TEXT_MODEL_API_KEY:}
   base-url: https://open.bigmodel.cn/api/paas/v4
-  model: GLM-4-FlashX-250414
+  model: GLM-4.7-Flash
   temperature: 0.1
-  max-tokens: 200
+  max-tokens: 4096
   timeout: 30000
   max-retries: 3
   retry-base-delay-ms: 5000
@@ -304,6 +305,12 @@ search:
     dual-channel-threshold: 0.7
     # 专用通道必选词过滤开关
     required-word-filter-enabled: true
+  # 外部 rerank 精排（OpenAI 兼容 /rerank 端点），默认关闭
+  rerank:
+    enabled: false
+    base-url: ${RERANK_BASE_URL:}
+    model: ${RERANK_MODEL:}
+    api-key: ${RERANK_API_KEY:}
 
 anthropic:
   api-key: ${ANTHROPIC_API_KEY:}

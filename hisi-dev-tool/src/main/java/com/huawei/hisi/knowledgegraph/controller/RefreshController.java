@@ -1,12 +1,8 @@
 package com.huawei.hisi.knowledgegraph.controller;
 
 import com.huawei.hisi.knowledgegraph.exception.NoCheckpointException;
-import com.huawei.hisi.knowledgegraph.exception.WorkingDirDirtyException;
-import com.huawei.hisi.knowledgegraph.service.IncrementalRefreshService;
-import com.huawei.hisi.knowledgegraph.service.IncrementalRefreshServiceV2;
-import com.huawei.hisi.knowledgegraph.service.VectorGenerationService;
+import com.huawei.hisi.knowledgegraph.service.IncrementalKnowledgeGraphBuilder;
 import com.huawei.hisi.model.ApiResponse;
-import com.huawei.hisi.utils.PathUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -18,6 +14,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Endpoint for triggering incremental knowledge-graph refresh.
+ *
+ * <p>Uses {@link IncrementalKnowledgeGraphBuilder} which composes
+ * {@link com.huawei.hisi.knowledgegraph.service.KnowledgeGraphBuilder}
+ * to ensure graph state equivalence with a full build at the same commit.
  */
 @RestController
 @RequestMapping("/api/knowledge-graph")
@@ -25,12 +25,10 @@ import org.springframework.web.bind.annotation.RestController;
 @Slf4j
 public class RefreshController {
 
-    private final IncrementalRefreshService refreshService;
-    private final IncrementalRefreshServiceV2 refreshServiceV2;
-    private final VectorGenerationService vectorGenerationService;
+    private final IncrementalKnowledgeGraphBuilder incrementalBuilder;
 
     @PostMapping("/refresh")
-    public ResponseEntity<ApiResponse<IncrementalRefreshService.RefreshResult>> refresh(
+    public ResponseEntity<ApiResponse<IncrementalKnowledgeGraphBuilder.RefreshResult>> refresh(
             @RequestBody RefreshRequest request) {
 
         if (request.projectPath() == null || request.projectPath().isBlank()) {
@@ -39,77 +37,17 @@ public class RefreshController {
         }
 
         try {
-            boolean preview = request.preview() != null && request.preview();
-            var result = refreshService.refresh(request.projectPath(), preview);
+            var result = incrementalBuilder.incrementalRefresh(request.projectPath());
             return ResponseEntity.ok(ApiResponse.success(result));
         } catch (NoCheckpointException e) {
             log.warn("Refresh rejected — no checkpoint: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(ApiResponse.error(409, "No checkpoint found: " + e.getMessage()));
-        } catch (WorkingDirDirtyException e) {
-            log.warn("Refresh rejected — dirty working directory: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.PRECONDITION_FAILED)
-                    .body(ApiResponse.error(412, "Working directory is dirty: " + e.getMessage()));
+                    .body(ApiResponse.error(409, "No checkpoint found. Run full generation first: "
+                            + e.getMessage()));
         } catch (Exception e) {
             log.error("Refresh failed unexpectedly", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error(500, "Refresh failed: " + e.getMessage()));
-        }
-    }
-
-    @PostMapping("/refresh-v2")
-    public ResponseEntity<ApiResponse<IncrementalRefreshServiceV2.RefreshResult>> refreshV2(
-            @RequestBody RefreshRequest request) {
-
-        if (request.projectPath() == null || request.projectPath().isBlank()) {
-            return ResponseEntity.badRequest()
-                    .body(ApiResponse.error(400, "projectPath is required"));
-        }
-
-        String normalizedPath = PathUtils.normalize(request.projectPath());
-
-        try {
-            var result = refreshServiceV2.refresh(normalizedPath);
-
-            // Trigger vector generation for empty nodes
-            if (result.success() && result.rebuiltNodes() > 0) {
-                vectorGenerationService.startVectorGeneration(normalizedPath);
-            }
-
-            return ResponseEntity.ok(ApiResponse.success(result));
-        } catch (Exception e) {
-            log.error("V2 Refresh failed unexpectedly", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error(500, "V2 Refresh failed: " + e.getMessage()));
-        }
-    }
-
-    /**
-     * Debug endpoint to check checkpoint status.
-     */
-    @PostMapping("/checkpoint/debug")
-    public ResponseEntity<ApiResponse<String>> debugCheckpoint(@RequestBody RefreshRequest request) {
-        String projectPath = request.projectPath();
-        if (projectPath == null || projectPath.isBlank()) {
-            return ResponseEntity.badRequest()
-                .body(ApiResponse.error(400, "projectPath is required"));
-        }
-
-        log.info("[Checkpoint Debug] Checking checkpoint for: {}", projectPath);
-
-        try {
-            var checkpoint = refreshServiceV2.debugCheckpoint(projectPath);
-            if (checkpoint != null) {
-                return ResponseEntity.ok(ApiResponse.success(
-                    "Checkpoint found: lastCommit=" + checkpoint.lastCommit() +
-                    ", lastBranch=" + checkpoint.lastBranch()));
-            } else {
-                return ResponseEntity.ok(ApiResponse.success("No checkpoint found for: " + projectPath));
-            }
-        } catch (Exception e) {
-            log.error("[Checkpoint Debug] Error: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.error(500, "Debug failed: " + e.getMessage()));
         }
     }
 

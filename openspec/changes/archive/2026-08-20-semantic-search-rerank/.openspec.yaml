@@ -1,0 +1,3 @@
+schema: spec-driven
+created: 2026-08-20
+goal: 修复 MCP hybrid_search 端点错配 + 移除历史检索接口 + rerank 外部 API 配置化

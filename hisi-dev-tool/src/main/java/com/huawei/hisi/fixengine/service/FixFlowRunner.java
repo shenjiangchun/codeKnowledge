@@ -224,8 +224,25 @@ public class FixFlowRunner {
                 log.info("[FixFlowRunner] step7 done: tests pass");
             }
 
-            // ---- Step 8: Commit ----
-            String commitHash = runStep(sid, turnId, "commit",
+            // ---- Step 8: Commit（HITL 闸门：测试未通过时不 commit，停在 worktree 等待人工确认） ----
+            String commitHash = null;
+            if (!passed) {
+                // 未通过测试：不自动 commit，停下等人工确认
+                String note = "Fix did not pass tests — auto-commit blocked by HITL gate. "
+                        + "Worktree kept at " + worktreePath + " for manual review.";
+                buildNotes.add(note);
+                session.setStatus("WAITING_REVIEW");
+                fixSessionRepository.update(session);
+                String pendingText = buildSummaryText(null, branchName, filePath, exceptionType,
+                        throwPointSig, buildNotes);
+                pushCheckpoint(sid, turnId,
+                        "⚠️ 修复未通过测试，已暂停自动提交（HITL 闸门）。\n"
+                        + "worktree: " + worktreePath + "\n分支: " + branchName + "\n\n" + pendingText);
+                log.warn("[FixFlowRunner] step8: HITL gate blocked auto-commit, session={} waiting for manual review", session.getId());
+                return;
+            }
+
+            commitHash = runStep(sid, turnId, "commit",
                     Map.of("message", "Committing fix...", "branchName", branchName),
                     () -> {
                         String hash = worktreeService.commit(branchName, worktreePath,

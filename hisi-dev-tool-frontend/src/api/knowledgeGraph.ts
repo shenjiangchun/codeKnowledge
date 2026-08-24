@@ -136,6 +136,14 @@ export interface MethodNode {
   methodBody: string
   projectPath: string
   description?: string
+  serviceName?: string
+  language?: string
+  framework?: string
+  packageName?: string
+  inDegree?: number
+  outDegree?: number
+  communityId?: number
+  riskScore?: number
 }
 
 export interface PageResult<T> {
@@ -415,19 +423,25 @@ export const knowledgeGraphApi = {
   // 任务管理接口（V1，写操作保持 projectPath）
   // ============================================================
 
-  startGenerateTask(projectPath: string, excludePaths?: string[]) {
+  startGenerateTask(projectPath: string, excludePaths?: string[], generateVector = true, generateArchitecture = true, buildMode = 'reuse') {
     const params: Record<string, string> = { projectPath }
     if (excludePaths && excludePaths.length > 0) {
       params.excludePaths = excludePaths.join(',')
     }
+    params.generateVector = String(generateVector)
+    params.generateArchitecture = String(generateArchitecture)
+    params.buildMode = buildMode
     return request.post<KnowledgeGraphTask>('/knowledge-graph/tasks/generate', null, { params })
   },
 
   /** 批量入队：多项目排队生成，完整完成一个再做下一个 */
-  startGenerateTaskBatch(projectPaths: string[], excludePaths?: string[]) {
+  startGenerateTaskBatch(projectPaths: string[], excludePaths?: string[], generateVector = true, generateArchitecture = true, buildMode = 'reuse') {
     return request.post<KnowledgeGraphTask[]>('/knowledge-graph/tasks/generate-batch', {
       projectPaths,
-      excludePaths: excludePaths || undefined
+      excludePaths: excludePaths || undefined,
+      generateVector,
+      generateArchitecture,
+      buildMode
     })
   },
 
@@ -737,7 +751,18 @@ export const knowledgeGraphApi = {
   },
 
   refresh(projectPath: string) {
-    return request.post<{ isNoop: boolean; changedFiles: number; deleted: number; rebuilt: number }>('/knowledge-graph/refresh', {
+    return request.post<{
+      projectPath: string
+      lastCommit: string
+      currentCommit: string
+      changedFiles: number
+      deletedNodes: number
+      rebuiltNodes: number
+      rebuiltEdges: number
+      rebuiltEntryPoints: number
+      vectorsGenerated: number
+      success: boolean
+    }>('/knowledge-graph/refresh', {
       projectPath
     })
   },
@@ -779,4 +804,168 @@ export const knowledgeGraphApi = {
       params: { oldBaseDir, dryRun }
     })
   },
+
+  // ==================== Aggregation APIs (Phase 4) ====================
+  getDashboard(projectPaths: string[], language?: string) {
+    return request.get<DashboardData>('/v2/knowledge-graph/dashboard', { params: { projectPaths, language } })
+  },
+  getDsm(projectPaths: string[], language?: string, level?: string) {
+    return request.get<DsmData>('/v2/knowledge-graph/dsm', { params: { projectPaths, language, level } })
+  },
+  getDsmDrillDown(projectPaths: string[], modules: string[]) {
+    return request.get<DsmData>('/v2/knowledge-graph/dsm/drill-down', { params: { projectPaths, modules } })
+  },
+  getHotspots(projectPaths: string[], language?: string, limit?: number) {
+    return request.get<{ hotspots: HotspotItem[]; total: number }>('/v2/knowledge-graph/hotspots', { params: { projectPaths, language, limit } })
+  },
+  getDomains(projectPaths: string[], language?: string) {
+    return request.get<{ domains: DomainItem[]; interactions: DomainEdge[] }>('/v2/knowledge-graph/domains', { params: { projectPaths, language } })
+  },
+  getDomainClasses(domainId: string, projectPaths: string[]) {
+    return request.get<{ domainId: string; classes: DomainClass[] }>(`/v2/knowledge-graph/domains/${encodeURIComponent(domainId)}/classes`, { params: { projectPaths } })
+  },
+  runArchitectureAnalysis(projectPaths: string[]) {
+    return request.post<{ results: { projectPath: string; taskId: number; status: string }[] }>('/v2/knowledge-graph/architecture-analysis', null, { params: { projectPaths } })
+  },
+  getArchAnalysisStatus(projectPaths: string[]) {
+    return request.get<ArchAnalysisTask[]>('/v2/knowledge-graph/architecture-analysis/status', { params: { projectPaths } })
+  },
+  getServiceTopology(projectPaths: string[], language?: string) {
+    return request.get<ServiceTopology>('/v2/knowledge-graph/service-topology', { params: { projectPaths, language } })
+  },
+  getBlastRadius(nodeId: string, projectPaths: string[], maxDepth?: number) {
+    return request.get<BlastRadiusData>(`/v2/knowledge-graph/blast-radius/${encodeURIComponent(nodeId)}`, { params: { projectPaths, maxDepth } })
+  },
+  generateTestSuggestions(nodeId: string, projectPaths: string[]) {
+    return request.post<{ nodeId: string; testCases: TestSuggestion[] }>('/v2/knowledge-graph/test-suggestions', null, { params: { nodeId, projectPaths } })
+  },
+  generateRefactorSuggestions(moduleName: string, projectPaths: string[]) {
+    return request.post<{ moduleName: string; suggestions: RefactorSuggestion[] }>('/v2/knowledge-graph/refactor-suggestions', null, { params: { moduleName, projectPaths } })
+  },
+  getModuleDependencyGraph(projectPaths: string[], sourceModule: string, targetModule: string) {
+    return request.get<ModuleDependencyGraph>('/v2/knowledge-graph/module-dependency-graph', { params: { projectPaths, sourceModule, targetModule } })
+  },
+  getDomainDependencyGraph(projectPaths: string[], sourceDomain: string, targetDomain: string) {
+    return request.get<ModuleDependencyGraph>('/v2/knowledge-graph/domain-dependency-graph', { params: { projectPaths, sourceDomain, targetDomain } })
+  },
+  getBuildModules(projectPaths: string[]) {
+    return request.get<BuildModuleGraphData>('/v2/knowledge-graph/build-modules', { params: { projectPaths } })
+  },
+  getBuildModuleCycles(projectPaths: string[]) {
+    return request.get<{ cycles: string[][]; cycleCount: number }>('/v2/knowledge-graph/build-module-cycles', { params: { projectPaths } })
+  },
+  getBuildModuleLayerViolations(projectPaths: string[]) {
+    return request.get<{ violations: ModuleLayerViolation[] }>('/v2/knowledge-graph/build-module-layer-violations', { params: { projectPaths } })
+  },
+  getPackageCycles(projectPaths: string[]) {
+    return request.get<{ cycles: ClassifiedCycle[]; cycleCount: number }>('/v2/knowledge-graph/package-cycles', { params: { projectPaths } })
+  },
+  getPackageDependencies(projectPaths: string[]) {
+    return request.get<PackageDependencyGraph>('/v2/knowledge-graph/package-dependencies', { params: { projectPaths } })
+  },
+  getModuleCycles(projectPaths: string[]) {
+    return request.get<{ cycles: ClassifiedCycle[]; cycleCount: number }>('/v2/knowledge-graph/module-cycles', { params: { projectPaths } })
+  },
+  getClassLayerViolations(projectPaths: string[]) {
+    return request.get<{ violations: ClassLayerViolation[] }>('/v2/knowledge-graph/class-layer-violations', { params: { projectPaths } })
+  },
+  getClassDependencies(projectPaths: string[], packages?: string[]) {
+    return request.get<ClassDependencyGraph>('/v2/knowledge-graph/class-dependencies', { params: { projectPaths, packages } })
+  },
+  getLayerDomainMatrix(projectPaths: string[]) {
+    return request.get<{ classes: LayerDomainClass[] }>('/v2/knowledge-graph/layer-domain-matrix', { params: { projectPaths } })
+  },
+  getClassEgoNet(projectPaths: string[], packages: string[]) {
+    return request.get<ClassEgoNet>('/v2/knowledge-graph/class-ego-net', { params: { projectPaths, packages } })
+  },
+}
+
+// --- Aggregation Types ---
+export interface DashboardData {
+  domains: DashboardDomain[]
+  interactions: { source: string; target: string; weight: number }[]
+  kpis: { totalMethods: number; totalDomains: number; cyclicDependencies: number; layeredViolations: number; avgCoupling: number }
+  risks: { severity: string; type: 'cyclic' | 'layered'; source: string; target: string; message: string }[]
+  hotspots: HotspotItem[]
+}
+export interface ModuleDependencyGraph {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+}
+export interface BuildModuleGraphData {
+  nodes: BuildModule[]
+  edges: { source: string; target: string }[]
+}
+export interface BuildModule {
+  moduleName: string; groupId: string; artifactId: string; version: string; projectPath: string
+}
+export interface ModuleLayerViolation {
+  source: string; target: string; type: string; sourceLayer: string; targetLayer: string; message: string
+}
+export interface ClassifiedCycle {
+  nodes: string[]; level: string; message: string
+}
+export interface ClassLayerViolation {
+  source: string; target: string; sourceRole: string; targetRole: string; message: string
+}
+export interface ClassDependencyGraph {
+  nodes: { className: string; classRole: string; classRoleSource: string; packageName: string }[]
+  edges: { source: string; target: string }[]
+}
+export interface LayerDomainClass {
+  className: string; classRole: string; domainName: string
+}
+export interface ClassEgoNetNode {
+  className: string; classRole: string; classRoleSource: string; packageName: string; center: boolean
+}
+export interface ClassEgoNet {
+  nodes: ClassEgoNetNode[]
+  edges: { source: string; target: string }[]
+}
+export interface PackageDependencyGraph {
+  nodes: { moduleName: string; layerRole: string; methodCount: number }[]
+  edges: { source: string; target: string; weight: number }[]
+}
+export interface DashboardDomain {
+  domainId: string; name: string; confidence: number; methodCount: number; classCount: number
+}
+export interface ModuleInfo {
+  name: string; level: string; methodCount: number; classCount: number; entryPointCount: number
+  avgComplexity: number; inDegree: number; outDegree: number; instability: number
+  layerRole: string; language: string
+}
+export interface DsmData { modules: string[]; cells: { sourceIdx: number; targetIdx: number; weight: number }[]; level: string }
+export interface HotspotItem {
+  filePath: string; commitCount90d: number; complexity: number; riskScore: number; layerRole: string
+}
+export interface DomainItem { id: string; name: string; confidence: number; methodCount: number; classCount: number }
+export interface DomainEdge { source: string; target: string; weight: number }
+export interface DomainClass { id: string; className: string; methodCount: number; description?: string }
+export interface ArchAnalysisTask {
+  id: number
+  taskType: string
+  projectPath: string
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
+  progress: number
+  totalCount: number
+  successCount: number
+  failCount: number
+  errorMessage?: string
+}
+export interface ServiceTopology {
+  services: { name: string; methodCount: number; language: string; framework: string }[]
+  edges: { source: string; target: string; type: string; weight: number }[]
+}
+export interface BlastRadiusData {
+  centerNode: { nodeId: string; className: string; methodName: string }
+  downstream: { totalAffectedMethods: number; maxDepth: number }
+  upstream: { totalCallers: number; maxDepth: number }
+  affectedEntryPoints: number
+  riskSummary: { overallRisk: 'LOW' | 'MEDIUM' | 'HIGH'; reasons: string[] }
+}
+export interface TestSuggestion {
+  scenario: string; type: 'UNIT' | 'INTEGRATION' | 'EXCEPTION' | 'BOUNDARY'; priority: 'HIGH' | 'MEDIUM' | 'LOW'
+}
+export interface RefactorSuggestion {
+  issue: string; direction: string; impact: string; priority: 'HIGH' | 'MEDIUM' | 'LOW'
 }

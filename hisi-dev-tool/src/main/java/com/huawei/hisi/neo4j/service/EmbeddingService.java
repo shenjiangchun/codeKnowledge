@@ -76,17 +76,13 @@ public class EmbeddingService {
     }
 
     /**
-     * 批量生成嵌入向量
+     * 批量生成嵌入向量（委托 UnifiedEmbeddingService 的批量 API）
      */
     public List<float[]> batchGenerateEmbeddings(List<String> texts) {
         if (texts == null || texts.isEmpty()) {
             return Collections.emptyList();
         }
-        List<float[]> results = new ArrayList<>(texts.size());
-        for (String text : texts) {
-            results.add(generateEmbedding(text));
-        }
-        return results;
+        return embeddingService.generateEmbeddings(texts);
     }
 
     /**

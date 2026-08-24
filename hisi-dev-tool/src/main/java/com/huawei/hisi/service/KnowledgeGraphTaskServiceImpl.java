@@ -55,6 +55,20 @@ public class KnowledgeGraphTaskServiceImpl implements KnowledgeGraphTaskService 
 
     @Override
     public KnowledgeGraphTask startTask(String rawProjectPath, List<String> excludePaths) {
+        return startTask(rawProjectPath, excludePaths, true, true);
+    }
+
+    @Override
+    public KnowledgeGraphTask startTask(String rawProjectPath, List<String> excludePaths,
+                                        boolean generateVector, boolean generateArchitecture) {
+        return startTask(rawProjectPath, excludePaths, generateVector, generateArchitecture,
+                com.huawei.hisi.knowledgegraph.service.BuildMode.REUSE);
+    }
+
+    @Override
+    public KnowledgeGraphTask startTask(String rawProjectPath, List<String> excludePaths,
+                                        boolean generateVector, boolean generateArchitecture,
+                                        com.huawei.hisi.knowledgegraph.service.BuildMode buildMode) {
         // Git 校验仍在此处做，队列只管执行
         final String projectPath = com.huawei.hisi.knowledgegraph.util.KnowledgeGraphCommonUtils.normalizePath(rawProjectPath);
         File projectDir = new File(projectPath);
@@ -78,7 +92,7 @@ public class KnowledgeGraphTaskServiceImpl implements KnowledgeGraphTaskService 
         }
 
         // 入队（队列内部处理 PENDING 任务创建和重复检查）
-        return kgGenerationQueue.enqueue(projectPath, excludePaths);
+        return kgGenerationQueue.enqueue(projectPath, excludePaths, generateVector, generateArchitecture, buildMode);
     }
 
     @Override
@@ -140,8 +154,27 @@ public class KnowledgeGraphTaskServiceImpl implements KnowledgeGraphTaskService 
                 .collect(Collectors.toList());
         }
         return taskRepository.findLatestByProjectPaths(projectPaths, TASK_TYPE).stream()
+            .map(this::markStuckIfRunning)
             .map(this::toKnowledgeGraphTask)
             .collect(Collectors.toList());
+    }
+
+    /**
+     * 卡死检测：RUNNING 状态超过 24h 的任务自动标记为 FAILED（与 {@link #getLatestTask} 保持一致）。
+     * 保证批量状态查询（getTaskStatus）与单查（getLatestTask）对卡死任务返回一致的状态。
+     */
+    private GenerationTask markStuckIfRunning(GenerationTask task) {
+        if ("RUNNING".equals(task.getStatus()) && task.getStartedAt() != null) {
+            long now = Instant.now().getEpochSecond();
+            long hours = (now - task.getStartedAt()) / 3600;
+            if (hours >= 24) {
+                taskRepository.updateFailed(task.getId(), "任务超时（超过1天）");
+                task.setStatus("FAILED");
+                task.setErrorMessage("任务超时（超过1天）");
+                LOG.warn("任务超时自动标记为FAILED: taskId={}, projectPath={}", task.getId(), task.getProjectPath());
+            }
+        }
+        return task;
     }
 
     @Override

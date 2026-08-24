@@ -4,7 +4,6 @@ import com.huawei.hisi.neo4j.model.MethodNode;
 import com.huawei.hisi.neo4j.model.SearchResult;
 import com.huawei.hisi.neo4j.model.SearchResultItem;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
-import com.huawei.hisi.neo4j.service.HybridSearchService;
 import com.huawei.hisi.neo4j.service.MultiQueryHybridSearchService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,7 +19,7 @@ import java.util.stream.Collectors;
  * 提供前端 SemanticSearchView 所需的 API 端点
  *
  * 端点列表:
- * - POST /api/search/semantic  - 语义搜索
+ * - POST /api/search/semantic/v2 - 语义搜索（多路召回 + RRF 融合）
  * - GET  /api/search/history   - 搜索历史
  * - GET  /api/search/node/{id} - 获取代码节点详情
  * - GET  /api/search/node/{id}/relations - 获取节点关系
@@ -32,7 +31,6 @@ public class SemanticSearchController {
 
     private static final Logger log = LoggerFactory.getLogger(SemanticSearchController.class);
 
-    private final HybridSearchService hybridSearchService;
     private final MultiQueryHybridSearchService multiQueryHybridSearchService;
     private final Neo4jMethodNodeRepository methodNodeRepository;
 
@@ -44,135 +42,10 @@ public class SemanticSearchController {
     private static final int MAX_HISTORY_PER_PROJECT = 20;
 
     public SemanticSearchController(
-            HybridSearchService hybridSearchService,
             MultiQueryHybridSearchService multiQueryHybridSearchService,
             Neo4jMethodNodeRepository methodNodeRepository) {
-        this.hybridSearchService = hybridSearchService;
         this.multiQueryHybridSearchService = multiQueryHybridSearchService;
         this.methodNodeRepository = methodNodeRepository;
-    }
-
-    /**
-     * 语义搜索（旧版，不含多路召回+RRF）
-     *
-     * @deprecated 使用 {@link #semanticSearchV2(Map)} 替代，支持分词多路召回和 RRF 融合
-     */
-    @Deprecated
-    @PostMapping("/semantic")
-    @SuppressWarnings("unchecked")
-    public ResponseEntity<Map<String, Object>> semanticSearch(@RequestBody Map<String, Object> request) {
-        String query = (String) request.get("query");
-        String projectPath = (String) request.get("projectPath");
-        List<String> projectPaths = request.get("projectPaths") != null ? (List<String>) request.get("projectPaths") : null;
-        Integer limit = request.get("limit") != null ? ((Number) request.get("limit")).intValue() : 20;
-        Double threshold = request.get("threshold") != null ? ((Number) request.get("threshold")).doubleValue() : 0.5;
-
-        // 从 filters 或顶层提取 language 参数
-        String language = null;
-        if (request.get("filters") instanceof Map) {
-            Map<String, Object> filters = (Map<String, Object>) request.get("filters");
-            if (filters.get("language") instanceof String lang && !lang.isBlank()) {
-                language = lang;
-            }
-        }
-        if (language == null && request.get("language") instanceof String lang && !lang.isBlank()) {
-            language = lang;
-        }
-
-        if (query == null || query.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "error", "查询不能为空",
-                    "results", Collections.emptyList(),
-                    "total", 0,
-                    "queryTime", 0
-            ));
-        }
-
-        // 构建要搜索的项目路径列表
-        List<String> searchPaths = new ArrayList<>();
-        if (projectPaths != null && !projectPaths.isEmpty()) {
-            searchPaths.addAll(projectPaths);
-        } else if (projectPath != null && !projectPath.trim().isEmpty()) {
-            searchPaths.add(projectPath);
-        } else {
-            List<String> projects = methodNodeRepository.findDistinctProjectPaths();
-            if (projects.isEmpty()) {
-                return ResponseEntity.ok(Map.of(
-                        "results", Collections.emptyList(),
-                        "total", 0,
-                        "queryTime", 0,
-                        "suggestedQueries", Collections.emptyList()
-                ));
-            }
-            searchPaths.add(projects.get(0));
-            log.debug("未指定项目路径，使用默认: {}", searchPaths.get(0));
-        }
-
-        log.debug("语义搜索项目范围: {}", searchPaths);
-        long startTime = System.currentTimeMillis();
-
-        try {
-            // 搜索每个项目并合并结果
-            List<Map<String, Object>> allResults = new ArrayList<>();
-            int totalCount = 0;
-
-            for (String path : searchPaths) {
-                // graphDepth=0：默认不做图遍历扩展，仅返回向量搜索直接命中的结果
-                // 前端可通过 graphDepth 参数按需开启（如需查看调用链上下文）
-                int graphDepth = request.get("graphDepth") != null ? ((Number) request.get("graphDepth")).intValue() : 0;
-                SearchResult searchResult = hybridSearchService.hybridSearch(query, path, searchPaths, language, limit, graphDepth);
-
-                // 构建 nodeId -> similarityScore 映射
-                Map<String, Double> scoreMap = new HashMap<>();
-                if (searchResult.getItems() != null) {
-                    for (SearchResultItem item : searchResult.getItems()) {
-                        if (item.getNodeId() != null && item.getSimilarityScore() != null) {
-                            scoreMap.put(item.getNodeId(), item.getSimilarityScore());
-                        }
-                    }
-                }
-
-                List<Map<String, Object>> formatted = searchResult.getResults().stream()
-                        .map(node -> convertToSemanticResult(node, scoreMap.getOrDefault(node.getNodeId(), 0.0)))
-                        .collect(Collectors.toList());
-                allResults.addAll(formatted);
-                totalCount += searchResult.getTotalCount();
-            }
-
-            long queryTime = System.currentTimeMillis() - startTime;
-
-            // 记录搜索历史（使用第一个项目路径）
-            recordSearchHistory(searchPaths.get(0), query);
-
-            // 按相关度排序并截取 limit 条
-            allResults.sort((a, b) -> {
-                double scoreA = a.get("relevanceScore") != null ? ((Number) a.get("relevanceScore")).doubleValue() : 0;
-                double scoreB = b.get("relevanceScore") != null ? ((Number) b.get("relevanceScore")).doubleValue() : 0;
-                return Double.compare(scoreB, scoreA);
-            });
-            if (allResults.size() > limit) {
-                allResults = allResults.subList(0, limit);
-            }
-
-            // 构建响应
-            Map<String, Object> response = new LinkedHashMap<>();
-            response.put("results", allResults);
-            response.put("total", totalCount);
-            response.put("queryTime", queryTime);
-            response.put("suggestedQueries", Collections.emptyList());
-
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            log.error("语义搜索失败: {}", e.getMessage(), e);
-            long queryTime = System.currentTimeMillis() - startTime;
-            return ResponseEntity.ok(Map.of(
-                    "results", Collections.emptyList(),
-                    "total", 0,
-                    "queryTime", queryTime,
-                    "suggestedQueries", Collections.emptyList()
-            ));
-        }
     }
 
     /**

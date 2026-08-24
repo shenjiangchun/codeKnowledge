@@ -227,6 +227,15 @@
                       <el-icon><Collection /></el-icon>
                       描述&amp;向量
                     </el-button>
+                    <el-button
+                      type="warning"
+                      link
+                      @click="handleArchitectureAnalysis(row)"
+                      :loading="analyzingArchitecture.has(normalizePath(row.path))"
+                      :disabled="!appStore.projectDirConfigured"
+                    >
+                      架构现状
+                    </el-button>
                     <GitOperations
                       v-if="hasGit(row) && appStore.projectDirConfigured"
                       :project-path="getProjectPath(row.name)"
@@ -449,6 +458,14 @@
                       <el-icon><Collection /></el-icon>
                       描述&amp;向量
                     </el-button>
+                    <el-button
+                      type="warning"
+                      link
+                      @click="handleRemoteArchitectureAnalysis(row)"
+                      :disabled="row.cloneStatus !== 'CLONED'"
+                    >
+                      架构现状
+                    </el-button>
                     <el-button type="info" link @click="openScheduleDialog(row)">定时任务配置</el-button>
                     <el-button type="danger" link @click="handleDeleteRemote(row)">删除</el-button>
                   </template>
@@ -588,6 +605,26 @@
       </template>
     </el-dialog>
 
+    <!-- 图谱生成后处理勾选弹窗 -->
+    <el-dialog v-model="generateDialogVisible" :title="pendingGenerateRow ? '生成知识图谱' : '批量生成知识图谱'" width="480px">
+      <div class="kg-exclude-hint">
+        选择图谱生成后是否继续生成以下内容（串行执行）：
+      </div>
+      <el-checkbox v-model="genVector" class="mt-4" style="display:block">语义&amp;向量（生成方法自然语言描述 + 向量）</el-checkbox>
+      <el-checkbox v-model="genArchitecture" class="mt-2" style="display:block">架构现状（领域划分 / DSM / 热点）</el-checkbox>
+      <div class="mt-3">
+        <span style="font-size: 13px; color: #606266;">构建模式：</span>
+        <el-select v-model="genBuildMode" style="width: 160px">
+          <el-option label="全量-复用" value="reuse" />
+          <el-option label="全量-全删" value="wipe" />
+        </el-select>
+      </div>
+      <template #footer>
+        <el-button @click="generateDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="pendingGenerateRow ? doGenerateKnowledgeGraph() : doBatchGenerateKG()">开始生成</el-button>
+      </template>
+    </el-dialog>
+
     <!-- Remote Project Add/Edit Dialog -->
     <el-dialog v-model="showRemoteDialog" :title="remoteIsEdit ? '编辑远端项目' : '添加远端项目'" width="500px">
       <el-form :model="remoteForm" label-width="100px">
@@ -639,11 +676,23 @@
         <el-form-item label="Cron表达式" required>
           <el-input v-model="scheduleForm.cronExpression" placeholder="例如: 0 0 2 * * ? (每天凌晨2点)" />
         </el-form-item>
-        <el-form-item label="任务类型">
-          <el-radio-group v-model="scheduleForm.taskType">
-            <el-radio value="FULL">全量</el-radio>
-            <el-radio value="INCREMENTAL">增量</el-radio>
-          </el-radio-group>
+        <el-form-item label="构建模式">
+          <el-select v-model="scheduleForm.buildMode" style="width: 100%">
+            <el-option label="增量" value="INCREMENTAL" />
+            <el-option label="全量-复用" value="REUSE" />
+            <el-option label="全量-全删" value="WIPE" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="拉取最新">
+          <el-switch v-model="scheduleForm.gitPullEnabled" />
+          <span class="schedule-hint">执行前 git pull 最新代码</span>
+        </el-form-item>
+        <el-form-item v-if="scheduleForm.gitPullEnabled" label="分支">
+          <el-input v-model="scheduleForm.branch" placeholder="留空跟随仓库当前分支" />
+        </el-form-item>
+        <el-form-item v-if="scheduleForm.buildMode === 'INCREMENTAL'" label="刷新勾选">
+          <el-checkbox v-model="scheduleForm.refreshDescription">语义&amp;向量</el-checkbox>
+          <el-checkbox v-model="scheduleForm.refreshArchitecture">架构现状</el-checkbox>
         </el-form-item>
         <el-form-item v-if="scheduleEditId !== null" label="启用">
           <el-switch v-model="scheduleForm.enabled" />
@@ -1818,7 +1867,7 @@ const loadCommitsForRemote = async (localPath: string) => {
 const handleRefreshProjectRemote = async (row: RemoteProject) => {
   try {
     const res = await knowledgeGraphApi.refresh(row.localPath)
-    if (res.isNoop) {
+    if (res.changedFiles === 0) {
       ElMessage.info('无变更，图谱已是最新')
     } else {
       ElMessage.success(`刷新完成：${res.changedFiles} 个文件变更`)
@@ -1945,13 +1994,30 @@ onUnmounted(() => {
   stopVectorPolling()
 })
 
-// Generate knowledge graph (async task)
-const handleGenerateKnowledgeGraph = async (row: GitRepositoryInfo) => {
+// Generate knowledge graph (async task) — 弹窗勾选语义向量 / 架构现状
+const generateDialogVisible = ref(false)
+const genVector = ref(true)
+const genArchitecture = ref(true)
+// 构建模式：reuse（全量-复用）/ wipe（全量-全删）。增量走独立入口，不在此下拉。
+const genBuildMode = ref<'reuse' | 'wipe'>('reuse')
+const pendingGenerateRow = ref<GitRepositoryInfo | null>(null)
+const pendingBatchPaths = ref<string[]>([])
+
+const handleGenerateKnowledgeGraph = (row: GitRepositoryInfo) => {
   if (!appStore.projectDirConfigured) {
     ElMessage.warning('请先配置项目目录')
     return
   }
+  pendingGenerateRow.value = row
+  genVector.value = true
+  genArchitecture.value = true
+  generateDialogVisible.value = true
+}
 
+const doGenerateKnowledgeGraph = async () => {
+  const row = pendingGenerateRow.value
+  if (!row) return
+  generateDialogVisible.value = false
   const normalizedPath = normalizePath(row.path)
   generatingKnowledgeGraph.value.add(normalizedPath)
 
@@ -1959,7 +2025,7 @@ const handleGenerateKnowledgeGraph = async (row: GitRepositoryInfo) => {
     // 记录防呆时间
     recordGenerateTime(row.path)
     // Start async task
-    const task = await knowledgeGraphApi.startGenerateTask(row.path, kgExcludePaths.value)
+    const task = await knowledgeGraphApi.startGenerateTask(row.path, kgExcludePaths.value, genVector.value, genArchitecture.value, genBuildMode.value)
     if (task) {
       knowledgeGraphTaskStatusMap.value = {
         ...knowledgeGraphTaskStatusMap.value,
@@ -2065,6 +2131,58 @@ const handleGenerateVector = async (row: GitRepositoryInfo) => {
     }
   }
 }
+
+// 独立触发架构现状分析（领域划分）
+const analyzingArchitecture = ref(new Set<string>())
+let archAnalysisTimer: ReturnType<typeof setInterval> | null = null
+
+const stopArchAnalysisPolling = () => {
+  if (archAnalysisTimer) {
+    clearInterval(archAnalysisTimer)
+    archAnalysisTimer = null
+  }
+}
+
+const startArchAnalysisPolling = (paths: string[]) => {
+  if (archAnalysisTimer) return
+  archAnalysisTimer = setInterval(async () => {
+    try {
+      const tasks = await knowledgeGraphApi.getArchAnalysisStatus(paths)
+      const running = (tasks || []).filter(t => t.status === 'PENDING' || t.status === 'RUNNING')
+      if (running.length > 0) return
+
+      stopArchAnalysisPolling()
+      paths.forEach(p => analyzingArchitecture.value.delete(normalizePath(p)))
+      const failed = (tasks || []).filter(t => t.status === 'FAILED')
+      if (failed.length > 0) {
+        ElMessage.error(`架构现状分析失败: ${failed[0].errorMessage || '未知错误'}`)
+      } else {
+        ElMessage.success('架构现状分析（领域划分）已完成')
+      }
+    } catch (e) {
+      stopArchAnalysisPolling()
+      paths.forEach(p => analyzingArchitecture.value.delete(normalizePath(p)))
+      console.error('Failed to poll architecture analysis status:', e)
+    }
+  }, 5000)
+}
+
+const handleArchitectureAnalysis = async (row: GitRepositoryInfo) => {
+  if (!appStore.projectDirConfigured) {
+    ElMessage.warning('请先配置项目目录')
+    return
+  }
+  const normalizedPath = normalizePath(row.path)
+  analyzingArchitecture.value.add(normalizedPath)
+  try {
+    await knowledgeGraphApi.runArchitectureAnalysis([row.path])
+    ElMessage.success('已提交架构现状分析（领域划分），后台执行中')
+    startArchAnalysisPolling([row.path])
+  } catch (error: any) {
+    analyzingArchitecture.value.delete(normalizedPath)
+    ElMessage.error(`架构现状分析提交失败: ${error.message || error}`)
+  }
+}
 // ============================================================
 // Multi-select & Cross-service Build
 // ============================================================
@@ -2145,22 +2263,12 @@ const handleBatchGenerateKGRemote = async () => {
     ElMessage.warning('请先勾选已克隆的项目')
     return
   }
-  const paths = selectedRemoteClonedProjects.value.map((p: RemoteProject) => normalizePath(p.localPath))
-  batchGeneratingKG.value = true
-  try {
-    const tasks = await knowledgeGraphApi.startGenerateTaskBatch(paths, kgExcludePaths.value.length > 0 ? kgExcludePaths.value : undefined)
-    if (tasks && tasks.length > 0) {
-      for (const task of tasks) {
-        knowledgeGraphTaskStatusMap.value[normalizePath(task.projectPath)] = task
-      }
-      ElMessage.success(`已入队 ${tasks.length} 个项目`)
-      startKgPolling()
-    }
-  } catch {
-    ElMessage.error('批量生成入队失败')
-  } finally {
-    batchGeneratingKG.value = false
-  }
+  // 弹窗勾选后处理项，确认后批量入队
+  pendingGenerateRow.value = null
+  pendingBatchPaths.value = selectedRemoteClonedProjects.value.map((p: RemoteProject) => normalizePath(p.localPath))
+  genVector.value = true
+  genArchitecture.value = true
+  generateDialogVisible.value = true
 }
 
 const selectedProjectsWithKg = computed(() =>
@@ -2177,10 +2285,27 @@ async function handleBatchGenerateKG() {
     ElMessage.warning('请先在表格中勾选项目')
     return
   }
-  const paths = selectedProjects.value.map((p: any) => normalizePath(p.path))
+  // 弹窗勾选后处理项（语义&向量 / 架构现状），确认后批量入队
+  pendingGenerateRow.value = null
+  pendingBatchPaths.value = selectedProjects.value.map((p: any) => normalizePath(p.path))
+  genVector.value = true
+  genArchitecture.value = true
+  generateDialogVisible.value = true
+}
+
+const doBatchGenerateKG = async () => {
+  generateDialogVisible.value = false
+  const paths = pendingBatchPaths.value
+  if (paths.length === 0) return
   batchGeneratingKG.value = true
   try {
-    const tasks = await knowledgeGraphApi.startGenerateTaskBatch(paths, kgExcludePaths.value.length > 0 ? kgExcludePaths.value : undefined)
+    const tasks = await knowledgeGraphApi.startGenerateTaskBatch(
+      paths,
+      kgExcludePaths.value.length > 0 ? kgExcludePaths.value : undefined,
+      genVector.value,
+      genArchitecture.value,
+      genBuildMode.value
+    )
     if (tasks && tasks.length > 0) {
       // 更新任务状态 map
       for (const task of tasks) {
@@ -2216,10 +2341,10 @@ async function handleCrossServiceBuild() {
 async function handleRefreshProject(project: { path: string }) {
   try {
     const res = await knowledgeGraphApi.refresh(project.path)
-    if (res.isNoop) {
+    if (res.changedFiles === 0) {
       ElMessage.info('无变更，图谱已是最新')
     } else {
-      ElMessage.success(`刷新完成：${res.changedFiles} 个文件变更，${res.deleted} 个节点删除，${res.rebuilt} 个节点重建`)
+      ElMessage.success(`刷新完成：${res.changedFiles} 个文件变更，${res.deletedNodes} 个节点删除，${res.rebuiltNodes} 个节点重建`)
       // 刷新后重新加载图谱状态
       await loadAllKnowledgeGraphStatuses()
     }
@@ -2278,27 +2403,29 @@ interface RemoteGroupedProjects {
   projects: RemoteProject[]
 }
 const groupedRemoteProjects = computed<RemoteGroupedProjects[]>(() => {
-  const result: RemoteGroupedProjects[] = []
-  const assigned = new Set<number>()
+  // 单次遍历分组（避免 O(n²)：原实现外层 groupMap × 内层 filter 全表扫）。
+  // 归属以 groupId 为准（groupName 仅作展示名，缺 groupName 时回退 groupId），
+  // 保证「有 groupId 无 groupName」的项目仍归入其分组，与原 filter 逻辑等价。
+  const groupProjectsMap = new Map<string, { appId: string; appName: string; projects: RemoteProject[] }>()
+  const ungrouped: RemoteProject[] = []
 
-  // 按分组归类（使用 groupId 和 groupName）
-  const groupMap = new Map<string, { appId: string; appName: string }>()
   remoteProjects.value.forEach(p => {
-    if (p.groupId && p.groupName) {
-      groupMap.set(p.groupId, { appId: p.groupId, appName: p.groupName })
+    if (p.groupId) {
+      let bucket = groupProjectsMap.get(p.groupId)
+      if (!bucket) {
+        bucket = { appId: p.groupId, appName: p.groupName || p.groupId, projects: [] }
+        groupProjectsMap.set(p.groupId, bucket)
+      }
+      bucket.projects.push(p)
+    } else {
+      ungrouped.push(p)
     }
   })
 
-  for (const [groupId, groupInfo] of groupMap) {
-    const matched = remoteProjects.value.filter(p => p.groupId === groupId)
-    if (matched.length > 0) {
-      result.push({ group: groupInfo, projects: matched })
-      matched.forEach(p => assigned.add(p.id))
-    }
+  const result: RemoteGroupedProjects[] = []
+  for (const [, bucket] of groupProjectsMap) {
+    result.push({ group: { appId: bucket.appId, appName: bucket.appName }, projects: bucket.projects })
   }
-
-  // 未分组项目
-  const ungrouped = remoteProjects.value.filter(p => !assigned.has(p.id))
   if (ungrouped.length > 0) {
     result.push({ group: null, projects: ungrouped })
   }
@@ -2560,6 +2687,10 @@ const handleRemoteGenerateKg = (row: RemoteProject) => {
   handleGenerateKnowledgeGraph({ name: row.name, path: row.localPath } as GitRepositoryInfo)
 }
 
+const handleRemoteArchitectureAnalysis = (row: RemoteProject) => {
+  handleArchitectureAnalysis({ name: row.name, path: row.localPath } as GitRepositoryInfo)
+}
+
 const handleRemoteGenerateVector = (row: RemoteProject) => {
   // 远端项目不需要本地项目目录，直接走选择流程
   const fakeRow = { name: row.name, path: row.localPath } as GitRepositoryInfo
@@ -2590,25 +2721,33 @@ const scheduleEditId = ref<number | null>(null)
 const scheduleLoading = ref(false)
 const scheduleForm = ref({
   cronExpression: '',
-  taskType: 'FULL' as 'FULL' | 'INCREMENTAL',
-  enabled: true
+  buildMode: 'REUSE' as 'INCREMENTAL' | 'REUSE' | 'WIPE',
+  enabled: true,
+  gitPullEnabled: false,
+  branch: '',
+  refreshDescription: false,
+  refreshArchitecture: false
 })
 
 const openScheduleDialog = async (row: RemoteProject) => {
   scheduleProjectPath.value = row.localPath
   scheduleEditId.value = null
-  scheduleForm.value = { cronExpression: '', taskType: 'FULL', enabled: true }
+  scheduleForm.value = { cronExpression: '', buildMode: 'REUSE', enabled: true, gitPullEnabled: false, branch: '', refreshDescription: false, refreshArchitecture: false }
   showScheduleDialog.value = true
 
   try {
-    const schedules = await listKgSchedules() as unknown as Array<{ id: number; projectPath: string; cronExpression: string; taskType: 'FULL' | 'INCREMENTAL'; enabled: boolean }>
+    const schedules = await listKgSchedules() as unknown as Array<{ id: number; projectPath: string; cronExpression: string; buildMode: 'INCREMENTAL' | 'REUSE' | 'WIPE'; enabled: boolean; gitPullEnabled: boolean; branch: string; refreshDescription: boolean; refreshArchitecture: boolean }>
     const match = schedules.find(s => normalizePath(s.projectPath) === normalizePath(row.localPath))
     if (match) {
       scheduleEditId.value = match.id
       scheduleForm.value = {
         cronExpression: match.cronExpression,
-        taskType: match.taskType,
-        enabled: match.enabled
+        buildMode: match.buildMode,
+        enabled: match.enabled,
+        gitPullEnabled: match.gitPullEnabled,
+        branch: match.branch || '',
+        refreshDescription: match.refreshDescription,
+        refreshArchitecture: match.refreshArchitecture
       }
     }
   } catch {
@@ -2627,15 +2766,23 @@ const handleScheduleSubmit = async () => {
       await updateKgSchedule(scheduleEditId.value, {
         projectPath: scheduleProjectPath.value,
         cronExpression: scheduleForm.value.cronExpression.trim(),
-        taskType: scheduleForm.value.taskType,
-        enabled: scheduleForm.value.enabled
+        buildMode: scheduleForm.value.buildMode,
+        enabled: scheduleForm.value.enabled,
+        gitPullEnabled: scheduleForm.value.gitPullEnabled,
+        branch: scheduleForm.value.branch,
+        refreshDescription: scheduleForm.value.refreshDescription,
+        refreshArchitecture: scheduleForm.value.refreshArchitecture
       })
       ElMessage.success('定时任务已更新')
     } else {
       await createKgSchedule({
         projectPath: scheduleProjectPath.value,
         cronExpression: scheduleForm.value.cronExpression.trim(),
-        taskType: scheduleForm.value.taskType
+        buildMode: scheduleForm.value.buildMode,
+        gitPullEnabled: scheduleForm.value.gitPullEnabled,
+        branch: scheduleForm.value.branch,
+        refreshDescription: scheduleForm.value.refreshDescription,
+        refreshArchitecture: scheduleForm.value.refreshArchitecture
       })
       ElMessage.success('定时任务已创建')
     }
@@ -2651,6 +2798,12 @@ const handleScheduleSubmit = async () => {
 <style scoped>
 .guidance-alert {
   margin-bottom: 16px;
+}
+
+.schedule-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #909399;
 }
 
 .card-header {

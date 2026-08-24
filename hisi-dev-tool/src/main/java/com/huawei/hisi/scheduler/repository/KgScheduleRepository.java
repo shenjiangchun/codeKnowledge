@@ -24,8 +24,12 @@ public class KgScheduleRepository {
             .id(rs.getLong("id"))
             .projectPath(rs.getString("project_path"))
             .cronExpression(rs.getString("cron_expression"))
-            .taskType(rs.getString("task_type"))
+            .buildMode(rs.getString("build_mode"))
             .enabled(rs.getInt("enabled") == 1)
+            .gitPullEnabled(rs.getInt("git_pull_enabled") == 1)
+            .branch(rs.getString("branch"))
+            .refreshDescription(rs.getInt("refresh_description") == 1)
+            .refreshArchitecture(rs.getInt("refresh_architecture") == 1)
             .lastRunAt(rs.getObject("last_run_at") != null ? rs.getLong("last_run_at") : null)
             .nextRunAt(rs.getObject("next_run_at") != null ? rs.getLong("next_run_at") : null)
             .createdAt(rs.getObject("created_at") != null ? rs.getLong("created_at") : null)
@@ -54,13 +58,17 @@ public class KgScheduleRepository {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(
-                "INSERT INTO kg_schedule (project_path, cron_expression, task_type, enabled) VALUES (?, ?, ?, ?)",
+                "INSERT INTO kg_schedule (project_path, cron_expression, build_mode, enabled, git_pull_enabled, branch, refresh_description, refresh_architecture) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS
             );
             ps.setString(1, schedule.getProjectPath());
             ps.setString(2, schedule.getCronExpression());
-            ps.setString(3, schedule.getTaskType());
+            ps.setString(3, schedule.getBuildMode());
             ps.setInt(4, schedule.isEnabled() ? 1 : 0);
+            ps.setInt(5, schedule.isGitPullEnabled() ? 1 : 0);
+            ps.setString(6, schedule.getBranch());
+            ps.setInt(7, schedule.isRefreshDescription() ? 1 : 0);
+            ps.setInt(8, schedule.isRefreshArchitecture() ? 1 : 0);
             return ps;
         }, keyHolder);
 
@@ -73,9 +81,13 @@ public class KgScheduleRepository {
 
     public int update(KgSchedule schedule) {
         return jdbcTemplate.update(
-            "UPDATE kg_schedule SET project_path = ?, cron_expression = ?, task_type = ?, enabled = ? WHERE id = ?",
+            "UPDATE kg_schedule SET project_path = ?, cron_expression = ?, build_mode = ?, enabled = ?, " +
+            "git_pull_enabled = ?, branch = ?, refresh_description = ?, refresh_architecture = ? WHERE id = ?",
             schedule.getProjectPath(), schedule.getCronExpression(),
-            schedule.getTaskType(), schedule.isEnabled() ? 1 : 0, schedule.getId()
+            schedule.getBuildMode(), schedule.isEnabled() ? 1 : 0,
+            schedule.isGitPullEnabled() ? 1 : 0, schedule.getBranch(),
+            schedule.isRefreshDescription() ? 1 : 0, schedule.isRefreshArchitecture() ? 1 : 0,
+            schedule.getId()
         );
     }
 

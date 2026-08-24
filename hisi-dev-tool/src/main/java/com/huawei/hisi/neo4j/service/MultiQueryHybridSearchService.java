@@ -1,5 +1,6 @@
 package com.huawei.hisi.neo4j.service;
 
+import com.huawei.hisi.neo4j.config.RerankProperties;
 import com.huawei.hisi.neo4j.config.SearchIntentProperties;
 import com.huawei.hisi.neo4j.model.*;
 import com.huawei.hisi.ram.nodes.impact.QueryDecomposer;
@@ -20,14 +21,20 @@ public class MultiQueryHybridSearchService {
     private final HybridSearchService hybridSearchService;
     private final QueryDecomposer queryDecomposer;
     private final SearchIntentProperties intentProperties;
+    private final RerankProperties rerankProperties;
+    private final RerankService rerankService;
 
     public MultiQueryHybridSearchService(
             HybridSearchService hybridSearchService,
             @Autowired(required = false) QueryDecomposer queryDecomposer,
-            SearchIntentProperties intentProperties) {
+            SearchIntentProperties intentProperties,
+            RerankProperties rerankProperties,
+            RerankService rerankService) {
         this.hybridSearchService = hybridSearchService;
         this.queryDecomposer = queryDecomposer;
         this.intentProperties = intentProperties;
+        this.rerankProperties = rerankProperties;
+        this.rerankService = rerankService;
     }
 
     /**
@@ -179,6 +186,15 @@ public class MultiQueryHybridSearchService {
                         Map.Entry::getValue,
                         (a, b) -> a,
                         LinkedHashMap::new));
+
+        // rerank 精排（仅主路径，开关默认关）：按 rerank 分重排，similarityScore 更新为 rerank 分，
+        // rrfScores 保持 RRF 原值（D4 决策）
+        if (rerankProperties.isEnabled() && !fusedResults.isEmpty()) {
+            Map<String, Double> rerankScores = rerankService.rerank(query, fusedResults);
+            if (!rerankScores.isEmpty()) {
+                applyRerankOrder(fusedResults, fusedItems, rerankScores);
+            }
+        }
 
         long totalCostMs = System.currentTimeMillis() - totalStart;
 
@@ -355,6 +371,37 @@ public class MultiQueryHybridSearchService {
             }
         } catch (Exception e) {
             log.debug("[CALLEE-PROP] Failed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 按 rerank 分重排候选（仅主路径）。
+     * 顺序与 similarityScore 跟 rerank 走；rrfScores 保持 RRF 原值（由调用方持有）。
+     */
+    private void applyRerankOrder(List<MethodNode> fusedResults,
+                                  List<SearchResultItem> fusedItems,
+                                  Map<String, Double> rerankScores) {
+        // nodeId → item 映射，用于同步重排 items 并写回 rerank 分
+        Map<String, SearchResultItem> itemByNodeId = new HashMap<>();
+        for (SearchResultItem item : fusedItems) {
+            if (item != null && item.getNodeId() != null) {
+                itemByNodeId.put(item.getNodeId(), item);
+            }
+        }
+
+        // 按 rerank 分降序重排 fusedResults；rerank 缺失的节点保持原相对顺序排后
+        fusedResults.sort(Comparator.comparingDouble(
+                (MethodNode n) -> rerankScores.getOrDefault(n.getNodeId(), Double.NEGATIVE_INFINITY)).reversed());
+
+        // 同步重建 fusedItems，写回 rerank 分；缺失 rerank 分的节点写回 0.0，
+        // 保证「排序靠后」与「分数低」一致（避免部分响应时分数/顺序错位）
+        fusedItems.clear();
+        for (MethodNode node : fusedResults) {
+            SearchResultItem item = itemByNodeId.get(node.getNodeId());
+            if (item != null) {
+                item.setSimilarityScore(rerankScores.getOrDefault(node.getNodeId(), 0.0));
+                fusedItems.add(item);
+            }
         }
     }
 
