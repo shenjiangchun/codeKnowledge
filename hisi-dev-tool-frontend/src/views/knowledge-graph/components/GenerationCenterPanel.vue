@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { knowledgeGraphApi, type TestSuggestion, type RefactorSuggestion } from '@/api/knowledgeGraph'
-import { ElAlert, ElInput, ElButton, ElSkeleton, ElEmpty, ElTag, ElCard, ElMessage, ElTabs, ElTabPane } from 'element-plus'
+import { knowledgeGraphApi, type TestSuggestion, type RefactorSuggestion, type MethodNode } from '@/api/knowledgeGraph'
+import { ElAlert, ElSelect, ElOption, ElInput, ElButton, ElSkeleton, ElEmpty, ElTag, ElCard, ElMessage, ElTabs, ElTabPane } from 'element-plus'
 
 const props = defineProps<{ projectPaths: string[] }>()
 
@@ -10,6 +10,9 @@ const activeTab = ref('test')
 const testNodeId = ref('')
 const testLoading = ref(false)
 const testCases = ref<TestSuggestion[]>([])
+// 方法模糊搜索下拉
+const searchLoading = ref(false)
+const searchOptions = ref<MethodNode[]>([])
 // 重构建议
 const refactorModule = ref('')
 const refactorLoading = ref(false)
@@ -18,9 +21,28 @@ const suggestions = ref<RefactorSuggestion[]>([])
 const priorityTag: Record<string, string> = { HIGH: 'danger', MEDIUM: 'warning', LOW: 'info' }
 const typeLabel: Record<string, string> = { UNIT: '单元测试', INTEGRATION: '集成测试', EXCEPTION: '异常测试', BOUNDARY: '边界测试' }
 
+async function searchMethods(query: string) {
+  if (!query.trim()) {
+    searchOptions.value = []
+    return
+  }
+  searchLoading.value = true
+  try {
+    searchOptions.value = await knowledgeGraphApi.searchMethods(query.trim(), props.projectPaths)
+  } catch (e) {
+    searchOptions.value = []
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+function methodLabel(m: MethodNode) {
+  return `${m.className}.${m.methodName}${m.signature ? '(' + m.signature + ')' : ''}`
+}
+
 async function genTest() {
   if (!testNodeId.value.trim()) {
-    ElMessage.warning('请输入方法 nodeId')
+    ElMessage.warning('请选择方法')
     return
   }
   testLoading.value = true
@@ -64,11 +86,32 @@ async function genRefactor() {
     <el-tabs v-model="activeTab">
       <el-tab-pane label="测试建议" name="test">
         <div class="query-row">
-          <el-input v-model="testNodeId" placeholder="输入方法 nodeId" clearable style="flex:1" @keyup.enter="genTest" />
+          <el-select
+            v-model="testNodeId"
+            filterable
+            remote
+            clearable
+            :remote-method="searchMethods"
+            :loading="searchLoading"
+            placeholder="输入类名或方法名模糊搜索"
+            style="flex:1"
+          >
+            <el-option
+              v-for="m in searchOptions"
+              :key="m.nodeId"
+              :label="methodLabel(m)"
+              :value="m.nodeId"
+            >
+              <div class="option-row">
+                <span class="option-label">{{ m.className }}.{{ m.methodName }}</span>
+                <span v-if="m.description" class="option-desc">{{ m.description }}</span>
+              </div>
+            </el-option>
+          </el-select>
           <el-button type="primary" :loading="testLoading" @click="genTest">生成测试建议</el-button>
         </div>
         <el-skeleton v-if="testLoading" :rows="5" animated />
-        <el-empty v-else-if="!testCases.length" description="输入方法 nodeId 生成测试建议" :image-size="80" />
+        <el-empty v-else-if="!testCases.length" description="搜索并选择方法生成测试建议" :image-size="80" />
         <el-card v-for="(tc, i) in testCases" :key="i" class="suggestion-card" shadow="hover">
           <div class="suggestion-head">
             <el-tag :type="priorityTag[tc.priority] as any" size="small">{{ tc.priority }}</el-tag>
@@ -105,4 +148,7 @@ async function genRefactor() {
 .suggestion-head { display: flex; gap: 8px; margin-bottom: 8px; }
 .suggestion-body { font-size: 14px; color: #303133; line-height: 1.6; }
 .suggestion-impact { margin-top: 6px; font-size: 12px; color: #909399; }
+.option-row { display: flex; flex-direction: column; line-height: 1.3; }
+.option-label { font-size: 14px; color: #303133; }
+.option-desc { font-size: 12px; color: #909399; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
