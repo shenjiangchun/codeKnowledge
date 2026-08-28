@@ -5,6 +5,7 @@ import com.huawei.hisi.neo4j.repository.Neo4jClassNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -36,6 +37,7 @@ public class ClassDescriptionService {
      * @param projectPath 项目路径
      * @return 生成的类描述数量
      */
+    @Transactional(transactionManager = "neo4jTransactionManager")
     public int generateClassDescriptions(String projectPath) {
         List<ClassNode> classes = classNodeRepository.findByProjectPath(projectPath);
         int generated = 0;

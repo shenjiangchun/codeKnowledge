@@ -72,10 +72,33 @@ public class KgGenerationQueue {
 
     @PostConstruct
     public void init() {
+        recoverOrphanTasks();
         consumerThread = new Thread(this::consumeLoop, "kg-queue-consumer");
         consumerThread.setDaemon(true);
         consumerThread.start();
         log.info("[KG Queue] Consumer thread started");
+    }
+
+    /**
+     * 启动恢复：队列是内存态，重启后遗留的 PENDING/RUNNING KG 任务无人认领（消费线程已丢）。
+     * 不处理会导致前端永远轮询不到终态。标 FAILED 让用户可重新触发。
+     * 不自动重跑：excludePaths/buildMode 等任务参数未持久化，无法安全重放。
+     * VECTOR 孤儿任务不处理：新构建会插入新任务，findLatestByProjectPathAndType 取最新自然顶掉。
+     */
+    private void recoverOrphanTasks() {
+        try {
+            List<GenerationTask> orphans = taskRepository.findRunningOrPending(KG_TASK_TYPE);
+            for (GenerationTask orphan : orphans) {
+                taskRepository.updateFailed(orphan.getId(), "应用重启，任务中断，请重新触发");
+                log.warn("[KG Queue] 启动恢复：孤儿任务标 FAILED: id={}, projectPath={}, status={}",
+                        orphan.getId(), orphan.getProjectPath(), orphan.getStatus());
+            }
+            if (!orphans.isEmpty()) {
+                log.warn("[KG Queue] 启动恢复完成：共 {} 个孤儿任务", orphans.size());
+            }
+        } catch (Exception e) {
+            log.error("[KG Queue] 启动恢复失败", e);
+        }
     }
 
     @PreDestroy
@@ -285,6 +308,10 @@ public class KgGenerationQueue {
         long startTime = System.currentTimeMillis();
         taskRepository.updateStarted(item.taskId());
 
+        // 记录构建前的最新 VECTOR 任务 id：waitForVectorCompletion 只认 id 更大的新任务，
+        // 避免把上一轮的陈旧 COMPLETED 任务误当成本次结果（新任务在 @Async 线程插入，可能延迟）
+        long maxVectorTaskIdBefore = 0L;
+
         if (item.incremental()) {
             // 增量刷新
             IncrementalKnowledgeGraphBuilder.RefreshResult result =
@@ -297,9 +324,16 @@ public class KgGenerationQueue {
             }
         } else {
             // 全量构建（内部自动触发异步向量生成；架构现状聚合在 waitForVectorCompletion 之后串行执行）
-            knowledgeGraphBuilder.buildKnowledgeGraph(item.projectPath(), item.excludePaths(),
-                    item.generateVector(), item.buildMode());
-            taskRepository.updateCompleted(item.taskId(), 0, 0, 0, 0);
+            maxVectorTaskIdBefore = taskRepository
+                    .findLatestByProjectPathAndType(item.projectPath(), VECTOR_TASK_TYPE)
+                    .map(GenerationTask::getId)
+                    .orElse(0L);
+            Map<String, Object> buildResult = knowledgeGraphBuilder.buildKnowledgeGraph(
+                    item.projectPath(), item.excludePaths(), item.generateVector(), item.buildMode());
+            // B9：传真实方法数，修复 totalCount=0 恒 COMPLETED 且前端 methodNodeCount 恒 0
+            int methodNodeCount = buildResult != null && buildResult.get("methodNodeCount") != null
+                    ? ((Number) buildResult.get("methodNodeCount")).intValue() : 0;
+            taskRepository.updateCompleted(item.taskId(), 100, methodNodeCount, methodNodeCount, 0);
         }
 
         long kgTime = System.currentTimeMillis() - startTime;
@@ -308,9 +342,8 @@ public class KgGenerationQueue {
 
         // 等待向量生成完成（仅当需要生成向量时才等待，否则直接跳过，避免白等 ~29s）
         if (item.generateVector()) {
-            waitForVectorCompletion(item.projectPath());
+            waitForVectorCompletion(item.projectPath(), maxVectorTaskIdBefore);
         }
-
         // 架构现状聚合：在向量生成（方法描述）完成之后串行执行，保证类描述能用方法描述聚合
         if (!item.incremental() && item.generateArchitecture()) {
             log.info("[KG Queue] 向量生成完成，开始架构现状聚合: projectPath={}", item.projectPath());
@@ -340,33 +373,32 @@ public class KgGenerationQueue {
 
     /**
      * 轮询等待向量任务完成（COMPLETED 或 FAILED）。
+     *
+     * <p>只认 {@code id > maxVectorTaskIdBefore} 的任务为本次构建触发的任务：新 VECTOR 任务在
+     * @Async 线程内插入（有延迟），若按"最新一条"判断，上一轮的陈旧 COMPLETED 任务会被误当成
+     * 结果立即返回，导致聚合在方法描述生成前就执行。
      */
-    private void waitForVectorCompletion(String projectPath) {
-        log.info("[KG Queue] Waiting for vector generation: projectPath={}", projectPath);
+    private void waitForVectorCompletion(String projectPath, long maxVectorTaskIdBefore) {
+        log.info("[KG Queue] Waiting for vector generation: projectPath={}, maxVectorTaskIdBefore={}",
+                projectPath, maxVectorTaskIdBefore);
         long waitStart = System.currentTimeMillis();
 
-        // 等待向量任务出现（KG 完成后异步触发，可能有短暂延迟）
+        // 等待本次向量任务出现（KG 完成后异步触发，可能有延迟；kg.vector.skip=true 或无方法节点时不会出现）
         int maxAppearAttempts = 30;
         for (int i = 0; i < maxAppearAttempts; i++) {
-            Optional<GenerationTask> vectorTask =
-                    taskRepository.findLatestByProjectPathAndType(projectPath, VECTOR_TASK_TYPE);
-            if (vectorTask.isPresent() && !"COMPLETED".equals(vectorTask.get().getStatus())
-                    && !"FAILED".equals(vectorTask.get().getStatus())) {
+            if (findCurrentVectorTask(projectPath, maxVectorTaskIdBefore).isPresent()) {
                 break;
             }
-            if (vectorTask.isEmpty() && i < maxAppearAttempts - 1) {
-                sleepQuietly(1000);
-            }
+            sleepQuietly(1000);
         }
 
         // 轮询等待完成
         while (true) {
-            Optional<GenerationTask> vectorTask =
-                    taskRepository.findLatestByProjectPathAndType(projectPath, VECTOR_TASK_TYPE);
+            Optional<GenerationTask> vectorTask = findCurrentVectorTask(projectPath, maxVectorTaskIdBefore);
 
             if (vectorTask.isEmpty()) {
                 // 没有向量任务——可能项目没有方法节点，直接返回
-                log.info("[KG Queue] No vector task found, skipping wait: projectPath={}", projectPath);
+                log.info("[KG Queue] No new vector task found, skipping wait: projectPath={}", projectPath);
                 return;
             }
 
@@ -396,6 +428,12 @@ public class KgGenerationQueue {
     }
 
     // ==================== 辅助方法 ====================
+
+    /** 查询本次构建触发的 VECTOR 任务（id 大于基线的最新一条）。 */
+    private Optional<GenerationTask> findCurrentVectorTask(String projectPath, long maxVectorTaskIdBefore) {
+        return taskRepository.findLatestByProjectPathAndType(projectPath, VECTOR_TASK_TYPE)
+                .filter(task -> task.getId() != null && task.getId() > maxVectorTaskIdBefore);
+    }
 
     private boolean isInQueue(String projectPath) {
         for (QueueItem item : queue) {

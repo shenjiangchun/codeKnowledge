@@ -37,15 +37,6 @@ export interface KnowledgeGraphTask {
   updatedAt?: string
 }
 
-export interface GenerateResult {
-  methodNodeCount: number
-  callRelationCount: number
-  entryPointCount: number
-  interfaceImplCount: number
-  callChainCount: number
-  costTimeMs: number
-}
-
 export interface CallerInfo {
   callerId: string
   callerClassName: string
@@ -462,12 +453,9 @@ export const knowledgeGraphApi = {
   },
 
   // ============================================================
-  // 同步生成接口（V1，写操作保持 projectPath）
+  // 同步生成接口已删除（后端 POST /knowledge-graph/generate 已移除，
+  // 前端无调用方）。生成统一走 startGenerateTask / startGenerateTaskBatch 异步队列。
   // ============================================================
-
-  generate(projectPath: string) {
-    return request.post<GenerateResult>('/knowledge-graph/generate', { projectPath })
-  },
 
   // ============================================================
   // 状态查询 — V2

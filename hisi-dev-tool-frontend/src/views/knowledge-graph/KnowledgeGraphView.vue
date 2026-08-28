@@ -783,6 +783,11 @@ const isRefreshingMissing = ref(false)
 const showMissingDrawer = ref(false)
 let pollingTimer: number | null = null
 let vectorPollingTimer: number | null = null
+// 轮询最大时长（ms）：后端任务卡住时前端不得无限轮询
+const POLLING_MAX_MS = 2 * 60 * 60 * 1000
+const VECTOR_POLLING_MAX_MS = 2 * 60 * 60 * 1000
+let pollingStartedAt = 0
+let vectorPollingStartedAt = 0
 
 // 前端防呆：记录每个项目上次点击生成的时间（内存中，刷新可重置）
 const lastGenerateTimes = reactive<Record<string, number>>({})
@@ -908,9 +913,7 @@ const loadVectorStatus = async () => {
     return
   }
   try {
-    console.log('[KnowledgeGraph] Loading vector status for path:', projectPath.value)
     const status = await getVectorGenerationStatus(projectPath.value)
-    console.log('[KnowledgeGraph] Vector status loaded:', status)
     vectorStatus.value = status
   } catch (error) {
     console.error('[KnowledgeGraph] Failed to load vector status:', error)
@@ -920,19 +923,22 @@ const loadVectorStatus = async () => {
 
 // 开始向量状态轮询
 const startVectorPolling = () => {
-  console.log('[KnowledgeGraph] Starting vector polling')
   if (vectorPollingTimer) {
     clearInterval(vectorPollingTimer)
   }
+  vectorPollingStartedAt = Date.now()
   vectorPollingTimer = window.setInterval(async () => {
-    console.log('[KnowledgeGraph] Vector poll - current status:', vectorStatus.value?.status)
+    if (Date.now() - vectorPollingStartedAt > VECTOR_POLLING_MAX_MS) {
+      stopVectorPolling()
+      ElMessage.warning('向量生成时间过长，已停止自动刷新，请手动刷新查看状态')
+      return
+    }
     const currentStatus = vectorStatus.value?.status as string | undefined
     if (currentStatus === 'PENDING' || currentStatus === 'RUNNING') {
       await loadVectorStatus()
       // 检查任务是否完成
       const newStatus = vectorStatus.value?.status as string | undefined
       if (newStatus === 'COMPLETED' || newStatus === 'FAILED') {
-        console.log('[KnowledgeGraph] Vector task completed, stopping polling')
         stopVectorPolling()
         loadMissingInfo()
       }
@@ -1027,7 +1033,13 @@ const startPolling = () => {
   if (pollingTimer) {
     clearInterval(pollingTimer)
   }
+  pollingStartedAt = Date.now()
   pollingTimer = window.setInterval(async () => {
+    if (Date.now() - pollingStartedAt > POLLING_MAX_MS) {
+      stopPolling()
+      ElMessage.warning('知识图谱生成时间过长，已停止自动刷新，请手动刷新查看状态')
+      return
+    }
     if (graphStatus.value?.status === 'pending' || graphStatus.value?.status === 'running' || isGenerating.value) {
       await loadGraphStatus()
       // 检查任务是否完成
@@ -1159,7 +1171,6 @@ const handleGenerateVector = async () => {
     recordGenerateTime()
     isGeneratingVector.value = true
     ElMessage.info('已启动向量生成任务，请稍候...')
-    console.log('[KnowledgeGraph] Starting vector generation for path:', projectPath.value)
     await startVectorGeneration(projectPath.value)
     ElMessage.success('向量生成任务已启动')
     // 立即刷新状态并开始轮询
@@ -1381,18 +1392,12 @@ onMounted(async () => {
   // 注意：projectPaths computed 会使用 fallback 从 appStore.selectedProjects 获取路径
   // 所以即使 projects.value 还没包含远端项目，路径也应该正确
   if (projectPath.value) {
-    console.log('[KnowledgeGraph] onMounted - projectPath:', projectPath.value)
-    console.log('[KnowledgeGraph] onMounted - projectPaths:', projectPaths.value)
-    console.log('[KnowledgeGraph] onMounted - appStore.selectedProjects:', appStore.selectedProjects)
     loadGraphStatus()
     loadGitStatus()
     loadVectorStatus()
     loadMissingInfo()
   } else {
     console.warn('[KnowledgeGraph] onMounted - projectPath is empty')
-    console.log('[KnowledgeGraph] onMounted - selectedProjectNames:', selectedProjectNames.value)
-    console.log('[KnowledgeGraph] onMounted - projects:', projects.value.map(p => p.name))
-    console.log('[KnowledgeGraph] onMounted - appStore.selectedProjectNames:', appStore.selectedProjectNames)
   }
 })
 

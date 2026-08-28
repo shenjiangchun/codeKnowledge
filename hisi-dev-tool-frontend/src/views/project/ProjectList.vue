@@ -1326,6 +1326,12 @@ const knowledgeGraphStatusMap = ref<Record<string, { status: string; methodNodeC
 const vectorGenerationStatusMap = ref<Record<string, VectorGenerationTask>>({})
 let kgPollingTimer: ReturnType<typeof setInterval> | null = null
 let vectorPollingTimer: ReturnType<typeof setInterval> | null = null
+// 轮询最大时长（ms）：后端任务若卡住，前端不得无限轮询
+const KG_POLLING_MAX_MS = 2 * 60 * 60 * 1000
+const VECTOR_POLLING_MAX_MS = 2 * 60 * 60 * 1000
+const ARCH_POLLING_MAX_MS = 60 * 60 * 1000
+let kgPollingStartedAt = 0
+let vectorPollingStartedAt = 0
 
 // ============================================================
 // Knowledge Graph Task Status Management
@@ -1502,7 +1508,13 @@ const startVectorPolling = () => {
   if (vectorPollingTimer) {
     return
   }
+  vectorPollingStartedAt = Date.now()
   vectorPollingTimer = setInterval(async () => {
+    if (Date.now() - vectorPollingStartedAt > VECTOR_POLLING_MAX_MS) {
+      stopVectorPolling()
+      ElMessage.warning('向量生成时间过长，已停止自动刷新，请手动刷新查看状态')
+      return
+    }
     const runningTasks = Object.values(vectorGenerationStatusMap.value)
       .filter(t => t.status === 'PENDING' || t.status === 'RUNNING')
 
@@ -1577,7 +1589,13 @@ const startKgPolling = () => {
   if (kgPollingTimer) {
     return
   }
+  kgPollingStartedAt = Date.now()
   kgPollingTimer = setInterval(async () => {
+    if (Date.now() - kgPollingStartedAt > KG_POLLING_MAX_MS) {
+      stopKgPolling()
+      ElMessage.warning('知识图谱生成时间过长，已停止自动刷新，请手动刷新查看状态')
+      return
+    }
     const runningTasks = Object.values(knowledgeGraphTaskStatusMap.value)
       .filter(t => t.status === 'PENDING' || t.status === 'RUNNING')
 
@@ -1992,6 +2010,7 @@ onMounted(() => {
 onUnmounted(() => {
   stopKgPolling()
   stopVectorPolling()
+  stopArchAnalysisPolling()
 })
 
 // Generate knowledge graph (async task) — 弹窗勾选语义向量 / 架构现状
@@ -2135,6 +2154,7 @@ const handleGenerateVector = async (row: GitRepositoryInfo) => {
 // 独立触发架构现状分析（领域划分）
 const analyzingArchitecture = ref(new Set<string>())
 let archAnalysisTimer: ReturnType<typeof setInterval> | null = null
+let archAnalysisStartedAt = 0
 
 const stopArchAnalysisPolling = () => {
   if (archAnalysisTimer) {
@@ -2145,7 +2165,14 @@ const stopArchAnalysisPolling = () => {
 
 const startArchAnalysisPolling = (paths: string[]) => {
   if (archAnalysisTimer) return
+  archAnalysisStartedAt = Date.now()
   archAnalysisTimer = setInterval(async () => {
+    if (Date.now() - archAnalysisStartedAt > ARCH_POLLING_MAX_MS) {
+      stopArchAnalysisPolling()
+      paths.forEach(p => analyzingArchitecture.value.delete(normalizePath(p)))
+      ElMessage.warning('架构现状分析时间过长，已停止自动刷新，请手动刷新查看状态')
+      return
+    }
     try {
       const tasks = await knowledgeGraphApi.getArchAnalysisStatus(paths)
       const running = (tasks || []).filter(t => t.status === 'PENDING' || t.status === 'RUNNING')

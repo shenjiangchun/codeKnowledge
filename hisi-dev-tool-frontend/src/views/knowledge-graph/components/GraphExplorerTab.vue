@@ -137,6 +137,7 @@ async function loadEntryTypes() {
     availableEntryTypes.value = (await knowledgeGraphApi.getEntryTypes(props.projectPaths)) ?? []
   } catch {
     availableEntryTypes.value = []
+    ElMessage.error('入口类型加载失败')
   } finally {
     entryTypesLoading.value = false
   }
@@ -160,6 +161,7 @@ async function loadClassList(keyword?: string) {
     classList.value = result?.items ?? []
   } catch {
     classList.value = []
+    ElMessage.error('类列表加载失败')
   } finally {
     classLoading.value = false
   }

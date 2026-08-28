@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch, nextTick, computed } from 'vue'
 import { knowledgeGraphApi, type ServiceTopology } from '@/api/knowledgeGraph'
-import { ElSkeleton, ElEmpty, ElAlert } from 'element-plus'
+import { ElSkeleton, ElEmpty, ElAlert, ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 
 const props = defineProps<{ projectPaths: string[]; language?: string }>()
@@ -30,7 +30,7 @@ async function load() {
   try {
     const res = await knowledgeGraphApi.getServiceTopology(props.projectPaths, props.language)
     data.value = res
-  } catch { } finally { loading.value = false }
+  } catch { ElMessage.error('跨服务拓扑加载失败') } finally { loading.value = false }
 }
 
 // 手动网格布局：像素坐标（x/y 单位一致 → 节点正圆），横向铺满画布

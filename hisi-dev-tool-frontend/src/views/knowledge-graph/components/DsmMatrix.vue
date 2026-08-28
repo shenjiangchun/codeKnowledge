@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch, nextTick, computed } from 'vue'
 import { knowledgeGraphApi, type DsmData } from '@/api/knowledgeGraph'
-import { ElSkeleton, ElEmpty, ElAlert, ElTag, ElSelect, ElOption, ElButton } from 'element-plus'
+import { ElSkeleton, ElEmpty, ElAlert, ElTag, ElSelect, ElOption, ElButton, ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 
 const props = defineProps<{ projectPaths: string[]; language?: string }>()
@@ -29,7 +29,7 @@ async function load() {
     data.value = res
     drillDownData.value = null
     selectedModules.value = []
-  } finally { loading.value = false }
+  } catch { ElMessage.error('DSM 依赖矩阵加载失败') } finally { loading.value = false }
 }
 
 /** 勾选模块后下钻：展示这些模块内部类之间的依赖 */

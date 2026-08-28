@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Configuration
 @EnableTransactionManagement
-@EnableNeo4jRepositories(basePackages = "com.huawei.hisi.neo4j.repository")
+@EnableNeo4jRepositories(basePackages = "com.huawei.hisi.neo4j.repository", transactionManagerRef = "neo4jTransactionManager")
 public class Neo4jConfig {
 
     @Value("${neo4j.uri:bolt://localhost:7687}")

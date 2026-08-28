@@ -402,31 +402,9 @@ public class KnowledgeGraphController {
     }
 
     // ============================================================
-    // 同步生成接口（保留，供简单场景使用）
+    // 同步生成接口已删除（原 POST /generate 与异步队列抢 generationSemaphore，
+    // 且前端无调用方）。生成统一走 /tasks/generate 异步队列。
     // ============================================================
-
-    /**
-     * 为项目生成知识图谱（同步，阻塞请求）
-     */
-    @PostMapping("/generate")
-    public ApiResponse<Map<String, Object>> generate(@RequestBody Map<String, String> request) {
-        String projectPath = request.get("projectPath");
-        if (projectPath == null || projectPath.isEmpty()) {
-            return ApiResponse.error(400, "项目路径不能为空");
-        }
-        // 入口规范化（与 startTask 保持一致），避免再产生分隔符不一致的脏数据。
-        projectPath = normalizePath(projectPath);
-
-        String buildMode = request.getOrDefault("buildMode", "reuse");
-        try {
-            Map<String, Object> result = knowledgeGraphBuilder.buildKnowledgeGraph(projectPath, null, true,
-                    com.huawei.hisi.knowledgegraph.service.BuildMode.fromString(buildMode));
-            return ApiResponse.success(result);
-        } catch (Exception e) {
-            log.error("生成知识图谱失败", e);
-            return ApiResponse.error(500, "生成失败: " + e.getMessage());
-        }
-    }
 
     /**
      * 获取知识图谱状态（包含任务状态）
@@ -559,25 +537,25 @@ public class KnowledgeGraphController {
         Map<String, Long> entryCounts = new HashMap<>();
         boolean countQueryFailed = false;
         try {
-            for (Map<String, Object> row : neo4jMethodNodeRepository.countByProjectPathsGrouped(paths)) {
-                methodCounts.put(String.valueOf(row.get("projectPath")), toLong(row.get("cnt")));
-            }
+            methodCounts.putAll(groupedCountByProjectPath(
+                "MATCH (m:Method) WHERE m.projectPath IN $projectPaths RETURN m.projectPath AS projectPath, count(m) AS cnt",
+                paths));
         } catch (Exception e) {
             countQueryFailed = true;
             log.warn("[KG Batch Status] grouped method count failed: {}", e.getMessage());
         }
         try {
-            for (Map<String, Object> row : neo4jMethodNodeRepository.countCallRelationsByProjectPathsGrouped(paths)) {
-                relationCounts.put(String.valueOf(row.get("projectPath")), toLong(row.get("cnt")));
-            }
+            relationCounts.putAll(groupedCountByProjectPath(
+                "MATCH (caller:Method)-[r:CALLS]->(callee:Method) WHERE caller.projectPath IN $projectPaths RETURN caller.projectPath AS projectPath, COUNT(r) AS cnt",
+                paths));
         } catch (Exception e) {
             countQueryFailed = true;
             log.warn("[KG Batch Status] grouped relation count failed: {}", e.getMessage());
         }
         try {
-            for (Map<String, Object> row : neo4jEntryPointNodeRepository.countByProjectPathsGrouped(paths)) {
-                entryCounts.put(String.valueOf(row.get("projectPath")), toLong(row.get("cnt")));
-            }
+            entryCounts.putAll(groupedCountByProjectPath(
+                "MATCH (entry:EntryPoint) WHERE entry.projectPath IN $projectPaths RETURN entry.projectPath AS projectPath, count(entry) AS cnt",
+                paths));
         } catch (Exception e) {
             countQueryFailed = true;
             log.warn("[KG Batch Status] grouped entry point count failed: {}", e.getMessage());
@@ -627,10 +605,30 @@ public class KnowledgeGraphController {
         return ApiResponse.success(batchResult);
     }
 
-    private long toLong(Object v) {
-        if (v instanceof Number n) return n.longValue();
-        if (v == null) return 0L;
-        try { return Long.parseLong(v.toString()); } catch (NumberFormatException e) { return 0L; }
+    /**
+     * 按 projectPath 分组统计数量（driver 直查，绕开 SDN 实体映射）。
+     *
+     * <p>批量状态查询需要一次 Cypher 返回每项目的 {@code projectPath} 与聚合列
+     * {@code cnt} 两列。Spring Data Neo4j 7.x 的接口投影要求结果列是实体属性，
+     * 聚合列 {@code cnt} 并非实体字段，走投影会抛
+     * "Invalid property 'cnt' of bean class [...]"；走 Map 则抛
+     * "Records with more than one value cannot be converted without a mapper"。
+     * 因此这里直接用 Driver 执行 GROUP BY 查询并手动解析结果。
+     *
+     * @param cypher        形如 RETURN xxx.projectPath AS projectPath, count(...) AS cnt 的查询
+     * @param projectPaths  已规范化的项目路径列表
+     * @return projectPath → 计数
+     */
+    private Map<String, Long> groupedCountByProjectPath(String cypher, List<String> projectPaths) {
+        Map<String, Long> counts = new HashMap<>();
+        try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
+            var result = session.run(cypher, Map.of("projectPaths", projectPaths));
+            while (result.hasNext()) {
+                Record record = result.next();
+                counts.put(record.get("projectPath").asString(""), record.get("cnt").asLong(0L));
+            }
+        }
+        return counts;
     }
 
     /**
@@ -867,7 +865,7 @@ public class KnowledgeGraphController {
         List<CallCycleInfo> cycles = new ArrayList<>();
 
         buildDownstreamGraph(startNode.getNodeId(), resolvedPath, 0, maxDepth,
-            visitedNodes, graphNodes, graphEdges, nodesInCycle, cycles, null);
+            visitedNodes, graphNodes, graphEdges, nodesInCycle, cycles, null, new HashSet<>());
 
         CallChainGraphResponse response = CallChainGraphResponse.builder()
             .entryId(startNode.getNodeId())
@@ -1157,7 +1155,7 @@ public class KnowledgeGraphController {
         List<CallCycleInfo> cycles = new ArrayList<>();
 
         // 递归遍历调用链
-        buildDownstreamGraph(nodeId, resolvedPath, 0, maxDepth, visitedNodes, nodes, edges, nodesInCycle, cycles, null);
+        buildDownstreamGraph(nodeId, resolvedPath, 0, maxDepth, visitedNodes, nodes, edges, nodesInCycle, cycles, null, new HashSet<>());
 
         // 构建响应
         CallChainGraphResponse response = CallChainGraphResponse.builder()
@@ -1223,7 +1221,7 @@ public class KnowledgeGraphController {
         List<CallCycleInfo> cycles = new ArrayList<>();
 
         // 递归遍历调用链（projectPath 参数在 buildDownstreamGraph 内部未用于过滤，传空即可）
-        buildDownstreamGraph(methodNodeId, null, 0, maxDepth, visitedNodes, nodes, edges, nodesInCycle, cycles, null);
+        buildDownstreamGraph(methodNodeId, null, 0, maxDepth, visitedNodes, nodes, edges, nodesInCycle, cycles, null, new HashSet<>());
 
         // 检测环
         if (includeCycles) {
@@ -1333,17 +1331,33 @@ public class KnowledgeGraphController {
     // ============================================================
 
     /**
-     * 递归构建向下调用链图
+     * 递归构建向下调用链图。
+     *
+     * <p>去重与防环分离：
+     * <ul>
+     *   <li>{@code visitedNodes} 全局去重——同一方法只出现一次（深度取首次路径），保证 node.id 唯一
+     *       （前端 FlowDag/dagre/mergeGraphs 依赖 id 唯一）；
+     *   <li>{@code pathAncestors} 当前递归路径——重访节点在路径上才是真环（标记环节点+回边），
+     *       跨分支重访（菱形汇合）只是共享，不标环。</li>
+     * </ul>
      */
     private void buildDownstreamGraph(String nodeId, String projectPath, int currentDepth, int maxDepth,
                                       Set<String> visitedNodes, List<GraphNode> nodes, List<GraphEdge> edges,
                                       Set<String> nodesInCycle, List<CallCycleInfo> cycles,
-                                      String incomingCallType) {
-        if (currentDepth > maxDepth || visitedNodes.contains(nodeId)) {
-            // 检测到环
-            if (visitedNodes.contains(nodeId)) {
+                                      String incomingCallType, Set<String> pathAncestors) {
+        if (currentDepth > maxDepth) {
+            return;
+        }
+        if (visitedNodes.contains(nodeId)) {
+            if (pathAncestors.contains(nodeId)) {
+                // 真环：回访当前路径上的节点
                 nodesInCycle.add(nodeId);
+                nodes.stream()
+                    .filter(n -> nodeId.equals(n.getId()))
+                    .findFirst()
+                    .ifPresent(n -> n.setInCycle(true));
             }
+            // 否则是菱形汇合（跨分支共享），边已由调用方添加，静默返回
             return;
         }
 
@@ -1363,7 +1377,7 @@ public class KnowledgeGraphController {
             .name(method.getMethodName())
             .className(method.getClassName())
             .depth(currentDepth)
-            .inCycle(nodesInCycle.contains(nodeId))
+            .inCycle(false)
             .callType(incomingCallType)
             .signature(method.getSignature())
             .filePath(method.getFilePath())
@@ -1377,20 +1391,27 @@ public class KnowledgeGraphController {
         // 所以 findCalleesWithRelation 直接返回所有下游关系，无需 IMPLEMENTS fallback。
         List<Neo4jMethodNodeRepository.CalleeWithRelation> relations = neo4jMethodNodeRepository.findCalleesWithRelation(nodeId);
 
-        for (Neo4jMethodNodeRepository.CalleeWithRelation relation : relations) {
-            // 添加边
-            GraphEdge edge = GraphEdge.builder()
-                .source(nodeId)
-                .target(relation.calleeId())
-                .callType(relation.callType())
-                .callLine(relation.callLine())
-                .isCycleEdge(false)
-                .build();
-            edges.add(edge);
+        pathAncestors.add(nodeId);
+        try {
+            for (Neo4jMethodNodeRepository.CalleeWithRelation relation : relations) {
+                // 回边（callee 在当前路径上）即环边，前端渲染为虚线
+                boolean isCycleEdge = pathAncestors.contains(relation.calleeId());
+                // 添加边
+                GraphEdge edge = GraphEdge.builder()
+                    .source(nodeId)
+                    .target(relation.calleeId())
+                    .callType(relation.callType())
+                    .callLine(relation.callLine())
+                    .isCycleEdge(isCycleEdge)
+                    .build();
+                edges.add(edge);
 
-            // 递归处理被调用方
-            buildDownstreamGraph(relation.calleeId(), projectPath, currentDepth + 1, maxDepth,
-                visitedNodes, nodes, edges, nodesInCycle, cycles, relation.callType());
+                // 递归处理被调用方
+                buildDownstreamGraph(relation.calleeId(), projectPath, currentDepth + 1, maxDepth,
+                    visitedNodes, nodes, edges, nodesInCycle, cycles, relation.callType(), pathAncestors);
+            }
+        } finally {
+            pathAncestors.remove(nodeId);
         }
     }
 
@@ -1963,7 +1984,7 @@ public class KnowledgeGraphController {
 
                 // 下游：从 ServiceImpl 方法向下追溯
                 buildDownstreamGraph(bridge.calleeId(), resolvedPath, 0, maxDepth,
-                    globalVisited, allNodes, allEdges, nodesInCycle, cycles, null);
+                    globalVisited, allNodes, allEdges, nodesInCycle, cycles, null, new HashSet<>());
 
                 // 确保 bridge 边本身存在
                 boolean bridgeEdgeExists = allEdges.stream()
@@ -2078,7 +2099,7 @@ public class KnowledgeGraphController {
 
                 // 下游：从 Consumer 方法向下追溯
                 buildDownstreamGraph(bridge.calleeId(), resolvedPath, 0, maxDepth,
-                    globalVisited, allNodes, allEdges, nodesInCycle, cycles, null);
+                    globalVisited, allNodes, allEdges, nodesInCycle, cycles, null, new HashSet<>());
 
                 // 确保 bridge 边本身存在
                 boolean bridgeEdgeExists = allEdges.stream()
@@ -3500,13 +3521,18 @@ public class KnowledgeGraphController {
         if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
 
         List<Map<String, Object>> results = new ArrayList<>();
-        for (String path : paths) {
-            Long taskId = architectureAnalysisService.submit(path);
-            Map<String, Object> r = new HashMap<>();
-            r.put("projectPath", path);
-            r.put("taskId", taskId);
-            r.put("status", "PENDING");
-            results.add(r);
+        try {
+            for (String path : paths) {
+                Long taskId = architectureAnalysisService.submit(path);
+                Map<String, Object> r = new HashMap<>();
+                r.put("projectPath", path);
+                r.put("taskId", taskId);
+                r.put("status", "PENDING");
+                results.add(r);
+            }
+        } catch (IllegalStateException e) {
+            // 同项目正在执行/排队中（与 /tasks/generate 的 TASK_RUNNING 409 语义对齐）
+            return ApiResponse.error(409, e.getMessage());
         }
         Map<String, Object> result = new HashMap<>();
         result.put("results", results);
@@ -3612,12 +3638,23 @@ public class KnowledgeGraphController {
             var callers = neo4jMethodNodeRepository.findCallersUpToDepth(nodeId, Math.min(maxDepth, 10));
             result.put("upstream", Map.of("totalCallers", callers.size(), "maxDepth", maxDepth));
 
-            // 受影响入口点 — 从调用者中匹配 EntryPoint
+            // 受影响入口点 — 真实匹配：上游调用者（含中心方法自身）中有 EntryPoint 指向的方法数。
+            // 历史实现把"上游调用者数量"当成了入口点数（与 totalCallers 重复、名不副实）。
+            Map<String, Set<String>> idsByPath = new HashMap<>();
+            if (m.getNodeId() != null) {
+                idsByPath.computeIfAbsent(m.getProjectPath() != null ? m.getProjectPath() : paths.get(0),
+                        k -> new HashSet<>()).add(m.getNodeId());
+            }
+            for (MethodNode c : callers) {
+                if (c.getNodeId() != null) {
+                    String p = c.getProjectPath() != null ? c.getProjectPath() : paths.get(0);
+                    idsByPath.computeIfAbsent(p, k -> new HashSet<>()).add(c.getNodeId());
+                }
+            }
             int entryCount = 0;
-            if (!callers.isEmpty()) {
-                entryCount = (int) callers.stream()
-                    .filter(c -> c.getNodeId() != null)
-                    .count();
+            for (Map.Entry<String, Set<String>> e : idsByPath.entrySet()) {
+                entryCount += neo4jEntryPointNodeRepository
+                        .findByMethodNodeIds(e.getKey(), new ArrayList<>(e.getValue())).size();
             }
             result.put("affectedEntryPoints", entryCount);
 

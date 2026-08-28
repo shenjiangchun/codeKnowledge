@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
 import { knowledgeGraphApi, type DomainItem, type DomainEdge, type DomainClass, type MethodNode } from '@/api/knowledgeGraph'
-import { ElSkeleton, ElEmpty, ElTag, ElCard, ElAlert } from 'element-plus'
+import { ElSkeleton, ElEmpty, ElTag, ElCard, ElAlert, ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 
 const props = defineProps<{ projectPaths: string[]; language?: string }>()
@@ -25,7 +25,7 @@ async function load() {
     const res = await knowledgeGraphApi.getDomains(props.projectPaths, props.language)
     domains.value = res.domains
     interactions.value = res.interactions ?? []
-  } catch { } finally { loading.value = false }
+  } catch { ElMessage.error('领域划分加载失败') } finally { loading.value = false }
 }
 
 /** 点击领域 → 展开/收起该领域的类列表（虚拟类节点） */
@@ -43,7 +43,7 @@ async function toggleDomain(d: DomainItem) {
   try {
     const res = await knowledgeGraphApi.getDomainClasses(d.id, props.projectPaths)
     domainClasses.value = res.classes
-  } catch { domainClasses.value = [] }
+  } catch { domainClasses.value = []; ElMessage.error('领域类列表加载失败') }
 }
 
 /** 点击类 → 展开/收起该类的方法列表 */
@@ -57,7 +57,7 @@ async function toggleClass(cls: DomainClass) {
   try {
     const methods = await knowledgeGraphApi.getMethodsByClass(cls.className, props.projectPaths)
     classMethods.value = methods
-  } catch { classMethods.value = [] }
+  } catch { classMethods.value = []; ElMessage.error('类方法列表加载失败') }
 }
 
 function shortName(fqn: string): string {

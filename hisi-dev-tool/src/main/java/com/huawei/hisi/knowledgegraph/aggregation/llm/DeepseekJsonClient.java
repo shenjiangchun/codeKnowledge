@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -26,17 +27,23 @@ import org.springframework.web.client.RestTemplate;
 public class DeepseekJsonClient {
 
     private static final int MAX_TOKENS = 16384;
+    /** 连接超时（毫秒）。网关不可达时快速失败，避免无限挂起。 */
+    private static final int CONNECT_TIMEOUT_MS = 10_000;
+    /** 读超时（毫秒）。json_object 强制下长输出（16k token）可能耗时数分钟。 */
+    private static final int READ_TIMEOUT_MS = 300_000;
 
     private final String apiUrl;
     private final String apiKey;
     private final String model;
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
 
     public DeepseekJsonClient(
             @Value("${anthropic.base-url:}") String baseUrl,
             @Value("${anthropic.api-key:}") String apiKey,
-            @Value("${anthropic.model:deepseek-v4-pro-cc}") String model) {
+            @Value("${anthropic.model:deepseek-v4-pro-cc}") String model,
+            @Value("${deepseek.connect-timeout-ms:" + CONNECT_TIMEOUT_MS + "}") int connectTimeoutMs,
+            @Value("${deepseek.read-timeout-ms:" + READ_TIMEOUT_MS + "}") int readTimeoutMs) {
         String effective = (baseUrl == null || baseUrl.isBlank())
                 ? "http://1.95.145.190:8888" : baseUrl.trim();
         if (effective.endsWith("/")) effective = effective.substring(0, effective.length() - 1);
@@ -48,7 +55,15 @@ public class DeepseekJsonClient {
         }
         this.apiKey = apiKey;
         this.model = model;
-        log.info("[DeepseekJson] apiUrl={} model={}", this.apiUrl, this.model);
+        // 必须有超时：本 client 被 KgGenerationQueue / ArchitectureAnalysisService 的串行队列调用，
+        // 无超时的一次网络挂起会让队列任务无限期 RUNNING。超时异常被 chatJson 吞成 null，
+        // 由上游既有的"压缩 prompt 重试"机制接住。
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(connectTimeoutMs);
+        factory.setReadTimeout(readTimeoutMs);
+        this.restTemplate = new RestTemplate(factory);
+        log.info("[DeepseekJson] apiUrl={} model={} connectTimeoutMs={} readTimeoutMs={}",
+                this.apiUrl, this.model, connectTimeoutMs, readTimeoutMs);
     }
 
     /**
