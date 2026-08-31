@@ -64,19 +64,4 @@ public interface KnowledgeGraphTaskService {
      * @return 任务列表
      */
     List<KnowledgeGraphTask> getRunningTasks();
-
-    /**
-     * 异步执行知识图谱生成任务
-     * @param taskId 任务ID
-     * @param projectPath 项目路径
-     */
-    void executeTaskAsync(Long taskId, String projectPath);
-
-    /**
-     * 异步执行知识图谱生成任务（支持自定义屏蔽目录）
-     * @param taskId 任务ID
-     * @param projectPath 项目路径
-     * @param excludePaths 屏蔽目录列表
-     */
-    void executeTaskAsync(Long taskId, String projectPath, List<String> excludePaths);
 }

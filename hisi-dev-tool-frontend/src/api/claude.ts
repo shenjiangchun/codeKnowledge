@@ -1,41 +1,6 @@
 import request from '@/utils/request'
 import type { UniversalChatRequest, StreamCallbacks as StreamCallbacksType } from '@/types/session'
 
-export interface AnalyzeLogRequest {
-  /** 错误摘要（日志头+异常类型+消息） */
-  errorMessage: string
-  /** 异常类型，如 NullPointerException */
-  errorType?: string
-  /** 异常详细消息 */
-  errorMessageDetail?: string
-  /** 结构化的堆栈信息 */
-  stackTrace?: string
-  /** Caused by 链 */
-  causedBy?: string
-  /** 项目路径或服务名 */
-  projectPath?: string
-  /** 额外上下文 */
-  additionalContext?: string
-}
-
-export interface AnalyzeCodeRequest {
-  code: string
-  language?: string
-  projectPath?: string
-  additionalContext?: string
-}
-
-export interface ClaudeAnalysisResult {
-  errorType: string
-  rootCause: string
-  affectedCode: string[]
-  fixSuggestions: string[]
-  confidence: number
-  timestamp: string
-  analysisType: string
-  requestId: string
-}
-
 export interface ChatRequest {
   sessionId: string
   message: string
@@ -45,19 +10,6 @@ export interface ChatRequest {
 export type StreamCallbacks = StreamCallbacksType
 
 export const claudeApi = {
-  // 非流式分析（保留兼容）
-  analyzeLog(data: AnalyzeLogRequest) {
-    return request.post<ClaudeAnalysisResult>('/claude/analyze', data)
-  },
-
-  analyzeCode(data: AnalyzeCodeRequest) {
-    return request.post<ClaudeAnalysisResult>('/claude/analyze-code', data)
-  },
-
-  healthCheck() {
-    return request.get<boolean>('/claude/health')
-  },
-
   /**
    * 流式分析日志 - 使用 SSE
    * @param params 分析参数

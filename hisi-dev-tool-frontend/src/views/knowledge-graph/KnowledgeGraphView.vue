@@ -414,9 +414,9 @@
           </el-descriptions-item>
         </el-descriptions>
 
-        <div v-if="pathDiagnosisResult?.inconsistentPaths?.length > 0" style="margin-top: 16px;">
+        <div v-if="(pathDiagnosisResult?.inconsistentPaths?.length ?? 0) > 0" style="margin-top: 16px;">
           <p style="color: #e6a23c; font-weight: 600;">以下路径与当前配置不一致：</p>
-          <el-table :data="pathDiagnosisResult.inconsistentPaths" stripe size="small" max-height="300">
+          <el-table :data="pathDiagnosisResult?.inconsistentPaths ?? []" stripe size="small" max-height="300">
             <el-table-column prop="path" label="KG 存储路径" show-overflow-tooltip />
             <el-table-column prop="expectedPath" label="期望路径" show-overflow-tooltip />
             <el-table-column prop="projectName" label="项目名" width="150" />
@@ -427,7 +427,7 @@
       </el-card>
 
       <!-- 迁移操作 -->
-      <div v-if="pathDiagnosisResult?.inconsistentCount > 0" style="margin-top: 20px;">
+      <div v-if="(pathDiagnosisResult?.inconsistentCount ?? 0) > 0" style="margin-top: 20px;">
         <el-divider>路径迁移</el-divider>
         <el-form label-width="140px">
           <el-form-item label="旧基础目录">
@@ -569,6 +569,8 @@ import { listRemoteProjects } from '@/api/remote-project'
 import { projectNameGroupApi, type ProjectNameGroup } from '@/api/projectNameGroup'
 import type { GlossaryTerm } from '@/types/glossary'
 import type { RemoteProject } from '@/types/remote-project'
+import type { GitRepositoryInfo } from '@/types/callchain'
+import type { VectorSearchResult } from '@/api/vectorSearch'
 import { useAppStore } from '@/stores/app'
 import CodeUnderstandingTab from './components/CodeUnderstandingTab.vue'
 import SemanticSearchPanel from './components/SemanticSearchPanel.vue'
@@ -967,7 +969,7 @@ const loadProjects = async () => {
     const remoteProjects = Array.isArray(remoteRes) ? remoteRes : []
 
     // 直接使用后端返回的项目信息（包含正确的 path）
-    const localProjects: ProjectInfo[] = scannedRepos.map((repo: any) => ({
+    const localProjects: ProjectInfo[] = scannedRepos.map((repo: GitRepositoryInfo) => ({
       name: repo.name,
       path: repo.path
     }))
@@ -1225,13 +1227,13 @@ watch(projectPath, (path) => {
 })
 
 // 处理查看方法详情
-function handleViewDetail(_result: any) {
+function handleViewDetail(_result: VectorSearchResult) {
   // 跳转到方法详情或打开弹窗
 }
 
 // 处理查看调用链：切到引用分析 tab 并自动以该方法为入口查向下调用
 const methodRefGraphRef = ref<InstanceType<typeof MethodReferenceGraph> | null>(null)
-function handleViewCallChain(result: any) {
+function handleViewCallChain(result: VectorSearchResult) {
   if (!result || !result.className || !result.methodName) {
     ElMessage.warning('该结果缺少类名或方法名，无法跳转')
     return
@@ -1331,9 +1333,23 @@ const glossarySubmit = async () => {
 }
 
 // ==================== KG 路径诊断 ====================
+interface PathDiagnosisResult {
+  currentProjectDir: string
+  kgProjectPaths: string[]
+  totalKgPaths: number
+  inconsistentPaths: Array<{
+    path: string
+    normalized: string
+    reason: string
+    projectName: string
+    expectedPath: string
+  }>
+  inconsistentCount: number
+}
+
 const showPathDiagnosisDialog = ref(false)
 const pathDiagnosisLoading = ref(false)
-const pathDiagnosisResult = ref<any>(null)
+const pathDiagnosisResult = ref<PathDiagnosisResult | null>(null)
 const pathMigrationLoading = ref(false)
 const migrationOldBaseDir = ref('')
 const migrationDryRun = ref(true)

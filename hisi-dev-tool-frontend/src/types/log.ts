@@ -63,6 +63,8 @@ export interface Report {
   fixSuggestions?: string
   codeSnippets?: string
   userId?: string
+  /** 前端临时状态：重新分析中 */
+  reanalyzing?: boolean
 }
 
 export interface ReportListResponse {
@@ -90,6 +92,14 @@ export interface DetailedAnalysisReport {
 export interface LogQueryResponse {
   logs: LogEntry[]
   total: number
+}
+
+/** 报告处理进度状态（轮询接口返回） */
+export interface ReportStatus {
+  status: string
+  progress: number
+  stage?: string
+  etaSeconds?: number
 }
 
 // ========== 日志分析实时节点事件 (WebSocket) ==========

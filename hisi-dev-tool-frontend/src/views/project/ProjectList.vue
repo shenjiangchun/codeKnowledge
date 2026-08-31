@@ -121,7 +121,7 @@
               <el-table
                 :data="gp.projects"
                 stripe
-                @selection-change="(selection: any[]) => handleGroupSelectionChange(gp.group?.appId || 'ungrouped', selection)"
+                @selection-change="(selection: GitRepositoryInfo[]) => handleGroupSelectionChange(gp.group?.appId || 'ungrouped', selection)"
               >
                 <el-table-column type="selection" width="55" />
                 <el-table-column prop="name" label="项目名称">
@@ -276,7 +276,7 @@
                 :disabled="selectedRemoteProjects.length === 0"
               >
                 <el-icon><Select /></el-icon>
-                选择 ({{ selectedRemoteProjects.filter((p: any) => p.cloneStatus === 'CLONED').length }})
+                选择 ({{ selectedRemoteProjects.filter(p => p.cloneStatus === 'CLONED').length }})
               </el-button>
               <!-- 公共功能按钮 -->
               <el-button @click="openKgExcludeDialog">
@@ -327,7 +327,7 @@
               <el-table
                 :data="grp.projects"
                 stripe
-                @selection-change="(selection: any[]) => handleRemoteGroupSelectionChange(grp.group?.appId || 'ungrouped', selection)"
+                @selection-change="(selection: RemoteProject[]) => handleRemoteGroupSelectionChange(grp.group?.appId || 'ungrouped', selection)"
               >
                 <el-table-column type="selection" width="55" />
                 <el-table-column prop="name" label="项目名称" min-width="120">
@@ -951,7 +951,7 @@ const expandedGroups = ref<string[]>([])
 const groupSelectionState = ref<Map<string, boolean>>(new Map())
 
 // 每个分组的当前选中行
-const groupSelections = ref<Map<string, any[]>>(new Map())
+const groupSelections = ref<Map<string, GitRepositoryInfo[]>>(new Map())
 
 // 切换分组全选
 const toggleGroupSelection = (groupKey: string, groupProjects: GitRepositoryInfo[]) => {
@@ -969,7 +969,7 @@ const toggleGroupSelection = (groupKey: string, groupProjects: GitRepositoryInfo
 
 // 合并所有分组的选择状态
 const mergeAllGroupSelections = () => {
-  const allSelection: any[] = []
+  const allSelection: GitRepositoryInfo[] = []
   groupSelections.value.forEach((selection) => {
     allSelection.push(...selection)
   })
@@ -977,7 +977,7 @@ const mergeAllGroupSelections = () => {
 }
 
 // 处理分组内选择变化（由 el-table 的 selection-change 事件触发）
-const handleGroupSelectionChange = (groupKey: string, selection: any[]) => {
+const handleGroupSelectionChange = (groupKey: string, selection: GitRepositoryInfo[]) => {
   groupSelections.value.set(groupKey, selection)
   const group = groupedProjects.value.find(g => (g.group?.appId || 'ungrouped') === groupKey)
   if (group) {
@@ -1779,7 +1779,7 @@ const handleScan = async () => {
   try {
     const res = await projectApi.scanGitRepos()
     // axios 拦截器已提取 data，res 直接就是仓库数组
-    projects.value = Array.isArray(res) ? res : (res as any)?.data || []
+    projects.value = Array.isArray(res) ? res : (res as unknown as { data?: GitRepositoryInfo[] })?.data || []
     ElMessage.success(`扫描完成，发现 ${projects.value.length} 个仓库`)
     // Load task statuses and groups in parallel after scan
     await Promise.all([
@@ -2213,8 +2213,8 @@ const handleArchitectureAnalysis = async (row: GitRepositoryInfo) => {
 // ============================================================
 // Multi-select & Cross-service Build
 // ============================================================
-const selectedProjects = ref<any[]>([])
-const selectedRemoteProjects = ref<any[]>([])
+const selectedProjects = ref<GitRepositoryInfo[]>([])
+const selectedRemoteProjects = ref<RemoteProject[]>([])
 const crossServiceBuilding = ref(false)
 
 /** 确认多选：将表格勾选的项目设置为全局选中 */
@@ -2223,7 +2223,7 @@ function handleConfirmMultiSelect() {
     ElMessage.warning('请先在表格中勾选项目')
     return
   }
-  const projects = selectedProjects.value.map((p: any) => ({ name: p.name, path: p.path }))
+  const projects = selectedProjects.value.map(p => ({ name: p.name, path: p.path }))
   appStore.selectProjects(projects)
   const names = projects.map(p => p.name)
   ElMessage.success(`已选择 ${names.length} 个项目: ${names.join(', ')}`)
@@ -2235,12 +2235,12 @@ function handleRemoteConfirmMultiSelect() {
     ElMessage.warning('请先在表格中勾选项目')
     return
   }
-  const clonedProjects = selectedRemoteProjects.value.filter((p: any) => p.cloneStatus === 'CLONED')
+  const clonedProjects = selectedRemoteProjects.value.filter(p => p.cloneStatus === 'CLONED')
   if (clonedProjects.length === 0) {
     ElMessage.warning('请选择已克隆的项目')
     return
   }
-  const projects = clonedProjects.map((p: any) => ({ name: p.name, path: p.localPath }))
+  const projects = clonedProjects.map(p => ({ name: p.name, path: p.localPath }))
   appStore.selectProjects(projects)
   const names = projects.map(p => p.name)
   ElMessage.success(`已选择 ${names.length} 个项目: ${names.join(', ')}`)
@@ -2314,7 +2314,7 @@ async function handleBatchGenerateKG() {
   }
   // 弹窗勾选后处理项（语义&向量 / 架构现状），确认后批量入队
   pendingGenerateRow.value = null
-  pendingBatchPaths.value = selectedProjects.value.map((p: any) => normalizePath(p.path))
+  pendingBatchPaths.value = selectedProjects.value.map(p => normalizePath(p.path))
   genVector.value = true
   genArchitecture.value = true
   generateDialogVisible.value = true
@@ -2552,8 +2552,8 @@ const loadRemoteProjectTaskStatuses = async () => {
 
     const newStatusMap = { ...knowledgeGraphStatusMap.value }
     try {
-      const batchResult = await knowledgeGraphApi.getBatchStatus(clonedPaths) as unknown as Array<any>
-      batchResult.forEach((item: any) => {
+      const batchResult = await knowledgeGraphApi.getBatchStatus(clonedPaths)
+      batchResult.forEach(item => {
         if (item.projectPath) {
           newStatusMap[normalizePath(item.projectPath)] = item
         }

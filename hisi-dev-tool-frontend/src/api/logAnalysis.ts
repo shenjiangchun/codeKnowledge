@@ -2,7 +2,8 @@ import request from '@/utils/request'
 import type {
   LogQueryDto, LogAnalyzeRequest, AnalyzeTaskResponse,
   DetailedAnalysisReport, ReportListResponse,
-  FollowupStartResponse, FollowupContinueResponse
+  FollowupStartResponse, FollowupContinueResponse,
+  LogQueryResponse, ReportStatus
 } from '@/types/log'
 
 export interface AppLogConfig {
@@ -17,7 +18,7 @@ export interface AppLogConfig {
 
 export const logAnalysisApi = {
   // 查询日志
-  queryLogs(data: LogQueryDto): Promise<any> {
+  queryLogs(data: LogQueryDto): Promise<LogQueryResponse> {
     return request.post('/log/query', data)
   },
 
@@ -47,7 +48,7 @@ export const logAnalysisApi = {
   },
 
   // 获取任务状态
-  getStatus(id: string): Promise<any> {
+  getStatus(id: string): Promise<ReportStatus> {
     return request.get(`/log/report/${id}/status`)
   },
 

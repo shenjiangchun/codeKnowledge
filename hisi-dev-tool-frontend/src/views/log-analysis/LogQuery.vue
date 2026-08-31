@@ -256,9 +256,6 @@
         </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link size="small" @click="handleAnalyze(row)">
-              分析
-            </el-button>
             <el-button type="info" link size="small" @click="showDetail(row)">
               详情
             </el-button>
@@ -712,16 +709,13 @@ import { useRouter } from 'vue-router'
 import { Search, Document, Warning, Cpu, Check, Delete, Plus, Download, SetUp } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { logAnalysisApi, type AppLogConfig } from '@/api/logAnalysis'
-import { aiAnalysisApi } from '@/api/aiAnalysis'
-import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { projectGroupApi, type ProjectGroup } from '@/api/projectGroup'
-import type { LogEntry } from '@/types/log'
-import { parseJavaErrorLog, formatForAnalysis, type ParsedErrorLog } from '@/utils/logParser'
+import type { LogEntry, Report } from '@/types/log'
+import { parseJavaErrorLog, type ParsedErrorLog } from '@/utils/logParser'
 import { renderMarkdown } from '@/utils/markdown'
 import { downloadBlob } from '@/utils/download'
 
 const router = useRouter()
-const workspaceStore = useWorkspaceStore()
 
 const loading = ref(false)
 const logs = ref<LogEntry[]>([])
@@ -912,7 +906,7 @@ const formatConfigTime = (timestamp: number) => {
 
 // ========== 分析报告管理 ==========
 const reportsLoading = ref(false)
-const reports = ref<any[]>([])
+const reports = ref<Report[]>([])
 const reportFilter = reactive({
   status: '' ,
   startTime: null as Date | null, 
@@ -939,7 +933,7 @@ const pollingTimers = new Map<string, number>()
 const loadReports = async () => {
   reportsLoading.value = true
   try {
-    const params: any = {
+    const params: { page: number; pageSize: number; status?: string } = {
       page: reportsPagination.page,
       pageSize: reportsPagination.pageSize
     }
@@ -1027,7 +1021,7 @@ const clearAllPollingTimers = () => {
   pollingTimers.clear()
 }
 
-const viewReportDetail = async (report: any) => {
+const viewReportDetail = async (report: Report) => {
   try {
     const res = await logAnalysisApi.getReport(report.reportId)
     selectedReport.value = res
@@ -1052,7 +1046,7 @@ const goAutoFix = () => {
 
 // checkReportStatus removed as it was never referenced in the template
 
-const handleReanalyzeReport = async (report: any) => {
+const handleReanalyzeReport = async (report: Report) => {
   try {
     await ElMessageBox.confirm(
       `确认重新分析报告 "${report.reportId}"？这将重新执行完整的 DAG 分析流程。`,
@@ -1076,7 +1070,7 @@ const handleReanalyzeReport = async (report: any) => {
   }
 }
 
-const handleDeleteReport = async (report: any) => {
+const handleDeleteReport = async (report: Report) => {
   try {
     await ElMessageBox.confirm(
       `确认删除报告 "${report.reportId}"？此操作不可恢复。`,
@@ -1133,7 +1127,7 @@ const getReportStatusText = (status: string): string => {
 }
 
 
-const formatReportTime = (time: any): string => {
+const formatReportTime = (time: string | Date | null): string => {
   if (!time) return '-'
   if (typeof time === 'string') return time.replace('T', ' ').substring(0, 19)
   return new Date(time).toLocaleString('zh-CN')
@@ -1575,7 +1569,7 @@ const handleQuery = async () => {
       generatedDsl.value = dslJsonString
     }
 
-    const params: any = {
+    const params: { dslQuery: string } = {
       dslQuery: dslJsonString
     }
 
@@ -1633,39 +1627,6 @@ const handleReset = () => {
 const showDetail = (row: LogEntry) => {
   selectedLog.value = row
   detailVisible.value = true
-}
-
-const handleAnalyze = async (row: LogEntry) => {
-  // 解析日志，区分错误信息和堆栈信息
-  const rawLog = row.message || row.stackTrace || ''
-  const parsed = parseJavaErrorLog(rawLog)
-  const formatted = formatForAnalysis(parsed)
-
-  try {
-    // 1. 调后端接口，从 Neo4j 拉取相关代码上下文组装为富提示词
-    const result = await aiAnalysisApi.buildLogPrompt({
-      errorMessage: formatted.errorSummary || formatted.errorMessage || rawLog,
-      errorType: formatted.errorType || '',
-      stackTrace: formatted.stackTrace || parsed.rawStackTrace || '',
-      projectPath: row.serviceName || parsed.loggerName || ''
-    }) as any
-
-    const prompt = result?.prompt || result
-    if (!prompt) {
-      ElMessage.warning('生成分析提示词失败')
-      return
-    }
-
-    // 2. 创建 workspace session，通过 PTY 终端发送到 Claude CLI
-    const session = await workspaceStore.createSession(
-      'log-analysis',
-      typeof prompt === 'string' ? prompt : JSON.stringify(prompt)
-    )
-    router.push({ name: 'ClaudeTerminal', query: { sessionId: session.id } })
-    ElMessage.success('已创建日志分析会话')
-  } catch (error: any) {
-    ElMessage.error(`创建分析会话失败: ${error.message || error}`)
-  }
 }
 </script>
 

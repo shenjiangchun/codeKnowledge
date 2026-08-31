@@ -109,7 +109,7 @@ const handleClassChange = async (value: string) => {
     }
     const res = await knowledgeGraphApi.getMethodsByClass(value, [projectPath])
     // 转换为组件期望的格式
-    methods.value = (res || []).map((m: any) => ({
+    methods.value = (res || []).map(m => ({
       methodName: m.methodName,
       signature: m.signature
     }))

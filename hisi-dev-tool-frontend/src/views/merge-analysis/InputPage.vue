@@ -6,6 +6,8 @@ import { Plus, Close } from '@element-plus/icons-vue'
 import { projectApi } from '@/api/project'
 import { listRemoteProjects } from '@/api/remote-project'
 import { listBranches, type ImageContent } from '@/api/merge-analysis'
+import type { GitRepositoryInfo } from '@/types/callchain'
+import type { RemoteProject } from '@/types/remote-project'
 import type { UploadFile } from 'element-plus'
 
 const router = useRouter()
@@ -47,16 +49,16 @@ async function fetchProjects() {
     ])
 
     const local = localResult.status === 'fulfilled' && Array.isArray(localResult.value)
-      ? (localResult.value as any[]).map((p: any) => ({
+      ? (localResult.value as GitRepositoryInfo[]).map(p => ({
           name: p.name || '',
           path: p.path || '',
           source: p.source || 'scanned'
         }))
       : []
     const cloned = remoteResult.status === 'fulfilled' && Array.isArray(remoteResult.value)
-      ? (remoteResult.value as any[])
-          .filter((r: any) => r.cloneStatus === 'CLONED')
-          .map((r: any) => ({
+      ? (remoteResult.value as RemoteProject[])
+          .filter(r => r.cloneStatus === 'CLONED')
+          .map(r => ({
             name: r.name,
             // Use fullPath if available, otherwise fallback to localPath for backward compatibility
             path: r.fullPath || r.localPath,

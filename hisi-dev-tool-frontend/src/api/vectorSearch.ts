@@ -9,6 +9,33 @@ export interface VectorSearchRequest {
   language?: string
 }
 
+/** 调用者摘要（对应后端 SearchResultItem.CallerSummary） */
+export interface CallerSummary {
+  className: string
+  methodName: string
+  signature: string
+}
+
+/** 被调用者摘要（对应后端 SearchResultItem.CalleeSummary） */
+export interface CalleeSummary {
+  className: string
+  methodName: string
+  signature: string
+}
+
+/** 入口点摘要（对应后端 SearchResultItem.EntryPointSummary） */
+export interface EntryPointSummary {
+  entryType: string
+  entryKey: string
+}
+
+/** SQL 摘要（对应后端 SearchResultItem.SqlSummary） */
+export interface SqlSummary {
+  sqlId: string
+  statementType: string
+  sqlStatement: string
+}
+
 export interface VectorSearchResult {
   nodeId: string
   className: string
@@ -20,8 +47,8 @@ export interface VectorSearchResult {
   endLine: number
   complexity: number
   methodBody?: string
-  callers?: any[]
-  callees?: any[]
+  callers?: CallerSummary[]
+  callees?: CalleeSummary[]
   /** 相似度分数（0-1，仅在 items 中由后端返回） */
   similarityScore?: number
 }
@@ -43,10 +70,10 @@ export interface VectorSearchResultItem {
   similarityScore?: number
   /** 命中该结果的子查询列表（多路召回时记录，前端按分词筛选用） */
   matchedSubQueries?: string[]
-  callers?: any[]
-  callees?: any[]
-  entryPoints?: any[]
-  sqlNodes?: any[]
+  callers?: CallerSummary[]
+  callees?: CalleeSummary[]
+  entryPoints?: EntryPointSummary[]
+  sqlNodes?: SqlSummary[]
 }
 
 export interface VectorSearchResponse {

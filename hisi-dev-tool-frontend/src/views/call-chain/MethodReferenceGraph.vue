@@ -241,8 +241,8 @@ const loadDependencyGraph = async () => {
       const queries = entryMethods.value.map(method => {
         const { className, methodName } = splitFqn(method)
         return knowledgeGraphApi.getRootEntries(className, methodName, projectPaths)
-          .then(resp => (resp as any)?.rootEntries || [])
-          .catch(() => [] as any[])
+          .then(resp => resp?.rootEntries || [])
+          .catch(() => [] as RootEntry[])
       })
       const results = await Promise.all(queries)
       const allEntries: RootEntry[] = []

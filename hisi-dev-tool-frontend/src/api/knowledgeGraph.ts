@@ -216,79 +216,8 @@ export interface MyBatisScanResult {
 }
 
 // ============================================================
-// 业务流程生成接口定义
+// 图节点/边定义
 // ============================================================
-
-export interface BusinessFlowRequest {
-  callChainData: string
-  projectPath?: string
-  entryPointKey?: string
-  maxDepth?: number
-  includeDescription?: boolean
-}
-
-export interface BusinessFlowResponse {
-  requestId: string
-  mermaidDiagram: string
-  description: string
-  steps: FlowStep[]
-  keyNodes: KeyNode[]
-  generatedAt: string
-  success: boolean
-  errorMessage?: string
-}
-
-export interface FlowStep {
-  stepNumber: number
-  description: string
-  className: string
-  methodName: string
-  depth: number
-}
-
-export interface KeyNode {
-  nodeId: string
-  className: string
-  methodName: string
-  reason: string
-}
-
-// ============================================================
-// 单元测试生成接口定义
-// ============================================================
-
-export interface UnitTestRequest {
-  methodId: string
-  projectPath: string
-  className: string
-  methodName: string
-  includeBusinessFlow?: boolean
-  testFramework?: 'junit5' | 'junit4'
-}
-
-export interface UnitTestResponse {
-  requestId: string
-  testClassName: string
-  testCode: string
-  mockDependencies: MockDependency[]
-  testCases: TestCase[]
-  estimatedCoverage: number
-  generatedAt: string
-  success: boolean
-  errorMessage?: string
-}
-
-export interface MockDependency {
-  className: string
-  mockType: string
-  methods: string[]
-}
-
-export interface TestCase {
-  name: string
-  type: string
-  description: string
-}
 
 export interface GraphNode {
   id: string
@@ -640,22 +569,6 @@ export const knowledgeGraphApi = {
   },
 
   // ============================================================
-  // 业务流程生成接口（V1，POST）
-  // ============================================================
-
-  generateBusinessFlow(data: BusinessFlowRequest) {
-    return request.post<BusinessFlowResponse>('/knowledge-graph/business-flow/generate', data)
-  },
-
-  // ============================================================
-  // 单元测试生成接口（V1，POST）
-  // ============================================================
-
-  generateUnitTest(data: UnitTestRequest) {
-    return request.post<UnitTestResponse>('/knowledge-graph/unit-test/generate', data)
-  },
-
-  // ============================================================
   // 桥接关系查询接口 — V2
   // ============================================================
 
@@ -686,15 +599,6 @@ export const knowledgeGraphApi = {
   getBridgeStats(projectPaths: string[]) {
     return request.get<BridgeStats>('/v2/knowledge-graph/bridge-stats', {
       params: { projectPaths }
-    })
-  },
-
-  /**
-   * 获取入口点桥接关系 — 保持 V1（未纳入 V2 控制器）
-   */
-  getEntryBridges(entryKey: string, projectPath: string, projectPaths?: string[]) {
-    return request.get<BridgeRelation[]>('/knowledge-graph/bridges/entry', {
-      params: { entryKey, projectPath, projectPaths }
     })
   },
 

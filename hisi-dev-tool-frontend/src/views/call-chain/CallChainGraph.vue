@@ -31,15 +31,6 @@
         <el-button type="primary" @click="loadCallChain" :loading="loading" :disabled="!selectedUri || !selectedProject">
           查询
         </el-button>
-        <el-button
-          type="success"
-          @click="handleAIAnalysis"
-          :loading="analysisLoading"
-          :disabled="!chainData"
-        >
-          <el-icon><ChatDotRound /></el-icon>
-          AI 调用链分析
-        </el-button>
       </div>
 
       <ChainChart
@@ -67,11 +58,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ChatDotRound } from '@element-plus/icons-vue'
 import { knowledgeGraphApi, type GraphNode, type GraphEdge } from '@/api/knowledgeGraph'
-import { aiAnalysisApi } from '@/api/aiAnalysis'
 import { useAppStore } from '@/stores/app'
-import { useWorkspaceStore } from '@/stores/workspaceStore'
 import UriSelector from './components/UriSelector.vue'
 import ChainChart from './components/ChainChart.vue'
 import ContextMenu from './components/ContextMenu.vue'
@@ -91,13 +79,11 @@ interface ChainNode {
 const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
-const workspaceStore = useWorkspaceStore()
 
 const projects = ref<string[]>([])
 const selectedProject = ref(route.query.project as string || '')
 const selectedUri = ref(route.query.uri as string || '')
 const loading = ref(false)
-const analysisLoading = ref(false)
 const chainData = ref<ChainNode | null>(null)
 
 // 提供给子组件的有效 projectPath（处理相对/绝对路径拼接）
@@ -328,40 +314,6 @@ const handleMenuAction = (action: string, node: ChainNode) => {
         }
       })
       break
-  }
-}
-
-// Handle AI analysis for call chain
-// 混合模式：后端从 Neo4j 组装完整调用链数据 → 前端创建 workspace session → PTY 终端
-const handleAIAnalysis = async () => {
-  if (!chainData.value || !selectedUri.value) return
-
-  analysisLoading.value = true
-  try {
-    // 1. 调后端接口，从 Neo4j 拉取完整调用链数据组装为富提示词
-    const result = await aiAnalysisApi.buildCallChainPrompt({
-      entryKey: selectedUri.value,
-      projectPath: effectiveProjectPath.value
-    }) as any
-
-    const prompt = result?.prompt || result
-    if (!prompt || (typeof prompt === 'string' && prompt.length < 10)) {
-      ElMessage.warning('未找到调用链数据，请先生成知识图谱')
-      return
-    }
-
-    // 2. 创建 workspace session，通过 PTY 终端发送到 Claude CLI
-    const session = await workspaceStore.createSession(
-      'call-chain-analysis',
-      typeof prompt === 'string' ? prompt : JSON.stringify(prompt),
-      effectiveProjectPath.value || undefined
-    )
-    router.push({ name: 'ClaudeTerminal', query: { sessionId: session.id } })
-    ElMessage.success('已创建调用链分析会话')
-  } catch (error: any) {
-    ElMessage.error(`创建分析会话失败: ${error.message || error}`)
-  } finally {
-    analysisLoading.value = false
   }
 }
 
