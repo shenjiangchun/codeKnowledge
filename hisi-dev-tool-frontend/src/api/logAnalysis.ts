@@ -28,7 +28,7 @@ export const logAnalysisApi = {
   },
 
   // 获取报告列表
-  getReports(params?: { userId?: string; status?: string; page?: number; pageSize?: number }): Promise<ReportListResponse> {
+  getReports(params?: { userId?: string; status?: string; startTime?: string; endTime?: string; page?: number; pageSize?: number }): Promise<ReportListResponse> {
     return request.get('/log/reports', { params }) as Promise<ReportListResponse>
   },
 

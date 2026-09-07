@@ -189,9 +189,9 @@ class LogAnalysisControllerTest {
 
         PaginatedReports paginated = new PaginatedReports(1, reports);
 
-        when(repository.findByUserIdPagination("sys_admin", 1, 10)).thenReturn(paginated);
+        when(repository.findByFilters("sys_admin", null, null, null, 1, 10)).thenReturn(paginated);
 
-        ApiResponse<ReportListResponse> response = controller.getReports(null, null, 1, 10);
+        ApiResponse<ReportListResponse> response = controller.getReports(null, null, null, null, 1, 10);
 
         assertEquals(200, response.getCode());
         assertEquals(1, response.getData().getTotal());
@@ -209,13 +209,30 @@ class LogAnalysisControllerTest {
         entity.setUpdatedAt(LocalDateTime.now());
         reports.add(entity);
 
-        when(repository.findByUserIdAndStatus("sys_admin", "completed")).thenReturn(reports);
+        PaginatedReports paginated = new PaginatedReports(1, reports);
 
-        ApiResponse<ReportListResponse> response = controller.getReports(null, "completed", 1, 10);
+        when(repository.findByFilters("sys_admin", "completed", null, null, 1, 10)).thenReturn(paginated);
+
+        ApiResponse<ReportListResponse> response = controller.getReports(null, "completed", null, null, 1, 10);
 
         assertEquals(200, response.getCode());
         assertEquals(1, response.getData().getTotal());
-        verify(repository).findByUserIdAndStatus("sys_admin", "completed");
+        verify(repository).findByFilters("sys_admin", "completed", null, null, 1, 10);
+    }
+
+    @Test
+    @DisplayName("获取任务列表 - 时间范围透传给仓储")
+    void getReports_withTimeRange_shouldPassStartEndTime() {
+        LocalDateTime startTime = LocalDateTime.of(2025, 1, 1, 0, 0);
+        LocalDateTime endTime = LocalDateTime.of(2025, 1, 31, 23, 59);
+        PaginatedReports paginated = new PaginatedReports(0, new ArrayList<>());
+
+        when(repository.findByFilters("sys_admin", null, startTime, endTime, 1, 10)).thenReturn(paginated);
+
+        ApiResponse<ReportListResponse> response = controller.getReports(null, null, startTime, endTime, 1, 10);
+
+        assertEquals(200, response.getCode());
+        verify(repository).findByFilters("sys_admin", null, startTime, endTime, 1, 10);
     }
 
     @Test
@@ -279,5 +296,22 @@ class LogAnalysisControllerTest {
         ResponseEntity<byte[]> response = controller.exportReportsZip(startTime, endTime);
 
         assertEquals(500, response.getStatusCodeValue());
+    }
+
+    @Test
+    @DisplayName("批量导出报告 ZIP - 仅填开始时间时结束时间默认当前")
+    void exportReportsZip_withOnlyStartTime_defaultsEndTime() throws Exception {
+        LocalDateTime startTime = LocalDateTime.of(2025, 1, 1, 0, 0);
+        byte[] expectedZip = new byte[]{0x50, 0x4B, 0x03, 0x04};
+
+        when(reportExportService.exportLogReportsAsZip(eq(startTime), any(LocalDateTime.class)))
+            .thenReturn(expectedZip);
+
+        ResponseEntity<byte[]> response = controller.exportReportsZip(startTime, null);
+
+        assertEquals(200, response.getStatusCodeValue());
+        // 结束时间被赋予默认值（非 null 且不早于开始时间），而非退化为全量
+        verify(reportExportService).exportLogReportsAsZip(eq(startTime),
+            argThat(endTime -> endTime != null && !endTime.isBefore(startTime)));
     }
 }

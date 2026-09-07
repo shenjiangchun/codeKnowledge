@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -160,32 +161,43 @@ public class LogAnalysisRepository {
     }
 
     /**
-     * 按用户ID和状态查询报告列表
+     * 组合条件分页查询报告：userId + 状态 + 创建时间范围 + 分页。
+     * status / startTime / endTime 均可为空，为空时对应条件不生效。
      */
-    public List<LogAnalysisReportEntity> findByUserIdAndStatus(String userId, String status) {
-        String sql = "SELECT * FROM log_analysis_report WHERE user_id = ? AND status = ? ORDER BY created_at DESC";
-        try {
-            return jdbcTemplate.query(sql, new LogAnalysisReportRowMapper(), userId, status);
-        } catch (Exception e) {
-            log.error("查询报告列表失败 (userId={}, status={}): {}", userId, status, e.getMessage());
-            return List.of();
+    public PaginatedReports findByFilters(String userId, String status,
+                                           LocalDateTime startTime, LocalDateTime endTime,
+                                           int page, int pageSize) {
+        StringBuilder where = new StringBuilder(" WHERE user_id = ?");
+        List<Object> params = new ArrayList<>();
+        params.add(userId);
+
+        if (status != null && !status.isEmpty()) {
+            where.append(" AND status = ?");
+            params.add(status);
         }
-    }
+        if (startTime != null) {
+            where.append(" AND created_at >= ?");
+            params.add(startTime.atZone(ZoneId.systemDefault()).toEpochSecond());
+        }
+        if (endTime != null) {
+            where.append(" AND created_at <= ?");
+            params.add(endTime.atZone(ZoneId.systemDefault()).toEpochSecond());
+        }
 
-    /**
-     * 按用户ID分页查询报告
-     */
-    public PaginatedReports findByUserIdPagination(String userId, int page, int pageSize) {
-        String countSql = "SELECT COUNT(*) FROM log_analysis_report WHERE user_id = ?";
-        String listSql = "SELECT * FROM log_analysis_report WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?";
+        String countSql = "SELECT COUNT(*) FROM log_analysis_report" + where;
+        String listSql = "SELECT * FROM log_analysis_report" + where + " ORDER BY created_at DESC LIMIT ? OFFSET ?";
 
         try {
-            Integer total = jdbcTemplate.queryForObject(countSql, Integer.class, userId);
+            Integer total = jdbcTemplate.queryForObject(countSql, Integer.class, params.toArray());
             int offset = (page - 1) * pageSize;
-            List<LogAnalysisReportEntity> list = jdbcTemplate.query(listSql, new LogAnalysisReportRowMapper(), userId, pageSize, offset);
+            List<Object> listParams = new ArrayList<>(params);
+            listParams.add(pageSize);
+            listParams.add(offset);
+            List<LogAnalysisReportEntity> list = jdbcTemplate.query(listSql, new LogAnalysisReportRowMapper(), listParams.toArray());
             return new PaginatedReports(total != null ? total : 0, list);
         } catch (Exception e) {
-            log.error("分页查询报告列表失败 (userId={}, page={}): {}", userId, page, e.getMessage());
+            log.error("组合条件分页查询报告列表失败 (userId={}, status={}, startTime={}, endTime={}): {}",
+                    userId, status, startTime, endTime, e.getMessage());
             return new PaginatedReports(0, List.of());
         }
     }

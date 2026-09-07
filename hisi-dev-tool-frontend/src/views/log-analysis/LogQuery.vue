@@ -343,6 +343,7 @@
                 v-model="reportFilter.startTime"
                 type="datetime"
                 placeholder="开始时间"
+                value-format="YYYY-MM-DDTHH:mm:ss"
                 style="width: 180px"
               />
               <span style="margin: 0 4px">-</span>
@@ -350,6 +351,7 @@
                 v-model="reportFilter.endTime"
                 type="datetime"
                 placeholder="结束时间"
+                value-format="YYYY-MM-DDTHH:mm:ss"
                 style="width: 180px"
               />
             </el-form-item>
@@ -909,8 +911,8 @@ const reportsLoading = ref(false)
 const reports = ref<Report[]>([])
 const reportFilter = reactive({
   status: '' ,
-  startTime: null as Date | null, 
-  endTime: null as Date | null
+  startTime: null as string | null,
+  endTime: null as string | null
 })
 const reportsPagination = reactive({
   page: 1,
@@ -933,12 +935,18 @@ const pollingTimers = new Map<string, number>()
 const loadReports = async () => {
   reportsLoading.value = true
   try {
-    const params: { page: number; pageSize: number; status?: string } = {
+    const params: { page: number; pageSize: number; status?: string; startTime?: string; endTime?: string } = {
       page: reportsPagination.page,
       pageSize: reportsPagination.pageSize
     }
     if (reportFilter.status) {
       params.status = reportFilter.status
+    }
+    if (reportFilter.startTime) {
+      params.startTime = reportFilter.startTime
+    }
+    if (reportFilter.endTime) {
+      params.endTime = reportFilter.endTime
     }
     const res = await logAnalysisApi.getReports(params)
     reports.value = res?.list || []
@@ -1091,8 +1099,8 @@ const handleDeleteReport = async (report: Report) => {
 const handleExportZip = async () => {
   exportingZip.value = true
   try {
-    const startTime = reportFilter.startTime ? reportFilter.startTime.toISOString() : undefined
-    const endTime = reportFilter.endTime ? reportFilter.endTime.toISOString() : undefined
+    const startTime = reportFilter.startTime || undefined
+    const endTime = reportFilter.endTime || undefined
     const blob = await logAnalysisApi.exportReportsZip(startTime, endTime)
     const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '' )
     const filename = `log-reports-${timestamp}.zip`
