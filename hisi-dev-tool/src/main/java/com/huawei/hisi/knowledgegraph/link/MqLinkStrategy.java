@@ -18,7 +18,7 @@ public class MqLinkStrategy implements LinkStrategy {
     private final Neo4jMethodNodeRepository methodNodeRepository;
 
     @Override
-    public void link(List<String> projectPaths) {
+    public List<Map<String, Object>> link(List<String> projectPaths) {
         List<Neo4jMethodNodeRepository.MqProducerCall> producers =
             methodNodeRepository.findMqProducerCalls(projectPaths);
         List<Neo4jMethodNodeRepository.MqConsumerEntry> consumers =
@@ -27,7 +27,7 @@ public class MqLinkStrategy implements LinkStrategy {
         if (producers.isEmpty() || consumers.isEmpty()) {
             log.info("[MqLink] No producers ({}) or consumers ({}) for projectPaths: {}",
                 producers.size(), consumers.size(), projectPaths);
-            return;
+            return List.of();
         }
 
         // Build index: normalized topic -> list of consumers
@@ -68,12 +68,11 @@ public class MqLinkStrategy implements LinkStrategy {
         }
 
         if (!relations.isEmpty()) {
-            methodNodeRepository.createCallRelations(relations);
-            log.info("[MqLink] Created {} EXTERNAL_CALL edges for projectPaths: {}",
-                relations.size(), projectPaths);
+            log.info("[MqLink] Matched {} EXTERNAL_CALL edges for projectPaths: {}", relations.size(), projectPaths);
         } else {
             log.info("[MqLink] No matches found for projectPaths: {}", projectPaths);
         }
+        return relations;
     }
 
     /**

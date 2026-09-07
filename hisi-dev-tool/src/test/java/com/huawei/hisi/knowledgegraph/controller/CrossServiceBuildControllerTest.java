@@ -25,7 +25,7 @@ class CrossServiceBuildControllerTest {
     private CrossServiceBuildController controller;
 
     @Test
-    @DisplayName("build returns success on completion")
+    @DisplayName("build returns success with normalized paths on completion")
     void build_returnsSuccess() {
         var request = new CrossServiceBuildController.BuildRequest(List.of("/a", "/b"));
 
@@ -36,9 +36,20 @@ class CrossServiceBuildControllerTest {
     }
 
     @Test
-    @DisplayName("build returns 400 on IllegalArgumentException")
-    void build_returns400OnBadArg() {
+    @DisplayName("build returns 400 when fewer than 2 project paths")
+    void build_returns400OnTooFewPaths() {
         var request = new CrossServiceBuildController.BuildRequest(List.of("/a"));
+
+        ApiResponse<Map<String, Object>> response = controller.build(request);
+
+        assertThat(response.getCode()).isEqualTo(400);
+        verifyNoInteractions(buildService);
+    }
+
+    @Test
+    @DisplayName("build returns 400 on IllegalArgumentException from service")
+    void build_returns400OnBadArg() {
+        var request = new CrossServiceBuildController.BuildRequest(List.of("/a", "/b"));
         doThrow(new IllegalArgumentException("No KG")).when(buildService).build(anyList());
 
         ApiResponse<Map<String, Object>> response = controller.build(request);
@@ -47,10 +58,10 @@ class CrossServiceBuildControllerTest {
     }
 
     @Test
-    @DisplayName("build returns 500 on unexpected error")
+    @DisplayName("build returns 500 on IllegalStateException from service")
     void build_returns500OnError() {
-        var request = new CrossServiceBuildController.BuildRequest(List.of("/a"));
-        doThrow(new RuntimeException("boom")).when(buildService).build(anyList());
+        var request = new CrossServiceBuildController.BuildRequest(List.of("/a", "/b"));
+        doThrow(new IllegalStateException("boom")).when(buildService).build(anyList());
 
         ApiResponse<Map<String, Object>> response = controller.build(request);
 

@@ -31,14 +31,14 @@ public class HttpRestLinkStrategy implements LinkStrategy {
     private static final Pattern FLASK_PARAM = Pattern.compile("<[^>]+>");
 
     @Override
-    public void link(List<String> projectPaths) {
+    public List<Map<String, Object>> link(List<String> projectPaths) {
         List<OutboundHttpCall> outbounds = methodNodeRepository.findOutboundHttpCalls(projectPaths);
         List<HttpEntryInfo> entries = methodNodeRepository.findHttpEntries(projectPaths);
 
         if (outbounds.isEmpty() || entries.isEmpty()) {
             log.info("[HttpRestLink] No outbound calls ({}) or entries ({}) found for projectPaths: {}",
                 outbounds.size(), entries.size(), projectPaths);
-            return;
+            return List.of();
         }
 
         Map<String, List<HttpEntryInfo>> entryIndex = new HashMap<>();
@@ -82,12 +82,11 @@ public class HttpRestLinkStrategy implements LinkStrategy {
         }
 
         if (!relations.isEmpty()) {
-            methodNodeRepository.createCallRelations(relations);
-            log.info("[HttpRestLink] Created {} EXTERNAL_CALL edges for projectPaths: {}",
-                relations.size(), projectPaths);
+            log.info("[HttpRestLink] Matched {} EXTERNAL_CALL edges for projectPaths: {}", relations.size(), projectPaths);
         } else {
             log.info("[HttpRestLink] No matches found for projectPaths: {}", projectPaths);
         }
+        return relations;
     }
 
     /**

@@ -2,52 +2,76 @@ package com.huawei.hisi.knowledgegraph.link;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InOrder;
-import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
-import static org.assertj.core.api.Assertions.assertThatNoException;
-import static org.mockito.Mockito.*;
+import static org.assertj.core.api.Assertions.*;
 
-@ExtendWith(MockitoExtension.class)
 class CrossServiceLinkerTest {
 
     private static final List<String> PROJECT_PATHS = List.of("/workspace/service-a", "/workspace/service-b");
 
-    @Test
-    @DisplayName("link executes all strategies in order")
-    void link_executesAllStrategiesInOrder() {
-        LinkStrategy first = mock(LinkStrategy.class, "first");
-        LinkStrategy second = mock(LinkStrategy.class, "second");
-        LinkStrategy third = mock(LinkStrategy.class, "third");
+    /** 记录调用顺序的探针策略。 */
+    private static final class RecordingStrategy implements LinkStrategy {
+        final String name;
+        final List<Map<String, Object>> result;
+        final List<String> calls = new ArrayList<>();
 
-        var linker = new CrossServiceLinker(List.of(first, second, third));
-        linker.link(PROJECT_PATHS);
+        RecordingStrategy(String name, List<Map<String, Object>> result) {
+            this.name = name;
+            this.result = result;
+        }
 
-        InOrder inOrder = inOrder(first, second, third);
-        inOrder.verify(first).link(PROJECT_PATHS);
-        inOrder.verify(second).link(PROJECT_PATHS);
-        inOrder.verify(third).link(PROJECT_PATHS);
+        @Override
+        public List<Map<String, Object>> link(List<String> projectPaths) {
+            calls.addAll(projectPaths);
+            return result;
+        }
+
+        @Override
+        public String toString() {
+            return name;
+        }
     }
 
     @Test
-    @DisplayName("link continues when a strategy throws an exception")
-    void link_continuesOnStrategyFailure() {
-        LinkStrategy failing = mock(LinkStrategy.class, "failing");
-        LinkStrategy second = mock(LinkStrategy.class, "second");
-        LinkStrategy third = mock(LinkStrategy.class, "third");
+    @DisplayName("link executes all strategies and aggregates non-empty matched relations")
+    void link_executesAllStrategiesInOrder() {
+        RecordingStrategy first = new RecordingStrategy("first", List.of(Map.of("callerId", "c1")));
+        RecordingStrategy second = new RecordingStrategy("second", List.of());
+        RecordingStrategy third = new RecordingStrategy("third", List.of(Map.of("callerId", "c2"), Map.of("callerId", "c3")));
 
-        doThrow(new RuntimeException("boom")).when(failing).link(anyList());
+        var linker = new CrossServiceLinker(List.of(first, second, third));
+        Map<String, List<Map<String, Object>>> result = linker.link(PROJECT_PATHS);
 
-        var linker = new CrossServiceLinker(List.of(failing, second, third));
-        linker.link(PROJECT_PATHS);
+        // 所有策略都被调用，且收到相同的 projectPaths
+        for (RecordingStrategy s : List.of(first, second, third)) {
+            assertThat(s.calls).containsExactlyElementsOf(PROJECT_PATHS);
+        }
 
-        verify(failing).link(PROJECT_PATHS);
-        verify(second).link(PROJECT_PATHS);
-        verify(third).link(PROJECT_PATHS);
+        // 非空结果被聚合（空结果省略）：c1 + c2 + c3 = 3 条
+        int total = result.values().stream().mapToInt(List::size).sum();
+        assertThat(total).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("link surfaces strategy failure instead of swallowing it")
+    void link_surfacesStrategyFailure() {
+        LinkStrategy failing = projectPaths -> { throw new RuntimeException("boom"); };
+        RecordingStrategy second = new RecordingStrategy("second", List.of());
+
+        var linker = new CrossServiceLinker(List.of(failing, second));
+
+        assertThatThrownBy(() -> linker.link(PROJECT_PATHS))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("boom")
+                .hasCauseInstanceOf(RuntimeException.class);
+
+        // 失败后不再执行后续策略
+        assertThat(second.calls).isEmpty();
     }
 
     @Test
@@ -55,19 +79,18 @@ class CrossServiceLinkerTest {
     void link_handlesEmptyStrategiesList() {
         var linker = new CrossServiceLinker(Collections.emptyList());
 
-        assertThatNoException().isThrownBy(() -> linker.link(PROJECT_PATHS));
+        assertThat(linker.link(PROJECT_PATHS)).isEmpty();
     }
 
     @Test
     @DisplayName("link passes the exact projectPaths to each strategy")
     void link_passesCorrectProjectPaths() {
         List<String> specificPaths = List.of("/data/projects/alpha", "/data/projects/beta");
-        LinkStrategy strategy = mock(LinkStrategy.class);
+        RecordingStrategy strategy = new RecordingStrategy("solo", List.of());
 
         var linker = new CrossServiceLinker(List.of(strategy));
         linker.link(specificPaths);
 
-        verify(strategy).link(specificPaths);
-        verifyNoMoreInteractions(strategy);
+        assertThat(strategy.calls).containsExactlyElementsOf(specificPaths);
     }
 }
