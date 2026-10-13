@@ -4,12 +4,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("FrontendProjectDiscoverer")
 class FrontendProjectDiscovererTest {
@@ -17,52 +16,39 @@ class FrontendProjectDiscovererTest {
     private final FrontendProjectDiscoverer discoverer = new FrontendProjectDiscoverer();
 
     @Test
-    @DisplayName("同级探测发现 <后端名>-frontend 目录（含 package.json）")
-    void discover_siblingFrontendDir_found(@TempDir Path tempDir) throws Exception {
-        // 构造 backend 目录 + 同级 backend-frontend 目录（含 package.json）
-        Path backend = Files.createDirectory(tempDir.resolve("hisi-dev-tool"));
-        Path frontend = Files.createDirectory(tempDir.resolve("hisi-dev-tool-frontend"));
-        Files.createFile(frontend.resolve("package.json"));
-
-        List<String> found = discoverer.discover(backend.toString(), null);
-        assertThat(found).hasSize(1);
-        assertThat(found.get(0)).endsWith("hisi-dev-tool-frontend");
-    }
-
-    @Test
-    @DisplayName("同级无前端目录时返回空")
-    void discover_noFrontendDir_empty(@TempDir Path tempDir) throws Exception {
-        Path backend = Files.createDirectory(tempDir.resolve("hisi-dev-tool"));
-        List<String> found = discoverer.discover(backend.toString(), null);
-        assertThat(found).isEmpty();
-    }
-
-    @Test
-    @DisplayName("前端目录存在但无 package.json 时返回空")
-    void discover_frontendDirWithoutPackageJson_empty(@TempDir Path tempDir) throws Exception {
-        Path backend = Files.createDirectory(tempDir.resolve("hisi-dev-tool"));
-        Files.createDirectory(tempDir.resolve("hisi-dev-tool-frontend")); // 无 package.json
-        List<String> found = discoverer.discover(backend.toString(), null);
-        assertThat(found).isEmpty();
-    }
-
-    @Test
-    @DisplayName("显式指定前端路径（含 package.json）时返回该路径")
-    void discover_explicitFrontendPath_found(@TempDir Path tempDir) throws Exception {
-        Path backend = Files.createDirectory(tempDir.resolve("hisi-dev-tool"));
+    @DisplayName("显式前端目录含 package.json 时校验通过")
+    void validate_validFrontend_passes(@TempDir Path tempDir) throws Exception {
         Path frontend = Files.createDirectory(tempDir.resolve("custom-frontend"));
         Files.createFile(frontend.resolve("package.json"));
 
-        List<String> found = discoverer.discover(backend.toString(), frontend.toString());
-        assertThat(found).hasSize(1);
-        assertThat(found.get(0)).endsWith("custom-frontend");
+        assertThatCode(() -> discoverer.validateFrontendProject(frontend.toString()))
+            .doesNotThrowAnyException();
     }
 
     @Test
-    @DisplayName("后端路径为空或不存在时返回空")
-    void discover_blankOrMissingBackend_empty(@TempDir Path tempDir) {
-        assertThat(discoverer.discover("", null)).isEmpty();
-        assertThat(discoverer.discover(null, null)).isEmpty();
-        assertThat(discoverer.discover(tempDir.resolve("nonexistent").toString(), null)).isEmpty();
+    @DisplayName("前端目录不含 package.json 时抛异常")
+    void validate_noPackageJson_throws(@TempDir Path tempDir) throws Exception {
+        Path frontend = Files.createDirectory(tempDir.resolve("custom-frontend"));
+
+        assertThatThrownBy(() -> discoverer.validateFrontendProject(frontend.toString()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("package.json");
+    }
+
+    @Test
+    @DisplayName("前端目录不存在时抛异常")
+    void validate_missingDir_throws(@TempDir Path tempDir) {
+        assertThatThrownBy(() -> discoverer.validateFrontendProject(tempDir.resolve("nonexistent").toString()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("不存在");
+    }
+
+    @Test
+    @DisplayName("前端路径为空时抛异常")
+    void validate_blankPath_throws() {
+        assertThatThrownBy(() -> discoverer.validateFrontendProject(""))
+            .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> discoverer.validateFrontendProject(null))
+            .isInstanceOf(IllegalArgumentException.class);
     }
 }

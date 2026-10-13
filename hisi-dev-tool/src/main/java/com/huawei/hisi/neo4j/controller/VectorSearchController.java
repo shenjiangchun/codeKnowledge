@@ -1,11 +1,14 @@
 package com.huawei.hisi.neo4j.controller;
 
+import com.huawei.hisi.knowledgegraph.binding.service.ProjectBindingService;
 import com.huawei.hisi.model.ApiResponse;
 import com.huawei.hisi.neo4j.model.SearchErrorCode;
 import com.huawei.hisi.neo4j.model.SearchException;
 import com.huawei.hisi.neo4j.model.SearchResult;
+import com.huawei.hisi.neo4j.model.SearchResultItem;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.huawei.hisi.neo4j.service.EmbeddingService;
+import com.huawei.hisi.neo4j.service.FrontendNodeSearchService;
 import com.huawei.hisi.neo4j.service.MultiQueryHybridSearchService;
 import com.huawei.hisi.utils.PathUtils;
 import jakarta.validation.Valid;
@@ -39,14 +42,40 @@ public class VectorSearchController {
     private final MultiQueryHybridSearchService multiQueryHybridSearchService;
     private final Neo4jMethodNodeRepository methodNodeRepository;
     private final EmbeddingService embeddingService;
+    private final FrontendNodeSearchService frontendNodeSearchService;
+    private final ProjectBindingService projectBindingService;
 
     public VectorSearchController(
             MultiQueryHybridSearchService multiQueryHybridSearchService,
             Neo4jMethodNodeRepository methodNodeRepository,
-            EmbeddingService embeddingService) {
+            EmbeddingService embeddingService,
+            FrontendNodeSearchService frontendNodeSearchService,
+            ProjectBindingService projectBindingService) {
         this.multiQueryHybridSearchService = multiQueryHybridSearchService;
         this.methodNodeRepository = methodNodeRepository;
         this.embeddingService = embeddingService;
+        this.frontendNodeSearchService = frontendNodeSearchService;
+        this.projectBindingService = projectBindingService;
+    }
+
+    /**
+     * 绑定范围展开：对每个路径调用 {@link ProjectBindingService#resolve} 展开绑定组，去重合并。
+     * 无绑定时退化为原路径集合（单项目模式，向后兼容）。
+     */
+    private List<String> expandBindingScope(List<String> paths) {
+        if (paths == null || paths.isEmpty()) {
+            return List.of();
+        }
+        List<String> expanded = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        for (String p : paths) {
+            for (String resolved : projectBindingService.resolve(p)) {
+                if (seen.add(resolved)) {
+                    expanded.add(resolved);
+                }
+            }
+        }
+        return expanded;
     }
 
     /**
@@ -96,19 +125,35 @@ public class VectorSearchController {
                             ? List.of(normalizedProjectPath)
                             : List.of();
 
+            // 绑定范围展开：给定任一目录，展开为「自身 + 绑定对中的对侧目录」
+            List<String> expandedPaths = expandBindingScope(paths);
+
             SearchResult result = multiQueryHybridSearchService.multiQuerySearch(
                     request.getQuery(),
                     normalizedProjectPath,
-                    paths,
+                    expandedPaths,
                     request.getLanguage(),
                     request.getLimit(),
                     request.getGraphDepth()
             );
 
-            log.info("v2 搜索完成: totalCount={}, subQueries={}, costTimeMs={}",
+            // 前端节点语义检索：合并前端节点命中（nodeType 区分）
+            List<SearchResultItem> frontendItems = frontendNodeSearchService.search(
+                    request.getQuery(),
+                    expandedPaths,
+                    request.getLimit() != null ? request.getLimit() : 10);
+            if (!frontendItems.isEmpty()) {
+                List<SearchResultItem> merged = new ArrayList<>(result.getItems());
+                merged.addAll(frontendItems);
+                result.setItems(merged);
+                result.setTotalCount(merged.size());
+            }
+
+            log.info("v2 搜索完成: totalCount={}, subQueries={}, costTimeMs={}, frontendHits={}",
                     result.getTotalCount(),
                     result.getSubQueries() != null ? result.getSubQueries().size() : 0,
-                    result.getCostTimeMs());
+                    result.getCostTimeMs(),
+                    frontendItems.size());
 
             return ResponseEntity.ok(ApiResponse.success(result));
 

@@ -29,6 +29,19 @@ public class SchemaValidator {
 
     private static final String SCHEMA_PATH_TEMPLATE = "schemas/ram/%s.json";
 
+    /**
+     * Resolve a logical schema name to a classpath resource path.
+     * Names containing '/' are treated as directory-qualified (e.g. {@code "arch/root-cause-analysis"}
+     * → {@code schemas/arch/root-cause-analysis.json}); bare names keep the legacy
+     * {@code schemas/ram/} default for backward compatibility.
+     */
+    private static String resolveResourcePath(String schemaName) {
+        if (schemaName.contains("/")) {
+            return "schemas/" + schemaName + ".json";
+        }
+        return String.format(SCHEMA_PATH_TEMPLATE, schemaName);
+    }
+
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final JsonSchemaFactory factory =
             JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V7);
@@ -65,7 +78,7 @@ public class SchemaValidator {
     }
 
     private JsonSchema loadSchema(String schemaName) {
-        String resourcePath = String.format(SCHEMA_PATH_TEMPLATE, schemaName);
+        String resourcePath = resolveResourcePath(schemaName);
         ClassPathResource resource = new ClassPathResource(resourcePath);
         if (!resource.exists()) {
             throw new IllegalArgumentException(

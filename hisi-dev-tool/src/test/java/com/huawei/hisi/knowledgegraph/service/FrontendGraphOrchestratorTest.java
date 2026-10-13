@@ -2,9 +2,11 @@ package com.huawei.hisi.knowledgegraph.service;
 
 import com.huawei.hisi.knowledgegraph.codegraph.FrontendAstParser;
 import com.huawei.hisi.knowledgegraph.link.FrontendBackendLinker;
+import com.huawei.hisi.knowledgegraph.vector.FrontendNodeVectorizer;
 import com.huawei.hisi.knowledgegraph.service.storage.KnowledgeGraphStorageService;
 import com.huawei.hisi.neo4j.model.ApiClientNode;
 import com.huawei.hisi.neo4j.repository.Neo4jComponentNodeRepository;
+import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,7 +15,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -40,38 +45,65 @@ class FrontendGraphOrchestratorTest {
     @Mock
     private Neo4jComponentNodeRepository componentNodeRepository;
 
+    @Mock
+    private Neo4jMethodNodeRepository methodNodeRepository;
+
+    @Mock
+    private FrontendNodeVectorizer frontendNodeVectorizer;
+
     private FrontendGraphOrchestrator orchestrator;
 
     @BeforeEach
     void setUp() {
-        orchestrator = new FrontendGraphOrchestrator(discoverer, parser, linker, storageService, componentNodeRepository);
+        orchestrator = new FrontendGraphOrchestrator(discoverer, parser, linker,
+                storageService, componentNodeRepository, methodNodeRepository, frontendNodeVectorizer);
     }
 
     @Test
-    @DisplayName("发现前端项目后编排实体化 + 链接")
-    void run_discoveredFrontend_orchestrates() {
-        when(discoverer.discover("/be", null)).thenReturn(List.of("/fe"));
+    @DisplayName("后端已建图 + 前端目录有效时编排实体化 + 链接")
+    void run_validInputs_orchestrates() {
+        when(methodNodeRepository.countByProjectPath("/be")).thenReturn(5L);
 
         ApiClientNode client = ApiClientNode.builder()
             .apiClientId("fe:x.ts:GET /api")
             .method("GET").url("/api").projectPath("/fe").build();
         when(parser.parseDirectory("/fe", "/fe"))
-            .thenReturn(new FrontendAstParser.ParseResult(List.of(client), List.of()));
+            .thenReturn(new FrontendAstParser.ParseResult(List.of(client), List.of(), List.of()));
         when(parser.toFrontendRouteNodes(any(), anyString())).thenReturn(List.of());
         when(linker.link("/fe", List.of("/be"))).thenReturn(1);
 
-        orchestrator.run("/be", null);
+        Map<String, Object> result = orchestrator.run("/be", "/fe");
 
         verify(storageService).saveApiClientNodes(anyList());
         verify(linker).link("/fe", List.of("/be"));
+        assertThat(result.get("apiClients")).isEqualTo(1);
+        assertThat(result.get("linked")).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("未发现前端项目时跳过，不调用落库")
-    void run_noFrontend_skips() {
-        when(discoverer.discover("/be", null)).thenReturn(List.of());
-        orchestrator.run("/be", null);
+    @DisplayName("后端未建图时抛异常，不调用落库/链接")
+    void run_backendNotBuilt_throws() {
+        when(methodNodeRepository.countByProjectPath("/be")).thenReturn(0L);
+
+        assertThatThrownBy(() -> orchestrator.run("/be", "/fe"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("尚未建图");
+
         verify(storageService, never()).saveApiClientNodes(anyList());
         verify(linker, never()).link(anyString(), anyList());
+    }
+
+    @Test
+    @DisplayName("前端目录无效时抛异常（由校验器抛出）")
+    void run_invalidFrontend_throws() {
+        when(methodNodeRepository.countByProjectPath("/be")).thenReturn(5L);
+        org.mockito.Mockito.doThrow(new IllegalArgumentException("前端目录不含 package.json: /fe"))
+            .when(discoverer).validateFrontendProject("/fe");
+
+        assertThatThrownBy(() -> orchestrator.run("/be", "/fe"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("package.json");
+
+        verify(storageService, never()).saveApiClientNodes(anyList());
     }
 }

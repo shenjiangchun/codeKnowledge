@@ -42,7 +42,6 @@ public class KgGenerationQueue {
     private final IncrementalKnowledgeGraphBuilder incrementalBuilder;
     private final GenerationTaskRepository taskRepository;
     private final com.huawei.hisi.knowledgegraph.aggregation.AggregationPipeline aggregationPipeline;
-    private final FrontendGraphOrchestrator frontendGraphOrchestrator;
 
     private final LinkedBlockingQueue<QueueItem> queue = new LinkedBlockingQueue<>();
     private Thread consumerThread;
@@ -53,13 +52,11 @@ public class KgGenerationQueue {
     public KgGenerationQueue(KnowledgeGraphBuilder knowledgeGraphBuilder,
                              IncrementalKnowledgeGraphBuilder incrementalBuilder,
                              GenerationTaskRepository taskRepository,
-                             com.huawei.hisi.knowledgegraph.aggregation.AggregationPipeline aggregationPipeline,
-                             FrontendGraphOrchestrator frontendGraphOrchestrator) {
+                             com.huawei.hisi.knowledgegraph.aggregation.AggregationPipeline aggregationPipeline) {
         this.knowledgeGraphBuilder = knowledgeGraphBuilder;
         this.incrementalBuilder = incrementalBuilder;
         this.taskRepository = taskRepository;
         this.aggregationPipeline = aggregationPipeline;
-        this.frontendGraphOrchestrator = frontendGraphOrchestrator;
     }
 
     // ==================== 内部队列项 ====================
@@ -352,16 +349,6 @@ public class KgGenerationQueue {
                 log.info("[KG Queue] 架构现状聚合完成: projectPath={}", item.projectPath());
             } catch (Exception e) {
                 log.warn("[KG Queue] 架构现状聚合异常（不阻断）: projectPath={}, error={}",
-                    item.projectPath(), e.getMessage());
-            }
-        }
-
-        // 前端图编排：自动发现前端目录 → 前端实体化 → 跨层链接（独立链接阶段，不阻断后端）
-        if (!item.incremental()) {
-            try {
-                frontendGraphOrchestrator.run(item.projectPath(), null);
-            } catch (Exception e) {
-                log.warn("[KG Queue] 前端图编排异常（不阻断）: projectPath={}, error={}",
                     item.projectPath(), e.getMessage());
             }
         }

@@ -1,6 +1,7 @@
 package com.huawei.hisi.knowledgegraph.codegraph;
 
 import com.huawei.hisi.neo4j.model.ApiClientNode;
+import com.huawei.hisi.neo4j.model.ComponentNode;
 import com.huawei.hisi.neo4j.model.FrontendRouteNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -51,9 +52,10 @@ public class FrontendAstParser {
     );
 
     /**
-     * 解析结果：ApiClient 节点 + FrontendRoute 节点。
+     * 解析结果：ApiClient 节点 + FrontendRoute 节点 + Component 节点。
      */
-    public record ParseResult(List<ApiClientNode> apiClients, List<FrontendRoute> frontendRoutes) {
+    public record ParseResult(List<ApiClientNode> apiClients, List<FrontendRoute> frontendRoutes,
+                              List<ComponentNode> components) {
     }
 
     /**
@@ -72,9 +74,10 @@ public class FrontendAstParser {
     public ParseResult parseSource(String source, String projectPath, String sourceFile) {
         List<ApiClientNode> apiClients = new ArrayList<>();
         List<FrontendRoute> routes = new ArrayList<>();
+        List<ComponentNode> components = new ArrayList<>();
 
         if (source == null || source.isBlank()) {
-            return new ParseResult(apiClients, routes);
+            return new ParseResult(apiClients, routes, components);
         }
 
         // 1. ApiClient：request.* 调用
@@ -126,7 +129,22 @@ public class FrontendAstParser {
             }
         }
 
-        return new ParseResult(apiClients, routes);
+        // 3. Component：每个 .vue 文件本身是一个前端组件实体
+        if (sourceFile != null && sourceFile.endsWith(".vue")) {
+            String cn = deriveComponentName(sourceFile);
+            if (cn != null && !cn.isBlank()) {
+                components.add(ComponentNode.builder()
+                    .componentId(ComponentNode.generateComponentId(projectPath, cn))
+                    .componentName(cn)
+                    .filePath(sourceFile)
+                    .projectPath(projectPath)
+                    .language("typescript")
+                    .framework("vue")
+                    .build());
+            }
+        }
+
+        return new ParseResult(apiClients, routes, components);
     }
 
     /**
@@ -178,13 +196,14 @@ public class FrontendAstParser {
     public ParseResult parseDirectory(String directoryPath, String projectPath) {
         List<ApiClientNode> apiClients = new ArrayList<>();
         List<FrontendRoute> routes = new ArrayList<>();
+        List<ComponentNode> components = new ArrayList<>();
         if (directoryPath == null || directoryPath.isBlank()) {
-            return new ParseResult(apiClients, routes);
+            return new ParseResult(apiClients, routes, components);
         }
         Path root = Path.of(directoryPath);
         if (!Files.isDirectory(root)) {
             log.debug("[FrontendAstParser] 前端目录不存在: {}", directoryPath);
-            return new ParseResult(apiClients, routes);
+            return new ParseResult(apiClients, routes, components);
         }
         try (Stream<Path> walk = Files.walk(root)) {
             List<Path> files = walk
@@ -216,10 +235,11 @@ public class FrontendAstParser {
                 ParseResult r = parseSource(source, projectPath, sourceFile);
                 apiClients.addAll(r.apiClients());
                 routes.addAll(r.frontendRoutes());
+                components.addAll(r.components());
             }
         } catch (IOException e) {
             log.warn("[FrontendAstParser] 遍历目录失败: {}", directoryPath, e);
         }
-        return new ParseResult(apiClients, routes);
+        return new ParseResult(apiClients, routes, components);
     }
 }

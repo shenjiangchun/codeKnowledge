@@ -16,6 +16,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -57,6 +59,44 @@ class BlastRadiusTest {
         Map<String, Object> data = resp.getData();
         assertEquals(1, ((Number) data.get("affectedEntryPoints")).intValue(),
                 "3 个上游方法中只有 1 个是入口，entryCount 应为 1（历史误报为 2）");
+    }
+
+    @Test
+    void suggestedTests_nonEmptyWhenEntryPointsExist() {
+        String centerId = "D:/proj:Svc.controller.execute";
+        MethodNode center = methodOf(centerId, "execute");
+        MethodNode entryCaller = methodOf("D:/proj:Svc.controller.api", "api");
+
+        when(methodRepo.findByNodeId(centerId)).thenReturn(Optional.of(center));
+        when(methodRepo.findCalleesUpToDepth(eq(centerId), anyInt())).thenReturn(List.of());
+        when(methodRepo.findCallersUpToDepth(eq(centerId), anyInt())).thenReturn(List.of(entryCaller));
+        when(entryPointRepo.findByMethodNodeIds(anyString(), anyList()))
+                .thenReturn(List.of(entryPoint("ep1", entryCaller.getNodeId())));
+
+        ApiResponse<Map<String, Object>> resp = controller.getBlastRadius(centerId, 5, PROJECT, null);
+
+        @SuppressWarnings("unchecked")
+        List<String> tests = (List<String>) resp.getData().get("suggestedTests");
+        assertFalse(tests.isEmpty(), "有受影响入口点时 suggestedTests 应非空");
+        assertTrue(tests.stream().anyMatch(t -> t.contains("单元测试")), "应包含单元测试建议");
+        assertTrue(tests.stream().anyMatch(t -> t.contains("端到端测试")), "应包含端到端测试建议");
+    }
+
+    @Test
+    void suggestedTests_emptyWhenNoEntryPoints() {
+        String centerId = "D:/proj:Svc.util.helper";
+        MethodNode center = methodOf(centerId, "helper");
+
+        when(methodRepo.findByNodeId(centerId)).thenReturn(Optional.of(center));
+        when(methodRepo.findCalleesUpToDepth(eq(centerId), anyInt())).thenReturn(List.of());
+        when(methodRepo.findCallersUpToDepth(eq(centerId), anyInt())).thenReturn(List.of());
+        when(entryPointRepo.findByMethodNodeIds(anyString(), anyList())).thenReturn(List.of());
+
+        ApiResponse<Map<String, Object>> resp = controller.getBlastRadius(centerId, 5, PROJECT, null);
+
+        @SuppressWarnings("unchecked")
+        List<String> tests = (List<String>) resp.getData().get("suggestedTests");
+        assertTrue(tests.isEmpty(), "无受影响入口点时 suggestedTests 应为空数组");
     }
 
     private MethodNode methodOf(String nodeId, String methodName) {

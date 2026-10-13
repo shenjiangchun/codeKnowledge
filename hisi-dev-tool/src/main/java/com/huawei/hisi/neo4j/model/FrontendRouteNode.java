@@ -55,6 +55,12 @@ public class FrontendRouteNode {
     private String projectPath;
 
     /**
+     * 描述向量（与后端 MethodNode.descriptionEmbedding 同构，2048d，语义检索用）
+     */
+    @Property("descriptionEmbedding")
+    private float[] descriptionEmbedding;
+
+    /**
      * 生成唯一的路由节点 ID
      */
     public static String generateFrontendRouteId(String projectPath, String path) {

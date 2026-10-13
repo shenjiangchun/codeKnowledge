@@ -32,8 +32,15 @@ public class JwtAuthFilter implements Filter {
         HttpServletRequest httpRequest = (HttpServletRequest) request;
 
         String authHeader = httpRequest.getHeader(AUTH_HEADER);
+        String token = null;
         if (authHeader != null && authHeader.startsWith(BEARER_PREFIX)) {
-            String token = authHeader.substring(BEARER_PREFIX.length());
+            token = authHeader.substring(BEARER_PREFIX.length());
+        } else {
+            // SSE/EventSource 无法携带 Authorization 头，回退到 ?token= 查询参数
+            // （镜像 WebSocket 的 JwtHandshakeInterceptor 握手鉴权方式）。
+            token = httpRequest.getParameter("token");
+        }
+        if (token != null && !token.isBlank()) {
             try {
                 Claims claims = tokenProvider.validateToken(token);
                 String username = claims.getSubject();

@@ -39,8 +39,13 @@ public class WorkflowRegistry {
 
     /**
      * Register a workflow definition.
+     *
+     * <p>Fail-fast: all referenced node names must already be registered, so a
+     * misconfigured workflow is caught at registration time rather than at the
+     * first {@code /start} request.</p>
      */
     public void registerWorkflow(WorkflowDefinition def) {
+        resolveNodes(def.nodeNames());
         workflowRegistry.put(def.workflowType(), def);
         log.info("[WorkflowRegistry] registered workflow: type={} nodes={}",
                 def.workflowType(), def.nodeNames());

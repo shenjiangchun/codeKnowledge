@@ -1,5 +1,6 @@
 package com.huawei.hisi.neo4j.config;
 
+import com.huawei.hisi.config.EmbeddingModelConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Driver;
@@ -10,7 +11,9 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Neo4j 初始化器
@@ -24,6 +27,7 @@ public class Neo4jInitializer {
 
     private final Driver neo4jDriver;
     private final SessionConfig neo4jSessionConfig;
+    private final EmbeddingModelConfig embeddingModelConfig;
 
     /**
      * 唯一性约束列表
@@ -113,22 +117,35 @@ public class Neo4jInitializer {
     );
 
     /**
-     * 向量索引列表
-     * 用于语义检索（description/code/sql embedding）
+     * 向量索引定义（不含维度，维度统一取自运行时 {@link EmbeddingModelConfig#getDimension()}）。
+     * 仅列出由本后端创建、维度应跟随 embedding 模型的索引；codegraph sidecar 建的
+     * {@code interface_vector_index}(384) 等不在其内，自愈逻辑不触碰。
      */
-    private static final List<String> VECTOR_INDEXES = List.of(
+    private record VectorIndexSpec(String name, String label, String property) {
+        String createCypher(int dimension) {
+            return "CREATE VECTOR INDEX " + name + " IF NOT EXISTS FOR (n:" + label + ") ON n." + property
+                    + " OPTIONS {indexConfig: {`vector.dimensions`: " + dimension
+                    + ", `vector.similarity_function`: 'cosine'}}";
+        }
+    }
+
+    private static final List<VectorIndexSpec> VECTOR_INDEX_SPECS = List.of(
         // Method 向量索引（双向量：description + code）
-        "CREATE VECTOR INDEX method_description_vector_index IF NOT EXISTS FOR (m:Method) ON m.descriptionEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}",
-        "CREATE VECTOR INDEX method_code_vector_index IF NOT EXISTS FOR (m:Method) ON m.codeEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}",
+        new VectorIndexSpec("method_description_vector_index", "Method", "descriptionEmbedding"),
+        new VectorIndexSpec("method_code_vector_index", "Method", "codeEmbedding"),
         // SQL 向量索引
-        "CREATE VECTOR INDEX sql_node_vector_index IF NOT EXISTS FOR (s:Sql) ON s.sqlEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}",
+        new VectorIndexSpec("sql_node_vector_index", "Sql", "sqlEmbedding"),
         // ClassNode 向量索引（类级语义检索）
-        "CREATE VECTOR INDEX classNode_description_vector_index IF NOT EXISTS FOR (c:Class) ON c.descriptionEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}",
+        new VectorIndexSpec("classNode_description_vector_index", "Class", "descriptionEmbedding"),
         // EntryPoint 向量索引（双向量：brief + detailed）
-        "CREATE VECTOR INDEX entry_point_brief_vector_index IF NOT EXISTS FOR (e:EntryPoint) ON e.briefEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}",
-        "CREATE VECTOR INDEX entry_point_detailed_vector_index IF NOT EXISTS FOR (e:EntryPoint) ON e.detailedEmbedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}",
-        // Task 5: LogChunk 向量索引（用于日志相似度检索）
-        "CREATE VECTOR INDEX logEmbedding IF NOT EXISTS FOR (l:LogChunk) ON l.embedding OPTIONS {indexConfig: {`vector.dimensions`: 2048, `vector.similarity_function`: 'cosine'}}"
+        new VectorIndexSpec("entry_point_brief_vector_index", "EntryPoint", "briefEmbedding"),
+        new VectorIndexSpec("entry_point_detailed_vector_index", "EntryPoint", "detailedEmbedding"),
+        // LogChunk 向量索引（日志相似度检索）
+        new VectorIndexSpec("logEmbedding", "LogChunk", "embedding"),
+        // 前端节点向量索引（语义检索命中前端节点）
+        new VectorIndexSpec("component_description_vector_index", "Component", "descriptionEmbedding"),
+        new VectorIndexSpec("frontendRoute_description_vector_index", "FrontendRoute", "descriptionEmbedding"),
+        new VectorIndexSpec("apiClient_description_vector_index", "ApiClient", "descriptionEmbedding")
     );
 
     /**
@@ -150,9 +167,12 @@ public class Neo4jInitializer {
      * 一次性数据回填语句列表
      * 用于将历史数据迁移到新字段；语句本身必须是幂等的（通过 WHERE 条件排除已处理数据）
      */
-    private static final List<String> BACKFILL_STATEMENTS = List.of(
+    static final List<String> BACKFILL_STATEMENTS = List.of(
         // Remove publicProjectPath property from all nodes (cleanup migration)
-        "MATCH (n) WHERE n.publicProjectPath IS NOT NULL REMOVE n.publicProjectPath"
+        "MATCH (n) WHERE n.publicProjectPath IS NOT NULL REMOVE n.publicProjectPath",
+        // 旧分层枚举脏标签归一（现行枚举：CONTROLLER/SERVICE/REPOSITORY/MODEL/UTILITY/UNKNOWN）
+        "MATCH (mod:ModuleNode) WHERE mod.layerRole = 'DATA' SET mod.layerRole = 'MODEL'",
+        "MATCH (mod:ModuleNode) WHERE mod.layerRole = 'MAPPER' SET mod.layerRole = 'REPOSITORY'"
     );
 
     /**
@@ -218,18 +238,9 @@ public class Neo4jInitializer {
                 }
             }
 
-            // 创建向量索引
+            // 创建向量索引（维度跟随运行时 embedding 模型；已存在且维度不符则先删后建）
             log.info("创建向量索引...");
-            for (String cypher : VECTOR_INDEXES) {
-                try {
-                    session.run(cypher).consume();
-                    successCount++;
-                    log.debug("成功创建向量索引: {}", extractIndexName(cypher));
-                } catch (Exception e) {
-                    log.warn("创建向量索引失败: {} - {}", extractIndexName(cypher), e.getMessage());
-                    failCount++;
-                }
-            }
+            reconcileVectorIndexes(session);
 
             // 删除已废弃的索引
             log.info("删除已废弃的索引...");
@@ -265,6 +276,65 @@ public class Neo4jInitializer {
         } catch (Exception e) {
             log.error("Neo4j 初始化失败: {}", e.getMessage(), e);
         }
+    }
+
+    /**
+     * 向量索引维度自愈：期望维度取自运行时 {@link EmbeddingModelConfig#getDimension()}（与
+     * 向量生成同源）。对每个受管向量索引：
+     * <ul>
+     *   <li>不存在 → 按期望维度创建</li>
+     *   <li>已存在且维度不符 → 仅告警并保留现状（不做破坏性 {@code DROP}，交由人工核对）</li>
+     *   <li>已存在且维度一致 → 跳过</li>
+     * </ul>
+     * 幂等；不在 {@link #VECTOR_INDEX_SPECS} 清单内的向量索引（如 sidecar 的 384 维
+     * interface_vector_index）不触碰。
+     */
+    private void reconcileVectorIndexes(Session session) {
+        int expectedDimension = embeddingModelConfig.getDimension();
+        Map<String, Integer> actualDimensions = readVectorIndexDimensions(session);
+
+        for (VectorIndexSpec spec : VECTOR_INDEX_SPECS) {
+            try {
+                Integer actual = actualDimensions.get(spec.name());
+                if (actual == null) {
+                    session.run(spec.createCypher(expectedDimension)).consume();
+                    log.info("[Neo4jInitializer] 向量索引已创建: {} (dim={})", spec.name(), expectedDimension);
+                } else if (actual != expectedDimension) {
+                    // 维度不一致：不做破坏性 DROP 重建，仅告警保留现状，交由人工核对（防御性加固）
+                    log.warn("[Neo4jInitializer] 向量索引维度不一致，保留现状未重建: {} ({} -> {})，请人工核对",
+                            spec.name(), actual, expectedDimension);
+                }
+            } catch (Exception e) {
+                log.warn("[Neo4jInitializer] 向量索引自愈失败: {} - {}", spec.name(), e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 读取当前库中所有向量索引的实际维度，返回 {@code 索引名 -> 维度}。
+     */
+    private Map<String, Integer> readVectorIndexDimensions(Session session) {
+        Map<String, Integer> dims = new HashMap<>();
+        try {
+            var result = session.run("SHOW VECTOR INDEXES YIELD name, options RETURN name, options");
+            while (result.hasNext()) {
+                var record = result.next();
+                String name = record.get("name").asString();
+                var options = record.get("options");
+                if (options != null && !options.isNull()) {
+                    var indexConfig = options.get("indexConfig");
+                    if (indexConfig != null && !indexConfig.isNull()) {
+                        var dim = indexConfig.get("vector.dimensions");
+                        if (dim != null && !dim.isNull()) {
+                            dims.put(name, dim.asInt());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[Neo4jInitializer] 读取向量索引维度失败: {}", e.getMessage());
+        }
+        return dims;
     }
 
     /**

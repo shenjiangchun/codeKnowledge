@@ -5,6 +5,7 @@ import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.AgentSession;
 import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.model.SessionStatus;
+import com.huawei.hisi.ram.model.SessionType;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
 import com.huawei.hisi.ram.service.SessionMappingService;
@@ -49,6 +50,7 @@ public class WorkflowController {
     private final SessionMappingService sessionMappingService;
     private final AgentSessionRepository sessionRepository;
     private final AgentEventRepository eventRepository;
+    private final DagExecutor dagExecutor;
 
     @Value("${ram.sse.timeout-ms:300000}")
     private long sseTimeoutMs = 300_000;
@@ -66,11 +68,13 @@ public class WorkflowController {
     public WorkflowController(WorkflowRegistry registry,
                               SessionMappingService sessionMappingService,
                               AgentSessionRepository sessionRepository,
-                              AgentEventRepository eventRepository) {
+                              AgentEventRepository eventRepository,
+                              DagExecutor dagExecutor) {
         this.registry = registry;
         this.sessionMappingService = sessionMappingService;
         this.sessionRepository = sessionRepository;
         this.eventRepository = eventRepository;
+        this.dagExecutor = dagExecutor;
     }
 
     // ──────────────────────────── Request / Response types ────────────────────────────
@@ -82,6 +86,49 @@ public class WorkflowController {
     public record ClarifyRequest(Map<String, Object> answers) {}
     public record ConfirmRequest(String action, String feedback, Map<String, Object> editedOutput) {}
     public record NodeInfo(String name, String agentId) {}
+
+    // ──────────────────────────── Start endpoint ────────────────────────────
+
+    /**
+     * 通用工作流启动端点（移植自 RamController 启动路径）：
+     * Registry 校验 type → 种 agent_session（UUID→id 映射先行注册）→ 异步执行 DAG → 返回 sessionId。
+     * 前端经 {@code GET /sessions/{sid}/stream} 订阅进度。
+     */
+    @PostMapping("/start")
+    public ApiResponse<StartResponse> start(@RequestBody StartRequest request) {
+        if (request == null || request.workflowType() == null || request.workflowType().isBlank()) {
+            return ApiResponse.error(400, "workflowType is required");
+        }
+        WorkflowDefinition def = registry.getWorkflow(request.workflowType());
+        if (def == null) {
+            return ApiResponse.error(400, "unknown workflowType: " + request.workflowType());
+        }
+        Map<String, Object> input = request.input() == null ? Map.of() : request.input();
+        if (!(input.get("projectPaths") instanceof List<?> paths) || paths.isEmpty()) {
+            return ApiResponse.error(400, "input.projectPaths is required");
+        }
+
+        // 种会话行：UUID→id 映射在异步执行前注册，SSE 可立即挂接
+        String handle = UUID.randomUUID().toString();
+        AgentSession seeded = sessionRepository.save(AgentSession.newRunning("anonymous", SessionType.WORKFLOW));
+        long backendId = seeded.getId();
+        seeded.setUuid(handle);
+        sessionRepository.update(seeded);
+        sessionMappingService.register(handle, backendId);
+        log.info("[Workflow][start] type={} handle={} backendId={} projectPaths={}",
+                request.workflowType(), handle, backendId, paths);
+
+        List<DagNode> nodes = registry.resolveNodes(def.nodeNames());
+        ExecutionPolicy policy = ExecutionPolicy.fromMetadata(def.metadata());
+        CompletableFuture.runAsync(() -> dagExecutor.run(nodes, backendId, input, policy))
+                .exceptionally(ex -> {
+                    log.error("[Workflow][start] DAG execution failed type={} backendId={}",
+                            request.workflowType(), backendId, ex);
+                    sessionRepository.updateStatus(backendId, SessionStatus.FAILED);
+                    return null;
+                });
+        return ApiResponse.success(new StartResponse(handle));
+    }
 
     // ──────────────────────────── Definition endpoints ────────────────────────────
 

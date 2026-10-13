@@ -72,6 +72,12 @@ public class ComponentNode {
     private String description;
 
     /**
+     * 描述向量（与后端 MethodNode.descriptionEmbedding 同构，2048d，语义检索用）
+     */
+    @Property("descriptionEmbedding")
+    private float[] descriptionEmbedding;
+
+    /**
      * 生成唯一的组件节点 ID
      * @param projectPath 前端项目路径
      * @param componentName 组件名

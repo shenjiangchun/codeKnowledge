@@ -233,10 +233,10 @@ public class Neo4jVectorIndexService {
                     // 不删不建，交给 waitForIndexOnline 处理
                     return true;
                 }
-                // 维度不对，删除重建
-                log.warn("向量索引 '{}' 维度不正确 (当前: {}, 需要: {})，正在删除重建...",
+                // 维度不对：不做破坏性 DROP 重建，仅告警保留现状，交由人工核对
+                log.warn("向量索引 '{}' 维度不一致 (当前: {}, 需要: {})，保留现状不删除重建，请人工核对",
                         indexName, currentDimension, config.dimension());
-                session.run("DROP INDEX " + indexName).consume();
+                return true;
             }
 
             // 创建新索引

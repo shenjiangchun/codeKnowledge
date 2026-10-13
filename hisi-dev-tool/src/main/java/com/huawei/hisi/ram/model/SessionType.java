@@ -16,5 +16,7 @@ public enum SessionType {
     /** Log analysis follow-up Q&A session */
     LOG_FOLLOWUP,
     /** Exception auto-fix session */
-    FIX
+    FIX,
+    /** Generic workflow session (unified /api/workflow/* entry point) */
+    WORKFLOW
 }

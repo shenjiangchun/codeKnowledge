@@ -45,15 +45,13 @@ class KgGenerationQueueTest {
     private GenerationTaskRepository taskRepository;
     @Mock
     private AggregationPipeline aggregationPipeline;
-    @Mock
-    private FrontendGraphOrchestrator frontendGraphOrchestrator;
 
     private KgGenerationQueue queue;
 
     @BeforeEach
     void setUp() {
         queue = new KgGenerationQueue(knowledgeGraphBuilder, incrementalBuilder,
-                taskRepository, aggregationPipeline, frontendGraphOrchestrator);
+                taskRepository, aggregationPipeline);
     }
 
     @AfterEach

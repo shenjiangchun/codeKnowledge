@@ -103,6 +103,7 @@ public class KnowledgeGraphController {
     private final ClassLayerViolationDetector classLayerViolationDetector;
     private final Neo4jClassNodeRepository neo4jClassNodeRepository;
     private final ArchitectureAnalysisService architectureAnalysisService;
+    private final com.huawei.hisi.knowledgegraph.binding.service.ProjectBindingService projectBindingService;
 
     // ============================================================
     // 任务管理接口（异步生成）
@@ -2584,6 +2585,7 @@ public class KnowledgeGraphController {
             @RequestParam(required = false) String language) {
         List<String> paths = ProjectPathResolver.resolve(projectPath, projectPaths);
         if (paths.isEmpty()) return ApiResponse.error(400, "projectPath or projectPaths required");
+        paths = expandBindingScope(paths);
 
         try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             // 领域列表：读 DomainNode（技术耦合 + LLM 业务语义检测结果，非包名切片）
@@ -2733,6 +2735,26 @@ public class KnowledgeGraphController {
             result.put("hotspots", hotspots);
             return ApiResponse.success(result);
         }
+    }
+
+    /**
+     * 绑定范围展开：对每个路径调用 {@link com.huawei.hisi.knowledgegraph.binding.service.ProjectBindingService#resolve}
+     * 展开绑定组，去重合并。无绑定时退化为原路径集合。
+     */
+    private List<String> expandBindingScope(List<String> paths) {
+        if (paths == null || paths.isEmpty()) {
+            return List.of();
+        }
+        List<String> expanded = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (String p : paths) {
+            for (String resolved : projectBindingService.resolve(p)) {
+                if (seen.add(resolved)) {
+                    expanded.add(resolved);
+                }
+            }
+        }
+        return expanded;
     }
 
     /**
@@ -3667,11 +3689,31 @@ public class KnowledgeGraphController {
                 "涉及约 " + entryCount + " 个上游入口点"
             ));
             result.put("riskSummary", riskSummary);
-            result.put("suggestedTests", List.of());
+            result.put("suggestedTests", deriveSuggestedTests(m, callees.size(), callers.size(), entryCount));
 
             return ApiResponse.success(result);
         } catch (Exception e) {
             return ApiResponse.error(500, "Blast radius query failed: " + e.getMessage());
         }
+    }
+
+    /**
+     * 基于爆炸半径推导测试建议：中心方法单测 + 下游集成测试 + 上游回归测试 + 入口点端到端测试。
+     * 无受影响入口点时返回空数组（spec: 无受影响入口点时的建议）。
+     */
+    private List<String> deriveSuggestedTests(MethodNode center, int downstreamCount, int upstreamCount, int entryCount) {
+        List<String> tests = new ArrayList<>();
+        if (entryCount == 0) {
+            return tests;
+        }
+        tests.add("单元测试: " + center.getClassName() + "." + center.getMethodName() + "() — 覆盖核心逻辑分支");
+        if (downstreamCount > 0) {
+            tests.add("集成测试: 验证 " + downstreamCount + " 个下游受影响方法的调用契约");
+        }
+        if (upstreamCount > 0) {
+            tests.add("回归测试: 验证 " + upstreamCount + " 个上游调用者的行为不变");
+        }
+        tests.add("端到端测试: 覆盖 " + entryCount + " 个受影响入口点的业务场景");
+        return tests;
     }
 }

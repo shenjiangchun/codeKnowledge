@@ -80,6 +80,11 @@ public class DeepseekJsonClient {
             if (json == null || json.isBlank()) {
                 return null;
             }
+            // String.class 表示调用方只要原始 JSON 文本（自行二次解析），
+            // 不能走 readValue(json, String.class)——那会把 JSON 对象当 String 反序列化而抛 START_OBJECT。
+            if (type == String.class) {
+                return type.cast(json);
+            }
             try {
                 return objectMapper.readValue(json, type);
             } catch (Exception e) {

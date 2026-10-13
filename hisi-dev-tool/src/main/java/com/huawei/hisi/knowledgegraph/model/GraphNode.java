@@ -63,4 +63,10 @@ public class GraphNode {
      * LLM 生成的自然语言描述（可为 null，表示尚未生成）
      */
     private String description;
+
+    /**
+     * 节点类型（跨层图区分节点类别）：Method / Component / ApiClient / EntryPoint / FrontendRoute。
+     * 纯方法调用链场景下为 null，向后兼容。
+     */
+    private String nodeType;
 }

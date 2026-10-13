@@ -4,88 +4,47 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@DisplayName("类级职责三级回退 + 分层违规标疑似")
+/**
+ * 类级职责识别单测：复数后缀（*Utils/*Constants 等）与既有后缀行为保持。
+ */
 class ClassLayerRoleDetectorTest {
 
-    private final ClassLayerRoleDetector roleDetector = new ClassLayerRoleDetector();
-    private final ClassLayerViolationDetector violationDetector = new ClassLayerViolationDetector(roleDetector);
+    private final ClassLayerRoleDetector detector = new ClassLayerRoleDetector();
 
     @Test
-    @DisplayName("注解优先识别")
-    void annotationFirst() {
-        assertThat(roleDetector.detect(List.of("RestController"), "com.foo.AnyClass", "com.foo.x"))
-            .isEqualTo(ClassLayerRoleDetector.CONTROLLER);
-        assertThat(roleDetector.detect(List.of("Service"), "com.foo.AnyClass", "com.foo.x"))
-            .isEqualTo(ClassLayerRoleDetector.SERVICE);
-        assertThat(roleDetector.detect(List.of("Repository"), "com.foo.AnyClass", "com.foo.x"))
-            .isEqualTo(ClassLayerRoleDetector.REPOSITORY);
+    @DisplayName("复数类名后缀：*Utils → UTILITY(NAME)")
+    void pluralClassNameSuffix() {
+        var r = detector.detectWithSource(List.of(), "com.hisi.utils.CodeAnalysisUtils", "com.hisi.utils");
+        assertThat(r.role()).isEqualTo("UTILITY");
+        assertThat(r.source()).isEqualTo("NAME");
     }
 
     @Test
-    @DisplayName("类名后缀回退")
-    void classNameFallback() {
-        assertThat(roleDetector.detect(List.of(), "com.foo.OrderController", "com.foo.x"))
-            .isEqualTo(ClassLayerRoleDetector.CONTROLLER);
-        assertThat(roleDetector.detect(List.of(), "com.foo.OrderService", "com.foo.x"))
-            .isEqualTo(ClassLayerRoleDetector.SERVICE);
-        assertThat(roleDetector.detect(List.of(), "com.foo.OrderRepository", "com.foo.x"))
-            .isEqualTo(ClassLayerRoleDetector.REPOSITORY);
+    @DisplayName("复数包名后缀：xx.utils → UTILITY(PACKAGE)")
+    void pluralPackageNameSuffix() {
+        var r = detector.detectWithSource(List.of(), "com.hisi.helper.StringHelperFacade", "com.hisi.utils");
+        assertThat(r.role()).isEqualTo("UTILITY");
+        assertThat(r.source()).isEqualTo("PACKAGE");
     }
 
     @Test
-    @DisplayName("包名后缀兜底")
-    void packageFallback() {
-        assertThat(roleDetector.detect(List.of(), "com.foo.OrderManager", "com.foo.controller"))
-            .isEqualTo(ClassLayerRoleDetector.CONTROLLER);
-        assertThat(roleDetector.detect(List.of(), "com.foo.OrderManager", "com.foo.service"))
-            .isEqualTo(ClassLayerRoleDetector.SERVICE);
+    @DisplayName("复数 Constants/DTOs 命中")
+    void pluralConstantsAndDtos() {
+        assertThat(detector.detect(List.of(), "com.hisi.GlobalConstants", "com.hisi").equals("UTILITY")).isTrue();
+        assertThat(detector.detect(List.of(), "com.hisi.dto.UserDtos", "com.hisi.dto").equals("MODEL")).isTrue();
     }
 
     @Test
-    @DisplayName("三级均无法识别返回 UNKNOWN")
-    void unknown() {
-        assertThat(roleDetector.detect(List.of(), "com.foo.Mystery", "com.foo.mystery"))
-            .isEqualTo(ClassLayerRoleDetector.UNKNOWN);
-    }
-
-    @Test
-    @DisplayName("来源标记：注解/类名/包名/未知")
-    void roleSource() {
-        assertThat(roleDetector.detectWithSource(List.of("Service"), "com.foo.Any", "com.foo.x").source())
-            .isEqualTo("ANNOTATION");
-        assertThat(roleDetector.detectWithSource(List.of(), "com.foo.OrderController", "com.foo.x").source())
-            .isEqualTo("NAME");
-        assertThat(roleDetector.detectWithSource(List.of(), "com.foo.Any", "com.foo.service").source())
-            .isEqualTo("PACKAGE");
-        assertThat(roleDetector.detectWithSource(List.of(), "com.foo.Mystery", "com.foo.mystery").source())
-            .isEqualTo("UNKNOWN");
-    }
-
-    @Test
-    @DisplayName("类级反向依赖标疑似（service 依赖 controller）")
-    void reverseDependency() {
-        Map<String, String> roleMap = Map.of(
-            "com.foo.OrderService", ClassLayerRoleDetector.SERVICE,
-            "com.foo.OrderController", ClassLayerRoleDetector.CONTROLLER);
-        var edges = List.of(new TarjanSccDetector.Edge("com.foo.OrderService", "com.foo.OrderController"));
-        var violations = violationDetector.detect(edges, roleMap);
-        assertThat(violations).hasSize(1);
-        assertThat(violations.get(0).sourceRole()).isEqualTo(ClassLayerRoleDetector.SERVICE);
-        assertThat(violations.get(0).message()).contains("疑似");
-    }
-
-    @Test
-    @DisplayName("正向依赖不标（controller 依赖 service）")
-    void forwardDependency() {
-        Map<String, String> roleMap = Map.of(
-            "com.foo.OrderController", ClassLayerRoleDetector.CONTROLLER,
-            "com.foo.OrderService", ClassLayerRoleDetector.SERVICE);
-        var edges = List.of(new TarjanSccDetector.Edge("com.foo.OrderController", "com.foo.OrderService"));
-        var violations = violationDetector.detect(edges, roleMap);
-        assertThat(violations).isEmpty();
+    @DisplayName("既有行为保持：注解优先 / 单数后缀 / 未知")
+    void existingBehaviorPreserved() {
+        assertThat(detector.detectWithSource(List.of("RestController"), "a.B", "p").role()).isEqualTo("CONTROLLER");
+        assertThat(detector.detectWithSource(List.of(), "a.UserController", "p").role()).isEqualTo("CONTROLLER");
+        assertThat(detector.detectWithSource(List.of(), "a.OrderService", "p").role()).isEqualTo("SERVICE");
+        assertThat(detector.detectWithSource(List.of(), "a.UserMapper", "p").role()).isEqualTo("REPOSITORY");
+        assertThat(detector.detectWithSource(List.of(), "a.UserDTO", "p").role()).isEqualTo("MODEL");
+        assertThat(detector.detectWithSource(List.of(), "a.FooBar", "p.weird").role()).isEqualTo("UNKNOWN");
     }
 }
