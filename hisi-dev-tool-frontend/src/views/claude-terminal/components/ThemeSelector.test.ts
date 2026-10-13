@@ -19,6 +19,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { defineComponent, h } from 'vue'
 import ThemeSelector from './ThemeSelector.vue'
 
 // Mock localStorage - must be defined before any imports that use it
@@ -359,30 +360,43 @@ vi.mock('@/themes', () => {
 })
 
 // Simple mock components for testing
-const MockColorPicker = {
+// 注意：不能用字符串 template（runtime-only 构建不编译），改用 h() 渲染函数
+const MockColorPicker = defineComponent({
   name: 'ElColorPicker',
-  template: '<input type="color" class="el-color-picker" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   props: ['modelValue'],
-  emits: ['update:modelValue', 'change']
-}
+  emits: ['update:modelValue', 'change'],
+  setup(props, { emit }) {
+    return () =>
+      h('input', {
+        type: 'color',
+        class: 'el-color-picker',
+        value: props.modelValue,
+        onInput: (e: Event) => emit('update:modelValue', (e.target as HTMLInputElement).value)
+      })
+  }
+})
 
-const MockButton = {
+const MockButton = defineComponent({
   name: 'ElButton',
-  template: '<button class="el-button" @click="$emit(\'click\')"><slot /></button>',
   props: ['size', 'type'],
-  emits: ['click']
-}
+  emits: ['click'],
+  setup(_props, { emit, slots }) {
+    return () => h('button', { class: 'el-button', onClick: () => emit('click') }, slots.default?.())
+  }
+})
 
-// Helper function to mount with Element Plus stubs
+// Helper function to mount with Element Plus mocks registered as global components
+// 说明：不能用 stubs —— stubs 按组件 name 匹配，而 <el-button>/<el-color-picker> 是未注册的
+// 字符串组件，拿不到 name，stub 匹配会落空。改用 global.components 注册 mock 组件即可被解析。
 function mountWithStubs(component: any, options: any = {}) {
   return mount(component, {
     ...options,
     global: {
       ...options.global,
-      stubs: {
+      components: {
         ElColorPicker: MockColorPicker,
         ElButton: MockButton,
-        ...options.global?.stubs
+        ...options.global?.components
       }
     }
   })

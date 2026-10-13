@@ -209,8 +209,11 @@ describe('request.ts 响应拦截器', () => {
       await expect(errorHandler(error)).rejects.toThrow()
 
       const { ElMessage } = await import('element-plus')
-      // 代码优先使用 API 返回的 message
-      expect(ElMessage.error).toHaveBeenCalledWith('未授权')
+      // 401 使用 ElMessage({...}) 对象形式，type 为 'warning'，优先使用 API 返回的 message
+      expect(ElMessage).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'warning',
+        message: '未授权'
+      }))
     })
 
     test('401 未授权错误 - 无 message 时使用默认消息', async () => {
@@ -224,7 +227,11 @@ describe('request.ts 响应拦截器', () => {
       await expect(errorHandler(error)).rejects.toThrow()
 
       const { ElMessage } = await import('element-plus')
-      expect(ElMessage.error).toHaveBeenCalledWith('未授权，请先登录')
+      // 无 message 时使用默认消息「登录已过期，请重新登录」
+      expect(ElMessage).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'warning',
+        message: '登录已过期，请重新登录'
+      }))
     })
 
     test('404 资源不存在错误 - 使用 API 消息', async () => {
