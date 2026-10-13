@@ -82,6 +82,14 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/architecture',
+    name: 'ArchitectureDiagnosis',
+    component: () => import('@/views/architecture-diagnosis/ArchitectureDiagnosisView.vue'),
+    meta: {
+      title: '架构诊断'
+    }
+  },
+  {
     path: '/project',
     name: 'Project',
     component: () => import('@/views/project/ProjectList.vue'),
@@ -260,6 +268,11 @@ router.beforeEach(async (to, _from, next) => {
   const menuAvailability = appStore.availableMenus
 
   if (to.path.startsWith('/knowledge-graph') && !menuAvailability['knowledge-graph']) {
+    ElMessage.warning('请先在项目管理页面选择项目')
+    return next('/project')
+  }
+
+  if (to.path.startsWith('/architecture') && !menuAvailability['architecture-diagnosis']) {
     ElMessage.warning('请先在项目管理页面选择项目')
     return next('/project')
   }

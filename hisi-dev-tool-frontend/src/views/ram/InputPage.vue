@@ -26,6 +26,7 @@ import { projectApi } from '@/api/project'
 import { listRemoteProjects } from '@/api/remote-project'
 import { projectGroupApi, type ProjectGroup } from '@/api/projectGroup'
 import type { GitRepositoryInfo } from '@/types/callchain'
+import type { RemoteProject } from '@/types/remote-project'
 import type { UploadFile } from 'element-plus'
 
 const router = useRouter()
@@ -136,9 +137,9 @@ async function loadProjects(): Promise<void> {
       ? localList.value as GitRepositoryInfo[]
       : []
     const cloned = remoteList.status === 'fulfilled' && Array.isArray(remoteList.value)
-      ? (remoteList.value as any[])
-          .filter((r: any) => r.cloneStatus === 'CLONED')
-          .map((r: any) => ({
+      ? (remoteList.value as RemoteProject[])
+          .filter(r => r.cloneStatus === 'CLONED')
+          .map(r => ({
             name: r.name,
             // Use fullPath if available, otherwise fallback to localPath for backward compatibility
             path: r.fullPath || r.localPath,
@@ -160,7 +161,7 @@ async function loadProjects(): Promise<void> {
   }
 
   // Pre-populate from app store if available.
-  const fromStore = appStore.selectedProjects?.map((p: any) => p.path).filter(Boolean) as string[]
+  const fromStore = appStore.selectedProjects?.map(p => p.path).filter(Boolean) as string[]
   if (fromStore && fromStore.length > 0 && projectPaths.value.length === 0) {
     projectPaths.value = fromStore
     // 同步到 selectedValues

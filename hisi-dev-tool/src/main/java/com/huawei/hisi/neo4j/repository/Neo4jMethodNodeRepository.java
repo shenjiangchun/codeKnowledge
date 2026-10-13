@@ -117,17 +117,6 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     long countByProjectPaths(@Param("projectPaths") List<String> projectPaths);
 
     /**
-     * [批量聚合] 按 projectPath 分组统计方法节点数量（一次查询返回每项目计数）。
-     * 用于批量状态查询，避免对每个项目单独跑一次 Neo4j 往返。
-     */
-    @Query("""
-        MATCH (m:Method)
-        WHERE m.projectPath IN $projectPaths
-        RETURN m.projectPath AS projectPath, count(m) AS cnt
-        """)
-    List<Map<String, Object>> countByProjectPathsGrouped(@Param("projectPaths") List<String> projectPaths);
-
-    /**
      * [诊断] 统计项目下拥有 descriptionEmbedding 的方法节点数量
      */
     @Query("""
@@ -1965,17 +1954,6 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
         RETURN COUNT(r)
         """)
     long countCallRelationsByProjectPaths(@Param("projectPaths") List<String> projectPaths);
-
-    /**
-     * [批量聚合] 按 projectPath 分组统计调用关系数量。
-     * 用于批量状态查询，避免对每个项目单独跑一次 Neo4j 往返。
-     */
-    @Query("""
-        MATCH (caller:Method)-[r:CALLS]->(callee:Method)
-        WHERE caller.projectPath IN $projectPaths
-        RETURN caller.projectPath AS projectPath, COUNT(r) AS cnt
-        """)
-    List<Map<String, Object>> countCallRelationsByProjectPathsGrouped(@Param("projectPaths") List<String> projectPaths);
 
     /**
      * 批量按桥接类型统计多个项目的调用关系数量

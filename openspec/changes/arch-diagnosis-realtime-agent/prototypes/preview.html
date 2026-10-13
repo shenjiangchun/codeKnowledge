@@ -1,0 +1,340 @@
+<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><title>arch-diagnosis-realtime-agent 原型图</title><style>body{font-family:"Microsoft YaHei",sans-serif;background:#e8ebf0;margin:0;padding:24px}h1{font-size:20px;color:#1e3a5f}h2{font-size:15px;color:#303133;margin:28px 0 8px}.card{background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:8px;max-width:1200px}svg{max-width:100%;height:auto;display:block}</style></head><body><h1>架构诊断实时化 + Agent 流深度分析 — 交互原型</h1><h2>原型 1：实时统计视图（进页自动生成，无空态）</h2><div class="card"><svg xmlns="http://www.w3.org/2000/svg" width="1180" height="900" viewBox="0 0 1180 900" font-family="PingFang SC, Microsoft YaHei, sans-serif">
+  <defs>
+    <linearGradient id="hdr" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1e3a5f"/><stop offset="1" stop-color="#2c5282"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 浏览器外框 -->
+  <rect x="0" y="0" width="1180" height="900" rx="10" fill="#f0f2f5" stroke="#d0d7de"/>
+  <!-- 顶栏 -->
+  <rect x="0" y="0" width="1180" height="42" rx="10" fill="url(#hdr)"/>
+  <circle cx="24" cy="21" r="6" fill="#ff5f57"/><circle cx="44" cy="21" r="6" fill="#febc2e"/><circle cx="64" cy="21" r="6" fill="#28c840"/>
+  <text x="590" y="26" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">架构诊断 — HiSi DevTool</text>
+
+  <!-- 侧边栏 -->
+  <rect x="0" y="42" width="170" height="858" fill="#263445"/>
+  <text x="20" y="80" fill="#8fa3b8" font-size="12">导航</text>
+  <rect x="10" y="95" width="150" height="34" rx="5" fill="#31465c"/><text x="28" y="117" fill="#cfd8e3" font-size="13">知识图谱</text>
+  <rect x="10" y="137" width="150" height="34" rx="5" fill="#409eff"/><text x="28" y="159" fill="#fff" font-size="13" font-weight="600">架构诊断</text>
+  <rect x="10" y="179" width="150" height="34" rx="5" fill="#31465c"/><text x="28" y="201" fill="#cfd8e3" font-size="13">调用链</text>
+  <rect x="10" y="221" width="150" height="34" rx="5" fill="#31465c"/><text x="28" y="243" fill="#cfd8e3" font-size="13">日志分析</text>
+  <rect x="10" y="263" width="150" height="34" rx="5" fill="#31465c"/><text x="28" y="285" fill="#cfd8e3" font-size="13">RAM 需求分析</text>
+
+  <!-- 主区域：控制卡 -->
+  <rect x="190" y="62" width="970" height="64" rx="8" fill="#fff" stroke="#e4e7ed"/>
+  <text x="210" y="100" fill="#303133" font-size="16" font-weight="600">架构诊断</text>
+  <rect x="330" y="76" width="300" height="34" rx="5" fill="#fff" stroke="#c0c4cc"/>
+  <text x="344" y="98" fill="#606266" font-size="13">hisi-dev-tool  ▾</text>
+  <!-- 实时状态徽标 -->
+  <rect x="648" y="80" width="86" height="26" rx="13" fill="#f0f9eb" stroke="#67c23a"/>
+  <circle cx="664" cy="93" r="4" fill="#67c23a"/>
+  <text x="674" y="97" fill="#67c23a" font-size="12">实时生成</text>
+  <rect x="746" y="76" width="110" height="34" rx="5" fill="#fff" stroke="#c0c4cc"/>
+  <text x="762" y="98" fill="#606266" font-size="13">保存快照</text>
+  <rect x="868" y="76" width="150" height="34" rx="5" fill="#409eff"/>
+  <text x="888" y="98" fill="#fff" font-size="13" font-weight="600">✦ AI 深度分析</text>
+  <!-- 注释：自动生成 -->
+  <line x1="480" y1="115" x2="700" y2="145" stroke="#e6a23c" stroke-dasharray="4 3"/>
+  <rect x="700" y="132" width="380" height="26" rx="5" fill="#fdf6ec" stroke="#e6a23c"/>
+  <text x="712" y="150" fill="#e6a23c" font-size="12">进入页面/切换项目即自动生成（persist=false，不落快照）</text>
+
+  <!-- 诊断总览 -->
+  <rect x="190" y="150" width="970" height="130" rx="8" fill="#fff" stroke="#e4e7ed"/>
+  <text x="210" y="180" fill="#303133" font-size="14" font-weight="600">诊断总览</text>
+  <text x="300" y="180" fill="#909399" font-size="12">生成于 10:32:15 · 耗时 1.8s · 实时</text>
+  <!-- 健康分 -->
+  <circle cx="265" cy="230" r="42" fill="none" stroke="#e4e7ed" stroke-width="8"/>
+  <circle cx="265" cy="230" r="42" fill="none" stroke="#409eff" stroke-width="8" stroke-dasharray="198 264" stroke-linecap="round" transform="rotate(-90 265 230)"/>
+  <text x="265" y="236" text-anchor="middle" fill="#409eff" font-size="22" font-weight="700">75</text>
+  <text x="265" y="256" text-anchor="middle" fill="#909399" font-size="10">健康总分 B</text>
+  <!-- KPI -->
+  <g font-size="12" fill="#606266">
+    <rect x="340" y="200" width="120" height="56" rx="5" fill="#f5f7fa"/><text x="400" y="224" text-anchor="middle" fill="#303133" font-size="18" font-weight="600">139</text><text x="400" y="244" text-anchor="middle">方法数</text>
+    <rect x="472" y="200" width="120" height="56" rx="5" fill="#f5f7fa"/><text x="532" y="224" text-anchor="middle" fill="#303133" font-size="18" font-weight="600">7</text><text x="532" y="244" text-anchor="middle">领域数</text>
+    <rect x="604" y="200" width="120" height="56" rx="5" fill="#fdf0f0"/><text x="664" y="224" text-anchor="middle" fill="#f56c6c" font-size="18" font-weight="600">3</text><text x="664" y="244" text-anchor="middle">循环依赖</text>
+    <rect x="736" y="200" width="120" height="56" rx="5" fill="#fdf6ec"/><text x="796" y="224" text-anchor="middle" fill="#e6a23c" font-size="18" font-weight="600">12</text><text x="796" y="244" text-anchor="middle">分层违规</text>
+  </g>
+  <!-- 问题摘要 -->
+  <rect x="880" y="200" width="260" height="56" rx="5" fill="#fff" stroke="#e4e7ed"/>
+  <text x="896" y="224" fill="#303133" font-size="12">问题清单</text>
+  <rect x="896" y="234" width="52" height="16" rx="8" fill="#fde2e2"/><text x="922" y="246" text-anchor="middle" fill="#f56c6c" font-size="10">HIGH 4</text>
+  <rect x="956" y="234" width="66" height="16" rx="8" fill="#faecd8"/><text x="989" y="246" text-anchor="middle" fill="#e6a23c" font-size="10">MEDIUM 18</text>
+  <rect x="1030" y="234" width="46" height="16" rx="8" fill="#e9e9eb"/><text x="1053" y="246" text-anchor="middle" fill="#909399" font-size="10">LOW 9</text>
+
+  <!-- 四章 Tabs -->
+  <rect x="190" y="296" width="970" height="584" rx="8" fill="#fff" stroke="#e4e7ed"/>
+  <g font-size="13">
+    <rect x="206" y="312" width="72" height="30" rx="5" fill="#f5f7fa"/><text x="242" y="332" text-anchor="middle" fill="#606266">项目级</text>
+    <rect x="286" y="312" width="72" height="30" rx="5" fill="#409eff"/><text x="322" y="332" text-anchor="middle" fill="#fff" font-weight="600">模块级</text>
+    <rect x="366" y="312" width="72" height="30" rx="5" fill="#f5f7fa"/><text x="402" y="332" text-anchor="middle" fill="#606266">类级</text>
+    <rect x="446" y="312" width="72" height="30" rx="5" fill="#f5f7fa"/><text x="482" y="332" text-anchor="middle" fill="#606266">方法级</text>
+  </g>
+
+  <!-- 模块级：左 DSM 右环 -->
+  <text x="210" y="376" fill="#303133" font-size="13" font-weight="600">DSM 依赖矩阵</text>
+  <rect x="210" y="390" width="380" height="380" rx="5" fill="#fafafa" stroke="#e4e7ed"/>
+  <!-- DSM 热力格子示意 -->
+  <g>
+    <g transform="translate(280,420)">
+      <!-- 对角线 + 热力格 -->
+      <rect x="0" y="0" width="22" height="22" fill="#409eff" opacity="0.9"/><rect x="24" y="0" width="22" height="22" fill="#fff" stroke="#eee"/><rect x="48" y="0" width="22" height="22" fill="#f56c6c" opacity="0.8"/><rect x="72" y="0" width="22" height="22" fill="#fff" stroke="#eee"/><rect x="96" y="0" width="22" height="22" fill="#e6a23c" opacity="0.5"/>
+      <rect x="0" y="24" width="22" height="22" fill="#fff" stroke="#eee"/><rect x="24" y="24" width="22" height="22" fill="#409eff" opacity="0.9"/><rect x="48" y="24" width="22" height="22" fill="#fff" stroke="#eee"/><rect x="72" y="24" width="22" height="22" fill="#f56c6c" opacity="0.8"/><rect x="96" y="24" width="22" height="22" fill="#fff" stroke="#eee"/>
+      <rect x="0" y="48" width="22" height="22" fill="#f56c6c" opacity="0.8"/><rect x="24" y="48" width="22" height="22" fill="#fff" stroke="#eee"/><rect x="48" y="48" width="22" height="22" fill="#409eff" opacity="0.9"/><rect x="72" y="48" width="22" height="22" fill="#fff" stroke="#eee"/><rect x="96" y="48" width="22" height="22" fill="#e6a23c" opacity="0.5"/>
+      <rect x="0" y="72" width="22" height="22" fill="#fff" stroke="#eee"/><rect x="24" y="72" width="22" height="22" fill="#f56c6c" opacity="0.8"/><rect x="48" y="72" width="22" height="22" fill="#fff" stroke="#eee"/><rect x="72" y="72" width="22" height="22" fill="#409eff" opacity="0.9"/><rect x="96" y="72" width="22" height="22" fill="#fff" stroke="#eee"/>
+      <rect x="0" y="96" width="22" height="22" fill="#e6a23c" opacity="0.5"/><rect x="24" y="96" width="22" height="22" fill="#fff" stroke="#eee"/><rect x="48" y="96" width="22" height="22" fill="#e6a23c" opacity="0.5"/><rect x="72" y="96" width="22" height="22" fill="#fff" stroke="#eee"/><rect x="96" y="96" width="22" height="22" fill="#409eff" opacity="0.9"/>
+      <!-- 行标 -->
+      <text x="-8" y="15" text-anchor="end" fill="#909399" font-size="9">controller</text>
+      <text x="-8" y="39" text-anchor="end" fill="#909399" font-size="9">service</text>
+      <text x="-8" y="63" text-anchor="end" fill="#909399" font-size="9">repository</text>
+      <text x="-8" y="87" text-anchor="end" fill="#909399" font-size="9">model</text>
+      <text x="-8" y="111" text-anchor="end" fill="#909399" font-size="9">util</text>
+    </g>
+    <text x="400" y="560" text-anchor="middle" fill="#909399" font-size="11">红=反向依赖 · 悬停查看强度 · 点击下钻</text>
+  </g>
+
+  <text x="620" y="376" fill="#303133" font-size="13" font-weight="600">包级循环依赖（3）</text>
+  <g>
+    <rect x="620" y="390" width="520" height="72" rx="5" fill="#fdf0f0" stroke="#f56c6c"/>
+    <rect x="632" y="402" width="88" height="18" rx="9" fill="#f56c6c"/><text x="676" y="415" text-anchor="middle" fill="#fff" font-size="10">CROSS_LAYER</text>
+    <text x="632" y="440" fill="#303133" font-size="12">controller → service → repository → controller</text>
+    <text x="632" y="456" fill="#909399" font-size="11">3 个包参与跨层循环 · 点击节点定位类</text>
+    <rect x="620" y="472" width="520" height="72" rx="5" fill="#fdf6ec" stroke="#e6a23c"/>
+    <rect x="632" y="484" width="72" height="18" rx="9" fill="#e6a23c"/><text x="668" y="497" text-anchor="middle" fill="#fff" font-size="10">SAME_LAYER</text>
+    <text x="632" y="522" fill="#303133" font-size="12">service.a ⇄ service.b（同层互依）</text>
+  </g>
+
+  <text x="620" y="586" fill="#303133" font-size="13" font-weight="600">分层违规（12）</text>
+  <rect x="620" y="598" width="520" height="172" rx="5" fill="#fafafa" stroke="#e4e7ed"/>
+  <g font-size="11" fill="#606266">
+    <text x="636" y="622"><tspan fill="#f56c6c">■</tspan> repository.OrderMapper → controller.XxxController（下层依赖上层）</text>
+    <text x="636" y="646"><tspan fill="#f56c6c">■</tspan> model.dto.UserDTO → service.UserServiceImpl</text>
+    <text x="636" y="670"><tspan fill="#f56c6c">■</tspan> util.JsonUtils → controller.ExportController</text>
+    <text x="636" y="694" fill="#909399">… 共 12 条 · 点击行查看类级依赖下钻</text>
+  </g>
+
+  <!-- 底部提示条 -->
+  <rect x="210" y="800" width="930" height="56" rx="5" fill="#ecf5ff" stroke="#b3d8ff"/>
+  <text x="230" y="824" fill="#409eff" font-size="12" font-weight="600">✦ 想要「为什么会出现这些问题、先修哪三个」？</text>
+  <text x="230" y="844" fill="#606266" font-size="12">点击右上角「AI 深度分析」：agent 将结合以上数据与真实代码生成项目级架构现状及问题分析报告</text>
+</svg>
+</div><h2>原型 2：AI 深度分析进行中（agent 流三节点进度 + SSE）</h2><div class="card"><svg xmlns="http://www.w3.org/2000/svg" width="1180" height="900" viewBox="0 0 1180 900" font-family="PingFang SC, Microsoft YaHei, sans-serif">
+  <defs>
+    <linearGradient id="hdr2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1e3a5f"/><stop offset="1" stop-color="#2c5282"/>
+    </linearGradient>
+    <linearGradient id="running" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#409eff"/><stop offset="1" stop-color="#79bbff"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1180" height="900" rx="10" fill="#f0f2f5" stroke="#d0d7de"/>
+  <rect x="0" y="0" width="1180" height="42" rx="10" fill="url(#hdr2)"/>
+  <circle cx="24" cy="21" r="6" fill="#ff5f57"/><circle cx="44" cy="21" r="6" fill="#febc2e"/><circle cx="64" cy="21" r="6" fill="#28c840"/>
+  <text x="590" y="26" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">架构诊断 — AI 深度分析（进行中）</text>
+
+  <!-- 侧边栏 -->
+  <rect x="0" y="42" width="170" height="858" fill="#263445"/>
+  <g fill="#cfd8e3" font-size="13">
+    <rect x="10" y="95" width="150" height="34" rx="5" fill="#31465c"/><text x="28" y="117">知识图谱</text>
+    <rect x="10" y="137" width="150" height="34" rx="5" fill="#409eff"/><text x="28" y="159" fill="#fff" font-weight="600">架构诊断</text>
+    <rect x="10" y="179" width="150" height="34" rx="5" fill="#31465c"/><text x="28" y="201">调用链</text>
+    <rect x="10" y="221" width="150" height="34" rx="5" fill="#31465c"/><text x="28" y="243">日志分析</text>
+    <rect x="10" y="263" width="150" height="34" rx="5" fill="#31465c"/><text x="28" y="285">RAM 需求分析</text>
+  </g>
+
+  <!-- 顶部：运行中状态条 -->
+  <rect x="190" y="62" width="970" height="72" rx="8" fill="#fff" stroke="#e4e7ed"/>
+  <circle cx="222" cy="98" r="10" fill="none" stroke="#409eff" stroke-width="3" stroke-dasharray="40 14"/>
+  <text x="244" y="94" fill="#303133" font-size="15" font-weight="600">AI 深度分析运行中</text>
+  <text x="244" y="114" fill="#909399" font-size="12">工作流 arch-deep-analysis · 会话 wf-sess-8f21 · 已运行 1 分 24 秒</text>
+  <rect x="960" y="82" width="88" height="32" rx="5" fill="#fff" stroke="#c0c4cc"/>
+  <text x="1004" y="103" text-anchor="middle" fill="#606266" font-size="13">终止</text>
+
+  <!-- 三节点 StepCard 流程 -->
+  <g font-size="12">
+    <!-- 节点1：证据收集（完成） -->
+    <rect x="210" y="160" width="300" height="180" rx="8" fill="#fff" stroke="#67c23a" stroke-width="1.5"/>
+    <circle cx="238" cy="188" r="12" fill="#67c23a"/>
+    <text x="238" y="193" text-anchor="middle" fill="#fff" font-size="12">✓</text>
+    <text x="258" y="193" fill="#303133" font-size="14" font-weight="600">① 证据收集</text>
+    <rect x="472" y="176" width="26" height="18" rx="9" fill="#f0f9eb" stroke="#67c23a"/>
+    <text x="485" y="189" text-anchor="middle" fill="#67c23a" font-size="10">完成</text>
+    <g fill="#606266" font-size="11">
+      <text x="232" y="222">✓ 诊断四章数据（健康分 75 / B）</text>
+      <text x="232" y="242">✓ 包级环 ×3 · 分层违规 ×12</text>
+      <text x="232" y="262">✓ 类级度量（上帝类 ×2 · 枢纽 ×3）</text>
+      <text x="232" y="282">✓ 方法级热点 Top20（treemap）</text>
+      <text x="232" y="302">✓ KG 关键类代码摘录 ×6</text>
+      <text x="232" y="326" fill="#909399">CHECKPOINT · 证据包 12.4 KB</text>
+    </g>
+    <!-- 连接线 1→2 -->
+    <path d="M 510 250 L 540 250" stroke="#409eff" stroke-width="2" marker-end="url(#arr)"/>
+
+    <!-- 节点2：根因分析（运行中，LLM） -->
+    <rect x="440" y="160" width="300" height="180" rx="8" fill="#f0f7ff" stroke="#409eff" stroke-width="2"/>
+    <circle cx="468" cy="188" r="12" fill="url(#running)"/>
+    <text x="468" y="193" text-anchor="middle" fill="#fff" font-size="10">⚙</text>
+    <text x="488" y="193" fill="#303133" font-size="14" font-weight="600">② 问题根因分析</text>
+    <rect x="702" y="176" width="26" height="18" rx="9" fill="#ecf5ff" stroke="#409eff"/>
+    <text x="715" y="189" text-anchor="middle" fill="#409eff" font-size="10">LLM</text>
+    <g fill="#606266" font-size="11">
+      <text x="462" y="222">▌正在分析 3 个循环依赖的成因…</text>
+      <text x="462" y="242" fill="#909399">已识别疑似根因 2 条：</text>
+      <text x="474" y="260">· repository 反向依赖 controller</text>
+      <text x="474" y="278">  （统计报表直查 DB 绕过 service）</text>
+      <text x="462" y="302" fill="#909399">流式输出中…</text>
+    </g>
+
+    <!-- 连接线 2→3（虚线=未开始） -->
+    <path d="M 740 250 L 770 250" stroke="#c0c4cc" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+
+    <!-- 节点3：架构现状报告（待运行） -->
+    <rect x="670" y="160" width="300" height="180" rx="8" fill="#fff" stroke="#e4e7ed"/>
+    <circle cx="698" cy="188" r="12" fill="#c0c4cc"/>
+    <text x="698" y="193" text-anchor="middle" fill="#fff" font-size="12">3</text>
+    <text x="718" y="193" fill="#303133" font-size="14" font-weight="600">③ 架构现状报告</text>
+    <rect x="932" y="176" width="26" height="18" rx="9" fill="#f4f4f5" stroke="#c0c4cc"/>
+    <text x="945" y="189" text-anchor="middle" fill="#909399" font-size="10">LLM</text>
+    <g fill="#909399" font-size="11">
+      <text x="692" y="226">待节点 ② 完成后启动</text>
+      <text x="692" y="246">将生成项目级架构现状及问题分析</text>
+      <text x="692" y="266">Markdown（现状 → 问题 → 根因</text>
+      <text x="692" y="286">→ 改进优先级）</text>
+    </g>
+
+    <!-- 箭头 marker -->
+    <defs>
+      <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 z" fill="#409eff"/>
+      </marker>
+    </defs>
+  </g>
+
+  <!-- SSE 事件流 -->
+  <rect x="210" y="370" width="760" height="250" rx="8" fill="#1e1e1e"/>
+  <text x="230" y="396" fill="#9cdcfe" font-size="12" font-weight="600">实时事件流（SSE · agent_event）</text>
+  <g font-family="Consolas, monospace" font-size="11">
+    <text x="230" y="422" fill="#6a9955">[10:33:02] node:evidence   INFO   证据收集完成，共 5 类证据</text>
+    <text x="230" y="442" fill="#6a9955">[10:33:02] node:evidence   CHECKPOINT 写入会话 wf-sess-8f21</text>
+    <text x="230" y="462" fill="#569cd6">[10:33:04] node:rootcause  INFO   LLM 调用开始（deepseek / json 契约）</text>
+    <text x="230" y="482" fill="#dcdcaa">[10:33:41] node:rootcause  DELTA  已识别疑似根因 2 条…</text>
+    <text x="230" y="502" fill="#dcdcaa">[10:33:52] node:rootcause  DELTA  repository → controller 反向依赖源于…</text>
+    <text x="230" y="522" fill="#808080">[10:33:52] stream  事件序号 #47 · 每 3s 轮询增量拉取</text>
+  </g>
+
+  <!-- 右侧：会话信息 -->
+  <rect x="990" y="370" width="170" height="250" rx="8" fill="#fff" stroke="#e4e7ed"/>
+  <text x="1006" y="396" fill="#303133" font-size="13" font-weight="600">会话信息</text>
+  <g font-size="11" fill="#606266">
+    <text x="1006" y="422">工作流类型</text>
+    <text x="1006" y="440" fill="#303133">arch-deep-analysis</text>
+    <text x="1006" y="466">项目</text>
+    <text x="1006" y="484" fill="#303133">hisi-dev-tool</text>
+    <text x="1006" y="510">输入指纹</text>
+    <text x="1006" y="528" fill="#303133">a3f2…c91（checkpoint 命中可断点续跑）</text>
+    <text x="1006" y="560">进度</text>
+    <rect x="1006" y="572" width="130" height="8" rx="4" fill="#e4e7ed"/>
+    <rect x="1006" y="572" width="66" height="8" rx="4" fill="#409eff"/>
+    <text x="1006" y="600" fill="#409eff">2 / 3 节点</text>
+  </g>
+
+  <!-- 底部提示 -->
+  <rect x="210" y="650" width="950" height="56" rx="5" fill="#f5f7fa" stroke="#e4e7ed"/>
+  <text x="230" y="674" fill="#606266" font-size="12">页面可离开：agent 流在后台继续执行，回到本页自动恢复进度（lastSeq 水位增量拉取事件）</text>
+  <text x="230" y="694" fill="#909399" font-size="12">深度分析为分钟级异步任务，不阻塞实时报告的浏览与保存快照</text>
+
+  <!-- 下方被实时报告内容占据（滚动可见） -->
+  <rect x="190" y="730" width="970" height="120" rx="8" fill="#fff" stroke="#e4e7ed" stroke-dasharray="6 4"/>
+  <text x="590" y="784" text-anchor="middle" fill="#c0c4cc" font-size="13">诊断总览 / 四章 Tabs / 快照历史（实时报告仍在，可继续浏览）</text>
+</svg>
+</div><h2>原型 3：AI 深度分析报告（四段式 Markdown）</h2><div class="card"><svg xmlns="http://www.w3.org/2000/svg" width="1180" height="900" viewBox="0 0 1180 900" font-family="PingFang SC, Microsoft YaHei, sans-serif">
+  <defs>
+    <linearGradient id="hdr3" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1e3a5f"/><stop offset="1" stop-color="#2c5282"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1180" height="900" rx="10" fill="#f0f2f5" stroke="#d0d7de"/>
+  <rect x="0" y="0" width="1180" height="42" rx="10" fill="url(#hdr3)"/>
+  <circle cx="24" cy="21" r="6" fill="#ff5f57"/><circle cx="44" cy="21" r="6" fill="#febc2e"/><circle cx="64" cy="21" r="6" fill="#28c840"/>
+  <text x="590" y="26" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">架构诊断 — AI 深度分析报告</text>
+
+  <!-- 侧边栏 -->
+  <rect x="0" y="42" width="170" height="858" fill="#263445"/>
+  <g fill="#cfd8e3" font-size="13">
+    <rect x="10" y="95" width="150" height="34" rx="5" fill="#31465c"/><text x="28" y="117">知识图谱</text>
+    <rect x="10" y="137" width="150" height="34" rx="5" fill="#409eff"/><text x="28" y="159" fill="#fff" font-weight="600">架构诊断</text>
+    <rect x="10" y="179" width="150" height="34" rx="5" fill="#31465c"/><text x="28" y="201">调用链</text>
+    <rect x="10" y="221" width="150" height="34" rx="5" fill="#31465c"/><text x="28" y="243">日志分析</text>
+    <rect x="10" y="263" width="150" height="34" rx="5" fill="#31465c"/><text x="28" y="285">RAM 需求分析</text>
+  </g>
+
+  <!-- 顶部：完成状态 + 导出 -->
+  <rect x="190" y="62" width="970" height="64" rx="8" fill="#fff" stroke="#e4e7ed"/>
+  <circle cx="222" cy="94" r="10" fill="#67c23a"/>
+  <text x="218" y="99" text-anchor="middle" fill="#fff" font-size="12">✓</text>
+  <text x="244" y="90" fill="#303133" font-size="15" font-weight="600">AI 深度分析完成</text>
+  <text x="244" y="110" fill="#909399" font-size="12">耗时 2 分 41 秒 · 3/3 节点 · 证据包 12.4 KB · 基于 10:32:15 实时报告</text>
+  <rect x="860" y="76" width="110" height="34" rx="5" fill="#fff" stroke="#c0c4cc"/>
+  <text x="915" y="98" text-anchor="middle" fill="#606266" font-size="13">导出 Markdown</text>
+  <rect x="982" y="76" width="150" height="34" rx="5" fill="#409eff"/>
+  <text x="1057" y="98" text-anchor="middle" fill="#fff" font-size="13" font-weight="600">✦ 重新深度分析</text>
+
+  <!-- Tab 切换：实时报告 / 深度分析 -->
+  <g font-size="13">
+    <rect x="210" y="146" width="100" height="30" rx="5" fill="#f5f7fa"/><text x="260" y="166" text-anchor="middle" fill="#606266">实时报告</text>
+    <rect x="318" y="146" width="120" height="30" rx="5" fill="#409eff"/><text x="378" y="166" text-anchor="middle" fill="#fff" font-weight="600">AI 深度分析</text>
+  </g>
+
+  <!-- 报告正文卡片 -->
+  <rect x="190" y="192" width="970" height="688" rx="8" fill="#fff" stroke="#e4e7ed"/>
+
+  <!-- Markdown 渲染的标题 -->
+  <text x="230" y="240" fill="#303133" font-size="20" font-weight="700">hisi-dev-tool 架构现状及问题分析报告</text>
+  <text x="230" y="264" fill="#909399" font-size="11">AI 生成 · 2026-09-29 10:36 · 引用证据 5 类（诊断四章 / KG 环 / 类度量 / 方法热点 / 代码摘录）</text>
+
+  <!-- 目录 -->
+  <rect x="230" y="284" width="900" height="36" rx="5" fill="#f5f7fa"/>
+  <text x="246" y="307" fill="#606266" font-size="12">一、架构现状总览　二、核心问题及根因分析　三、改进建议与优先级　四、附录：证据清单</text>
+
+  <!-- 一、现状 -->
+  <text x="230" y="352" fill="#303133" font-size="15" font-weight="600">一、架构现状总览</text>
+  <g font-size="12" fill="#606266">
+    <text x="230" y="376">项目当前健康分 <tspan fill="#409eff" font-weight="600">75（B 级）</tspan>，共 139 个方法、7 个领域。整体呈 controller → service</text>
+    <text x="230" y="396">→ repository 的标准分层形态，但存在 <tspan fill="#f56c6c">3 个包级循环依赖</tspan>与 <tspan fill="#e6a23c">12 处分层违规</tspan>。</text>
+  </g>
+
+  <!-- 二、根因 -->
+  <text x="230" y="440" fill="#303133" font-size="15" font-weight="600">二、核心问题及根因分析</text>
+  <!-- 根因卡片 1 -->
+  <rect x="230" y="456" width="900" height="96" rx="6" fill="#fdf0f0" stroke="#f56c6c"/>
+  <rect x="244" y="468" width="120" height="20" rx="10" fill="#f56c6c"/><text x="304" y="482" text-anchor="middle" fill="#fff" font-size="11">问题 1 · HIGH</text>
+  <text x="376" y="482" fill="#303133" font-size="12" font-weight="600">repository → controller 反向依赖（3 处）</text>
+  <g font-size="12" fill="#606266">
+    <text x="244" y="506">根因：OrderMapper 等 Mapper 直接注入 Controller 用于统计报表导出，绕过 service 层。</text>
+    <text x="244" y="526">证据：<tspan fill="#409eff">repository/OrderMapper.java:42</tspan> · 关联环 CROSS_LAYER（controller→service→repository→controller）</text>
+    <text x="244" y="546">建议：抽取 StatsQueryService 承载报表查询，Controller 仅调用 service。</text>
+  </g>
+  <!-- 根因卡片 2 -->
+  <rect x="230" y="564" width="900" height="96" rx="6" fill="#fdf6ec" stroke="#e6a23c"/>
+  <rect x="244" y="576" width="140" height="20" rx="10" fill="#e6a23c"/><text x="314" y="590" text-anchor="middle" fill="#fff" font-size="11">问题 2 · MEDIUM</text>
+  <text x="396" y="590" fill="#303133" font-size="12" font-weight="600">service.a ⇄ service.b 同层互依（职责边界模糊）</text>
+  <g font-size="12" fill="#606266">
+    <text x="244" y="614">根因：UserService 与 OrderService 相互调用完成订单归属校验，缺乏领域接口隔离。</text>
+    <text x="244" y="634">证据：KG ego-net · 互调边 ×4 · 涉及类 UserServiceImpl / OrderServiceImpl</text>
+    <text x="244" y="654">建议：引入 OrderOwnershipValidator 领域服务打破互依。</text>
+  </g>
+  <!-- 优先级表 -->
+  <text x="230" y="700" fill="#303133" font-size="15" font-weight="600">三、改进建议与优先级（先修这三个）</text>
+  <rect x="230" y="716" width="900" height="110" rx="6" fill="#fafafa" stroke="#e4e7ed"/>
+  <g font-size="12" fill="#606266">
+    <text x="246" y="740"><tspan fill="#f56c6c" font-weight="700">P0</tspan>　抽取 StatsQueryService —— 消除 3 处反向依赖，收益最大（循环依赖 -1，违规 -3）</text>
+    <text x="246" y="766"><tspan fill="#e6a23c" font-weight="700">P1</tspan>　领域服务打破 service 互依 —— 环依赖 -1</text>
+    <text x="246" y="792"><tspan fill="#909399" font-weight="700">P2</tspan>　JsonUtils 工具类去 controller 依赖 —— 违规 -1，随 P0 顺手完成</text>
+  </g>
+
+  <!-- 附录提示 -->
+  <text x="230" y="858" fill="#909399" font-size="11">四、附录：证据清单（12.4 KB，含代码摘录与 KG 查询快照）· 支持展开查看每条结论的原始依据</text>
+</svg>
+</div></body></html>

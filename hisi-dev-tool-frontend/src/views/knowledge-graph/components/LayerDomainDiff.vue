@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, nextTick } from 'vue'
-import { ElCard, ElDrawer, ElRadioGroup, ElRadioButton, ElEmpty, ElTag } from 'element-plus'
+import { ElCard, ElDrawer, ElRadioGroup, ElRadioButton, ElEmpty, ElTag, ElMessage } from 'element-plus'
 import { knowledgeGraphApi, type LayerDomainClass } from '@/api/knowledgeGraph'
 import * as echarts from 'echarts'
 
@@ -88,6 +88,7 @@ async function load() {
     nextTick(() => { renderSankey(); renderHeatmap() })
   } catch (e) {
     console.error('[LayerDomainDiff] load 失败:', e)
+    ElMessage.error('分层×领域差异加载失败')
   } finally { loading.value = false }
 }
 

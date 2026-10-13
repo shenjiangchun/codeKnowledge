@@ -137,7 +137,7 @@ cors:
 
 # JWT 认证配置
 jwt:
-  secret: ${JWT_SECRET:***REMOVED_JWT_SECRET***}
+  secret: ${JWT_SECRET:test1111111111111111111111111111111111}
   expiration-ms: 86400000  # 24小时
 
 # 影响分析配置

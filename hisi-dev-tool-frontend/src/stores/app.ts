@@ -55,6 +55,7 @@ export const useAppStore = defineStore('app', () => {
     'claude-terminal': true,
     'search': projectSelected.value,
     'knowledge-graph': projectSelected.value,
+    'architecture-diagnosis': projectSelected.value,
     'log-analysis': true, // 日志分析始终可用，不依赖项目选择
     'ram': true, // 需求分析大师 - 有内部项目选择器
     'ram-demand': true, // 需求分析大师 - 有内部项目选择器

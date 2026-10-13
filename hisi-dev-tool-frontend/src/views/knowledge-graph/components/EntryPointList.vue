@@ -171,9 +171,16 @@ const treeData = computed(() => {
   })
 })
 
+// 树节点：分组或入口条目
+interface TreeEntryNode extends EntrySummary {
+  isGroup: boolean
+  serviceName?: string
+  children?: TreeEntryNode[]
+}
+
 const treeProps = {
   children: 'children',
-  label: (data: any) => data.isGroup ? data.serviceName : data.entryKey
+  label: (data: TreeEntryNode) => data.isGroup ? data.serviceName : data.entryKey
 }
 
 const handleSearch = () => {
@@ -190,9 +197,9 @@ const handleSelect = (row: EntryPoint) => {
   emit('select', row)
 }
 
-const handleTreeClick = (data: any) => {
+const handleTreeClick = (data: TreeEntryNode) => {
   if (!data.isGroup) {
-    emit('select', data as EntrySummary)
+    emit('select', data)
   }
 }
 

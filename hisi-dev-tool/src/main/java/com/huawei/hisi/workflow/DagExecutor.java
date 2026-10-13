@@ -54,6 +54,15 @@ public class DagExecutor {
     public ExecutionResult run(List<DagNode> orderedNodes,
                                long sessionId,
                                Map<String, Object> initialInput) {
+        return run(orderedNodes, sessionId, initialInput, ExecutionPolicy.DEFAULT);
+    }
+
+    /** 按工作流声明的执行策略执行（见 {@link ExecutionPolicy}）。 */
+    public ExecutionResult run(List<DagNode> orderedNodes,
+                               long sessionId,
+                               Map<String, Object> initialInput,
+                               ExecutionPolicy policy) {
+        ExecutionPolicy effectivePolicy = policy == null ? ExecutionPolicy.DEFAULT : policy;
         List<String> executed = new ArrayList<>();
         List<String> skipped = new ArrayList<>();
         Map<String, Object> previousOutput = initialInput == null ? Map.of() : initialInput;
@@ -117,9 +126,15 @@ public class DagExecutor {
 
             log.info("[DagExecutor] sid={} node={} EXECUTE inputsHash={} input.keys={} forceRerun={}",
                     sessionId, node.name(), inputsHash, input.keySet(), forceRerun);
+            if (effectivePolicy.emitNodeEvents()) {
+                appendNodeStart(sessionId, node.name());
+            }
+            NodeEventSink sink = effectivePolicy.emitNodeEvents()
+                    ? msg -> appendNodeDelta(sessionId, node.name(), msg)
+                    : msg -> {};
             Map<String, Object> output;
             try {
-                output = node.execute(input);
+                output = node.execute(input, sink);
             } catch (ClarifyRequiredException ce) {
                 log.info("[DagExecutor] sid={} node={} CLARIFY_REQ questions={}",
                         sessionId, node.name(), ce.getClarifyQuestions());
@@ -140,15 +155,19 @@ public class DagExecutor {
             log.info("[DagExecutor] sid={} node={} OK output.keys={}",
                     sessionId, node.name(), safeOutput.keySet());
             appendCheckpoint(sessionId, node.name(), inputsHash, safeOutput);
+            if (effectivePolicy.emitNodeEvents()) {
+                appendNodeComplete(sessionId, node.name());
+            }
             executed.add(node.name());
             previousOutput = safeOutput;
 
             // Inter-node confirmation gate: pause after each node (except the last)
             // to let the user review the output before proceeding. Skipped on
             // first-run (bootstrap) and on force-rerun (user already asked
-            // for re-execution).
+            // for re-execution); workflows may also disable the gate via
+            // ExecutionPolicy (e.g. batch-style one-shot analyses).
             boolean isLastNode = (nodeIdx == orderedNodes.size() - 1);
-            boolean skipGate = isFirstRun || forceRerun;
+            boolean skipGate = isFirstRun || forceRerun || !effectivePolicy.interNodeHitlEnabled();
             if (!isLastNode && !skipGate && !isNodeConfirmed(sessionEvents, node.name())) {
                 log.info("[DagExecutor] sid={} node={} HITL_REQ — awaiting confirmation",
                         sessionId, node.name());
@@ -213,6 +232,49 @@ public class DagExecutor {
                 .payload(toJson(payload))
                 .idempotencyKey(key)
                 .inputsHash(inputsHash)
+                .circuitState("OK")
+                .validatorStatus("OK")
+                .createdAt(nowEpoch())
+                .build();
+        eventRepo.append(ev);
+    }
+
+    private void appendNodeStart(long sessionId, String nodeName) {
+        appendNodeLifecycle(sessionId, nodeName, EventType.NODE_START);
+    }
+
+    private void appendNodeComplete(long sessionId, String nodeName) {
+        appendNodeLifecycle(sessionId, nodeName, EventType.NODE_COMPLETE);
+    }
+
+    /** Appends a {@code NODE_START}/{@code NODE_COMPLETE} lifecycle event carrying the executed node name. */
+    private void appendNodeLifecycle(long sessionId, String nodeName, EventType type) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("nodeName", nodeName);
+        String key = "node-event-" + sessionId + "-" + nodeName + "-" + type.name() + "-" + System.nanoTime();
+        AgentEvent ev = AgentEvent.builder()
+                .sessionId(sessionId)
+                .type(type)
+                .payload(toJson(payload))
+                .idempotencyKey(key)
+                .circuitState("OK")
+                .validatorStatus("OK")
+                .createdAt(nowEpoch())
+                .build();
+        eventRepo.append(ev);
+    }
+
+    /** Appends a {@code NODE_DELTA} progress event carrying the node name + a user-facing message. */
+    private void appendNodeDelta(long sessionId, String nodeName, String message) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("nodeName", nodeName);
+        payload.put("message", message);
+        String key = "node-delta-" + sessionId + "-" + nodeName + "-" + System.nanoTime();
+        AgentEvent ev = AgentEvent.builder()
+                .sessionId(sessionId)
+                .type(EventType.NODE_DELTA)
+                .payload(toJson(payload))
+                .idempotencyKey(key)
                 .circuitState("OK")
                 .validatorStatus("OK")
                 .createdAt(nowEpoch())

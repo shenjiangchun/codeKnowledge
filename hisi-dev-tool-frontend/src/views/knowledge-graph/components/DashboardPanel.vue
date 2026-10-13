@@ -26,7 +26,9 @@ let chart: echarts.ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
 
 // 已知分层的相对偏序（仅用于纵向排序，不是枚举清单——后端/LLM 可能返回其他层名）
-const LAYER_BIAS = ['CONTROLLER', 'SERVICE', 'REPOSITORY', 'MODEL', 'UTILITY']
+// 单一来源：@/constants/layerOrder（与后端 ClassLayerRoleDetector.layerOrderList() 一致）
+import { LAYER_ORDER } from '@/constants/layerOrder'
+const LAYER_BIAS: string[] = [...LAYER_ORDER]
 const UNKNOWN_COLOR = '#bdbdbd'
 const PALETTE = ['#1976d2', '#388e3c', '#f57c00', '#7b1fa2', '#607d8b', '#00838f', '#6d4c41', '#ad1457', '#558b2f', '#4527a0']
 

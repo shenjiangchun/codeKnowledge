@@ -2320,7 +2320,7 @@ public class KnowledgeGraphBuilder {
 
         // 3. 清理向量生成任务状态
         log.info("[SQLite] 清理生成任务状态: {}", projectPath);
-        generationTaskRepository.deleteByProjectPath(projectPath);
+        generationTaskRepository.deleteByProjectPathAndType(projectPath, "VECTOR");
     }
 
     /**
@@ -2345,7 +2345,7 @@ public class KnowledgeGraphBuilder {
 
         // 3. 清理向量生成任务状态
         log.info("[SQLite] 清理生成任务状态: {}", projectPath);
-        generationTaskRepository.deleteByProjectPath(projectPath);
+        generationTaskRepository.deleteByProjectPathAndType(projectPath, "VECTOR");
     }
 
     protected CombinedTypeSolver buildSolver(List<Path> sourceRoots) {

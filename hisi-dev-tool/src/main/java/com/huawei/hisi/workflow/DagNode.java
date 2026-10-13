@@ -20,4 +20,18 @@ public interface DagNode {
      *                                  without additional user clarification
      */
     Map<String, Object> execute(Map<String, Object> input) throws ClarifyRequiredException;
+
+    /**
+     * Execute this node with progress reporting. Default delegates to
+     * {@link #execute(Map)} and ignores the sink — backward compatible with
+     * nodes that have no intermediate progress to report.
+     *
+     * @param sink 过程消息通道；节点可在执行期间多次 {@link NodeEventSink#emit(String)}
+     *             输出进度，供 {@link DagExecutor} 包装为 {@code NODE_DELTA} 事件
+     * @throws ClarifyRequiredException 同 {@link #execute(Map)}
+     */
+    default Map<String, Object> execute(Map<String, Object> input, NodeEventSink sink)
+            throws ClarifyRequiredException {
+        return execute(input);
+    }
 }

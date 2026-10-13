@@ -16,6 +16,8 @@ import type {
 
 const BASE = '/workflow'
 
+const TOKEN_KEY = 'hisi-token'
+
 /** Start a workflow session */
 export function startWorkflow(payload: WorkflowStartRequest): Promise<WorkflowStartResponse> {
   return request.post(`${BASE}/start`, payload)
@@ -43,7 +45,11 @@ export function getWorkflowEvents(sessionId: string): Promise<WorkflowEvent[]> {
 /** Build the SSE stream URL */
 export function workflowStreamUrl(sessionId: string, afterSeq = 0): string {
   const base = (request.defaults?.baseURL ?? '').replace(/\/+$/, '')
-  return `${base}${BASE}/sessions/${sessionId}/stream?afterSeq=${afterSeq}`
+  // EventSource 无法携带 Authorization 头，token 经查询参数传给后端（镜像 WebSocket 的 ?token= 握手）。
+  const params = new URLSearchParams({ afterSeq: String(afterSeq) })
+  const token = localStorage.getItem(TOKEN_KEY)
+  if (token) params.set('token', token)
+  return `${base}${BASE}/sessions/${sessionId}/stream?${params.toString()}`
 }
 
 /** Submit clarification answers */

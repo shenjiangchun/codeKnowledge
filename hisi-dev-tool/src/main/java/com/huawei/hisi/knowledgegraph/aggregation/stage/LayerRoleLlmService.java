@@ -28,7 +28,7 @@ public class LayerRoleLlmService {
         this.deepseekJsonClient = deepseekJsonClient;
     }
 
-    private static final String SYSTEM_PROMPT = """
+    static final String SYSTEM_PROMPT = """
         你是 Java Spring 项目的架构分层专家。给定一个代码模块/类的名称和它的依赖关系，
         判断它属于哪一层。分层定义：
         - CONTROLLER：接收 HTTP 请求的入口层（controller/handler/endpoint/facade）
@@ -37,6 +37,8 @@ public class LayerRoleLlmService {
         - MODEL：数据模型层（dto/entity/model/po/vo/domain 对象）
         - UTILITY：工具/基础设施层（util/config/common/constant/helper/scanner/parser/agent 等）
         - UNKNOWN：确实无法判断
+
+        判断约束：按类自身职责判断，DTO/record/请求响应等纯数据对象归 MODEL，不因所在 service 包归 SERVICE。
         """;
 
     /** 每批处理的节点数 */

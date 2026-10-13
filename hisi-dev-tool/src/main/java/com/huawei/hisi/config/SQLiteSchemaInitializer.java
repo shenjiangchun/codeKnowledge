@@ -196,6 +196,18 @@ public class SQLiteSchemaInitializer {
 
         jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_glossary_project ON glossary_term(project_path)");
 
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS kg_project_binding (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                backend_path  VARCHAR(500) NOT NULL,
+                frontend_path VARCHAR(500) NOT NULL,
+                created_at    INTEGER DEFAULT (strftime('%s','now')),
+                updated_at    INTEGER DEFAULT (strftime('%s','now')),
+                UNIQUE(backend_path, frontend_path)
+            )
+            """);
+        log.info("[SQLite] Created kg_project_binding table");
+
         // Task 1: Add fingerprint and analysis columns to log_analysis_report
         addLogAnalysisReportColumns(jdbcTemplate);
 
@@ -327,7 +339,33 @@ public class SQLiteSchemaInitializer {
         jdbcTemplate.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_project_name_group_name ON project_name_group(group_name)");
         log.info("[SQLite] Created project_name_group table");
 
-        log.info("[SQLite] Schema initialization complete - 17 tables ensured");
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS architecture_diagnosis_snapshot (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope         TEXT NOT NULL,
+                health_score  INTEGER,
+                grade         TEXT,
+                high_count    INTEGER,
+                medium_count  INTEGER,
+                low_count     INTEGER,
+                report_json   TEXT,
+                created_at    TEXT DEFAULT (datetime('now','localtime'))
+            )
+            """);
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_arch_diag_snapshot_scope ON architecture_diagnosis_snapshot(scope)");
+        log.info("[SQLite] Created architecture_diagnosis_snapshot table");
+
+        // 垂直领域命名缓存：领域词 → LLM 命名结果（点「实时生成/刷新」时清空重算）
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS vertical_domain_name (
+                domain_word  TEXT PRIMARY KEY,
+                name         TEXT NOT NULL,
+                created_at   INTEGER DEFAULT (strftime('%s','now'))
+            )
+            """);
+        log.info("[SQLite] Created vertical_domain_name table");
+
+        log.info("[SQLite] Schema initialization complete - 18 tables ensured");
     }
 
     /** 幂等加列：列不存在才 ALTER TABLE ADD COLUMN */

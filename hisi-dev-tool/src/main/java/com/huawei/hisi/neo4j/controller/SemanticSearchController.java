@@ -1,9 +1,11 @@
 package com.huawei.hisi.neo4j.controller;
 
+import com.huawei.hisi.knowledgegraph.binding.service.ProjectBindingService;
 import com.huawei.hisi.neo4j.model.MethodNode;
 import com.huawei.hisi.neo4j.model.SearchResult;
 import com.huawei.hisi.neo4j.model.SearchResultItem;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
+import com.huawei.hisi.neo4j.service.FrontendNodeSearchService;
 import com.huawei.hisi.neo4j.service.MultiQueryHybridSearchService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +35,8 @@ public class SemanticSearchController {
 
     private final MultiQueryHybridSearchService multiQueryHybridSearchService;
     private final Neo4jMethodNodeRepository methodNodeRepository;
+    private final FrontendNodeSearchService frontendNodeSearchService;
+    private final ProjectBindingService projectBindingService;
 
     /**
      * 内存中的搜索历史（按项目路径分组）
@@ -43,9 +47,13 @@ public class SemanticSearchController {
 
     public SemanticSearchController(
             MultiQueryHybridSearchService multiQueryHybridSearchService,
-            Neo4jMethodNodeRepository methodNodeRepository) {
+            Neo4jMethodNodeRepository methodNodeRepository,
+            FrontendNodeSearchService frontendNodeSearchService,
+            ProjectBindingService projectBindingService) {
         this.multiQueryHybridSearchService = multiQueryHybridSearchService;
         this.methodNodeRepository = methodNodeRepository;
+        this.frontendNodeSearchService = frontendNodeSearchService;
+        this.projectBindingService = projectBindingService;
     }
 
     /**
@@ -102,21 +110,30 @@ public class SemanticSearchController {
             searchPaths.add(projects.get(0));
         }
 
+        // 绑定范围展开：给定任一目录，展开为「自身 + 绑定对中的对侧目录」
+        List<String> expandedPaths = expandBindingScope(searchPaths);
+
         int graphDepth = request.get("graphDepth") != null ? ((Number) request.get("graphDepth")).intValue() : 0;
         long startTime = System.currentTimeMillis();
 
         try {
             // 使用多路召回+RRF服务
             SearchResult searchResult = multiQueryHybridSearchService.multiQuerySearch(
-                    query, searchPaths.get(0), searchPaths, language, limit, graphDepth);
+                    query, expandedPaths.get(0), expandedPaths, language, limit, graphDepth);
+
+            // 前端节点语义检索合并（nodeType 区分）
+            List<SearchResultItem> frontendItems = frontendNodeSearchService.search(query, expandedPaths, limit);
+            List<SearchResultItem> mergedItems = new ArrayList<>();
+            if (searchResult.getItems() != null) {
+                mergedItems.addAll(searchResult.getItems());
+            }
+            mergedItems.addAll(frontendItems);
 
             // 构建 nodeId -> similarityScore 映射（此处已是 RRF 分数）
             Map<String, Double> scoreMap = new HashMap<>();
-            if (searchResult.getItems() != null) {
-                for (SearchResultItem item : searchResult.getItems()) {
-                    if (item.getNodeId() != null && item.getSimilarityScore() != null) {
-                        scoreMap.put(item.getNodeId(), item.getSimilarityScore());
-                    }
+            for (SearchResultItem item : mergedItems) {
+                if (item.getNodeId() != null && item.getSimilarityScore() != null) {
+                    scoreMap.put(item.getNodeId(), item.getSimilarityScore());
                 }
             }
 
@@ -124,13 +141,18 @@ public class SemanticSearchController {
                     .map(node -> convertToSemanticResult(node, scoreMap.getOrDefault(node.getNodeId(), 0.0)))
                     .collect(Collectors.toList());
 
+            // 前端节点转为前端语义结果格式（type=component/route/apiClient）
+            for (SearchResultItem item : frontendItems) {
+                formattedResults.add(convertFrontendItemToSemanticResult(item));
+            }
+
             long queryTime = System.currentTimeMillis() - startTime;
-            recordSearchHistory(searchPaths.get(0), query);
+            recordSearchHistory(expandedPaths.get(0), query);
 
             // 构建响应（额外包含 subQueries 和 rrfScores）
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("results", formattedResults);
-            response.put("total", searchResult.getTotalCount());
+            response.put("total", formattedResults.size());
             response.put("queryTime", queryTime);
             response.put("suggestedQueries", searchResult.getSuggestions() != null ? searchResult.getSuggestions() : Collections.emptyList());
             response.put("subQueries", searchResult.getSubQueries() != null ? searchResult.getSubQueries() : Collections.emptyList());
@@ -240,6 +262,51 @@ public class SemanticSearchController {
     }
 
     // ==================== 私有方法 ====================
+
+    /**
+     * 绑定范围展开：对每个路径调用 {@link ProjectBindingService#resolve} 展开绑定组，去重合并。
+     */
+    private List<String> expandBindingScope(List<String> paths) {
+        if (paths == null || paths.isEmpty()) {
+            return List.of();
+        }
+        List<String> expanded = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (String p : paths) {
+            for (String resolved : projectBindingService.resolve(p)) {
+                if (seen.add(resolved)) {
+                    expanded.add(resolved);
+                }
+            }
+        }
+        return expanded;
+    }
+
+    /**
+     * 将前端节点 SearchResultItem 转为前端语义结果格式（nodeType 区分）。
+     */
+    private Map<String, Object> convertFrontendItemToSemanticResult(SearchResultItem item) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", item.getNodeId());
+        result.put("nodeId", item.getNodeId());
+        result.put("type", item.getNodeType() != null ? item.getNodeType().toLowerCase() : "frontend");
+        result.put("nodeType", item.getNodeType());
+        result.put("name", item.getComponentName() != null ? item.getComponentName()
+                : (item.getRoutePath() != null ? item.getRoutePath()
+                : (item.getUrl() != null ? item.getUrl() : item.getNodeId())));
+        result.put("filePath", item.getFilePath() != null ? item.getFilePath() : "");
+        result.put("codeSnippet", item.getDescription() != null ? truncate(item.getDescription(), 500) : "");
+        result.put("relevanceScore", item.getSimilarityScore() != null ? item.getSimilarityScore() : 0.0);
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("componentName", item.getComponentName());
+        metadata.put("routePath", item.getRoutePath());
+        metadata.put("url", item.getUrl());
+        metadata.put("nodeType", item.getNodeType());
+        result.put("metadata", metadata);
+
+        return result;
+    }
 
     /**
      * 将 SearchResultItem（含 similarityScore）转换为前端格式

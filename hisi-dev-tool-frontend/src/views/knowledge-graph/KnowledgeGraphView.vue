@@ -100,6 +100,13 @@
             >
               术语配置
             </el-button>
+            <!-- 构建前后端完整图谱按钮 -->
+            <el-button
+              type="success"
+              @click="showBindingDialog = true"
+            >
+              构建前后端完整图谱
+            </el-button>
             <!-- KG 路径诊断按钮 -->
             <el-button
               type="info"
@@ -270,30 +277,24 @@
           </el-empty>
         </el-tab-pane>
 
-        <!-- ★ Phase 5: 多切面分析平台 — 6 个新切面 -->
-        <el-tab-pane label="架构仪表盘" name="dashboard">
-          <DashboardPanel v-if="activeTab === 'dashboard'" :project-paths="projectPaths" />
-        </el-tab-pane>
-        <el-tab-pane label="热点分析" name="hotspots">
-          <HotspotTreemap v-if="activeTab === 'hotspots'" :project-paths="projectPaths" />
-        </el-tab-pane>
-        <el-tab-pane label="领域划分" name="domains">
-          <DomainBoundaryView v-if="activeTab === 'domains'" :project-paths="projectPaths" />
-        </el-tab-pane>
-        <el-tab-pane label="跨服务拓扑" name="serviceTopo">
-          <CrossServiceTopology v-if="activeTab === 'serviceTopo'" :project-paths="projectPaths" />
-        </el-tab-pane>
-        <el-tab-pane label="构建模块" name="buildModule">
-          <BuildModuleAnalysis v-if="activeTab === 'buildModule'" :project-paths="projectPaths" />
-        </el-tab-pane>
-        <el-tab-pane label="爆炸半径" name="blastRadius">
-          <BlastRadiusView v-if="activeTab === 'blastRadius'" :project-paths="projectPaths" />
+        <el-tab-pane label="架构总览" name="dashboard">
+          <DashboardPanel
+            v-if="activeTab === 'dashboard' && projectPaths.length > 0"
+            :project-paths="projectPaths"
+          />
+          <el-empty v-else>
+            <template #description>
+              <div style="text-align: center;">
+                <p>请先选择项目</p>
+                <p style="color: #909399; font-size: 12px; margin-top: 8px;">
+                  在「项目管理」页面勾选项目后，点击「确认选择」按钮
+                </p>
+              </div>
+            </template>
+          </el-empty>
         </el-tab-pane>
         <el-tab-pane label="生成中心" name="generationCenter">
           <GenerationCenterPanel v-if="activeTab === 'generationCenter'" :project-paths="projectPaths" />
-        </el-tab-pane>
-        <el-tab-pane label="前后端跨层" name="frontendBackend">
-          <FrontendBackendTab v-if="activeTab === 'frontendBackend'" />
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -345,8 +346,7 @@
       title="术语配置"
       width="700px"
       destroy-on-close
-    >
-      <p style="color: #909399; margin: 0 0 16px 0; font-size: 13px;">
+    >      <p style="color: #909399; margin: 0 0 16px 0; font-size: 13px;">
         配置术语对照表后，LLM 生成语义描述时将自动遵守术语规范（重新生成向量后生效）
       </p>
 
@@ -414,9 +414,9 @@
           </el-descriptions-item>
         </el-descriptions>
 
-        <div v-if="pathDiagnosisResult?.inconsistentPaths?.length > 0" style="margin-top: 16px;">
+        <div v-if="(pathDiagnosisResult?.inconsistentPaths?.length ?? 0) > 0" style="margin-top: 16px;">
           <p style="color: #e6a23c; font-weight: 600;">以下路径与当前配置不一致：</p>
-          <el-table :data="pathDiagnosisResult.inconsistentPaths" stripe size="small" max-height="300">
+          <el-table :data="pathDiagnosisResult?.inconsistentPaths ?? []" stripe size="small" max-height="300">
             <el-table-column prop="path" label="KG 存储路径" show-overflow-tooltip />
             <el-table-column prop="expectedPath" label="期望路径" show-overflow-tooltip />
             <el-table-column prop="projectName" label="项目名" width="150" />
@@ -427,7 +427,7 @@
       </el-card>
 
       <!-- 迁移操作 -->
-      <div v-if="pathDiagnosisResult?.inconsistentCount > 0" style="margin-top: 20px;">
+      <div v-if="(pathDiagnosisResult?.inconsistentCount ?? 0) > 0" style="margin-top: 20px;">
         <el-divider>路径迁移</el-divider>
         <el-form label-width="140px">
           <el-form-item label="旧基础目录">
@@ -553,6 +553,13 @@
         <el-button v-if="editingGroupName" type="primary" @click="saveGroupNameGroup">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 构建前后端完整图谱（绑定管理）对话框 -->
+    <BindingManagerDialog
+      v-model="showBindingDialog"
+      :projects="projects"
+      @built="handleBindingBuilt"
+    />
   </div>
 </template>
 
@@ -569,6 +576,8 @@ import { listRemoteProjects } from '@/api/remote-project'
 import { projectNameGroupApi, type ProjectNameGroup } from '@/api/projectNameGroup'
 import type { GlossaryTerm } from '@/types/glossary'
 import type { RemoteProject } from '@/types/remote-project'
+import type { GitRepositoryInfo } from '@/types/callchain'
+import type { VectorSearchResult } from '@/api/vectorSearch'
 import { useAppStore } from '@/stores/app'
 import CodeUnderstandingTab from './components/CodeUnderstandingTab.vue'
 import SemanticSearchPanel from './components/SemanticSearchPanel.vue'
@@ -576,13 +585,8 @@ import MethodReferenceGraph from '@/views/call-chain/MethodReferenceGraph.vue'
 import CrossServiceBridgeTab from './components/CrossServiceBridgeTab.vue'
 import GraphExplorerTab from './components/GraphExplorerTab.vue'
 import DashboardPanel from './components/DashboardPanel.vue'
-import HotspotTreemap from './components/HotspotTreemap.vue'
-import DomainBoundaryView from './components/DomainBoundaryView.vue'
-import CrossServiceTopology from './components/CrossServiceTopology.vue'
-import BuildModuleAnalysis from './components/BuildModuleAnalysis.vue'
-import BlastRadiusView from './components/BlastRadiusView.vue'
 import GenerationCenterPanel from './components/GenerationCenterPanel.vue'
-import FrontendBackendTab from './components/FrontendBackendTab.vue'
+import BindingManagerDialog from './components/BindingManagerDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -783,6 +787,11 @@ const isRefreshingMissing = ref(false)
 const showMissingDrawer = ref(false)
 let pollingTimer: number | null = null
 let vectorPollingTimer: number | null = null
+// 轮询最大时长（ms）：后端任务卡住时前端不得无限轮询
+const POLLING_MAX_MS = 2 * 60 * 60 * 1000
+const VECTOR_POLLING_MAX_MS = 2 * 60 * 60 * 1000
+let pollingStartedAt = 0
+let vectorPollingStartedAt = 0
 
 // 前端防呆：记录每个项目上次点击生成的时间（内存中，刷新可重置）
 const lastGenerateTimes = reactive<Record<string, number>>({})
@@ -908,9 +917,7 @@ const loadVectorStatus = async () => {
     return
   }
   try {
-    console.log('[KnowledgeGraph] Loading vector status for path:', projectPath.value)
     const status = await getVectorGenerationStatus(projectPath.value)
-    console.log('[KnowledgeGraph] Vector status loaded:', status)
     vectorStatus.value = status
   } catch (error) {
     console.error('[KnowledgeGraph] Failed to load vector status:', error)
@@ -920,19 +927,22 @@ const loadVectorStatus = async () => {
 
 // 开始向量状态轮询
 const startVectorPolling = () => {
-  console.log('[KnowledgeGraph] Starting vector polling')
   if (vectorPollingTimer) {
     clearInterval(vectorPollingTimer)
   }
+  vectorPollingStartedAt = Date.now()
   vectorPollingTimer = window.setInterval(async () => {
-    console.log('[KnowledgeGraph] Vector poll - current status:', vectorStatus.value?.status)
+    if (Date.now() - vectorPollingStartedAt > VECTOR_POLLING_MAX_MS) {
+      stopVectorPolling()
+      ElMessage.warning('向量生成时间过长，已停止自动刷新，请手动刷新查看状态')
+      return
+    }
     const currentStatus = vectorStatus.value?.status as string | undefined
     if (currentStatus === 'PENDING' || currentStatus === 'RUNNING') {
       await loadVectorStatus()
       // 检查任务是否完成
       const newStatus = vectorStatus.value?.status as string | undefined
       if (newStatus === 'COMPLETED' || newStatus === 'FAILED') {
-        console.log('[KnowledgeGraph] Vector task completed, stopping polling')
         stopVectorPolling()
         loadMissingInfo()
       }
@@ -961,7 +971,7 @@ const loadProjects = async () => {
     const remoteProjects = Array.isArray(remoteRes) ? remoteRes : []
 
     // 直接使用后端返回的项目信息（包含正确的 path）
-    const localProjects: ProjectInfo[] = scannedRepos.map((repo: any) => ({
+    const localProjects: ProjectInfo[] = scannedRepos.map((repo: GitRepositoryInfo) => ({
       name: repo.name,
       path: repo.path
     }))
@@ -1027,7 +1037,13 @@ const startPolling = () => {
   if (pollingTimer) {
     clearInterval(pollingTimer)
   }
+  pollingStartedAt = Date.now()
   pollingTimer = window.setInterval(async () => {
+    if (Date.now() - pollingStartedAt > POLLING_MAX_MS) {
+      stopPolling()
+      ElMessage.warning('知识图谱生成时间过长，已停止自动刷新，请手动刷新查看状态')
+      return
+    }
     if (graphStatus.value?.status === 'pending' || graphStatus.value?.status === 'running' || isGenerating.value) {
       await loadGraphStatus()
       // 检查任务是否完成
@@ -1159,7 +1175,6 @@ const handleGenerateVector = async () => {
     recordGenerateTime()
     isGeneratingVector.value = true
     ElMessage.info('已启动向量生成任务，请稍候...')
-    console.log('[KnowledgeGraph] Starting vector generation for path:', projectPath.value)
     await startVectorGeneration(projectPath.value)
     ElMessage.success('向量生成任务已启动')
     // 立即刷新状态并开始轮询
@@ -1214,13 +1229,13 @@ watch(projectPath, (path) => {
 })
 
 // 处理查看方法详情
-function handleViewDetail(_result: any) {
+function handleViewDetail(_result: VectorSearchResult) {
   // 跳转到方法详情或打开弹窗
 }
 
 // 处理查看调用链：切到引用分析 tab 并自动以该方法为入口查向下调用
 const methodRefGraphRef = ref<InstanceType<typeof MethodReferenceGraph> | null>(null)
-function handleViewCallChain(result: any) {
+function handleViewCallChain(result: VectorSearchResult) {
   if (!result || !result.className || !result.methodName) {
     ElMessage.warning('该结果缺少类名或方法名，无法跳转')
     return
@@ -1240,6 +1255,11 @@ function handleViewCallChain(result: any) {
 
 // ==================== 术语管理 ====================
 const showGlossaryDialog = ref(false)
+const showBindingDialog = ref(false)
+const handleBindingBuilt = (_result: unknown) => {
+  // 构建完成后刷新图谱状态（前端节点已入库）
+  loadGraphStatus()
+}
 const glossaryTerms = ref<GlossaryTerm[]>([])
 const glossaryLoading = ref(false)
 const glossaryShowForm = ref(false)
@@ -1320,9 +1340,23 @@ const glossarySubmit = async () => {
 }
 
 // ==================== KG 路径诊断 ====================
+interface PathDiagnosisResult {
+  currentProjectDir: string
+  kgProjectPaths: string[]
+  totalKgPaths: number
+  inconsistentPaths: Array<{
+    path: string
+    normalized: string
+    reason: string
+    projectName: string
+    expectedPath: string
+  }>
+  inconsistentCount: number
+}
+
 const showPathDiagnosisDialog = ref(false)
 const pathDiagnosisLoading = ref(false)
-const pathDiagnosisResult = ref<any>(null)
+const pathDiagnosisResult = ref<PathDiagnosisResult | null>(null)
 const pathMigrationLoading = ref(false)
 const migrationOldBaseDir = ref('')
 const migrationDryRun = ref(true)
@@ -1381,18 +1415,12 @@ onMounted(async () => {
   // 注意：projectPaths computed 会使用 fallback 从 appStore.selectedProjects 获取路径
   // 所以即使 projects.value 还没包含远端项目，路径也应该正确
   if (projectPath.value) {
-    console.log('[KnowledgeGraph] onMounted - projectPath:', projectPath.value)
-    console.log('[KnowledgeGraph] onMounted - projectPaths:', projectPaths.value)
-    console.log('[KnowledgeGraph] onMounted - appStore.selectedProjects:', appStore.selectedProjects)
     loadGraphStatus()
     loadGitStatus()
     loadVectorStatus()
     loadMissingInfo()
   } else {
     console.warn('[KnowledgeGraph] onMounted - projectPath is empty')
-    console.log('[KnowledgeGraph] onMounted - selectedProjectNames:', selectedProjectNames.value)
-    console.log('[KnowledgeGraph] onMounted - projects:', projects.value.map(p => p.name))
-    console.log('[KnowledgeGraph] onMounted - appStore.selectedProjectNames:', appStore.selectedProjectNames)
   }
 })
 

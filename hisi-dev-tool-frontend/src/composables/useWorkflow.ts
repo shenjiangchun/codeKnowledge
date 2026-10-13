@@ -63,9 +63,20 @@ export function useWorkflow(options: UseWorkflowOptions): UseWorkflowReturn {
 
   // ──────────────────── Start ────────────────────
   async function start(input: Record<string, unknown>): Promise<string> {
+    // 每次 start 都是全新 session：断开旧 SSE、清零 lastSeq 与累积状态。
+    // 否则二次 start（如「重新分析」）会沿用旧 lastSeq，新 session 事件
+    // 从 seq=1 起，被 `evt.seq <= lastSeq` 全部去重丢弃，进度/工具输出不可见。
+    tearDown()
+    lastSeq = 0
+    events.value = []
+    report.value = null
+    cost.value = { tokens: 0, usd: 0 }
+    clarifyQuestions.value = null
+    hitlSchema.value = null
+
     const resp = await startWorkflow({
       workflowType: options.workflowType,
-      ...input,
+      input,
     })
     sessionId.value = resp.sessionId
     status.value = 'running'

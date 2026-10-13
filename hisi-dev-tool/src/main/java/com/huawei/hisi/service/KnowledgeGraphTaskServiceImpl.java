@@ -5,13 +5,11 @@ import com.huawei.hisi.knowledgegraph.model.GitStatus;
 import com.huawei.hisi.knowledgegraph.repository.GenerationTaskRepository;
 import com.huawei.hisi.knowledgegraph.service.GitStatusService;
 import com.huawei.hisi.knowledgegraph.service.KgGenerationQueue;
-import com.huawei.hisi.knowledgegraph.service.KnowledgeGraphBuilder;
 import com.huawei.hisi.model.KnowledgeGraphTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -19,7 +17,6 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -34,9 +31,6 @@ public class KnowledgeGraphTaskServiceImpl implements KnowledgeGraphTaskService 
 
     @Autowired
     private GenerationTaskRepository taskRepository;
-
-    @Autowired
-    private KnowledgeGraphBuilder knowledgeGraphBuilder;
 
     @Autowired
     private GitStatusService gitStatusService;
@@ -93,36 +87,6 @@ public class KnowledgeGraphTaskServiceImpl implements KnowledgeGraphTaskService 
 
         // 入队（队列内部处理 PENDING 任务创建和重复检查）
         return kgGenerationQueue.enqueue(projectPath, excludePaths, generateVector, generateArchitecture, buildMode);
-    }
-
-    @Override
-    @Async("analysisTaskExecutor")
-    public void executeTaskAsync(Long taskId, String projectPath) {
-        executeTaskAsync(taskId, projectPath, null);
-    }
-
-    @Override
-    @Async("analysisTaskExecutor")
-    public void executeTaskAsync(Long taskId, String projectPath, List<String> excludePaths) {
-        LOG.info("Starting async knowledge graph generation for task: {}, excludePaths={}", taskId, excludePaths);
-        long startTime = System.currentTimeMillis();
-
-        taskRepository.updateStarted(taskId);
-
-        try {
-            Map<String, Object> result = knowledgeGraphBuilder.buildKnowledgeGraph(projectPath, excludePaths);
-            int methodNodeCount = result.get("methodNodeCount") != null ? (int) result.get("methodNodeCount") : 0;
-            int callRelationCount = result.get("callRelationCount") != null ? (int) result.get("callRelationCount") : 0;
-
-            taskRepository.updateCompleted(taskId, methodNodeCount, methodNodeCount, methodNodeCount, 0);
-
-            LOG.info("Knowledge graph task completed: id={}, methodNodes={}, callRelations={}",
-                taskId, methodNodeCount, callRelationCount);
-
-        } catch (Exception e) {
-            LOG.error("Knowledge graph task failed: id={}, error={}", taskId, e.getMessage(), e);
-            taskRepository.updateFailed(taskId, e.getMessage());
-        }
     }
 
     @Override

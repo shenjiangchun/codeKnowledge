@@ -59,8 +59,8 @@ public class ModuleStatsAggregator {
             "    WHEN last = 'controller' OR last = 'handler' OR last = 'endpoint' THEN 'CONTROLLER'\n" +
             "    WHEN last = 'service' THEN 'SERVICE'\n" +
             "    WHEN last = 'repository' OR last = 'dao' OR last = 'mapper' THEN 'REPOSITORY'\n" +
-            "    WHEN last = 'dto' OR last = 'model' OR last = 'entity' OR last = 'vo' OR last = 'domain' THEN 'MODEL'\n" +
-            "    WHEN last = 'util' OR last = 'common' OR last = 'config' OR last = 'constant' THEN 'UTILITY'\n" +
+            "    WHEN last = 'dto' OR last = 'dtos' OR last = 'model' OR last = 'entity' OR last = 'vo' OR last = 'domain' THEN 'MODEL'\n" +
+            "    WHEN last = 'util' OR last = 'utils' OR last = 'common' OR last = 'config' OR last = 'constant' OR last = 'constants' OR last = 'helper' OR last = 'helpers' THEN 'UTILITY'\n" +
             "    ELSE 'UNKNOWN' END";
         try (Session session = neo4jDriver.session(neo4jSessionConfig)) {
             session.run(cypher, Map.of("projectPath", projectPath));

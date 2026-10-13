@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="900" viewBox="0 0 1180 900" font-family="PingFang SC, Microsoft YaHei, sans-serif">
+  <defs>
+    <linearGradient id="hdr2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1e3a5f"/><stop offset="1" stop-color="#2c5282"/>
+    </linearGradient>
+    <linearGradient id="running" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#409eff"/><stop offset="1" stop-color="#79bbff"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1180" height="900" rx="10" fill="#f0f2f5" stroke="#d0d7de"/>
+  <rect x="0" y="0" width="1180" height="42" rx="10" fill="url(#hdr2)"/>
+  <circle cx="24" cy="21" r="6" fill="#ff5f57"/><circle cx="44" cy="21" r="6" fill="#febc2e"/><circle cx="64" cy="21" r="6" fill="#28c840"/>
+  <text x="590" y="26" text-anchor="middle" fill="#fff" font-size="14" font-weight="600">架构诊断 — AI 深度分析（进行中）</text>
+
+  <!-- 侧边栏 -->
+  <rect x="0" y="42" width="170" height="858" fill="#263445"/>
+  <g fill="#cfd8e3" font-size="13">
+    <rect x="10" y="95" width="150" height="34" rx="5" fill="#31465c"/><text x="28" y="117">知识图谱</text>
+    <rect x="10" y="137" width="150" height="34" rx="5" fill="#409eff"/><text x="28" y="159" fill="#fff" font-weight="600">架构诊断</text>
+    <rect x="10" y="179" width="150" height="34" rx="5" fill="#31465c"/><text x="28" y="201">调用链</text>
+    <rect x="10" y="221" width="150" height="34" rx="5" fill="#31465c"/><text x="28" y="243">日志分析</text>
+    <rect x="10" y="263" width="150" height="34" rx="5" fill="#31465c"/><text x="28" y="285">RAM 需求分析</text>
+  </g>
+
+  <!-- 顶部：运行中状态条 -->
+  <rect x="190" y="62" width="970" height="72" rx="8" fill="#fff" stroke="#e4e7ed"/>
+  <circle cx="222" cy="98" r="10" fill="none" stroke="#409eff" stroke-width="3" stroke-dasharray="40 14"/>
+  <text x="244" y="94" fill="#303133" font-size="15" font-weight="600">AI 深度分析运行中</text>
+  <text x="244" y="114" fill="#909399" font-size="12">工作流 arch-deep-analysis · 会话 wf-sess-8f21 · 已运行 1 分 24 秒</text>
+  <rect x="960" y="82" width="88" height="32" rx="5" fill="#fff" stroke="#c0c4cc"/>
+  <text x="1004" y="103" text-anchor="middle" fill="#606266" font-size="13">终止</text>
+
+  <!-- 三节点 StepCard 流程 -->
+  <g font-size="12">
+    <!-- 节点1：证据收集（完成） -->
+    <rect x="210" y="160" width="300" height="180" rx="8" fill="#fff" stroke="#67c23a" stroke-width="1.5"/>
+    <circle cx="238" cy="188" r="12" fill="#67c23a"/>
+    <text x="238" y="193" text-anchor="middle" fill="#fff" font-size="12">✓</text>
+    <text x="258" y="193" fill="#303133" font-size="14" font-weight="600">① 证据收集</text>
+    <rect x="472" y="176" width="26" height="18" rx="9" fill="#f0f9eb" stroke="#67c23a"/>
+    <text x="485" y="189" text-anchor="middle" fill="#67c23a" font-size="10">完成</text>
+    <g fill="#606266" font-size="11">
+      <text x="232" y="222">✓ 诊断四章数据（健康分 75 / B）</text>
+      <text x="232" y="242">✓ 包级环 ×3 · 分层违规 ×12</text>
+      <text x="232" y="262">✓ 类级度量（上帝类 ×2 · 枢纽 ×3）</text>
+      <text x="232" y="282">✓ 方法级热点 Top20（treemap）</text>
+      <text x="232" y="302">✓ KG 关键类代码摘录 ×6</text>
+      <text x="232" y="326" fill="#909399">CHECKPOINT · 证据包 12.4 KB</text>
+    </g>
+    <!-- 连接线 1→2 -->
+    <path d="M 510 250 L 540 250" stroke="#409eff" stroke-width="2" marker-end="url(#arr)"/>
+
+    <!-- 节点2：根因分析（运行中，LLM） -->
+    <rect x="440" y="160" width="300" height="180" rx="8" fill="#f0f7ff" stroke="#409eff" stroke-width="2"/>
+    <circle cx="468" cy="188" r="12" fill="url(#running)"/>
+    <text x="468" y="193" text-anchor="middle" fill="#fff" font-size="10">⚙</text>
+    <text x="488" y="193" fill="#303133" font-size="14" font-weight="600">② 问题根因分析</text>
+    <rect x="702" y="176" width="26" height="18" rx="9" fill="#ecf5ff" stroke="#409eff"/>
+    <text x="715" y="189" text-anchor="middle" fill="#409eff" font-size="10">LLM</text>
+    <g fill="#606266" font-size="11">
+      <text x="462" y="222">▌正在分析 3 个循环依赖的成因…</text>
+      <text x="462" y="242" fill="#909399">已识别疑似根因 2 条：</text>
+      <text x="474" y="260">· repository 反向依赖 controller</text>
+      <text x="474" y="278">  （统计报表直查 DB 绕过 service）</text>
+      <text x="462" y="302" fill="#909399">流式输出中…</text>
+    </g>
+
+    <!-- 连接线 2→3（虚线=未开始） -->
+    <path d="M 740 250 L 770 250" stroke="#c0c4cc" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+
+    <!-- 节点3：架构现状报告（待运行） -->
+    <rect x="670" y="160" width="300" height="180" rx="8" fill="#fff" stroke="#e4e7ed"/>
+    <circle cx="698" cy="188" r="12" fill="#c0c4cc"/>
+    <text x="698" y="193" text-anchor="middle" fill="#fff" font-size="12">3</text>
+    <text x="718" y="193" fill="#303133" font-size="14" font-weight="600">③ 架构现状报告</text>
+    <rect x="932" y="176" width="26" height="18" rx="9" fill="#f4f4f5" stroke="#c0c4cc"/>
+    <text x="945" y="189" text-anchor="middle" fill="#909399" font-size="10">LLM</text>
+    <g fill="#909399" font-size="11">
+      <text x="692" y="226">待节点 ② 完成后启动</text>
+      <text x="692" y="246">将生成项目级架构现状及问题分析</text>
+      <text x="692" y="266">Markdown（现状 → 问题 → 根因</text>
+      <text x="692" y="286">→ 改进优先级）</text>
+    </g>
+
+    <!-- 箭头 marker -->
+    <defs>
+      <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 z" fill="#409eff"/>
+      </marker>
+    </defs>
+  </g>
+
+  <!-- SSE 事件流 -->
+  <rect x="210" y="370" width="760" height="250" rx="8" fill="#1e1e1e"/>
+  <text x="230" y="396" fill="#9cdcfe" font-size="12" font-weight="600">实时事件流（SSE · agent_event）</text>
+  <g font-family="Consolas, monospace" font-size="11">
+    <text x="230" y="422" fill="#6a9955">[10:33:02] node:evidence   INFO   证据收集完成，共 5 类证据</text>
+    <text x="230" y="442" fill="#6a9955">[10:33:02] node:evidence   CHECKPOINT 写入会话 wf-sess-8f21</text>
+    <text x="230" y="462" fill="#569cd6">[10:33:04] node:rootcause  INFO   LLM 调用开始（deepseek / json 契约）</text>
+    <text x="230" y="482" fill="#dcdcaa">[10:33:41] node:rootcause  DELTA  已识别疑似根因 2 条…</text>
+    <text x="230" y="502" fill="#dcdcaa">[10:33:52] node:rootcause  DELTA  repository → controller 反向依赖源于…</text>
+    <text x="230" y="522" fill="#808080">[10:33:52] stream  事件序号 #47 · 每 3s 轮询增量拉取</text>
+  </g>
+
+  <!-- 右侧：会话信息 -->
+  <rect x="990" y="370" width="170" height="250" rx="8" fill="#fff" stroke="#e4e7ed"/>
+  <text x="1006" y="396" fill="#303133" font-size="13" font-weight="600">会话信息</text>
+  <g font-size="11" fill="#606266">
+    <text x="1006" y="422">工作流类型</text>
+    <text x="1006" y="440" fill="#303133">arch-deep-analysis</text>
+    <text x="1006" y="466">项目</text>
+    <text x="1006" y="484" fill="#303133">hisi-dev-tool</text>
+    <text x="1006" y="510">输入指纹</text>
+    <text x="1006" y="528" fill="#303133">a3f2…c91（checkpoint 命中可断点续跑）</text>
+    <text x="1006" y="560">进度</text>
+    <rect x="1006" y="572" width="130" height="8" rx="4" fill="#e4e7ed"/>
+    <rect x="1006" y="572" width="66" height="8" rx="4" fill="#409eff"/>
+    <text x="1006" y="600" fill="#409eff">2 / 3 节点</text>
+  </g>
+
+  <!-- 底部提示 -->
+  <rect x="210" y="650" width="950" height="56" rx="5" fill="#f5f7fa" stroke="#e4e7ed"/>
+  <text x="230" y="674" fill="#606266" font-size="12">页面可离开：agent 流在后台继续执行，回到本页自动恢复进度（lastSeq 水位增量拉取事件）</text>
+  <text x="230" y="694" fill="#909399" font-size="12">深度分析为分钟级异步任务，不阻塞实时报告的浏览与保存快照</text>
+
+  <!-- 下方被实时报告内容占据（滚动可见） -->
+  <rect x="190" y="730" width="970" height="120" rx="8" fill="#fff" stroke="#e4e7ed" stroke-dasharray="6 4"/>
+  <text x="590" y="784" text-anchor="middle" fill="#c0c4cc" font-size="13">诊断总览 / 四章 Tabs / 快照历史（实时报告仍在，可继续浏览）</text>
+</svg>

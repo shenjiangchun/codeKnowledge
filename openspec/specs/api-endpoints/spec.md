@@ -80,8 +80,15 @@ TBD - created by archiving change multi-perspective-platform. Update Purpose aft
 - 则：响应含 downstream（totalAffectedMethods/maxDepth/bridgeCount/affectedServices/criticalPath）
 - 并且：upstream（totalEntryPoints/entryTypes/affectedAPIs）
 - 并且：riskSummary（overallRisk/reasons）
-- 并且：suggestedTests（受影响入口点的测试建议列表）
+- 并且：suggestedTests（受影响入口点的测试建议列表，非空，每项指向受影响入口点或受影响方法）
 
+#### Scenario: 测试建议非空
+- 当：影响面分析返回 `affectedEntryPoints > 0` 或存在受影响方法
+- 则：`suggestedTests` SHALL 返回基于受影响入口点/方法推导的测试建议列表（如「为入口 X 补充回归测试」「覆盖受影响方法 Y 的调用路径」），而非恒空数组
+
+#### Scenario: 无受影响入口点时的建议
+- 当：上游调用者与下游方法均为空（影响面为 0）
+- 则：`suggestedTests` 返回空数组（无建议可给），不抛错
 
 ### Requirement: 批量生成图谱支持后处理勾选
 系统 MUST 在 POST /knowledge-graph/tasks/generate-batch 端点接收 generateVector（是否生成语义&向量）和 generateArchitecture（是否运行架构现状聚合）两个布尔参数，透传到入队逻辑。批量生成每个项目按勾选决定是否生成向量、是否运行架构现状，而非固定全做。
@@ -105,3 +112,4 @@ TBD - created by archiving change multi-perspective-platform. Update Purpose aft
 #### Scenario: 卡死任务状态一致
 - 前提：某项目存在 RUNNING 超过 24h 的任务
 - 则：批量状态与单查 /tasks/latest 返回一致的 FAILED 状态（自动标记超时）
+

@@ -20,20 +20,27 @@ public class AdminOnlyInterceptor implements HandlerInterceptor {
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
             throws Exception {
         String method = request.getMethod();
+        String uri = request.getRequestURI();
 
-        // GET 请求放行（/api/users/** 除外，该路径下 GET 也需管理员）
-        if ("GET".equals(method) && !request.getRequestURI().startsWith("/api/users")) {
-            return true;
-        }
-
-        // OPTIONS 预检请求放行
+        // OPTIONS 预检请求放行（浏览器预检不携带 token）
         if ("OPTIONS".equals(method)) {
             return true;
         }
 
-        // POST/PUT/DELETE 及 /api/users/** 的 GET — 检查 ADMIN 权限
         SecurityContext ctx = (SecurityContext) request.getAttribute(SecurityContext.ATTR_NAME);
 
+        // /api/workflow/** 全部端点（含 GET 流式/报告读取）要求登录：未携带有效 token 返回 401
+        if (uri.startsWith("/api/workflow/") && ctx == null) {
+            writeError(response, HttpStatus.UNAUTHORIZED, 401, "请先登录后再执行此操作");
+            return false;
+        }
+
+        // GET 请求放行（/api/users/** 除外，该路径下 GET 也需管理员）
+        if ("GET".equals(method) && !uri.startsWith("/api/users")) {
+            return true;
+        }
+
+        // POST/PUT/DELETE 及 /api/users/** 的 GET — 检查 ADMIN 权限
         if (ctx == null) {
             writeError(response, HttpStatus.UNAUTHORIZED, 401, "请先登录后再执行此操作");
             return false;

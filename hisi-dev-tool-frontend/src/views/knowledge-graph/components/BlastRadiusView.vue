@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { knowledgeGraphApi, type BlastRadiusData } from '@/api/knowledgeGraph'
-import { ElAlert, ElInput, ElButton, ElSkeleton, ElEmpty, ElTag, ElDescriptions, ElDescriptionsItem, ElMessage } from 'element-plus'
+import { knowledgeGraphApi, type BlastRadiusData, type MethodNode } from '@/api/knowledgeGraph'
+import { ElAlert, ElSelect, ElOption, ElButton, ElSkeleton, ElEmpty, ElTag, ElDescriptions, ElDescriptionsItem, ElMessage } from 'element-plus'
 
 const props = defineProps<{ projectPaths: string[] }>()
 const nodeId = ref('')
@@ -10,9 +10,32 @@ const data = ref<BlastRadiusData | null>(null)
 
 const riskColor: Record<string, string> = { LOW: 'success', MEDIUM: 'warning', HIGH: 'danger' }
 
+// 方法模糊搜索下拉
+const searchLoading = ref(false)
+const searchOptions = ref<MethodNode[]>([])
+
+async function searchMethods(query: string) {
+  if (!query.trim()) {
+    searchOptions.value = []
+    return
+  }
+  searchLoading.value = true
+  try {
+    searchOptions.value = await knowledgeGraphApi.searchMethods(query.trim(), props.projectPaths)
+  } catch (e) {
+    searchOptions.value = []
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+function methodLabel(m: MethodNode) {
+  return `${m.className}.${m.methodName}${m.signature ? '(' + m.signature + ')' : ''}`
+}
+
 async function query() {
   if (!nodeId.value.trim()) {
-    ElMessage.warning('请输入方法 nodeId')
+    ElMessage.warning('请选择方法')
     return
   }
   loading.value = true
@@ -36,12 +59,34 @@ async function query() {
     </el-alert>
 
     <div class="query-row">
-      <el-input v-model="nodeId" placeholder="输入方法 nodeId（如 projectPath:className:methodName）" clearable style="flex:1" @keyup.enter="query" />
+      <el-select
+        v-model="nodeId"
+        filterable
+        remote
+        clearable
+        :remote-method="searchMethods"
+        :loading="searchLoading"
+        placeholder="输入类名或方法名模糊搜索"
+        style="flex:1"
+        @change="query"
+      >
+        <el-option
+          v-for="m in searchOptions"
+          :key="m.nodeId"
+          :label="methodLabel(m)"
+          :value="m.nodeId"
+        >
+          <div class="option-row">
+            <span class="option-label">{{ m.className }}.{{ m.methodName }}</span>
+            <span v-if="m.description" class="option-desc">{{ m.description }}</span>
+          </div>
+        </el-option>
+      </el-select>
       <el-button type="primary" :loading="loading" @click="query">查询爆炸半径</el-button>
     </div>
 
     <el-skeleton v-if="loading" :rows="6" animated />
-    <el-empty v-else-if="!data" description="输入方法 nodeId 查询其影响范围" :image-size="80" />
+    <el-empty v-else-if="!data" description="搜索并选择方法查询其影响范围" :image-size="80" />
 
     <div v-else class="result">
       <!-- 中心节点 -->
@@ -75,4 +120,7 @@ async function query() {
 .query-row { display: flex; gap: 12px; margin-bottom: 16px; }
 .result { display: flex; flex-direction: column; gap: 12px; }
 .metrics { display: flex; flex-wrap: wrap; gap: 8px; }
+.option-row { display: flex; flex-direction: column; line-height: 1.3; }
+.option-label { font-size: 14px; color: #303133; }
+.option-desc { font-size: 12px; color: #909399; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

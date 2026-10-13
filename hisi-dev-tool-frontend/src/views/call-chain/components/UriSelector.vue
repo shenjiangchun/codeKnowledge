@@ -70,7 +70,7 @@ const loadUris = async () => {
     }
     const res = await knowledgeGraphApi.getEntryPoints([projectPath], 'HTTP', 1, 10000)
     // 从 entryKey 中提取 URI
-    uris.value = (res?.items || []).map((ep: any) => ep.entryKey)
+    uris.value = (res?.items || []).map(ep => ep.entryKey)
   } catch (error) {
     ElMessage.error('加载URI列表失败')
   } finally {

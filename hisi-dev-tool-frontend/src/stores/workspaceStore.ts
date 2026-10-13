@@ -50,7 +50,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         workingDirectory
       })
       // axios 拦截器已提取 data，res 直接就是会话对象
-      const session = res as any
+      const session = res
       sessions.value.unshift(session)
       currentSessionId.value = session.id
       return session
@@ -65,7 +65,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const res = await workspaceSessionApi.update(id, { title, status })
       const index = sessions.value.findIndex(s => s.id === id)
       if (index >= 0) {
-        sessions.value[index] = res as any
+        sessions.value[index] = res
       }
     } catch (e) {
       ElMessage.error('更新会话失败')
@@ -89,7 +89,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const res = await workspaceSessionApi.archive(id)
       const index = sessions.value.findIndex(s => s.id === id)
       if (index >= 0) {
-        sessions.value[index] = res as any
+        sessions.value[index] = res
       }
     } catch (e) {
       ElMessage.error('归档会话失败')
@@ -101,7 +101,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       const res = await workspaceSessionApi.bindClaudeSession(id, claudeSessionId)
       const index = sessions.value.findIndex(s => s.id === id)
       if (index >= 0) {
-        sessions.value[index] = res as any
+        sessions.value[index] = res
       }
     } catch (e) {
       console.error('Failed to bind Claude session:', e)

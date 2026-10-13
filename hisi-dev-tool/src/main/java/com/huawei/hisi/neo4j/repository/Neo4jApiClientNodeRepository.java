@@ -19,6 +19,28 @@ public interface Neo4jApiClientNodeRepository extends Neo4jRepository<ApiClientN
     List<ApiClientNode> findByProjectPath(String projectPath);
 
     /**
+     * 按多项目路径批量查询 API 调用点节点（IN 子句，跨层骨架图用）。
+     */
+    @Query("""
+        MATCH (a:ApiClient)
+        WHERE a.projectPath IN $projectPaths
+        RETURN a
+        """)
+    List<ApiClientNode> findByProjectPaths(@Param("projectPaths") List<String> projectPaths);
+
+    /**
+     * 批量查询 ApiClient -[:INVOKES_API]-> EntryPoint 跨层边（跨层骨架图用）。
+     */
+    @Query("""
+        MATCH (a:ApiClient)-[r:INVOKES_API]->(e:EntryPoint)
+        WHERE a.projectPath IN $projectPaths
+        RETURN a.apiClientId AS apiClientId, e.entryId AS entryId, r.method AS method
+        """)
+    List<InvokesApiEdge> findInvokesApiEdgesByProjectPaths(@Param("projectPaths") List<String> projectPaths);
+
+    record InvokesApiEdge(String apiClientId, String entryId, String method) {}
+
+    /**
      * 批量 MERGE 保存 API 调用点节点（幂等）。
      */
     @Query("""
@@ -80,4 +102,58 @@ public interface Neo4jApiClientNodeRepository extends Neo4jRepository<ApiClientN
         RETURN e.entryId AS entryId, e.entryKey AS entryKey, e.entryType AS entryType
         """)
     List<Map<String, Object>> findBackendDepsByApiClientId(@Param("apiClientId") String apiClientId);
+
+    /**
+     * 读取某项目下尚无 descriptionEmbedding 的 ApiClient 节点（待向量化）。
+     */
+    @Query("""
+        MATCH (a:ApiClient {projectPath: $projectPath})
+        WHERE a.descriptionEmbedding IS NULL
+        RETURN a
+        """)
+    List<ApiClientNode> findWithoutEmbeddingByProjectPath(@Param("projectPath") String projectPath);
+
+    /**
+     * 写回 ApiClient 的 descriptionEmbedding 向量。
+     */
+    @Query("""
+        MATCH (a:ApiClient {apiClientId: $apiClientId})
+        SET a.descriptionEmbedding = $embedding
+        """)
+    void updateDescriptionEmbedding(@Param("apiClientId") String apiClientId,
+                                    @Param("embedding") List<Double> embedding);
+
+    /**
+     * 语义检索：按描述向量索引命中 ApiClient 节点（带分数）。
+     */
+    @Query("""
+        CALL db.index.vector.queryNodes('apiClient_description_vector_index', $topK, $embedding)
+        YIELD node AS a, score
+        WHERE a.projectPath IN $projectPaths AND score >= $threshold
+        RETURN a.apiClientId as apiClientId, a.method as method, a.url as url,
+               a.sourceFile as sourceFile, a.componentName as componentName, a.projectPath as projectPath,
+               score
+        ORDER BY score DESC
+        """)
+    List<ApiClientWithScore> findByDescriptionVectorIndexWithScoreByProjectPaths(
+        @Param("projectPaths") List<String> projectPaths,
+        @Param("embedding") List<Double> embedding,
+        @Param("threshold") double threshold,
+        @Param("topK") int topK
+    );
+
+    record ApiClientWithScore(String apiClientId, String method, String url,
+                              String sourceFile, String componentName, String projectPath,
+                              Double score) {
+        public ApiClientNode toApiClientNode() {
+            return ApiClientNode.builder()
+                .apiClientId(apiClientId)
+                .method(method)
+                .url(url)
+                .sourceFile(sourceFile)
+                .componentName(componentName)
+                .projectPath(projectPath)
+                .build();
+        }
+    }
 }

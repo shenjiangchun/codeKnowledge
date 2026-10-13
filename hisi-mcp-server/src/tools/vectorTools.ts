@@ -14,6 +14,8 @@ export const vectorToolDefinitions = [
                  '【重要】调用本工具前必须先用 kg_list_projects 列出可选项目并和用户确认 projectPath，' +
                  '不要把仓库根目录当 projectPath，会查到 0 条。' +
                  '使用自然语言描述要找的功能，返回最相关的方法列表及其文件位置。' +
+                 '若所选目录存在前后端绑定，检索范围会自动展开到绑定的对侧目录，' +
+                 '结果可同时包含后端方法（type=method）与前端节点（type=component/route/apiclient，带 nodeType 字段）。' +
                  '示例查询：「查找处理支付回调的方法」、「用户创建逻辑」、「订单状态流转」',
     inputSchema: {
       type: 'object' as const,

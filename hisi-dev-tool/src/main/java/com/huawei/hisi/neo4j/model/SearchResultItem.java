@@ -23,7 +23,7 @@ public class SearchResultItem {
     private String nodeId;
 
     /**
-     * 节点类型: "Method" / "Sql" / "EntryPoint"
+     * 节点类型: "Method" / "Sql" / "EntryPoint" / "Class" / "Component" / "FrontendRoute" / "ApiClient"
      */
     private String nodeType;
 
@@ -46,6 +46,21 @@ public class SearchResultItem {
      * 源文件路径
      */
     private String filePath;
+
+    /**
+     * 前端组件名（nodeType=Component/ApiClient 时）
+     */
+    private String componentName;
+
+    /**
+     * 前端路由路径（nodeType=FrontendRoute 时）
+     */
+    private String routePath;
+
+    /**
+     * 前端 API 调用 URL（nodeType=ApiClient 时）
+     */
+    private String url;
 
     /**
      * 起始行号

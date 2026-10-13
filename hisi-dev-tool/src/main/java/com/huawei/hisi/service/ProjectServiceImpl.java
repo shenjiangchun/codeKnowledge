@@ -225,7 +225,8 @@ public class ProjectServiceImpl implements ProjectService {
         try (Git git = Git.open(repoDir)) {
             String branch = getCurrentBranch(git);
             String remoteUrl = getRemoteUrl(git);
-            boolean clean = git.status().call().isClean();
+            // 裸仓库（bare repository）无工作树/索引，status() 会抛 NoWorkTreeException
+            boolean clean = !git.getRepository().isBare() && git.status().call().isClean();
 
             // Get last commit info
             String lastCommitMessage = null;

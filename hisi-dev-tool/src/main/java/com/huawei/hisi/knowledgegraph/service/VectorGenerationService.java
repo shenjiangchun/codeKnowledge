@@ -164,8 +164,48 @@ public class VectorGenerationService {
     }
 
     private void fileLog(String format, Object... args) {
-        String message = String.format(format, args);
+        String message = formatLogMessage(format, args);
         fileLog(message);
+    }
+
+    /**
+     * 将 slf4j 风格 {@code {}} 占位符替换为参数值（与 slf4j 一致）。
+     *
+     * <p>历史 bug：这里曾用 {@link String#format}，但调用方传的是 {@code {}} 而非 {@code %s}，
+     * 导致 {@code {}} 被当字面量、参数被静默丢弃（日志出现 "id={}, total={}"）。
+     * 因此统一为 {@code {}} 替换；多余的参数按 slf4j 语义追加在末尾。
+     */
+    static String formatLogMessage(String format, Object... args) {
+        if (format == null) {
+            return "null";
+        }
+        if (args == null || args.length == 0) {
+            return format;
+        }
+        StringBuilder sb = new StringBuilder();
+        int argIdx = 0;
+        int i = 0;
+        while (i < format.length()) {
+            if (format.charAt(i) == '{' && i + 1 < format.length() && format.charAt(i + 1) == '}') {
+                if (argIdx < args.length) {
+                    sb.append(args[argIdx++]);
+                } else {
+                    sb.append("{}");
+                }
+                i += 2;
+            } else {
+                sb.append(format.charAt(i));
+                i++;
+            }
+        }
+        // 多余参数按 slf4j 语义追加
+        while (argIdx < args.length) {
+            if (sb.length() > 0) {
+                sb.append(' ');
+            }
+            sb.append(args[argIdx++]);
+        }
+        return sb.toString();
     }
 
     /**
@@ -225,7 +265,7 @@ public class VectorGenerationService {
             int batchSz = getBatchSize();
 
             if (!methods.isEmpty()) {
-                fileLog("[向量生成] 开始批量处理: 总方法数=%d, 初始batchSize=%d, 线程数=%d",
+                fileLog("[向量生成] 开始批量处理: 总方法数={}, 初始batchSize={}, 线程数={}",
                         totalMethods, batchSz, concurrency);
 
                 AdaptiveBatchController adaptiveCtrl = new AdaptiveBatchController(
@@ -265,10 +305,10 @@ public class VectorGenerationService {
 
                     if (adaptiveCtrl.shouldAdjust()) {
                         AdaptiveBatchController.AdjustmentResult adj = adaptiveCtrl.adjust();
-                        fileLog("[向量生成] 自适应: batch=%d, %s", adj.newBatchSize(), adj.reason());
+                        fileLog("[向量生成] 自适应: batch={}, {}", adj.newBatchSize(), adj.reason());
                     }
 
-                    fileLog("[向量生成] 批次完成: %d/%d, 批次大小=%d, 耗时=%dms",
+                    fileLog("[向量生成] 批次完成: {}/{}, 批次大小={}, 耗时={}ms",
                             offset, totalMethods, batch.size(), batchLatency);
                 }
 
@@ -518,7 +558,7 @@ public class VectorGenerationService {
                 }
             }
 
-            fileLog("[SQL向量生成] 批次完成: %d/%d, 批次大小=%d", end, totalSql, batch.size());
+            fileLog("[SQL向量生成] 批次完成: {}/{}, 批次大小={}", end, totalSql, batch.size());
         }
 
         fileLog("[SQL向量生成] 完成: 成功=" + sqlSuccess.get() + ", 失败=" + sqlFail.get());

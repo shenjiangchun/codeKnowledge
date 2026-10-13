@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch, nextTick, computed } from 'vue'
 import { knowledgeGraphApi, type HotspotItem } from '@/api/knowledgeGraph'
-import { ElSkeleton, ElEmpty, ElTag, ElTable, ElTableColumn, ElSelect, ElOption, ElAlert, ElDialog, ElDescriptions, ElDescriptionsItem } from 'element-plus'
+import { ElSkeleton, ElEmpty, ElTag, ElTable, ElTableColumn, ElSelect, ElOption, ElAlert, ElDialog, ElDescriptions, ElDescriptionsItem, ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 
 const props = defineProps<{ projectPaths: string[]; language?: string }>()
@@ -30,7 +30,7 @@ async function load() {
   try {
     const res = await knowledgeGraphApi.getHotspots(props.projectPaths, props.language, 100)
     hotspots.value = res.hotspots
-  } finally { loading.value = false }
+  } catch { ElMessage.error('热点分析加载失败') } finally { loading.value = false }
 }
 
 function renderTreemap() {

@@ -78,10 +78,10 @@ describe('FileBrowserPanel', () => {
     expect(store.selectedFile).toBe('com/bar/C.java')
   })
 
-  it('ring grouping headers include counts in 涉及 / 修改 / 影响 format', () => {
+  it('ring grouping headers include counts in 受影响的入口 / 修改 / 影响 format', () => {
     const w = mount(FileBrowserPanel, { props })
     const headers = w.findAll('.file-group-header').map((h) => h.text())
-    expect(headers.some((t) => t.includes('涉及 (1)'))).toBe(true)
+    expect(headers.some((t) => t.includes('受影响的入口 (1)'))).toBe(true)
     expect(headers.some((t) => t.includes('修改 (1)'))).toBe(true)
     expect(headers.some((t) => t.includes('影响 (2)'))).toBe(true)
   })

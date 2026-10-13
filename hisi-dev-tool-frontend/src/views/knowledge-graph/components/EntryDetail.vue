@@ -101,7 +101,7 @@ const cycleCount = ref(0)
 const contextMenuVisible = ref(false)
 const contextMenuX = ref(0)
 const contextMenuY = ref(0)
-const contextMenuNode = ref<any>(null)
+const contextMenuNode = ref<TreeNode | null>(null)
 
 // 将 CallChainView 转换为 ChainChart 需要的树形结构
 interface TreeNode {
@@ -112,6 +112,8 @@ interface TreeNode {
   methodBody?: string
   description?: string
   isNoMatch?: boolean
+  // 桥接字段用 any：TreeNode 由 GraphNode 构建，但需兼容 ChainChart 的 ChainNode
+  // （bridgeType 为 BridgeType 字面量联合、bridgeInfo 为 BridgeInfo），此契约不一致处保留逃生口
   bridgeType?: any
   bridgeInfo?: any
   depth: number
@@ -290,7 +292,7 @@ const loadChain = async () => {
 }
 
 // 右键菜单
-const handleContextMenu = (event: MouseEvent, node: any) => {
+const handleContextMenu = (event: MouseEvent, node: TreeNode) => {
   contextMenuVisible.value = true
   contextMenuX.value = event.clientX
   contextMenuY.value = event.clientY
@@ -301,7 +303,7 @@ const closeContextMenu = () => {
   contextMenuVisible.value = false
 }
 
-const handleMenuAction = (_action: string, _node: any) => {
+const handleMenuAction = (_action: string, _node: { name: string; className?: string; methodSignature?: string }) => {
   // 复用调用链页面的菜单逻辑
   closeContextMenu()
 }

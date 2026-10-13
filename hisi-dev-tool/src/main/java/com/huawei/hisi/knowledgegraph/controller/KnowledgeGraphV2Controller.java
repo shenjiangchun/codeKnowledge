@@ -1,9 +1,11 @@
 package com.huawei.hisi.knowledgegraph.controller;
 
+import com.huawei.hisi.knowledgegraph.binding.service.ProjectBindingService;
 import com.huawei.hisi.knowledgegraph.model.BridgeRelation;
 import com.huawei.hisi.knowledgegraph.model.BridgeStats;
 import com.huawei.hisi.knowledgegraph.model.CallChainGraphResponse;
 import com.huawei.hisi.knowledgegraph.model.GenerationTask;
+import com.huawei.hisi.knowledgegraph.service.CrossLayerGraphService;
 import com.huawei.hisi.model.ApiResponse;
 import com.huawei.hisi.neo4j.model.ServiceEntryGroup;
 import com.huawei.hisi.neo4j.model.SqlNode;
@@ -13,9 +15,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 知识图谱 V2 API —— 所有查询接口统一使用 projectPaths（必填），不再接受单个 projectPath。
@@ -30,6 +35,8 @@ public class KnowledgeGraphV2Controller {
     private final Neo4jEntryPointNodeRepository neo4jEntryPointNodeRepository;
     private final Neo4jApiClientNodeRepository neo4jApiClientNodeRepository;
     private final GenerationController generationController;
+    private final CrossLayerGraphService crossLayerGraphService;
+    private final ProjectBindingService projectBindingService;
 
     @GetMapping("/status")
     public ApiResponse<Map<String, Object>> getStatus(
@@ -442,5 +449,35 @@ public class KnowledgeGraphV2Controller {
         result.put("apiClientId", apiClientId);
         result.put("deps", deps);
         return ApiResponse.success(result);
+    }
+
+    /**
+     * 前后端跨层骨架图：一次返回「前端路由→组件→API调用点→后端入口→入口方法」整张图。
+     * 对给定 projectPaths 做绑定范围展开，再构建骨架（调用链不展开，由前端懒加载）。
+     */
+    @GetMapping("/frontend-backend/graph")
+    public ApiResponse<CallChainGraphResponse> getFrontendBackendGraph(
+            @RequestParam List<String> projectPaths) {
+        List<String> expanded = expandBindingScope(projectPaths);
+        return ApiResponse.success(crossLayerGraphService.buildSkeleton(expanded));
+    }
+
+    /**
+     * 绑定范围展开：对每个路径调用 {@link ProjectBindingService#resolve} 展开绑定组，去重合并。
+     */
+    private List<String> expandBindingScope(List<String> paths) {
+        if (paths == null || paths.isEmpty()) {
+            return List.of();
+        }
+        List<String> expanded = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (String p : paths) {
+            for (String resolved : projectBindingService.resolve(p)) {
+                if (seen.add(resolved)) {
+                    expanded.add(resolved);
+                }
+            }
+        }
+        return expanded;
     }
 }

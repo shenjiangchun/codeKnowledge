@@ -7,7 +7,7 @@ import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 
 // Define menu key type that matches availableMenus keys
-type MenuKey = 'log-analysis' | 'project-management' | 'claude-terminal' | 'prompt-config' | 'skill-market' | 'kg-skills-kit' | 'knowledge-graph' | 'settings' | 'apm-debug' | 'ram' | 'ram-demand' | 'ram-chat' | 'merge-analysis'
+type MenuKey = 'log-analysis' | 'project-management' | 'claude-terminal' | 'prompt-config' | 'skill-market' | 'kg-skills-kit' | 'knowledge-graph' | 'architecture-diagnosis' | 'settings' | 'apm-debug' | 'ram' | 'ram-demand' | 'ram-chat' | 'merge-analysis'
 
 interface MenuItem {
   index: string
@@ -40,6 +40,12 @@ const baseMenuItems: MenuItem[] = [
       { index: '/prompt-config', title: '提示词配置' },
       { index: '/glossary', title: '术语管理' }
     ]
+  },
+  {
+    index: '/architecture',
+    title: '架构诊断',
+    icon: Connection,
+    menuKey: 'architecture-diagnosis'
   },
   {
     index: '/log-analysis',

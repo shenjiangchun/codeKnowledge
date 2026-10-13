@@ -147,6 +147,8 @@ public class LogAnalysisController {
      *
      * @param userId 用户 ID（可选，默认为 sys_admin）
      * @param status 状态过滤（可选）
+     * @param startTime 创建时间下限（可选，ISO 格式 yyyy-MM-ddTHH:mm:ss）
+     * @param endTime 创建时间上限（可选，ISO 格式 yyyy-MM-ddTHH:mm:ss）
      * @param page   页码（可选，默认 1）
      * @param pageSize 每页大小（可选，默认 10）
      * @return 任务列表
@@ -155,38 +157,21 @@ public class LogAnalysisController {
     public ApiResponse<ReportListResponse> getReports(
             @RequestParam(required = false) String userId,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int pageSize) {
 
         try {
             String finalUserId = userId != null ? userId : DEFAULT_USER_ID;
 
-            List<LogAnalysisReportEntity> reports;
+            var paginated = repository.findByFilters(finalUserId, status, startTime, endTime, page, pageSize);
 
-            // 如果指定了状态，按状态查询
-            if (status != null && !status.isEmpty()) {
-                reports = repository.findByUserIdAndStatus(finalUserId, status);
-            } else {
-                // 否则分页查询所有
-                var paginated = repository.findByUserIdPagination(finalUserId, page, pageSize);
-                reports = paginated.getList();
-
-                // 构建完整响应
-                ReportListResponse response = new ReportListResponse();
-                response.setTotal(paginated.getTotal());
-                response.setPage(page);
-                response.setPageSize(pageSize);
-                response.setList(ReportListResponse.fromEntities(reports));
-
-                return ApiResponse.success(response);
-            }
-
-            // 按状态查询时返回全部匹配结果
             ReportListResponse response = new ReportListResponse();
-            response.setTotal(reports.size());
-            response.setPage(1);
-            response.setPageSize(reports.size());
-            response.setList(ReportListResponse.fromEntities(reports));
+            response.setTotal(paginated.getTotal());
+            response.setPage(page);
+            response.setPageSize(pageSize);
+            response.setList(ReportListResponse.fromEntities(paginated.getList()));
 
             return ApiResponse.success(response);
 
@@ -460,10 +445,17 @@ public class LogAnalysisController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {
         try {
-            // 如果不传日期，导出全部报告
-            if (startTime == null || endTime == null) {
+            // 只有起止时间都为空时才导出全部；仅填一侧时，另一侧取默认边界
+            if (startTime == null && endTime == null) {
                 startTime = LocalDateTime.of(2020, 1, 1, 0, 0);
                 endTime = LocalDateTime.now();
+            } else {
+                if (startTime == null) {
+                    startTime = LocalDateTime.of(2020, 1, 1, 0, 0);
+                }
+                if (endTime == null) {
+                    endTime = LocalDateTime.now();
+                }
             }
 
             byte[] zipContent = reportExportService.exportLogReportsAsZip(startTime, endTime);

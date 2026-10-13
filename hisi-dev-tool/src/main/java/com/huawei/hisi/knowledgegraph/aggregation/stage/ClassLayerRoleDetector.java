@@ -94,10 +94,18 @@ public class ClassLayerRoleDetector {
         return new RoleDetection(UNKNOWN, "UNKNOWN");
     }
 
-    /** 按后缀名识别职责，无法识别返回 null。 */
+    /** 按后缀名识别职责，支持复数形式（*Utils/*Constants/*Dtos 等），无法识别返回 null。 */
     private String detectBySuffix(String name) {
         if (name == null) return null;
         String lower = name.toLowerCase();
+        String bySuffix = matchSuffix(lower);
+        if (bySuffix == null && lower.endsWith("s") && !lower.endsWith("ss")) {
+            bySuffix = matchSuffix(lower.substring(0, lower.length() - 1));
+        }
+        return bySuffix;
+    }
+
+    private String matchSuffix(String lower) {
         if (lower.endsWith("controller")) return CONTROLLER;
         if (lower.endsWith("service") || lower.endsWith("serviceimpl")) return SERVICE;
         if (lower.endsWith("repository") || lower.endsWith("dao") || lower.endsWith("mapper")) return REPOSITORY;
@@ -117,5 +125,13 @@ public class ClassLayerRoleDetector {
     /** 分层偏序值，用于反向依赖判定；UNKNOWN 返回 -1。 */
     public int layerOrder(String role) {
         return LAYER_ORDER.getOrDefault(role, -1);
+    }
+
+    /**
+     * 权威分层偏序（高 → 低，UTILITY 为叶子），作为报告 {@code layerOrder} 与前端可视化的单一来源。
+     * 前端原先硬编码的 {@code LAYER_BIAS} 应收敛到此。
+     */
+    public static List<String> layerOrderList() {
+        return java.util.List.of(CONTROLLER, SERVICE, REPOSITORY, MODEL, UTILITY);
     }
 }

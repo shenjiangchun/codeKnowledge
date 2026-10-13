@@ -111,10 +111,12 @@ import {
 interface Props {
   nodes: GraphNode[]
   edges: GraphEdge[]
-  direction?: 'TB' | 'BT'
+  direction?: 'TB' | 'BT' | 'LR'
   entrySources?: Map<string, Set<string>>
   entryColors?: Map<string, string>
   entryLabels?: Map<string, string>
+  /** 按节点 id 指定的边框颜色（如按 nodeType 着色），优先级最高 */
+  nodeColors?: Map<string, string>
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -122,6 +124,7 @@ const props = withDefaults(defineProps<Props>(), {
   entrySources: undefined,
   entryColors: undefined,
   entryLabels: undefined,
+  nodeColors: undefined,
 })
 
 defineEmits<{
@@ -172,6 +175,12 @@ function cardClasses(node: FlowNode): Record<string, boolean> {
 }
 
 function cardStyle(node: FlowNode): Record<string, string> {
+  const custom = props.nodeColors?.get(node.id)
+  if (custom) {
+    return {
+      borderLeft: `3px solid ${custom}`,
+    }
+  }
   if (node.sources.size > 1 && props.entryColors) {
     const colors: string[] = []
     for (const src of node.sources) {
