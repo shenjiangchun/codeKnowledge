@@ -53,10 +53,10 @@ export interface HitlSchema {
   output: Record<string, unknown>
 }
 
-/** Start request payload */
+/** Start request payload — matches backend WorkflowController.StartRequest(workflowType, input). */
 export interface WorkflowStartRequest {
   workflowType: string
-  [key: string]: unknown
+  input: Record<string, unknown>
 }
 
 /** Start response */

@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import type { CallChainGraphData } from '@/api/knowledgeGraph'
 
 export interface ApiConsumer {
   url: string
@@ -39,4 +40,14 @@ export const frontendBackendApi = {
   getBackendDeps(apiClientId: string): Promise<BackendDepsResponse> {
     return request.get('/v2/knowledge-graph/backend-deps', { params: { apiClientId } })
   },
+
+  /**
+   * 一次返回「前端路由→组件→API调用点→后端入口→入口方法」跨层骨架图。
+   */
+  getFrontendBackendGraph(projectPaths: string[]): Promise<CallChainGraphData> {
+    return request.get('/v2/knowledge-graph/frontend-backend/graph', {
+      params: { projectPaths }
+    })
+  },
 }
+

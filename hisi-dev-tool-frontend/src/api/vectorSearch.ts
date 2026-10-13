@@ -68,6 +68,12 @@ export interface VectorSearchResultItem {
   endLine: number
   description: string
   similarityScore?: number
+  /** 前端组件名（nodeType=Component/ApiClient 时） */
+  componentName?: string
+  /** 前端路由路径（nodeType=FrontendRoute 时） */
+  routePath?: string
+  /** 前端 API 调用 URL（nodeType=ApiClient 时） */
+  url?: string
   /** 命中该结果的子查询列表（多路召回时记录，前端按分词筛选用） */
   matchedSubQueries?: string[]
   callers?: CallerSummary[]

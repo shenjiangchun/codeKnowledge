@@ -132,9 +132,41 @@
       </el-card>
     </div>
 
+    <!-- 前端节点搜索结果 -->
+    <div class="search-results frontend-results" v-if="frontendResults.length > 0">
+      <div class="frontend-results-header">
+        <el-icon><Connection /></el-icon>
+        <span>前端节点命中（{{ frontendResults.length }}）</span>
+      </div>
+      <el-card v-for="result in frontendResults" :key="result.nodeId" class="result-card">
+        <template #header>
+          <div class="result-header">
+            <el-tag size="small" :type="getNodeTypeTagType(result.nodeType)">
+              {{ result.nodeType }}
+            </el-tag>
+            <span class="method-name">{{ getFrontendDisplayName(result) }}</span>
+            <el-tag
+              v-if="result.similarityScore != null"
+              :type="getSimilarityTagType(result.similarityScore)"
+              size="small"
+              class="similarity-tag"
+            >
+              置信度 {{ (result.similarityScore * 100).toFixed(1) }}%
+            </el-tag>
+          </div>
+        </template>
+        <div class="result-content">
+          <div class="description-section">
+            <span class="label">{{ getFrontendDetailLabel(result) }}：</span>
+            <span class="description">{{ getFrontendDetailValue(result) }}</span>
+          </div>
+        </div>
+      </el-card>
+    </div>
+
     <!-- 空状态 -->
     <el-empty v-if="!loading && searched && filteredResults.length === 0 && results.length > 0" description="当前筛选条件下无匹配结果" />
-    <el-empty v-if="!loading && searched && results.length === 0" description="未找到相关方法" />
+    <el-empty v-if="!loading && searched && results.length === 0 && frontendResults.length === 0" description="未找到相关方法或前端节点" />
 
     <!-- 耗时提示 -->
     <div class="search-info" v-if="costTimeMs">
@@ -195,7 +227,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { Search, Connection } from '@element-plus/icons-vue'
-import { vectorSearchApi, type VectorSearchResult } from '@/api/vectorSearch'
+import { vectorSearchApi, type VectorSearchResult, type VectorSearchResultItem } from '@/api/vectorSearch'
 
 const props = defineProps<{
   projectPath: string
@@ -209,6 +241,7 @@ const emit = defineEmits<{
 
 const searchQuery = ref('')
 const results = ref<VectorSearchResult[]>([])
+const frontendResults = ref<VectorSearchResultItem[]>([])
 const loading = ref(false)
 const searched = ref(false)
 const totalCount = ref(0)
@@ -272,6 +305,10 @@ async function handleSearch() {
       ...r,
       similarityScore: scoreMap.get(r.nodeId) ?? r.similarityScore
     }))
+    // 前端节点（nodeType=Component/FrontendRoute/ApiClient）从 items 中提取
+    frontendResults.value = (response.items || []).filter(
+      it => it.nodeType === 'Component' || it.nodeType === 'FrontendRoute' || it.nodeType === 'ApiClient'
+    )
     totalCount.value = response.totalCount
     costTimeMs.value = response.costTimeMs
   } catch (error) {
@@ -346,6 +383,41 @@ function getSimilarityTagType(score: number): '' | 'success' | 'warning' | 'dang
   if (score >= 0.4) return 'warning'
   return 'info'
 }
+
+// 前端节点类型标签颜色
+function getNodeTypeTagType(nodeType?: string): '' | 'success' | 'warning' | 'danger' | 'info' {
+  switch (nodeType) {
+    case 'Component': return 'success'
+    case 'FrontendRoute': return 'warning'
+    case 'ApiClient': return 'danger'
+    default: return 'info'
+  }
+}
+
+// 前端节点展示名
+function getFrontendDisplayName(item: VectorSearchResultItem): string {
+  if (item.nodeType === 'Component') return item.componentName ?? item.nodeId
+  if (item.nodeType === 'FrontendRoute') return item.routePath ?? item.nodeId
+  if (item.nodeType === 'ApiClient') return item.url ?? item.nodeId
+  return item.nodeId
+}
+
+// 前端节点详情标签
+function getFrontendDetailLabel(item: VectorSearchResultItem): string {
+  if (item.nodeType === 'Component') return '组件描述'
+  if (item.nodeType === 'FrontendRoute') return '目标组件'
+  if (item.nodeType === 'ApiClient') return '调用点'
+  return '详情'
+}
+
+// 前端节点详情值
+function getFrontendDetailValue(item: VectorSearchResultItem): string {
+  if (item.nodeType === 'Component') return item.description || item.filePath || '-'
+  if (item.nodeType === 'FrontendRoute') return item.componentName ?? '-'
+  if (item.nodeType === 'ApiClient') return item.description ?? item.filePath ?? '-'
+  return '-'
+}
+
 </script>
 
 <style scoped>
@@ -435,6 +507,16 @@ function getSimilarityTagType(score: number): '' | 'success' | 'warning' | 'dang
 
 .result-card {
   margin-bottom: 16px;
+}
+
+.frontend-results-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  color: var(--el-color-success);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .result-header {

@@ -50,7 +50,7 @@ const NODE_H_DESC = 80
 export function computeFlowLayout(
   nodes: readonly GraphNode[],
   edges: readonly GraphEdge[],
-  direction: 'TB' | 'BT' = 'TB',
+  direction: 'TB' | 'BT' | 'LR' = 'TB',
   entrySources?: ReadonlyMap<string, ReadonlySet<string>>,
 ): FlowLayout {
   const g = new dagre.graphlib.Graph({ directed: true })

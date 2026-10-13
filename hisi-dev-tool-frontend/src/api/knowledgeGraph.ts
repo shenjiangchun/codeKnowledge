@@ -230,6 +230,8 @@ export interface GraphNode {
   filePath?: string
   startLine?: number
   description?: string
+  // 跨层图节点类别：Method / Component / ApiClient / EntryPoint / FrontendRoute
+  nodeType?: string
   // Runtime fields used by EntryDetail.vue / KG components
   isNoMatch?: boolean
   bridgeType?: string
@@ -509,6 +511,16 @@ export const knowledgeGraphApi = {
       params.maxDepth = maxDepth
     }
     return request.get<CallChainView>('/v2/knowledge-graph/call-chain/downstream', {
+      params
+    })
+  },
+
+  getDownstreamGraph(nodeId: string, projectPaths: string[], maxDepth?: number) {
+    const params: Record<string, string | number | string[]> = { nodeId, projectPaths }
+    if (maxDepth !== undefined) {
+      params.maxDepth = maxDepth
+    }
+    return request.get<CallChainGraphData>('/v2/knowledge-graph/call-chain/downstream', {
       params
     })
   },

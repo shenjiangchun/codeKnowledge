@@ -4,7 +4,19 @@ import { knowledgeGraphApi, type DsmData } from '@/api/knowledgeGraph'
 import { ElSkeleton, ElEmpty, ElAlert, ElTag, ElSelect, ElOption, ElButton, ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 
-const props = defineProps<{ projectPaths: string[]; language?: string }>()
+/** 全量类调用图（快照离线类级下钻数据源） */
+interface ClassCallGraphNode { className: string; packageName: string }
+interface ClassCallGraphEdge { source: string; target: string; weight: number }
+interface ClassCallGraph { nodes: ClassCallGraphNode[]; edges: ClassCallGraphEdge[] }
+
+const props = defineProps<{
+  projectPaths: string[]
+  language?: string
+  /** 历史快照：外部传入的包级 DSM 数据（非空时跳过 API 加载） */
+  externalDsm?: DsmData | null
+  /** 历史快照：外部传入的全量类调用图（含精确调用次数），供本地下钻 */
+  externalCallGraph?: ClassCallGraph | null
+}>()
 const loading = ref(false)
 const data = ref<DsmData | null>(null)
 const chartRef = ref<HTMLDivElement>()
@@ -21,7 +33,16 @@ const drillDownLoading = ref(false)
 // 当前展示的数据：下钻后为类粒度，否则为包粒度
 const currentData = computed<DsmData | null>(() => drillDownData.value ?? data.value)
 
+/** 历史模式下缺少类调用图时，禁用下钻 */
+const canDrillDown = computed(() => !props.externalDsm || !!props.externalCallGraph)
+
 async function load() {
+  if (props.externalDsm) {
+    data.value = props.externalDsm
+    drillDownData.value = null
+    selectedModules.value = []
+    return
+  }
   if (!props.projectPaths.length) return
   loading.value = true
   try {
@@ -35,12 +56,33 @@ async function load() {
 /** 勾选模块后下钻：展示这些模块内部类之间的依赖 */
 async function drillDown() {
   if (!selectedModules.value.length) return
+  if (props.externalCallGraph) {
+    drillDownData.value = localDrillDown(props.externalCallGraph, selectedModules.value)
+    nextTick(() => renderDsm())
+    return
+  }
   drillDownLoading.value = true
   try {
     const res = await knowledgeGraphApi.getDsmDrillDown(props.projectPaths, selectedModules.value)
     drillDownData.value = res
     nextTick(() => renderDsm())
   } finally { drillDownLoading.value = false }
+}
+
+/** 历史模式本地下钻：按选中包的 packageName 过滤类调用图，聚合为类级 DSM（精确调用次数） */
+function localDrillDown(callGraph: ClassCallGraph, packages: string[]): DsmData {
+  const pkgSet = new Set(packages)
+  const classes = new Set(callGraph.nodes.filter(n => pkgSet.has(n.packageName)).map(n => n.className))
+  const indexMap = new Map<string, number>()
+  const modules: string[] = []
+  const cells: { sourceIdx: number; targetIdx: number; weight: number }[] = []
+  for (const e of callGraph.edges) {
+    if (!classes.has(e.source) || !classes.has(e.target)) continue
+    if (!indexMap.has(e.source)) { indexMap.set(e.source, modules.length); modules.push(e.source) }
+    if (!indexMap.has(e.target)) { indexMap.set(e.target, modules.length); modules.push(e.target) }
+    cells.push({ sourceIdx: indexMap.get(e.source)!, targetIdx: indexMap.get(e.target)!, weight: e.weight })
+  }
+  return { modules, cells, level: 'class' }
 }
 
 /** 返回包级视图 */
@@ -128,6 +170,7 @@ function renderDsm() {
 
 onMounted(load)
 watch(() => props.projectPaths, load)
+watch(() => props.externalDsm, () => load())
 watch(data, (d) => {
   if (d) nextTick(() => renderDsm())
 }, { flush: 'post' })
@@ -164,7 +207,7 @@ onUnmounted(() => {
             <el-select v-model="selectedModules" multiple collapse-tags size="small" placeholder="勾选模块下钻" style="width:260px">
               <el-option v-for="m in data.modules" :key="m" :label="m.split('.').pop()" :value="m" />
             </el-select>
-            <el-button size="small" type="primary" :disabled="!selectedModules.length" :loading="drillDownLoading" @click="drillDown">下钻</el-button>
+            <el-button size="small" type="primary" :disabled="!selectedModules.length || !canDrillDown" :loading="drillDownLoading" @click="drillDown">下钻</el-button>
           </template>
           <el-button v-else size="small" @click="backToPackage">返回包级</el-button>
           <span v-if="truncatedCount > 0" class="meta-hint">仅显示依赖最多的 {{ topN }} 个，其余 {{ truncatedCount }} 个已隐藏</span>

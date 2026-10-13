@@ -100,6 +100,13 @@
             >
               术语配置
             </el-button>
+            <!-- 构建前后端完整图谱按钮 -->
+            <el-button
+              type="success"
+              @click="showBindingDialog = true"
+            >
+              构建前后端完整图谱
+            </el-button>
             <!-- KG 路径诊断按钮 -->
             <el-button
               type="info"
@@ -270,30 +277,24 @@
           </el-empty>
         </el-tab-pane>
 
-        <!-- ★ Phase 5: 多切面分析平台 — 6 个新切面 -->
-        <el-tab-pane label="架构仪表盘" name="dashboard">
-          <DashboardPanel v-if="activeTab === 'dashboard'" :project-paths="projectPaths" />
-        </el-tab-pane>
-        <el-tab-pane label="热点分析" name="hotspots">
-          <HotspotTreemap v-if="activeTab === 'hotspots'" :project-paths="projectPaths" />
-        </el-tab-pane>
-        <el-tab-pane label="领域划分" name="domains">
-          <DomainBoundaryView v-if="activeTab === 'domains'" :project-paths="projectPaths" />
-        </el-tab-pane>
-        <el-tab-pane label="跨服务拓扑" name="serviceTopo">
-          <CrossServiceTopology v-if="activeTab === 'serviceTopo'" :project-paths="projectPaths" />
-        </el-tab-pane>
-        <el-tab-pane label="构建模块" name="buildModule">
-          <BuildModuleAnalysis v-if="activeTab === 'buildModule'" :project-paths="projectPaths" />
-        </el-tab-pane>
-        <el-tab-pane label="爆炸半径" name="blastRadius">
-          <BlastRadiusView v-if="activeTab === 'blastRadius'" :project-paths="projectPaths" />
+        <el-tab-pane label="架构总览" name="dashboard">
+          <DashboardPanel
+            v-if="activeTab === 'dashboard' && projectPaths.length > 0"
+            :project-paths="projectPaths"
+          />
+          <el-empty v-else>
+            <template #description>
+              <div style="text-align: center;">
+                <p>请先选择项目</p>
+                <p style="color: #909399; font-size: 12px; margin-top: 8px;">
+                  在「项目管理」页面勾选项目后，点击「确认选择」按钮
+                </p>
+              </div>
+            </template>
+          </el-empty>
         </el-tab-pane>
         <el-tab-pane label="生成中心" name="generationCenter">
           <GenerationCenterPanel v-if="activeTab === 'generationCenter'" :project-paths="projectPaths" />
-        </el-tab-pane>
-        <el-tab-pane label="前后端跨层" name="frontendBackend">
-          <FrontendBackendTab v-if="activeTab === 'frontendBackend'" />
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -345,8 +346,7 @@
       title="术语配置"
       width="700px"
       destroy-on-close
-    >
-      <p style="color: #909399; margin: 0 0 16px 0; font-size: 13px;">
+    >      <p style="color: #909399; margin: 0 0 16px 0; font-size: 13px;">
         配置术语对照表后，LLM 生成语义描述时将自动遵守术语规范（重新生成向量后生效）
       </p>
 
@@ -553,6 +553,13 @@
         <el-button v-if="editingGroupName" type="primary" @click="saveGroupNameGroup">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 构建前后端完整图谱（绑定管理）对话框 -->
+    <BindingManagerDialog
+      v-model="showBindingDialog"
+      :projects="projects"
+      @built="handleBindingBuilt"
+    />
   </div>
 </template>
 
@@ -578,13 +585,8 @@ import MethodReferenceGraph from '@/views/call-chain/MethodReferenceGraph.vue'
 import CrossServiceBridgeTab from './components/CrossServiceBridgeTab.vue'
 import GraphExplorerTab from './components/GraphExplorerTab.vue'
 import DashboardPanel from './components/DashboardPanel.vue'
-import HotspotTreemap from './components/HotspotTreemap.vue'
-import DomainBoundaryView from './components/DomainBoundaryView.vue'
-import CrossServiceTopology from './components/CrossServiceTopology.vue'
-import BuildModuleAnalysis from './components/BuildModuleAnalysis.vue'
-import BlastRadiusView from './components/BlastRadiusView.vue'
 import GenerationCenterPanel from './components/GenerationCenterPanel.vue'
-import FrontendBackendTab from './components/FrontendBackendTab.vue'
+import BindingManagerDialog from './components/BindingManagerDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -1253,6 +1255,11 @@ function handleViewCallChain(result: VectorSearchResult) {
 
 // ==================== 术语管理 ====================
 const showGlossaryDialog = ref(false)
+const showBindingDialog = ref(false)
+const handleBindingBuilt = (_result: unknown) => {
+  // 构建完成后刷新图谱状态（前端节点已入库）
+  loadGraphStatus()
+}
 const glossaryTerms = ref<GlossaryTerm[]>([])
 const glossaryLoading = ref(false)
 const glossaryShowForm = ref(false)
