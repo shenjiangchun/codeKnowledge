@@ -1,5 +1,6 @@
 package com.huawei.hisi.workflow.agent;
 
+import com.huawei.hisi.archdiagnosis.service.ArchSourceScanService;
 import com.huawei.hisi.knowledgegraph.controller.KnowledgeGraphController;
 import com.huawei.hisi.model.ApiResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,17 +32,18 @@ class ArchAgentToolRegistryTest {
 
     @BeforeEach
     void setUp() {
-        registry = new ArchAgentToolRegistry(kg);
+        registry = new ArchAgentToolRegistry(kg, new ArchSourceScanService());
     }
 
     @Test
-    @DisplayName("注册 18 个只读工具，顺序稳定")
-    void registersEighteenTools() {
-        assertThat(registry.tools()).hasSize(18);
+    @DisplayName("注册 19 个只读工具，顺序稳定")
+    void registersNineteenTools() {
+        assertThat(registry.tools()).hasSize(19);
         assertThat(registry.tools()).extracting(ArchAgentTool::name).containsExactly(
                 "dashboard", "dsm", "package_cycles", "module_cycles", "class_ego_net", "callees_tree",
                 "downstream", "upstream", "root_entries", "method_detail", "method_by_class", "blast_radius",
-                "implementations", "interfaces", "class_dependencies", "hotspots", "service_topology", "domains");
+                "implementations", "interfaces", "class_dependencies", "hotspots", "service_topology", "domains",
+                "injection_scan");
     }
 
     @Test

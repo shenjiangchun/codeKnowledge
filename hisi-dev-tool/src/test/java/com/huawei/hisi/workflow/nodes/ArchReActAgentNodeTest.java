@@ -1,6 +1,7 @@
 package com.huawei.hisi.workflow.nodes;
 
 import com.huawei.hisi.archdiagnosis.service.ArchDiagramGenerator;
+import com.huawei.hisi.archdiagnosis.service.ArchSourceScanService;
 import com.huawei.hisi.knowledgegraph.aggregation.llm.DeepseekJsonClient;
 import com.huawei.hisi.knowledgegraph.controller.KnowledgeGraphController;
 import com.huawei.hisi.model.ApiResponse;
@@ -91,7 +92,7 @@ class ArchReActAgentNodeTest {
 
     @BeforeEach
     void setUp() {
-        registry = new ArchAgentToolRegistry(kg);
+        registry = new ArchAgentToolRegistry(kg, new ArchSourceScanService());
         node = new ArchReActAgentNode(llm, registry, new ObservationTrimmer(), new SchemaValidator(),
                 diagramGenerator, 6, 2000);
         lenient().when(diagramGenerator.generate(anyMap(), anyList())).thenReturn(VALID_DIAGRAMS);

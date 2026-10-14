@@ -3,6 +3,7 @@ package com.huawei.hisi.workflow;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hisi.archdiagnosis.service.ArchDiagnosisReportService;
 import com.huawei.hisi.archdiagnosis.service.ArchDiagramGenerator;
+import com.huawei.hisi.archdiagnosis.service.ArchSourceScanService;
 import com.huawei.hisi.knowledgegraph.aggregation.llm.DeepseekJsonClient;
 import com.huawei.hisi.knowledgegraph.controller.KnowledgeGraphController;
 import com.huawei.hisi.ram.contract.SchemaValidator;
@@ -149,7 +150,7 @@ class ArchDeepAnalysisIntegrationTest {
 
         List<DagNode> nodes = List.of(
                 new ArchEvidenceCollectNode(reportService, kgController),
-                new ArchReActAgentNode(reactLlm, new ArchAgentToolRegistry(kgController),
+                new ArchReActAgentNode(reactLlm, new ArchAgentToolRegistry(kgController, new ArchSourceScanService()),
                         new ObservationTrimmer(), new SchemaValidator(), new ArchDiagramGenerator(kgController), 6, 2000));
         ExecutionPolicy policy = ExecutionPolicy.fromMetadata(Map.of("skipHitl", true));
 
@@ -184,7 +185,7 @@ class ArchDeepAnalysisIntegrationTest {
 
         List<DagNode> nodes = List.of(
                 new ArchEvidenceCollectNode(reportService, kgController),
-                new ArchReActAgentNode(reactLlm, new ArchAgentToolRegistry(kgController),
+                new ArchReActAgentNode(reactLlm, new ArchAgentToolRegistry(kgController, new ArchSourceScanService()),
                         new ObservationTrimmer(), new SchemaValidator(), new ArchDiagramGenerator(kgController), 6, 2000));
         ExecutionPolicy policy = ExecutionPolicy.fromMetadata(Map.of("skipHitl", true));
 

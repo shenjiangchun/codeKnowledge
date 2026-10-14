@@ -1,5 +1,6 @@
 package com.huawei.hisi.workflow.agent;
 
+import com.huawei.hisi.archdiagnosis.service.ArchSourceScanService;
 import com.huawei.hisi.knowledgegraph.controller.KnowledgeGraphController;
 import com.huawei.hisi.model.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -22,8 +23,10 @@ import java.util.Map;
 public class ArchAgentToolRegistry {
 
     private final Map<String, ArchAgentTool> tools = new LinkedHashMap<>();
+    private final ArchSourceScanService sourceScan;
 
-    public ArchAgentToolRegistry(KnowledgeGraphController kg) {
+    public ArchAgentToolRegistry(KnowledgeGraphController kg, ArchSourceScanService sourceScan) {
+        this.sourceScan = sourceScan;
         registerReadOnlyTools(kg);
     }
 
@@ -132,6 +135,18 @@ public class ArchAgentToolRegistry {
                 "domains", "自动检测的领域/DDD 边界及其跨域交互关系",
                 Map.of("language", "语言过滤（可选）"),
                 (args, paths) -> unpack(kg.getDomains(null, paths, str(args, "language")))));
+
+        tools.put("injection_scan", ArchAgentTool.of(
+                "injection_scan", "本地源码依赖注入扫描：区分接口注入(interface) vs 直接依赖实现类(class) vs 外部类型(external)，用于灰度验证实现类外泄/直接依赖实现类误报",
+                Map.of("className", "全限定类名（可选，返回该类的注入点明细）",
+                        "packageFilter", "包名前缀（可选，返回该包下所有类的注入点明细）"),
+                (args, paths) -> {
+                    String className = str(args, "className");
+                    String pkg = str(args, "packageFilter");
+                    return (className != null || (pkg != null && !pkg.isBlank()))
+                            ? sourceScan.injectionSites(paths, className, pkg)
+                            : sourceScan.injectionSummary(paths);
+                }));
     }
 
     /** 解包 {@link ApiResponse}：成功返回 data，失败返回 error 摘要（不抛异常）。 */
