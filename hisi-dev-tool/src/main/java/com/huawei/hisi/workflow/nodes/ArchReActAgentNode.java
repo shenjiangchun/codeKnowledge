@@ -442,6 +442,8 @@ public class ArchReActAgentNode implements DagNode {
                 .append("灰度验证职责（必须执行）：对证据包 issues 中的每条候选问题，")
                 .append("用只读工具逐条查证其真伪（如用 method_by_class/upstream/root_entries/interfaces/implementations 等")
                 .append("核对定位信息 className/methodName/nodeId 指向的真实代码），再给出 verdict：\n")
+                .append("凡涉及 impl-leak/实现类外泄/直接依赖实现类的候选问题，必须用 injection_scan 查源码声明类型：")
+                .append("声明为接口则判 false_positive（接口注入，非直接依赖实现类），声明为实现类才保留。\n")
                 .append("- confirmed：查证属实，保留原严重度；\n")
                 .append("- false_positive：误报（如调用方为测试类触发的实现类外泄），不予采纳；\n")
                 .append("- downgraded：问题属实但严重度虚高，severity 给出下调后的等级，reason 说明为何虚高。\n")
