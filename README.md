@@ -16,13 +16,13 @@
 
 **[👉 打开 GitHub Wiki](https://github.com/shenjiangchun/codeKnowlage/wiki)**
 
-Wiki 收录了三套子项目的 CodeWiki 设计手册,共 **51 篇**,统一带 `Backend-` / `Frontend-` / `MCP-` 前缀:
+Wiki 收录了三套子项目的 CodeWiki 设计手册,共 **75 篇**,统一带 `Backend-` / `Frontend-` / `MCP-` 前缀:
 
 - **项目概览 / 架构设计 / 模块说明 / 数据流程**
 - **接口文档 / 数据模型 / 部署运维**
 - **技术决策 / 术语表**
 
-侧边栏 (`_Sidebar`) 已按"角色 → 章节"分组导航,推荐入口:
+`_Sidebar` 按"子项目 → 章节"分组导航,推荐入口:
 
 - 后端开发者 → [Backend-README](https://github.com/shenjiangchun/codeKnowlage/wiki/Backend-README)
 - 前端开发者 → [Frontend-README](https://github.com/shenjiangchun/codeKnowlage/wiki/Frontend-README)
@@ -41,7 +41,7 @@ npm install && npm run dev    # http://localhost:5173,代理至后端 8080
 
 # MCP 服务器(给 Claude / Codex 用)
 cd hisi-mcp-server
-npm install && npm run build && npm start
+npm start                    # 后端启动时会自动安装依赖并构建 dist，无需手工 npm install / build
 ```
 
 详细的环境依赖、Neo4j 配置、智谱 AI Key 申请、Playwright 浏览器安装等,请见 Wiki 的[**部署运维**](https://github.com/shenjiangchun/codeKnowlage/wiki/Backend-07-%E9%83%A8%E7%BD%B2%E8%BF%90%E7%BB%B4)章节。

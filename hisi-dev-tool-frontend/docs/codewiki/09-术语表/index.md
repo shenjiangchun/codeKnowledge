@@ -1,356 +1,202 @@
-# 09-术语表
+> 自动生成于 2026-11-26，基于 `99d0037` 版本
 
-## 概述
+# 术语表
 
-本文档定义 HiSi DevTool Frontend 中使用的专业术语和领域概念，帮助开发者快速理解项目中的专有名词。
-
----
-
-## 术语列表
-
-### A
-
-**APM（Application Performance Monitoring）**
-应用性能监控。HiSi DevTool 中的 API 调试和诊断模块，提供 DTO schema body skeleton、entryNodeId launch、API search autocomplete 等功能。
-
-**ApiResponse**
-后端 API 统一响应格式，包含 `success`、`data`、`error`、`meta` 字段。前端在拦截器中自动解包。
-
-**Axios**
-项目使用的 HTTP 客户端库，用于与后端 API 通信。
+> 本表收录前端代码里出现的专有名词、缩写与领域概念，按类别组织。"代码对应"一列给出可以在仓库里直接检索的标识符。
 
 ---
 
-### B
+## 1. 术语概览
 
-**BodySchemaForm**
-APM 模块中的 DTO schema body skeleton 表单组件，根据后端 Schema 自动生成请求体。
-
-**Bridge**
-跨服务桥接点，连接不同模块或服务的关键节点，如 Feign 调用、MQ 消息等。
-
----
-
-### C
-
-**CallChain**
-调用链，描述方法之间的调用关系，包括上游调用方和下游被调用方。
-
-**CallNode**
-调用链中的节点，代表一个方法或入口点。
-
-**CallEdge**
-调用链中的边，代表方法之间的调用关系。
-
-**CHECKPOINT**
-RAM 分析过程中的检查点事件，表示某个分析节点完成。
-
-**ClarifyModal**
-RAM 模块中的澄清问题弹窗，用于收集用户对需求的补充信息。
-
-**ClarifySchema**
-澄清问题的 Schema，定义需要用户回答的问题列表。
-
-**Claude CLI**
-Claude 命令行工具，HiSi DevTool 通过终端模拟与其交互。
-
-**Composable**
-Vue 3 组合式函数，用于封装可复用的逻辑，如 `useRamSession`、`useDiagnosis`。
-
-**ConfirmModal**
-RAM 模块中的节点确认弹窗，用于等待用户审批节点输出。
-
-**CostMeter**
-RAM 模块中的成本计量器，显示 token 消耗和费用。
-
-**CrossServiceBridgeTab**
-图谱浏览器中的跨服务桥接标签页，展示 Feign、MQ 等跨服务调用。
-
-**Cytoscape**
-图数据库可视化库，用于渲染 ThreeRingGraph。
+| 类别 | 数量 |
+|------|------|
+| 业务与领域 | 25 |
+| 分析会话与事件 | 12 |
+| 实时通信 | 9 |
+| 框架与工程 | 11 |
+| 缩略语 | 19 |
 
 ---
 
-### D
+## 2. 业务与领域
 
-**DAG（Directed Acyclic Graph）**
-有向无环图，用于表示 RAM 分析的 5 个节点（Clarify → Impact → Implement → Verify → Tech Plan）。
-
-**DagGraph**
-RAM 模块中的 DAG 流程图组件，展示分析节点状态。
-
-**DagNode**
-DAG 图中的节点，包含 `key`、`label`、`status` 属性。
-
-**dagre**
-DAG 自动布局算法库，用于计算节点位置。
-
-**DraftPage**
-RAM 模块中的草稿页面，实时展示分析进度。
-
----
-
-### E
-
-**ECharts**
-数据可视化库，用于渲染图表（桑基图、统计图表等）。
-
-**Element Plus**
-Vue 3 UI 组件库，提供 50+ 高质量组件。
-
-**EntryPoint**
-API 入口点，包括 Controller、Scheduled、MQ Listener、Feign Client 等类型。
-
-**EventSource**
-浏览器原生 SSE 客户端，用于接收服务器推送的事件。
-
-**ExecutionResult**
-APM 模块中 API 请求的执行结果，包含状态码、响应体、耗时等信息。
+| 术语 | 英文 / 全称 | 定义 | 代码对应 |
+|------|------------|------|---------|
+| **项目** | Project | 参与分析的代码仓库；可以是本地扫描到的，也可以是从远端克隆的 | `GitRepositoryInfo`、`RemoteProject` |
+| **已选项目** | Selected projects | 当前被勾选、供其它页面使用的一组项目，跨页面共享并持久化 | `useAppStore.selectedProjects` |
+| **项目根目录** | PROJECT_DIR | 存放项目代码的上级目录，用于扫描仓库与"一键更新" | `appStore.projectDir` |
+| **应用分组** | appId group | 把多个项目路径归为一个应用，供 RAM、日志等页面按应用选择 | `ProjectGroup` |
+| **名称分组** | Project name group | 按名称模式把项目归类，用于知识图谱页的分组视图 | `ProjectNameGroup` |
+| **知识图谱** | Knowledge Graph, KG | 后端从源码抽取的方法、调用关系、入口等构成的图 | `knowledgeGraphApi` |
+| **图谱生成** | Generate | 触发一次图谱构建任务，有"全量-复用""全量-全删""增量"等模式 | `startGenerateTask`、`buildMode` |
+| **向量** | Embedding | 方法的语义向量，供语义搜索使用 | `vectorGeneration.ts` |
+| **入口点** | Entry point | 系统对外的调用入口，例如一个 HTTP 接口 | `EntryPoint`、`KgEntryPoint` |
+| **调用链** | Call chain | 从入口点出发的方法调用路径 | `CallChainGraphData`、`ChainChart` |
+| **引用分析** | Method reference | 以若干根入口为起点、合并它们的被调树后得到的图 | `MethodReferenceGraph` |
+| **桥接** | Bridge | 跨越 MyBatis、JPA、MQ、Feign、HTTP、切面等边界的调用关系 | `BridgeType`、`BridgeRelation` |
+| **领域** | Domain | 后端识别出的业务域 | `DomainItem` |
+| **分层** | Layer role | 类在架构中的角色，自上而下为控制器、服务、仓储、模型、工具 | `LAYER_ORDER` |
+| **DSM** | Dependency Structure Matrix | 依赖结构矩阵，行列是模块，格子是依赖强度 | `DsmMatrix`、`getDsm` |
+| **坏味道** | Smell | 架构层面的反模式，如大泥球、上帝类、枢纽类、幽灵类 | `ArchitectureDiagnosisView` |
+| **健康分** | Health score | 架构诊断给出的 0–100 分与 A–D 等级 | `DiagnosisReport` |
+| **快照** | Snapshot | 某次诊断报告的持久化版本，可回看 | `SnapshotItem` |
+| **伪终端** | PTY | 后端为每个终端会话维持的伪终端进程，浏览器里的终端通过它运行 Claude CLI | `createTerminalConnection` |
+| **工作空间会话** | Workspace session | 终端页里的一次会话，记录工作目录与 Claude 会话码 | `ClaudeWorkspaceSession` |
+| **技术债待办** | Workbench item | 由日志分析或架构分析产出、等待处理的条目 | `WorkbenchItem` |
+| **技术债清零** | Clear | 待办被修复并验证通过后的状态 | `ItemStatus` 的 `DONE` |
+| **修复运行** | Fix run | 针对一条待办发起的自动修复流程 | `WorkbenchFixRun` |
+| **技能** | Skill | 可安装到项目或本机的提示词 / 脚本包 | `SkillDefinition`、`KgSkill` |
+| **KG Skills 套件** | KG Skills Kit | 与知识图谱配套的一组技能 | `kgSkillsKitApi` |
 
 ---
 
-### F
+## 3. 分析会话与事件
 
-**FileBrowserPanel**
-RAM 模块中的文件浏览器面板，展示受影响的文件列表。
-
-**FlowDag**
-调用链模块中的流程 DAG 组件，展示调用流程。
-
-**Feign**
-声明式 HTTP 客户端，用于微服务间的调用。
-
----
-
-### G
-
-**GraphExplorerTab**
-图谱浏览器中的图谱浏览器标签页，提供方法搜索和调用链导航。
-
-**GraphPreviewPage**
-RAM 模块中的图谱预览页面，可视化展示影响图谱。
+| 术语 | 英文 / 全称 | 定义 | 代码对应 |
+|------|------------|------|---------|
+| **会话** | Session | 后端一次智能体分析的实例，有唯一编号 | `sessionId` |
+| **事件** | Event | 会话过程中产生的记录，含序号、类型与载荷 | `RamEvent`、`WorkflowEvent` |
+| **序号** | seq | 事件的单调递增编号，用于去重与续传 | `lastSeq`、`afterSeq` |
+| **节点** | Node | 会话里的一个处理步骤 | `nodeName` |
+| **检查点** | CHECKPOINT | 某节点完成时推送的事件，载荷带该节点的输出 | `useDagEventHandler` |
+| **HITL** | Human-in-the-Loop | 人工介入：分析中途停下来等用户澄清或确认 | `ClarifyModal`、`ConfirmModal` |
+| **澄清** | Clarify | 后端向用户提出开放性问题并等待回答 | `ClarifySchema` |
+| **确认** | Confirm | 用户对节点输出做出批准、驳回或编辑 | `ConfirmPayload` |
+| **重跑** | Rerun | 从某个节点或某一轮澄清开始重新执行 | `rerunFromNode` |
+| **工作流** | Workflow | 后端统一的节点编排；前端用 `workflowType` 区分种类 | `useWorkflow` |
+| **SDD** | Spec-Driven Development（按阶段内容推断，代码里只写了缩写） | 工作台自动修复遵循的流程：代码实证 → 方案确认 → Spec → 任务 → 开发 → 回归 → 全链路 E2E → 提交 | `WorkbenchView` 的 `STAGE_NAMES` |
+| **熔断** | Circuit open | 收到 `CIRCUIT_OPEN` 事件后，最近一个运行中的节点被标记的状态；触发条件由后端决定 | `DagNodeStatus` 的 `circuit-open` |
 
 ---
 
-### H
+## 4. 实时通信
 
-**HITL（Human-In-The-Loop）**
-人工介入，RAM 分析过程中需要用户确认的环节。
-
-**HitlSchema**
-人工确认的 Schema，定义需要用户审批的节点输出。
-
-**HybridSearch**
-混合检索，结合向量搜索、全文搜索和图遍历的搜索方式。
-
----
-
-### I
-
-**ImpactPayload**
-RAM 模块中影响分析的数据载荷，包含 `involved`、`modified`、`impacted`、`riskScores`。
-
-**ImpactOutputView**
-RAM 模块中的影响分析输出视图，结构化展示 impact 数据。
-
-**ImpactSankeyGraph**
-RAM 模块中的桑基图组件，展示影响流向。
-
-**InputPage**
-RAM 模块中的输入页面，收集需求原文和目标项目信息。
+| 术语 | 英文 / 全称 | 定义 | 代码对应 |
+|------|------------|------|---------|
+| **SSE** | Server-Sent Events | 服务端向浏览器的单向推送，基于 HTTP 长连接 | `EventSource` |
+| **续传** | Resume from seq | 重连时带上已处理的序号，只接收其后的事件 | `afterSeq` |
+| **REST 为准 + SSE 增量** | REST authoritative + SSE incremental | 先用普通接口取历史，再用流接收增量 | `useRamSession.rejoin` |
+| **WebSocket** | WS | 全双工长连接，用于终端与需要客户端发消息的场景 | `useApmWebSocket` 等 |
+| **心跳** | Heartbeat | 定时发送的保活消息 | `{ action: 'ping' }` |
+| **指数退避** | Exponential backoff | 重连间隔按 2 的幂增长、有上限的重试策略 | `Math.min(1000 * Math.pow(2, n), 30000)` |
+| **span** | Span | 一次调用的一段追踪记录，含起止时间与父子关系 | `ApmSpan` |
+| **追踪** | Trace | 由同一个 `traceId` 串起来的一组 span | `TraceView` |
+| **追问** | Follow-up | 针对一份日志报告继续提问 | `FollowupPanel` |
 
 ---
 
-### K
+## 5. 框架与工程
 
-**KnowledgeGraph**
-知识图谱，将代码结构转换为图数据，支持可视化探索和分析。
-
-**KnowledgeGraphView**
-图谱浏览器主页面，整合多个标签页。
-
----
-
-### M
-
-**MergeAnalysis**
-合并分析，分析代码合并的影响范围和风险。
-
-**MergeAnalysisEvent**
-合并分析 SSE 事件，包含 `seq`、`type`、`payload`。
-
-**Mermaid**
-流程图/时序图渲染库，使用文本描述图表。
-
-**MethodInfo**
-方法信息，包含类名、方法名、描述等。
-
-**Minimap**
-小地图组件，提供图表的缩略视图。
-
-**MQ（Message Queue）**
-消息队列，用于异步通信。
+| 术语 | 英文 / 全称 | 定义 | 代码对应 |
+|------|------------|------|---------|
+| **组合式 API** | Composition API | Vue 3 以 `ref`、`computed`、函数组织逻辑的写法 | `<script setup>` |
+| **组合式函数** | Composable | 可复用的响应式逻辑函数，约定以 `use` 开头 | `src/composables/` |
+| **Store** | Pinia store | 跨组件共享的状态容器 | `src/stores/` |
+| **拦截器** | Interceptor | axios 请求 / 响应的统一处理钩子 | `utils/request.ts` |
+| **解包** | Unwrap | 把 `{ code, message, data }` 外壳剥掉只留数据 | `UnwrappedAxios` |
+| **路由守卫** | Navigation guard | 导航前执行的校验函数 | `router.beforeEach` |
+| **懒加载** | Lazy loading | 页面组件在首次访问时才下载 | `() => import(...)` |
+| **DTO 结构** | DTO schema | 后端解析出的请求体字段定义，用于生成表单 | `DtoSchema`、`DtoField` |
+| **埋点模式** | Instrumentation mode | APM 启动时的字节码插桩策略 | `InstrumentationMode` |
+| **净化** | Sanitize | 渲染前清除不安全的 HTML | `DOMPurify.sanitize` |
+| **纯函数布局** | Pure layout | 不依赖 DOM 的图形布局算法 | `dagLayout.ts` 等 |
 
 ---
 
-### P
+## 6. 缩略语速查
 
-**Pinia**
-Vue 3 状态管理库，项目用于管理全局状态。
+展开式若未出现在代码注释里，采用的是业界通行含义。
 
-**Playwright**
-E2E 测试框架，支持多浏览器测试。
-
----
-
-### R
-
-**RAM（Requirement Analysis Master）**
-需求分析大师，HiSi DevTool 的核心功能模块，提供三页向导流程：输入需求 → 实时分析 → 图谱可视化。
-
-**RamEvent**
-RAM SSE 事件，包含 `seq`、`type`、`payload`。
-
-**RamStatus**
-RAM 会话状态，包括 `idle`、`running`、`clarify`、`confirm`、`completed`、`error`、`aborted`。
-
-**ramStore**
-RAM 模块的 Pinia Store，存储 Impact 数据。
-
-**RemoteProject**
-远程项目，通过 Git URL 管理的项目。
-
----
-
-### S
-
-**SchemaNode**
-DTO Schema 节点，描述数据结构，支持 `object`、`array`、`string`、`number`、`boolean` 类型。
-
-**SemanticSearch**
-语义搜索，使用自然语言查询代码。
-
-**SessionList**
-Claude 终端中的会话列表组件。
-
-**SSE（Server-Sent Events）**
-服务器推送事件，用于单向实时通信。
+| 缩略语 | 全称 | 说明 |
+|--------|------|------|
+| APM | Application Performance Monitoring | 应用性能监控；本项目中的"APM 调试"指启动被测服务并追踪一次请求 |
+| API | Application Programming Interface | 接口 |
+| CLI | Command Line Interface | 命令行；终端里运行的是 Claude CLI |
+| DAG | Directed Acyclic Graph | 有向无环图；RAM 的节点流程与影响图谱 |
+| DSM | Dependency Structure Matrix | 依赖结构矩阵 |
+| DTO | Data Transfer Object | 数据传输对象 |
+| E2E | End-to-End | 端到端测试 |
+| HITL | Human-in-the-Loop | 人工介入 |
+| HTTP | HyperText Transfer Protocol | — |
+| JWT | JSON Web Token | 登录令牌的格式 |
+| KG | Knowledge Graph | 知识图谱 |
+| MQ | Message Queue | 消息队列，桥接类型之一 |
+| PTY | Pseudo Terminal | 伪终端 |
+| RAM | Requirement Analysis Master | 需求分析大师 |
+| RRF | Reciprocal Rank Fusion | 语义搜索 v2 的多路召回融合；代码注释只写了缩写 |
+| SDD | Spec-Driven Development | 规格驱动开发 |
+| SSE | Server-Sent Events | 服务端推送事件 |
+| WMC | Weighted Methods per Class | 类的加权方法数，用于识别上帝类；代码里只有字段名 `wmc` |
+| WS | WebSocket | 全双工通信协议 |
 
 ---
 
-### T
-
-**TechPlanOutputView**
-RAM 模块中的技术方案输出视图，支持 Mermaid 图表渲染。
-
-**TerminalTheme**
-终端主题，定义终端的颜色配置。
-
-**ThreeRingGraph**
-RAM 模块中的三环影响图组件，展示 `involved`、`modified`、`impacted` 三层关系。
-
-**TraceView**
-APM 模块中的追踪视图，展示分布式追踪信息。
-
-**TypeScript**
-项目使用的类型系统，提供静态类型检查。
-
----
-
-### U
-
-**useMergeAnalysisSession**
-合并分析模块的 Composable，封装 SSE 会话管理。
-
-**useRamSession**
-RAM 模块的 Composable，封装 SSE 会话管理。
-
----
-
-### V
-
-**Vite**
-前端构建工具，用于开发服务器和生产构建。
-
-**Vitest**
-单元测试框架，与 Vite 深度集成。
-
-**Vue Flow**
-交互式流程图库，用于渲染 DAG。
-
-**Vue Router**
-Vue 3 路由库，用于 SPA 路由管理。
-
----
-
-### W
-
-**WebSocket**
-全双工通信协议，用于 Claude 终端的双向交互。
-
-**workspaceStore**
-工作区状态管理 Store。
-
----
-
-### X
-
-**xterm.js**
-Web 终端模拟库，用于在浏览器中模拟终端。
-
----
-
-## 领域概念
-
-### RAM 分析流程
+## 7. 术语关系图
 
 ```mermaid
-graph LR
-    C[Clarify<br/>需求澄清] --> I[Impact<br/>影响分析]
-    I --> IM[Implement<br/>实现方案]
-    IM --> V[Verify<br/>验证检查]
-    V --> TP[Tech Plan<br/>技术方案]
+flowchart TD
+    PROJ["项目"] --> KG["知识图谱"]
+    KG --> ENTRY["入口点"]
+    ENTRY --> CHAIN["调用链"]
+    CHAIN --> BRIDGE["桥接"]
+    KG --> EMB["向量"]
+    EMB --> SEARCH["语义搜索"]
+
+    PROJ --> SESSION["分析会话"]
+    SESSION --> NODE["节点"]
+    NODE --> CP["检查点"]
+    SESSION --> HITL["HITL: 澄清 / 确认"]
+    SESSION --> EVENT["事件 seq"]
+
+    PROJ --> APM["APM 调试"]
+    APM --> TRACE["追踪"]
+    TRACE --> SPAN["span"]
+
+    LOG["日志分析"] --> ITEM["技术债待办"]
+    ITEM --> RUN["修复运行"]
+    RUN --> SDD["SDD 阶段"]
+
+    style PROJ fill:#1565c0,color:#fff,stroke:#0d47a1
+    style SESSION fill:#1565c0,color:#fff,stroke:#0d47a1
+    style KG fill:#e3f2fd,stroke:#1976d2,color:#0d47a1
+    style ENTRY fill:#e3f2fd,stroke:#1976d2,color:#0d47a1
+    style CHAIN fill:#e3f2fd,stroke:#1976d2,color:#0d47a1
+    style NODE fill:#e3f2fd,stroke:#1976d2,color:#0d47a1
+    style CP fill:#e3f2fd,stroke:#1976d2,color:#0d47a1
+    style HITL fill:#fff8e1,stroke:#f57c00,color:#e65100
+    style EVENT fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
+    style ITEM fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
+    style RUN fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
 ```
-
-### 三环影响图
-
-```mermaid
-graph TB
-    subgraph "内环"
-        INV[Involved<br/>涉及的入口]
-    end
-    subgraph "中环"
-        MOD[Modified<br/>修改的方法]
-    end
-    subgraph "外环"
-        IMP[Impacted<br/>影响的范围]
-    end
-    INV --> MOD
-    MOD --> IMP
-```
-
-### 调用链类型
-
-| 类型 | 说明 |
-|------|------|
-| `call` | 方法调用 |
-| `reference` | 方法引用 |
-| `feign` | Feign 远程调用 |
-| `mq` | MQ 消息 |
-
-### 入口点类型
-
-| 类型 | 说明 |
-|------|------|
-| `controller` | REST API 入口 |
-| `scheduled` | 定时任务入口 |
-| `mq` | MQ 监听器入口 |
-| `feign` | Feign 客户端入口 |
 
 ---
 
-## 下一步
+## 8. 易混淆术语辨析
 
-- [项目概览](../01-项目概览/index.md) - 了解项目整体情况
-- [架构设计](../02-架构设计/index.md) - 了解系统架构
-- [技术决策](../08-技术决策/index.md) - 了解技术选型决策
+| 术语 A | 术语 B | 区别 |
+|--------|--------|------|
+| 工作空间会话 `ClaudeWorkspaceSession` | 对话会话 `Session` | 前者属于终端页，存放在 `/workspace-sessions`；后者属于网页对话，存放在 `/sessions`。两者没有代码上的关联 |
+| `claudeSessionId` | `claudeSessionCode` | 前者是工作空间会话绑定的终端会话编号；后者是对话会话保存的恢复凭据 |
+| RAM 会话 `sessionId` | 修复会话 `id` | 异常修复页用修复会话的 `id` 调修复接口，用它的 `chatSessionId` 连对话通道 |
+| RAM 需求分析 | RAM 对话 | 前者走固定的节点流程，后者是自由对话；二者共用 `/ram` 前缀但接口不同 |
+| 项目分组 `ProjectGroup` | 名称分组 `ProjectNameGroup` | 前者按 `appId` 归集项目路径；后者按名称模式归类项目名 |
+| 技能市场 | KG Skills 套件 | 前者把技能装到某个项目目录；后者把整套技能装到本机 |
+| 提示词配置 | 术语管理 | 前者编辑各场景的提示词模板；后者维护当前项目根目录下的术语与同义词 |
+| 报告详情弹窗 | 报告详情页 | 前者在日志分析页的"分析报告"页签内；后者是独立路由 `/log-analysis/report/:id` |
+| `ram` Store | `useRamSession` | 前者只保存跨页传递的影响数据与联动状态；后者是 RAM 会话的状态机 |
+| `theme` 的界面色 | `theme` 的终端色 | 界面色写入 CSS 变量作用于全站；终端色只交给 xterm.js |
+
+---
+
+## 9. 术语维护规则
+
+1. 新增领域概念时同步更新本表，并给出可检索的代码标识符。
+2. 术语含义变化时更新定义并注明原因。
+3. 代码中已不可达的概念（如多智能体诊断、自然语言对话）保留在表中并标注现状，不删除。
+
+---
+
+> **延伸阅读**：
+> - 核心概念 → [01-项目概览](../01-项目概览/index.md)
+> - 类型的代码定义 → [06-数据模型](../06-数据模型/index.md)
+> - 各模块文档索引见 README 的模块列表

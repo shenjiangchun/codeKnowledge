@@ -1,581 +1,255 @@
-# API 服务层
+# API服务层
 
-## 概述
+> 自动生成于 2026-11-26，基于 `99d0037` 版本
 
-API 服务层负责与后端 Spring Boot 服务进行 HTTP 通信。项目使用 Axios 作为 HTTP 客户端，通过模块化组织 API 调用，配合 TypeScript 类型定义，提供类型安全的 API 访问。
+| 属性 | 值 |
+|------|-----|
+| **所属层** | 服务层（与后端通信的统一入口） |
+| **目录** | `src/utils/request.ts`、`src/api/`、`src/types/api.ts` |
+| **文件数** | 34 个 API 模块 + 1 个入口文件 + 1 个请求封装 + 1 个测试文件 |
+| **依赖模块** | [状态管理](./状态管理.md)（仅 401 时动态引用 `auth`）、[认证与系统管理](./认证与系统管理.md) |
 
 ---
 
-## API 架构
+## 1. 模块概述
+
+### 1.1 职责定义
+
+**核心职责**：封装一个 axios 实例，统一处理基础路径、超时、令牌注入、响应解包与错误提示；再按业务域拆成一个个 API 模块供页面与 Store 调用。
+
+**职责边界**：
+
+| 本模块负责 | 本模块不负责 | 由谁负责 |
+|-----------|-------------|---------|
+| axios 实例与拦截器 | SSE / WebSocket 连接的生命周期 | [实时通信](./实时通信.md) |
+| 按域组织请求函数 | 业务流程编排 | 各 Store 与 Composable |
+| 生成 SSE 流地址（3 个 `*StreamUrl` 函数） | 建立 `EventSource` | [实时通信](./实时通信.md) |
+
+### 1.2 核心文件清单
+
+| 文件 | 类型 | 职责 | 行数 |
+|------|------|------|------|
+| `src/utils/request.ts` | 请求封装 | axios 实例、两个拦截器、HTTP 状态码文案 | 191 |
+| `src/api/index.ts` | 入口 | 默认导出 `request` | 3 |
+| `src/types/api.ts` | 类型 | `ApiResponse`、`UserInfo`、`AuthResponse`、校验错误解析 | 90 |
+| `src/api/*.ts` | API 模块 | 34 个业务模块，见第 3 节 | 合计约 3300 |
+
+---
+
+## 2. 模块架构
+
+### 2.1 请求处理流程
 
 ```mermaid
-graph TB
-    subgraph "Vue 组件"
-        V[Views/Components]
-    end
+flowchart TD
+    CALL["页面 / Store 调用 API 函数"] --> REQ["request 实例 baseURL=/api"]
+    REQ --> RI["请求拦截器: 注入 Bearer token"]
+    RI --> BE[("后端")]
+    BE --> RS{"响应拦截器"}
+    RS -->|"data.code 是数字"| C200{"code === 200 ?"}
+    C200 -->|"是"| UNWRAP["返回 data.data"]
+    C200 -->|"否"| BIZ["reject: Error(message)"]
+    RS -->|"非 ApiResponse 结构"| RAW["原样返回 data"]
+    BE -->|"HTTP 4xx / 5xx"| ERR{"状态码"}
+    ERR -->|"400"| V400["解析校验错误并提示"]
+    ERR -->|"401"| V401["提示并打开登录弹窗"]
+    ERR -->|"403"| V403["错误提示"]
+    ERR -->|"其它"| VOTH["按状态码文案提示"]
 
-    subgraph "API 模块"
-        RAM[api/ram.ts]
-        APM[api/apmDebug.ts]
-        SEARCH[api/search.ts]
-        CHAIN[api/callChain.ts]
-        MERGE[api/merge-analysis.ts]
-        LOG[api/logAnalysis.ts]
-        PROJECT[api/project.ts]
-        REMOTE[api/remote-project.ts]
-    end
-
-    subgraph "基础设施"
-        REQ[utils/request.ts<br/>Axios 实例]
-        INTER[拦截器<br/>请求/响应处理]
-    end
-
-    subgraph "后端服务"
-        BE[Spring Boot<br/>localhost:8080]
-    end
-
-    V --> RAM
-    V --> APM
-    V --> SEARCH
-    V --> CHAIN
-    V --> MERGE
-    V --> LOG
-    V --> PROJECT
-    V --> REMOTE
-
-    RAM --> REQ
-    APM --> REQ
-    SEARCH --> REQ
-    CHAIN --> REQ
-    MERGE --> REQ
-    LOG --> REQ
-    PROJECT --> REQ
-    REMOTE --> REQ
-
-    REQ --> INTER
-    INTER --> BE
+    style CALL fill:#1565c0,color:#fff,stroke:#0d47a1
+    style RS fill:#fff8e1,stroke:#f57c00,color:#e65100
+    style C200 fill:#fff8e1,stroke:#f57c00,color:#e65100
+    style UNWRAP fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
+    style BIZ fill:#fce4ec,stroke:#c62828,color:#b71c1c
+    style V400 fill:#fce4ec,stroke:#c62828,color:#b71c1c
+    style V401 fill:#fce4ec,stroke:#c62828,color:#b71c1c
+    style V403 fill:#fce4ec,stroke:#c62828,color:#b71c1c
+    style VOTH fill:#fce4ec,stroke:#c62828,color:#b71c1c
 ```
 
----
+### 2.2 axios 实例配置
 
-## Axios 实例配置
+| 项 | 值 | 说明 |
+|----|----|------|
+| `baseURL` | `/api` | 开发环境由 Vite 代理到后端，见 [07-部署运维](../07-部署运维/index.md) |
+| `timeout` | `120000` | 默认 2 分钟 |
+| `headers` | `Content-Type: application/json` | — |
+| `paramsSerializer.indexes` | `null` | 数组参数序列化为 `projectPaths=a&projectPaths=b`，以适配 Spring 的 `@RequestParam List<String>` |
 
-### request.ts
+### 2.3 两种响应结构
 
-**路径**：`src/utils/request.ts`
+拦截器同时兼容后端的两种返回方式：
 
-**职责**：创建 Axios 实例，配置拦截器。
+| 结构 | 判定 | 处理 |
+|------|------|------|
+| `ApiResponse<T>`：`{ code, message, data }` | `data.code` 是数字 | `code === 200` 时返回 `data.data`；否则以业务错误拒绝 |
+| 直接返回数据（如 `ResponseEntity<T>`） | 没有 `code` 字段 | 原样返回 |
 
-**配置**：
-```typescript
-const request = axios.create({
-  baseURL: '/api',  // Vite 代理前缀
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json'
-  }
-})
-```
-
-**请求拦截器**：
-```typescript
-request.interceptors.request.use(
-  (config) => {
-    // 添加 token（如果有）
-    const token = localStorage.getItem('token')
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
-    }
-    return config
-  },
-  (error) => {
-    return Promise.reject(error)
-  }
-)
-```
-
-**响应拦截器**：
-```typescript
-request.interceptors.response.use(
-  (response) => {
-    // 解包 ApiResponse<T>，直接返回 data
-    const apiResponse = response.data as ApiResponse<unknown>
-    if (apiResponse.success) {
-      return apiResponse.data
-    } else {
-      // 业务错误处理
-      const message = apiResponse.error || '请求失败'
-      ElMessage.error(message)
-      return Promise.reject(new Error(message))
-    }
-  },
-  (error) => {
-    // HTTP 错误处理
-    if (error.response) {
-      const status = error.response.status
-      switch (status) {
-        case 401:
-          ElMessage.error('未授权，请重新登录')
-          break
-        case 403:
-          ElMessage.error('权限不足')
-          break
-        case 404:
-          ElMessage.error('资源不存在')
-          break
-        case 500:
-          ElMessage.error('服务器内部错误')
-          break
-        default:
-          ElMessage.error(`请求失败：${status}`)
-      }
-    } else if (error.request) {
-      ElMessage.error('网络错误，请检查网络连接')
-    }
-    return Promise.reject(error)
-  }
-)
-```
+因此 `request.get<T>()` 的运行时返回值就是 `T`，调用方不需要再 `.data`。为此 `request.ts` 导出了 `UnwrappedAxios` 接口，把所有方法的返回类型声明成 `Promise<T>`。
 
 ---
 
-## API 模块组织
+## 3. API 模块清单
 
-### 模块列表
+### 3.1 按业务域分组
 
-| 模块 | 文件 | 功能 | 后端端点 |
-|------|------|------|---------|
-| RAM | `api/ram.ts` | 需求分析会话管理 | `/api/ram/*` |
-| APM | `api/apmDebug.ts` | APM 调试接口 | `/api/apm/*` |
-| 搜索 | `api/search.ts` | 语义搜索、方法搜索 | `/api/search/*` |
-| 调用链 | `api/callChain.ts` | 调用链查询 | `/api/callchain/*` |
-| 合并分析 | `api/merge-analysis.ts` | 合并分析接口 | `/api/merge-analysis/*` |
-| 日志分析 | `api/logAnalysis.ts` | 日志查询、报告生成 | `/api/log/*` |
-| 项目管理 | `api/project.ts` | 项目 CRUD | `/api/projects/*` |
-| 远程项目 | `api/remote-project.ts` | 远程项目管理 | `/api/remote-projects/*` |
-| 配置 | `api/config.ts` | 系统配置 | `/api/config/*` |
-| Git | `api/git.ts` | Git 操作 | `/api/git/*` |
-| MCP | `api/mcp.ts` | MCP 配置 | `/api/mcp/*` |
-| 技能市场 | `api/skillMarket.ts` | 技能管理 | `/api/skill/*` |
-| 会话 | `api/session.ts` | Claude 会话 | `/api/session/*` |
-| 工作区 | `api/workspaceSession.ts` | 工作区会话 | `/api/workspace-session/*` |
-| 术语 | `api/glossary.ts` | 术语管理 | `/api/glossary/*` |
-| 提示词 | `api/prompt.ts` | 提示词配置 | `/api/prompt/*` |
-| 自然语言 | `api/naturalLanguage.ts` | 自然语言处理 | `/api/natural-language/*` |
-| 代码分析 | `api/codeAnalysis.ts` | 代码分析 | `/api/code-analysis/*` |
-| 向量生成 | `api/vectorGeneration.ts` | 向量生成 | `/api/vector-generation/*` |
-| 终端 | `api/terminal.ts` | 终端操作 | `/api/terminal/*` |
+| 模块文件 | 行数 | 导出形式 | 路径前缀 | 主要使用方 |
+|---------|------|---------|---------|-----------|
+| `apmDebug.ts` | 56 | 对象 `apmApi` | `/apm` | `apmStore` |
+| `testCase.ts` | 54 | 对象 `testCaseApi` | `/apm/test-cases` | APM 调试页 |
+| `architectureDiagnosis.ts` | 49 | 具名函数 | `/architecture-diagnosis` | 架构诊断页 |
+| `auth.ts` | 16 | 对象 `authApi` | `/auth` | `auth` Store |
+| `user.ts` | 12 | 对象 `userApi` | `/users` | 用户管理页 |
+| `config.ts` | 54 | 对象 `configApi` | `/config` | `app` Store |
+| `workbench.ts` | 53 | 对象 `workbenchApi` | `/workbench` | 工作台 |
+| `workflow.ts` | 94 | 具名函数 | `/v2/workflow` | `useWorkflow`、`useFixRunStream` |
+| `ram.ts` | 237 | 具名函数 | `/ram` | RAM 各页面、`useRamSession` |
+| `ramChat.ts` | 72 | 对象 `ramChatApi` | `/ram/chat` | `ramChat` Store |
+| `fix.ts` | 50 | 对象 `fixApi` | `/fix` | 异常修复页、日志报告页 |
+| `merge-analysis.ts` | 88 | 具名函数 | `/merge-analysis` | 合入分析各页面 |
+| `logAnalysis.ts` | 127 | 对象 `logAnalysisApi` | `/log`、`/v2/log` | 日志分析页 |
+| `knowledgeGraph.ts` | 875 | 对象 `knowledgeGraphApi` + 类型 | `/knowledge-graph`、`/v2/knowledge-graph` | 知识图谱页、项目管理页、`apmStore` |
+| `vectorSearch.ts` | 109 | 对象 `vectorSearchApi` | `/vector-search` | 语义搜索面板 |
+| `vectorGeneration.ts` | 101 | 具名函数 + 对象 `vectorGenerationApi` | `/vector-generation` | 知识图谱页、项目管理页 |
+| `binding.ts` | 44 | 对象 `bindingApi` | `/knowledge-graph/binding` | 绑定管理弹窗 |
+| `frontendBackend.ts` | 53 | 对象 `frontendBackendApi` | `/v2/knowledge-graph` | `FrontendBackendTab`（见 3.3） |
+| `callChain.ts` | 83 | 对象 `callChainApi` | `/callchain` | 见 3.3 |
+| `project.ts` | 33 | 对象 `projectApi` | `/projects` | 项目管理、RAM、合入分析、技能市场 |
+| `remote-project.ts` | 26 | 具名函数 | `/remote-projects` | 项目管理、RAM、合入分析、知识图谱 |
+| `projectGroup.ts` | 37 | 对象 `projectGroupApi` | `/project-group` | 项目管理、日志分析、RAM 输入页 |
+| `projectNameGroup.ts` | 32 | 对象 `projectNameGroupApi` | `/project-name-group` | 知识图谱页 |
+| `kg-schedule.ts` | 18 | 具名函数 | `/kg-schedules` | 项目管理页 |
+| `git.ts` | 91 | 对象 `gitApi` | `/git` | 项目管理页、终端侧栏、`GitOperations` |
+| `session.ts` | 60 | 对象 `sessionApi` | `/sessions` | `session` Store |
+| `claude.ts` | 278 | 对象 `claudeApi` | `/claude`、`/chat` | `session` Store、Claude 会话页、APM 诊断对话、方法引用图 |
+| `workspaceSession.ts` | 65 | 对象 `workspaceSessionApi` | `/workspace-sessions` | `workspace` Store |
+| `terminal.ts` | 144 | 函数 `createTerminalConnection` | WebSocket `/ws/terminal` | Claude 终端页 |
+| `prompt.ts` | 39 | 对象 `promptApi` | `/prompts` | `prompt` Store |
+| `glossary.ts` | 22 | 对象 `glossaryApi` | `/glossary` | 术语管理页、知识图谱页、项目管理页 |
+| `skillMarket.ts` | 87 | 对象 `skillMarketApi` | `/skill-market` | `skill` Store |
+| `kgSkillsKit.ts` | 74 | 对象 `kgSkillsKitApi` | `/kg-skills-kit` | KG Skills 套件页 |
+| `ops.ts` | 27 | 对象 `opsApi` | `/ops` | 见 3.3 |
 
----
+### 3.2 写法约定
 
-## API 模块详解
+- **导出形式不统一**：多数模块导出一个 `xxxApi` 对象（`apmApi`、`authApi` 等），`ram.ts`、`merge-analysis.ts`、`workflow.ts`、`remote-project.ts`、`kg-schedule.ts`、`architectureDiagnosis.ts` 则导出具名函数。
+- **导入方式**：除 `kgSkillsKit.ts` 从 `./index` 导入外，其余模块都直接 `import request from '@/utils/request'`。
+- **类型就近定义**：请求 / 响应类型大多定义在 API 模块内部并一并导出（如 `knowledgeGraph.ts` 的几十个接口类型），少数放在 `src/types/`。
+- **文件命名**：大多数为小驼峰，`kg-schedule.ts`、`merge-analysis.ts`、`remote-project.ts` 三个为短横线。
+- **版本前缀**：`workflow.ts` 固定走 `/v2/workflow`；`logAnalysis.ts` 的分析流走 `/v2/log`，列表、导出、追问仍走 `/log`。两处都有注释说明回滚时改回旧前缀即可。
 
-### ram.ts
+### 3.3 存在于代码但当前无人引用的模块
 
-**路径**：`src/api/ram.ts`
+以下结论来自对全仓库导入关系的检索：
 
-**功能**：RAM（Requirement Analysis Master）会话管理。
+| 模块 | 状态 |
+|------|------|
+| `ops.ts` | 没有任何文件导入 |
+| `callChain.ts` | 仅被 `views/call-chain/ProjectList.vue` 与 `UriList.vue` 导入，而这两个组件本身没有路由或父组件引用 |
+| `frontendBackend.ts` | 仅被 `views/knowledge-graph/components/FrontendBackendTab.vue` 导入，该组件本身没有父组件引用 |
 
-**函数列表**：
-| 函数 | 参数 | 返回值 | 说明 |
-|------|------|--------|------|
-| `startRamSession(payload)` | `StartSessionPayload` | `Promise<StartSessionResponse>` | 创建 RAM 会话 |
-| `submitRamClarify(sessionId, answers)` | `string, Record<string, unknown>` | `Promise<ClarifyResponse>` | 提交澄清答案 |
-| `resumeRamSession(sessionId)` | `string` | `Promise<ResumeResponse>` | 恢复会话 |
-| `abortRamSession(sessionId)` | `string` | `Promise<AbortResponse>` | 中止会话 |
-| `confirmRamNode(sessionId, payload)` | `string, ConfirmPayload` | `Promise<ConfirmResponse>` | 确认节点输出 |
-| `getRamSession(sessionId)` | `string` | `Promise<SessionInfoResponse>` | 获取会话信息 |
-| `executeTechPlan(sessionId)` | `string` | `Promise<Record<string, unknown>>` | 触发技术方案生成 |
-| `ramStreamUrl(sessionId, afterSeq?)` | `string, number?` | `string` | 获取 SSE 流 URL |
-
-**类型定义**：
-```typescript
-interface StartSessionPayload {
-  rawInput: string
-  projectPath: string
-  userId?: string
-}
-
-interface StartSessionResponse {
-  readonly sessionId: string
-}
-
-interface ClarifyResponse {
-  readonly accepted: boolean
-  readonly nextSeq: number
-  readonly status?: string
-  readonly hitlPayload?: {
-    readonly nodeName: string
-    readonly output: Readonly<Record<string, unknown>>
-  }
-}
-
-interface ConfirmPayload {
-  nodeName: string
-  action: 'approve' | 'reject' | 'edit'
-  feedback?: string
-  editedOutput?: Record<string, unknown>
-}
-```
-
-**SSE 流 URL 构建**：
-```typescript
-export function ramStreamUrl(sessionId: string, afterSeq?: number): string {
-  const base = `/api/ram/sessions/${sessionId}/stream`
-  return typeof afterSeq === 'number' && afterSeq > 0 
-    ? `${base}?afterSeq=${afterSeq}` 
-    : base
-}
-```
+这三个模块的接口路径见 [05-接口文档](../05-接口文档/index.md)，其中标注了"未接线"。
 
 ---
 
-### apmDebug.ts
+## 4. 内部实现
 
-**路径**：`src/api/apmDebug.ts`
+### 4.1 请求拦截器
 
-**功能**：APM 调试接口。
+每次请求从 `localStorage` 读取 `hisi-token`，存在则设置 `Authorization: Bearer {token}`。注意它不读取 `auth` Store，而是直接读存储，这保证了页面刷新后 token 尚未恢复到 Store 时请求也能带上令牌。
 
-**函数列表**：
-| 函数 | 参数 | 返回值 | 说明 |
-|------|------|--------|------|
-| `getEntryPoints(projectPath)` | `string` | `Promise<EntryPoint[]>` | 获取入口点列表 |
-| `getEntryPointDetail(entryId)` | `string` | `Promise<EntryPointDetail>` | 获取入口点详情 |
-| `getSchema(entryId)` | `string` | `Promise<SchemaNode>` | 获取 DTO schema |
-| `executeRequest(entryId, params)` | `string, RequestParams` | `Promise<ExecutionResult>` | 执行 API 请求 |
-| `searchApis(projectPath, keyword)` | `string, string` | `Promise<ApiSearchResult[]>` | 搜索 API |
-
----
-
-### search.ts
-
-**路径**：`src/api/search.ts`
-
-**功能**：语义搜索和方法搜索。
-
-**函数列表**：
-| 函数 | 参数 | 返回值 | 说明 |
-|------|------|--------|------|
-| `semanticSearch(query, projectPath, limit?)` | `string, string, number?` | `Promise<SearchResult[]>` | 语义搜索 |
-| `searchMethods(keyword, projectPath)` | `string, string` | `Promise<MethodInfo[]>` | 方法搜索 |
-| `getMethodDetail(methodId)` | `string` | `Promise<MethodDetail>` | 获取方法详情 |
-| `getCallChain(methodId, direction, depth)` | `string, string, number` | `Promise<CallChain>` | 获取调用链 |
-
----
-
-### callChain.ts
-
-**路径**：`src/api/callChain.ts`
-
-**功能**：调用链查询。
-
-**函数列表**：
-| 函数 | 参数 | 返回值 | 说明 |
-|------|------|--------|------|
-| `getProjects()` | 无 | `Promise<Project[]>` | 获取项目列表 |
-| `getUris(projectPath)` | `string` | `Promise<UriInfo[]>` | 获取 URI 列表 |
-| `getUriChain(projectPath, uri)` | `string, string` | `Promise<UriChain>` | 获取 URI 调用链 |
-| `getMethodReference(projectPath, className, methodName)` | `string, string, string` | `Promise<MethodReference>` | 获取方法引用 |
-
----
-
-### merge-analysis.ts
-
-**路径**：`src/api/merge-analysis.ts`
-
-**功能**：合并分析接口。
-
-**函数列表**：
-| 函数 | 参数 | 返回值 | 说明 |
-|------|------|--------|------|
-| `startAnalysis(payload)` | `MergeAnalysisPayload` | `Promise<AnalysisSession>` | 启动合并分析 |
-| `getDiff(sessionId)` | `string` | `Promise<DiffResult>` | 获取 Diff 结果 |
-| `getAnalysisResult(sessionId)` | `string` | `Promise<AnalysisResult>` | 获取分析结果 |
-| `analysisStreamUrl(sessionId)` | `string` | `string` | 获取 SSE 流 URL |
-
----
-
-### logAnalysis.ts
-
-**路径**：`src/api/logAnalysis.ts`
-
-**功能**：日志分析接口。
-
-**函数列表**：
-| 函数 | 参数 | 返回值 | 说明 |
-|------|------|--------|------|
-| `queryLogs(params)` | `LogQueryParams` | `Promise<LogQueryResult>` | 查询日志 |
-| `getReport(reportId)` | `string` | `Promise<LogReport>` | 获取分析报告 |
-| `generateReport(logIds)` | `string[]` | `Promise<ReportTask>` | 生成分析报告 |
-
----
-
-### project.ts
-
-**路径**：`src/api/project.ts`
-
-**功能**：项目管理接口。
-
-**函数列表**：
-| 函数 | 参数 | 返回值 | 说明 |
-|------|------|--------|------|
-| `getProjects()` | 无 | `Promise<Project[]>` | 获取项目列表 |
-| `scanGitRepos()` | 无 | `Promise<GitRepositoryInfo[]>` | 扫描 Git 仓库 |
-| `addProject(project)` | `ProjectInfo` | `Promise<Project>` | 添加项目 |
-| `deleteProject(projectId)` | `string` | `Promise<void>` | 删除项目 |
-| `updateProject(projectId, data)` | `string, ProjectUpdate` | `Promise<Project>` | 更新项目 |
-
----
-
-### remote-project.ts
-
-**路径**：`src/api/remote-project.ts`
-
-**功能**：远程项目管理接口。
-
-**函数列表**：
-| 函数 | 参数 | 返回值 | 说明 |
-|------|------|--------|------|
-| `getRemoteProjects()` | 无 | `Promise<RemoteProject[]>` | 获取远程项目列表 |
-| `addRemoteProject(project)` | `RemoteProjectInfo` | `Promise<RemoteProject>` | 添加远程项目 |
-| `deleteRemoteProject(projectId)` | `string` | `Promise<void>` | 删除远程项目 |
-| `syncProject(projectId)` | `string` | `Promise<SyncResult>` | 同步远程项目 |
-| `getScheduleConfig(projectId)` | `string` | `Promise<ScheduleConfig>` | 获取调度配置 |
-| `updateScheduleConfig(projectId, config)` | `string, ScheduleConfig` | `Promise<void>` | 更新调度配置 |
-
----
-
-## API 设计模式
-
-### 1. 统一响应格式
-
-后端返回统一的 `ApiResponse<T>` 格式：
+### 4.2 响应拦截器（成功分支）
 
 ```typescript
-interface ApiResponse<T> {
-  success: boolean
-  data?: T
-  error?: string
-  meta?: {
-    total: number
-    page: number
-    limit: number
-  }
+if (data && typeof data.code === 'number') {
+  if (data.code === 200) return data.data
+  const businessError = new Error(data.message || '请求失败')
+  businessError.response = response
+  return Promise.reject(businessError)
 }
+return data
 ```
 
-前端在拦截器中解包，API 模块直接返回 `data`。
+### 4.3 响应拦截器（失败分支）
 
-### 2. 错误处理
+| 状态码 | 行为 |
+|--------|------|
+| 400 且消息可解析为校验错误 | 警告条列出"字段: 消息"，持续 5 秒可关闭；并把 `validationErrors` 挂到错误对象上 |
+| 400 但无法解析 | 警告条显示后端原始 `message` |
+| 401 | 警告条 + 动态导入 `auth` Store 并置 `showLoginDialog = true` |
+| 403 | 错误条，默认文案"仅管理员可执行此操作" |
+| 其它 | 错误条，优先用后端 `message`，否则按状态码取文案；同时 `console.error` |
+| 请求发出但无响应 | "网络连接失败，请检查网络" |
+| 请求未发出 | "请求配置错误" |
 
-```typescript
-// API 模块中的错误处理
-async function getProjects(): Promise<Project[]> {
-  try {
-    const projects = await request.get('/projects')
-    return projects as Project[]
-  } catch (error) {
-    // 拦截器已处理 HTTP 错误，这里处理业务错误
-    throw error
-  }
-}
-```
+校验错误的解析函数 `parseValidationErrors` 位于 `types/api.ts`，约定的后端消息格式是 `参数校验失败: field1: message1, field2: message2`。
 
-### 3. 类型安全
+### 4.4 不经过 axios 实例的调用
 
-```typescript
-// 使用 TypeScript 类型定义请求和响应
-interface StartSessionPayload {
-  rawInput: string
-  projectPath: string
-  userId?: string
-}
+| 位置 | 原因 | 鉴权方式 |
+|------|------|---------|
+| `claudeApi.streamAnalyze` | `EventSource` 不支持自定义请求头 | 代码中未附带 token |
+| `claudeApi.streamChat`、`claudeApi.universalChat` | 需要 `POST` + 流式读取响应体，用 `fetch` + `ReadableStream` | 代码中未附带 token |
+| `architectureDiagnosis.exportReport` | 直接下载文件，用 `fetch` 取 Blob | 手工读取 `hisi-token` 拼 `Authorization` |
+| `workflowStreamUrl` | `EventSource` 不支持自定义请求头 | token 经查询参数 `?token=` 传递 |
 
-interface StartSessionResponse {
-  readonly sessionId: string
-}
-
-export function startRamSession(
-  payload: StartSessionPayload
-): Promise<StartSessionResponse> {
-  return request.post('/ram/sessions', payload)
-}
-```
-
-### 4. SSE 流处理
-
-```typescript
-// SSE 流 URL 构建
-export function ramStreamUrl(sessionId: string, afterSeq?: number): string {
-  const base = `/api/ram/sessions/${sessionId}/stream`
-  return typeof afterSeq === 'number' && afterSeq > 0 
-    ? `${base}?afterSeq=${afterSeq}` 
-    : base
-}
-
-// 组件中使用 EventSource
-const eventSource = new EventSource(ramStreamUrl(sessionId))
-eventSource.onmessage = (event) => {
-  const data = JSON.parse(event.data)
-  // 处理事件
-}
-```
+后两类调用不经过响应拦截器，因此没有自动的解包和统一错误提示。
 
 ---
 
-## API 与组件交互
+## 5. 依赖关系
 
-### 1. 组件中调用 API
-
-```typescript
-// views/ram/InputPage.vue
-import { startRamSession } from '@/api/ram'
-import { projectApi } from '@/api/project'
-
-const projects = ref<GitRepositoryInfo[]>([])
-const submitting = ref(false)
-
-async function loadProjects() {
-  try {
-    const list = await projectApi.scanGitRepos()
-    if (Array.isArray(list)) {
-      projects.value = list
-    }
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : '扫描项目失败'
-    ElMessage.warning(`未能加载项目列表：${msg}`)
-  }
-}
-
-async function onSubmit() {
-  submitting.value = true
-  try {
-    const resp = await startRamSession({ 
-      rawInput: rawInput.value, 
-      projectPath: projectPath.value 
-    })
-    await router.push({ name: 'RamDraft', params: { sid: resp.sessionId } })
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : '启动失败'
-    ElMessage.error(msg)
-  } finally {
-    submitting.value = false
-  }
-}
-```
-
-### 2. Composable 封装
-
-```typescript
-// composables/useRamSession.ts
-export function useRamSession() {
-  const events = ref<RamEvent[]>([])
-  const status = ref<RamStatus>('idle')
-  const cost = ref({ tokens: 0, usd: 0 })
-
-  function rejoin(sessionId: string, afterSeq?: number) {
-    const url = ramStreamUrl(sessionId, afterSeq)
-    const eventSource = new EventSource(url)
-    
-    eventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      events.value.push(data)
-    }
-    
-    eventSource.onerror = () => {
-      status.value = 'error'
-    }
-  }
-
-  return {
-    events,
-    status,
-    cost,
-    rejoin
-  }
-}
-```
+| 方向 | 依赖 | 说明 |
+|------|------|------|
+| 上游 | `axios`、`element-plus`（`ElMessage`） | `request.ts` |
+| 上游 | `stores/auth.ts` | 仅 401 时动态导入 |
+| 上游 | `types/*` | 各模块的请求 / 响应类型 |
+| 下游 | 11 个 Store 中的 9 个、绝大多数页面与 Composable | 见各模块文档 |
 
 ---
 
-## 代理配置
+## 6. 配置项
 
-### Vite 开发代理
-
-```typescript
-// vite.config.ts
-export default defineConfig({
-  server: {
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8080',
-        changeOrigin: true
-      },
-      '/ws': {
-        target: 'ws://localhost:8080',
-        ws: true
-      }
-    }
-  }
-})
-```
-
-### 生产环境
-
-生产环境通过 Nginx 反向代理：
-
-```nginx
-location /api {
-  proxy_pass http://backend:8080;
-  proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-}
-
-location /ws {
-  proxy_pass http://backend:8080;
-  proxy_http_version 1.1;
-  proxy_set_header Upgrade $http_upgrade;
-  proxy_set_header Connection "upgrade";
-}
-```
+`request.ts` 中没有读取环境变量，`baseURL`、`timeout` 都是硬编码常量。后端地址由 Vite 的开发代理决定，不在此模块配置。
 
 ---
 
-## 测试
+## 7. 错误处理
 
-### API 模块测试
+| 层级 | 策略 |
+|------|------|
+| 传输层 | axios 超时 2 分钟；超时与断网都会走拦截器的错误分支并弹提示 |
+| 业务层 | `code !== 200` 转成 `Error` 抛出，消息取后端 `message` |
+| 表现层 | 拦截器已弹提示，所以多数调用方只需 `catch` 后做状态回滚，不必重复提示 |
 
-```typescript
-// api/__tests__/ram.spec.ts
-import { describe, it, expect, vi } from 'vitest'
-import { startRamSession } from '../ram'
-import request from '@/utils/request'
-
-vi.mock('@/utils/request')
-
-describe('ram API', () => {
-  it('should start session correctly', async () => {
-    const mockResponse = { sessionId: 'test-session-id' }
-    vi.mocked(request.post).mockResolvedValue(mockResponse)
-
-    const result = await startRamSession({
-      rawInput: 'test requirement',
-      projectPath: '/test/project'
-    })
-
-    expect(result).toEqual(mockResponse)
-    expect(request.post).toHaveBeenCalledWith('/ram/sessions', {
-      rawInput: 'test requirement',
-      projectPath: '/test/project'
-    })
-  })
-})
-```
+HTTP 状态码默认文案（`getHttpErrorMessage`）：400 请求参数错误、401 未授权、403 拒绝访问、404 请求的资源不存在、405 请求方法不允许、408 请求超时、409 请求冲突、422 请求格式错误、429 请求过于频繁、500 服务器内部错误、501 服务未实现、502 网关错误、503 服务不可用、504 网关超时。
 
 ---
 
-## 下一步
+## 8. 性能考量
 
-- [RAM需求评估UI](./RAM需求评估UI.md) - 了解 RAM API 的具体使用
-- [APM诊断UI](./APM诊断UI.md) - 了解 APM API 的具体使用
-- [数据模型](../06-数据模型/index.md) - 了解 TypeScript 类型定义
+| 关注点 | 策略 | 实现 |
+|--------|------|------|
+| 长耗时分析接口 | 超时放宽到 2 分钟 | `timeout: 120000` |
+| 避免循环依赖 | 401 分支动态导入 Store | `import('@/stores/auth')` |
+| 大文件下载 | `responseType: 'blob'` | 会话导出、报告导出等 |
+
+---
+
+## 9. 已知问题与扩展点
+
+| 类型 | 说明 |
+|------|------|
+| 已知问题 | 导出形式、文件命名风格不统一 |
+| 已知问题 | `hisi-token` 键名在多处重复 |
+| 已知问题 | `claude.ts` 中两个 `fetch` 调用没有附带令牌，是否需要鉴权未在代码中确认 |
+| 已知问题 | 设置页的 4 个接口散落在视图里，没有对应的 `api/` 模块 |
+| 扩展点 | 新增业务域：在 `src/api/` 下建模块，从 `@/utils/request` 导入 `request`，类型就近定义并导出 |
+
+---
+
+> **相关文档**：
+> - 架构总览 → [02-架构设计](../02-架构设计/index.md)
+> - 全部接口路径 → [05-接口文档](../05-接口文档/index.md)
+> - SSE / WebSocket → [实时通信](./实时通信.md)
+> - 代理配置 → [07-部署运维](../07-部署运维/index.md)

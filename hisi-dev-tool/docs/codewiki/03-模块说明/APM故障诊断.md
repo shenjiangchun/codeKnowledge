@@ -1,12 +1,15 @@
 # APM 故障诊断
 
+> 自动生成于 2026-11-26，基于 `99d0037` 版本
+
 | 属性 | 值 |
 |------|-----|
-| **所属层** | 应用层（Orchestration）+ 基础设施层（OTel 接收） |
-| **目录** | `apm/`（controller / service / model / cache / config / handler / repository） |
-| **文件数** | 44 |
-| **核心入口** | `ApmController`、`DiagnoseController`、`OtlpReceiverController` |
-| **REST 基础路径** | `/api/apm`、`/api/apm/diagnose`、`/v1/traces` |
+| **所属层** | 应用层（诊断流水线编排）+ 基础设施层（OTLP 接收、目标进程与 Agent 管理） |
+| **目录** | `apm/`（45 个文件：`cache` 3、`config` 4、`controller` 4、`handler` 1、`model` 10、`repository` 3、`service` 8、`service/locator` 12） |
+| **核心类** | `ApmController`、`DiagnoseController`、`OtlpReceiverController`、`ApmDebugService`、`TargetProcessManager`、`OtelAgentManager`、`SpanIngestionService`、`SpanToKgMapper`、`FailureLocatorService`、`LlmDiagnoseAdapter` |
+| **REST** | `/api/apm`、`/api/apm/diagnose`、`/api/apm/test-cases`、`/v1/traces`，共 21 个端点 |
+| **WebSocket** | `/ws/apm` |
+| **SQLite 表** | `apm_session`、`apm_span`、`apm_test_case` |
 
 ---
 
@@ -14,44 +17,28 @@
 
 ### 1.1 职责定义
 
-APM 故障诊断引擎是一个完整的故障定位流水线：接收 OpenTelemetry Agent 上报的 trace 数据，索引异常 span，结合知识图谱（KG）上下文丰富信息，调用 LLM 进行根因诊断，最终输出结构化的诊断报告。
+**核心职责**：用 OpenTelemetry Java Agent 拉起被测应用、采集方法级调用链 span，并把异常 trace 对应到知识图谱节点，最后由 LLM 产出根因诊断报告。
 
-| 本模块负责 ✅ | 不负责 ❌ |
-|-------------|---------|
-| OTel trace 接收（protobuf + JSON） | 知识图谱构建（在 `knowledgegraph/`） |
-| 异常 span 索引与缓存 | 通用检索（在 `HybridSearchService`） |
-| KG 上下文丰富（方法体、调用链） | LLM 协议细节（在 `UnifiedTextService`） |
-| LLM 根因诊断（Claude / OpenAI 兼容） | APM Agent 管理（外部 OTel Agent） |
-| 诊断报告存储与查询 | — |
-| APM 调试会话管理（launch/execute/stop） | — |
+| 本模块负责 | 本模块不负责 | 由谁负责 |
+|-----------|-------------|---------|
+| 下载与定位 OTel Agent、启动 / 停止目标进程 | 被测应用本身的构建 | 目标项目 |
+| 接收 OTLP/HTTP protobuf trace、落库、按 trace 索引异常 span | 通用日志分析 | [日志云与运维](./日志云与运维.md) |
+| span → KG 方法节点的映射 | 图谱构建 | [知识图谱构建](./知识图谱构建.md) |
+| 异步诊断流水线（去重、KG 丰富、LLM 诊断、报告状态机） | agent 流程编排 | [工作流引擎](./工作流引擎.md) |
+| APM 测试用例的保存与回放配置 | — | — |
 
-### 1.2 子包结构
+### 1.2 LLM 调用边界
 
-| 子包 / 文件 | 职责 |
-|-----------|------|
-| `controller/ApmController` | APM 调试会话 CRUD（launch/execute/stop/sessions/spans/trace/report） |
-| `controller/DiagnoseController` | 异步诊断流水线入口（POST / GET / DELETE /status） |
-| `controller/OtlpReceiverController` | OTLP/HTTP protobuf + JSON trace 接收端点 |
-| `controller/ApmTestCaseController` | APM 测试用例管理 |
-| `service/ApmDebugService` | 调试会话核心逻辑（进程管理、span 收集） |
-| `service/SpanIngestionService` | trace 数据入库（span 解析、异常检测、索引） |
-| `service/locator/FailureLocatorService` | 异步诊断流水线编排（去重→KG丰富→LLM诊断→报告） |
-| `service/locator/KgEnricher` | KG 上下文丰富接口（方法体、调用链、异常路径） |
-| `service/locator/LlmDiagnoser` | LLM 诊断接口（Claude / OpenAI 兼容） |
-| `service/locator/FailureLocatorPromptBuilder` | 诊断提示词构建 |
-| `service/locator/ApmClaudeLlmClient` | Claude SDK LLM 客户端实现 |
-| `service/SpanToKgMapper` | span → KG 节点映射 |
-| `service/KgMethodIncludeBuilder` | KG 方法包含关系构建 |
-| `service/DebugReportService` | 调试报告服务 |
-| `service/OtelAgentManager` | OTel Agent 生命周期管理 |
-| `service/TargetProcessManager` | 目标进程管理 |
-| `cache/ExceptionSpanIndex` | 异常 span 内存索引（按 traceId） |
-| `cache/DiagnosisReportStore` | 诊断报告存储（状态机） |
-| `cache/DiagnosisDedupCache` | 诊断去重缓存（防重复提交） |
-| `model/` | `ApmSession`、`ApmSpanEntity`、`DiagnoseReport`、`DiagnoseRequest`、`DebugReport`、`OtlpTraceData` 等 |
-| `repository/` | `ApmSessionRepository`、`ApmSpanRepository`、`ApmTestCaseRepository`（SQLite） |
-| `config/` | `ApmConfig`、`ApmDiagnoseConfig`、`ApmDiagnoseProperties`、`ApmLlmProperties` |
-| `handler/ApmWebSocketHandler` | APM WebSocket 实时推送 |
+APM 诊断的模型调用**不经 pi**，属于「单次结构化调用但仍直连」：
+
+| Bean | 装配条件 | 底层 |
+|------|---------|------|
+| `ApmClaudeLlmClient`（`@Primary`） | `hisi.apm.diagnose.llm.api-key` 非空 | 直连 OpenAI 兼容的 `/v1/chat/completions`，配置 `hisi.apm.diagnose.llm.*`；用公平信号量限制全局并发 |
+| `ApmDiagnoseConfig` 中的默认 `LlmClient` | 上一个不成立且上下文没有其他 `LlmClient`（`@ConditionalOnMissingBean`） | `UnifiedTextService`（system 与 user 提示词拼接后单轮调用） |
+| `LlmDiagnoseAdapter`（`@Primary`） | 存在 `LlmClient` bean 且 `hisi.apm.diagnose.llm-enabled` 不为 false | 调上面的 `LlmClient`，带单次调用超时 |
+| `stubLlmDiagnoser` | 没有 `LlmDiagnoseAdapter` 时 | 返回模板文本与 0.6 置信度 |
+
+接口 `apm.service.locator.LlmClient.chat(system, user)` 的另一个使用方是 [修复引擎fixengine](./修复引擎fixengine.md) 的 `FixAgent` / `TestGenAgent`。详见 [pi-agent底座](./pi-agent底座.md)。
 
 ---
 
@@ -59,250 +46,308 @@ APM 故障诊断引擎是一个完整的故障定位流水线：接收 OpenTelem
 
 ```mermaid
 flowchart TD
-    subgraph 接收层
-        OTelAgent["OTel Java Agent"]:::ext
-        OtlpCtrl["OtlpReceiverController\n/v1/traces"]:::entry
+    AG["OTel Java Agent<br/>挂在目标 JVM 上"]:::ext
+    OTLP["OtlpReceiverController<br/>POST /v1/traces"]:::entry
+    ING["SpanIngestionService"]:::process
+    MAP["SpanToKgMapper<br/>4 级匹配"]:::process
+    IDX["ExceptionSpanIndex<br/>按 traceId 索引异常 span"]:::data
+    SPAN[("apm_span")]:::data
+    WS["ApmWebSocketHandler<br/>/ws/apm"]:::process
+
+    subgraph DBG["调试会话"]
+        AC["ApmController"]:::entry
+        ADS["ApmDebugService"]:::process
+        TPM["TargetProcessManager"]:::process
+        OAM["OtelAgentManager"]:::process
+        KIB["KgMethodIncludeBuilder"]:::process
+        SESS[("apm_session")]:::data
     end
 
-    subgraph 索引层
-        SpanIngest["SpanIngestionService\n解析 + 异常检测"]:::process
-        SpanIndex["ExceptionSpanIndex\n(内存索引)"]:::data
-        SpanRepo["ApmSpanRepository\n(SQLite)"]:::data
+    subgraph DIAG["诊断流水线"]
+        DC["DiagnoseController"]:::entry
+        FLS["FailureLocatorService"]:::entry
+        DED["DiagnosisDedupCache"]:::proc2
+        KE["KgEnricherImpl"]:::process
+        LA["LlmDiagnoseAdapter"]:::process
+        RS["DiagnosisReportStore"]:::data
     end
 
-    subgraph 诊断流水线
-        DiagCtrl["DiagnoseController\n/api/apm/diagnose"]:::entry
-        FailureSvc["FailureLocatorService\n(异步编排)"]:::process
-        Dedup["DiagnosisDedupCache\n(去重)"]:::process
-        KgEnrich["KgEnricher\n(KG 上下文丰富)"]:::process
-        LlmDiag["LlmDiagnoser\n(LLM 根因诊断)"]:::process
-        ReportStore["DiagnosisReportStore\n(报告状态机)"]:::data
-    end
+    NEO[("Neo4j 图谱")]:::data
+    LLM["LLM<br/>/v1/chat/completions"]:::ext
 
-    subgraph 调试会话
-        ApmCtrl["ApmController\n/api/apm"]:::entry
-        ApmDebugSvc["ApmDebugService"]:::process
-        TargetMgr["TargetProcessManager\n(进程管理)"]:::process
-    end
+    AG -->|protobuf| OTLP --> ING
+    ING --> MAP
+    ING --> IDX
+    ING --> SPAN
+    ING --> WS
+    AC --> ADS --> TPM
+    TPM --> OAM
+    TPM --> KIB
+    ADS --> SESS
+    DC --> FLS
+    FLS --> DED
+    FLS --> IDX
+    FLS --> KE
+    FLS --> LA
+    FLS --> RS
+    KE --> NEO
+    LA --> LLM
+    KIB --> NEO
 
-    Neo4j[("Neo4j\n知识图谱")]:::data
-    LLM["Claude SDK / OpenAI 兼容 LLM"]:::ext
-
-    OTelAgent -->|protobuf / JSON| OtlpCtrl
-    OtlpCtrl --> SpanIngest
-    SpanIngest --> SpanIndex
-    SpanIngest --> SpanRepo
-
-    DiagCtrl --> FailureSvc
-    FailureSvc --> Dedup
-    FailureSvc --> SpanIndex
-    FailureSvc --> KgEnrich
-    KgEnrich --> Neo4j
-    FailureSvc --> LlmDiag
-    LlmDiag --> LLM
-    FailureSvc --> ReportStore
-
-    ApmCtrl --> ApmDebugSvc
-    ApmDebugSvc --> TargetMgr
-    ApmDebugSvc --> SpanIngest
-
-    classDef entry fill:#1565c0,color:#fff
-    classDef process fill:#e3f2fd
-    classDef data fill:#e8f5e9
-    classDef ext fill:#fce4ec
+    classDef entry fill:#1565c0,stroke:#0d47a1,color:#fff
+    classDef process fill:#e3f2fd,stroke:#1976d2,color:#0d47a1
+    classDef proc2 fill:#fff8e1,stroke:#f57c00,color:#e65100
+    classDef data fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
+    classDef ext fill:#fce4ec,stroke:#c62828,color:#b71c1c
 ```
 
 ---
 
-## 3. 核心流程
+## 3. Trace 接收
 
-### 3.1 OTel Trace 接收流程
+`OtlpReceiverController` 的 `POST /v1/traces` 有两个处理方法：
+
+| 请求体 | 处理 |
+|-------|------|
+| `application/x-protobuf` 的 `ExportTraceServiceRequest` | 用 `JsonFormat` 把 protobuf 转成 OTLP/JSON，再交给 Jackson 反序列化为 `OtlpTraceData` |
+| OTLP/JSON | 直接反序列化 |
+
+`SpanIngestionService.ingest`：展开嵌套的 resourceSpans → `ApmSpanEntity`，解析所属的 APM 会话，做 KG 映射，并推给 WebSocket。span kind 与 status code 的数字枚举映射为字符串（如 `SERVER` / `CLIENT`、`OK` / `ERROR`）。
+
+`SpanToKgMapper` 的 4 级匹配（结果写入 `apm_span.kg_node_id` 与 `kg_match_level`）：
+
+| 级别 | 常量 | 规则 |
+|------|------|------|
+| 1 | `MATCH_EXACT = 0` | `code.namespace` + `code.function` 属性精确匹配类名与方法名 |
+| 2 | `MATCH_UNIQUE = 1` | 从 span 操作名解析 `className.methodName` |
+| 3 | `MATCH_OVERLOADED = 2` | 按 HTTP 路由匹配 Controller 入口点 |
+| 4 | `MATCH_UNMATCHED = 3` | 未匹配 |
+
+`apm_span.kg_match_level` 的列默认值为 3。
+
+---
+
+## 4. 调试会话
+
+### 4.1 启动目标进程
+
+| 组件 | 职责 |
+|------|------|
+| `ApmDebugService` | 会话编排：launch / execute / stop / 查询 |
+| `TargetProcessManager` | 按会话 ID 管理目标 JVM：识别构建系统（Maven / Gradle / JAR）、按操作系统拼命令、注入 OTel agent 环境变量、stdout 环形缓冲（500 行）、按端口探活（每 500 毫秒，自动端口从 18080 起）、优雅与强制关闭 |
+| `OtelAgentManager` | 定位 agent JAR，顺序：配置的 `apm.otel-agent-path` → 项目目录 `lib/otel-agent/` → `~/.hisi-devtool/otel-agent/` 缓存 → 下载 |
+| `KgMethodIncludeBuilder` | 从入口方法沿图谱被调树生成 `OTEL_INSTRUMENTATION_METHODS_INCLUDE`：默认深度 5、每类最多 32 个方法、总计最多 256 个 |
+
+源码注释说明：OTel agent 不会自动插桩任意 `@Service` / `@Repository` / `@Component` 方法，要得到与图谱调用链一致的方法级 span 树，必须事先枚举方法。`TargetProcessManager` 中该字符串超过 16000 字符时改为写入 properties 文件、经 `-Dotel.javaagent.configuration-file` 传入。
+
+`ApmSession` 的生命周期（类注释）：`CREATED → LAUNCHING → READY → RUNNING → COMPLETED | ERROR`。
+
+### 4.2 调试报告
+
+`DebugReportService` 由已存的 span 构建层级 span 树，取耗时前 5 的热点，并汇总错误点。
+
+---
+
+## 5. 诊断流水线
 
 ```mermaid
 sequenceDiagram
-    participant Agent as OTel Java Agent
-    participant Otlp as OtlpReceiverController
-    participant Ingest as SpanIngestionService
-    participant Index as ExceptionSpanIndex
-    participant Repo as ApmSpanRepository
-
-    Agent->>Otlp: POST /v1/traces (protobuf)
-    Otlp->>Otlp: protobuf → JSON → POJO
-    Otlp->>Ingest: ingest(traceData)
-    Ingest->>Ingest: 解析 resourceSpans → ApmSpanEntity[]
-    Ingest->>Ingest: 检测异常 span (status.code = ERROR)
-    Ingest->>Index: 索引异常 span (按 traceId)
-    Ingest->>Repo: 持久化所有 span (SQLite)
-```
-
-### 3.2 LLM 诊断流水线
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant Ctrl as DiagnoseController
+    participant C as 客户端
+    participant DC as DiagnoseController
     participant FS as FailureLocatorService
-    participant Dedup as DedupCache
-    participant Index as ExceptionSpanIndex
-    participant KG as KgEnricher
-    participant LLM as LlmDiagnoser
-    participant Store as ReportStore
+    participant DD as DiagnosisDedupCache
+    participant IX as ExceptionSpanIndex
+    participant KE as KgEnricher
+    participant LLM as LlmDiagnoseAdapter
+    participant RS as DiagnosisReportStore
 
-    C->>Ctrl: POST /api/apm/diagnose {traceId, projectPath}
-    Ctrl->>FS: startDiagnose(request)
-    FS->>Dedup: 检查去重
-    alt 去重命中
-        FS-->>Ctrl: existingReportId
+    C->>DC: POST /api/apm/diagnose {traceId, projectPath}
+    DC->>FS: startDiagnose
+    FS->>DD: registerOrGet(traceId, projectPath)
+    alt 同一 (traceId, projectPath) 已有诊断
+        FS-->>C: 已有的 reportId
     else 新诊断
-        FS->>Store: createPending(reportId)
-        FS-->>Ctrl: reportId
-        Note over FS: 异步线程
-        FS->>Store: transition(RUNNING)
-        FS->>Index: getByTraceId(traceId)
-        Index-->>FS: exceptionSpans
-        FS->>KG: enrich(projectPath, spans)
-        KG-->>FS: evidenceAnchors
-        FS->>LLM: diagnose(projectPath, spans, evidence)
-        LLM-->>FS: {rootCauseMarkdown, confidence}
-        FS->>Store: markDone(reportId, result)
+        FS->>RS: createPending
+        FS-->>C: reportId
+        Note over FS: apmDiagnoseExecutor 异步
+        FS->>RS: RUNNING
+        FS->>IX: 取该 trace 的异常 span
+        FS->>KE: KG 丰富（可关）
+        FS->>LLM: 诊断
+        FS->>RS: DONE / LOW_CONFIDENCE / FAILED / TIMEOUT
     end
-    C->>Ctrl: GET /api/apm/diagnose/{reportId}
-    Ctrl->>Store: findById(reportId)
-    Store-->>Ctrl: DiagnoseReport
-    Ctrl-->>C: report
+    C->>DC: GET /api/apm/diagnose/{reportId}/status
 ```
 
-### 3.3 APM 调试会话流程
+### 5.1 报告状态 `DiagnoseReport.Status`
 
-```mermaid
-flowchart LR
-    Launch["POST /api/apm/launch\n启动目标进程 + OTel Agent"]:::entry
-    Execute["POST /api/apm/execute\n发送 HTTP 请求到目标"]:::process
-    Collect["自动收集 spans"]:::process
-    Stop["POST /api/apm/stop\n停止进程"]:::process
-    Report["GET /api/apm/report/{sessionId}\n查看执行报告"]:::done
+`PENDING → RUNNING → DONE | FAILED | CANCELLED | TIMEOUT | LOW_CONFIDENCE`。后五个为终态。
 
-    Launch --> Execute --> Collect --> Stop --> Report
+### 5.2 KG 丰富 `KgEnricherImpl`
 
-    classDef entry fill:#1565c0,color:#fff
-    classDef process fill:#e3f2fd
-    classDef done fill:#2e7d32,color:#fff
-```
+对异常 span 中每个不同的 `(className, methodName)` 解析一个 KG 方法锚点；只对第一个异常 span 追取最多 3 个直接上游调用方。装配条件：上下文里有 `KgQueryFacade`（即 `Neo4jMethodNodeRepository` 存在）；否则使用返回空列表的 no-op 实现。
+
+### 5.3 缓存
+
+| 组件 | 键 | 容量与过期 |
+|------|-----|-----------|
+| `DiagnosisReportStore` | `reportId` | 最多 500 条，访问后 2 小时过期；内部约束状态机只能向前流转 |
+| `DiagnosisDedupCache` | `traceId + "|" + projectPath` → `reportId` | 最多 2000 条，30 分钟 |
+| `ExceptionSpanIndex` | `traceId` → 异常 span 列表 | 最多 10000 个 trace，2 小时，每 trace 最多 50 个 span |
+
+三个缓存都是进程内的，重启后丢失。
+
+### 5.4 错误码 `ApmErrorCode`
+
+| 区段 | 取值 |
+|------|------|
+| 1xxx OTel Agent / 目标进程 | `OTEL_AGENT_DOWNLOAD_FAILED` 1001、`OTEL_EXTENSION_MISSING` 1002、`OTEL_MDC_BROKEN` 1003、`OTEL_NO_SPAN_RECEIVED` 1004、`OTEL_PROCESS_DEAD` 1005 |
+| 2xxx span 接收 | `INGEST_PARSE_FAILED` 2001、`INGEST_OVERLOAD` 2002 |
+| 3xxx 诊断 | `DIAGNOSE_TRACE_NOT_FOUND` 3001、`DIAGNOSE_REQUEST_DUPLICATED` 3002、`DIAGNOSE_TIMEOUT` 3003、`DIAGNOSE_CANCELLED` 3004、`DIAGNOSE_NO_EXCEPTION_SPANS` 3006、`DIAGNOSE_INTERNAL_ERROR` 3500 |
+| 4xxx LLM | `LLM_RATE_LIMITED` 4001、`LLM_TIMEOUT` 4002、`LLM_BUDGET_EXCEEDED` 4003、`LLM_INVALID_RESPONSE` 4004、`LLM_UPSTREAM_ERROR` 4500 |
+| 5xxx 图谱 | `KG_UNAVAILABLE` 5001、`KG_QUERY_TIMEOUT` 5002、`KG_METHOD_NOT_FOUND` 5003 |
+| 9xxx 测试 | `TEST_FIXTURE_MISSING` 9001 |
 
 ---
 
-## 4. REST 端点
+## 6. REST 端点与 WebSocket
 
-### 4.1 APM 调试会话（`/api/apm`）
+鉴权：GET 放行；POST / PUT / DELETE 需要管理员。`/v1/traces` 是 POST，按同一规则同样需要管理员令牌。
+
+### 6.1 调试会话 `/api/apm`
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/apm/launch` | 启动目标进程 + OTel Agent |
-| POST | `/api/apm/execute` | 发送 HTTP 请求到目标进程 |
+| POST | `/api/apm/launch` | 启动目标进程并挂载 OTel agent |
+| POST | `/api/apm/execute` | 向目标进程发 HTTP 请求 |
 | POST | `/api/apm/stop` | 停止目标进程 |
-| GET | `/api/apm/sessions` | 列出活跃/最近会话 |
+| GET | `/api/apm/sessions` | 会话列表，`limit` 默认 20 |
 | GET | `/api/apm/session/{id}` | 会话详情 |
-| GET | `/api/apm/spans/{sessionId}` | 会话收集的 spans |
-| GET | `/api/apm/trace/{traceId}` | 按 traceId 查看 span 树 |
-| GET | `/api/apm/report/{sessionId}` | 执行报告 |
-| GET | `/api/apm/process-output/{sessionId}` | 进程 stdout 输出 |
+| GET | `/api/apm/spans/{sessionId}` | 会话采集的 span |
+| GET | `/api/apm/trace/{traceId}` | 按 trace 查看 span 树 |
+| GET | `/api/apm/report/{sessionId}` | 调试报告 |
+| GET | `/api/apm/process-output/{sessionId}` | 进程 stdout，`maxLines` 默认 100 |
 | POST | `/api/apm/dev/register-session` | 开发用：手动注册会话 |
 
-### 4.2 诊断流水线（`/api/apm/diagnose`）
+### 6.2 诊断 `/api/apm/diagnose`
+
+控制器整体受 `hisi.apm.diagnose.enabled` 控制（缺省视为开启）。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/apm/diagnose` | 提交诊断请求（异步，返回 reportId） |
-| GET | `/api/apm/diagnose/{reportId}` | 获取完整诊断报告 |
-| GET | `/api/apm/diagnose/{reportId}/status` | 轻量状态轮询 |
-| DELETE | `/api/apm/diagnose/{reportId}` | 取消进行中的诊断 |
+| POST | `/api/apm/diagnose` | 提交诊断；请求体 `traceId`、`projectPath` 必填；返回 `reportId` |
+| GET | `/api/apm/diagnose/{reportId}` | 完整报告 |
+| GET | `/api/apm/diagnose/{reportId}/status` | 状态：`reportId`、`status`、起止时间、耗时、置信度、错误码 |
+| DELETE | `/api/apm/diagnose/{reportId}` | 取消 |
 
-### 4.3 OTel 接收（`/v1/traces`）
+### 6.3 测试用例 `/api/apm/test-cases`
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/v1/traces` | OTLP/HTTP protobuf trace 接收 |
-| POST | `/v1/traces` | OTLP/JSON trace 接收（向后兼容） |
+| GET | `/api/apm/test-cases` | 按 `projectPath` 列出 |
+| GET / PUT / DELETE | `/api/apm/test-cases/{id}` | 查、改、删 |
+| POST | `/api/apm/test-cases` | 新建 |
 
----
+### 6.4 OTLP 接收
 
-## 5. 数据模型
-
-### 5.1 诊断报告状态机
-
-```mermaid
-stateDiagram-v2
-    [*] --> PENDING: startDiagnose
-    PENDING --> RUNNING: 异步开始
-    RUNNING --> DONE: 诊断完成
-    RUNNING --> LOW_CONFIDENCE: 置信度低
-    RUNNING --> FAILED: 异常
-    RUNNING --> TIMEOUT: 超时
-    PENDING --> CANCELLED: 用户取消
-    RUNNING --> CANCELLED: 用户取消
-    DONE --> [*]
-    LOW_CONFIDENCE --> [*]
-    FAILED --> [*]
-    TIMEOUT --> [*]
-    CANCELLED --> [*]
-```
-
-### 5.2 核心实体
-
-| 实体 | 说明 |
-|------|------|
-| `ApmSession` | APM 调试会话（进程、状态、时间） |
-| `ApmSpanEntity` | OTel span 实体（traceId、spanId、parentSpanId、name、status、attributes） |
-| `DiagnoseReport` | 诊断报告（status、rootCauseMarkdown、confidence、evidenceAnchors、errorCode） |
-| `DiagnoseRequest` | 诊断请求（traceId、projectPath、userNote、forceRefresh） |
-| `DebugReport` | 调试执行报告（请求/响应、spans、耗时） |
-| `OtlpTraceData` | OTLP trace 数据结构（resourceSpans、scopeSpans、span） |
-
----
-
-## 6. 配置项
-
-| 配置 | 默认 | 说明 |
+| 方法 | 路径 | 说明 |
 |------|------|------|
-| `hisi.apm.diagnose.enabled` | `true` | 诊断功能开关 |
-| `hisi.apm.diagnose.timeout-seconds` | `120` | 诊断超时 |
-| `hisi.apm.diagnose.kg-enabled` | `true` | KG 丰富开关 |
+| POST | `/v1/traces` | 接收 OTLP/HTTP protobuf 与 OTLP/JSON |
+
+### 6.5 WebSocket `/ws/apm`
+
+`ApmWebSocketHandler` 向前端推送 span 批次与事件；单次发送时限 5000 毫秒，缓冲上限 65536 字节。
+
+---
+
+## 7. 数据模型
+
+### `apm_session`
+
+`id`（TEXT PK）、`project_path`、`service_name`、`target_port`、`status`（默认 `CREATED`）、`created_at`、`finished_at`。
+
+### `apm_span`
+
+`id`、`session_id`、`trace_id`、`span_id`、`parent_span_id`、`service_name`、`operation_name`、`span_kind`、`start_time_ns`、`end_time_ns`、`status_code`、`status_message`、`attributes`、`resource_attrs`、`kg_node_id`、`kg_match_level`（默认 3）、`created_at`。索引：`trace_id`、`session_id`、`created_at`。
+
+### `apm_test_case`
+
+`id`、`name`、`project_path`、`entry_node_id`、`method`、`url`、`headers`、`params`、`body`、`created_at`、`updated_at`。索引：`project_path`。
+
+---
+
+## 8. 配置项
+
+| 键 | 代码默认值 | 说明 |
+|----|-----------|------|
+| `hisi.apm.diagnose.enabled` | `true` | 诊断功能总开关 |
+| `hisi.apm.diagnose.executor-core-pool-size` / `executor-max-pool-size` / `executor-queue-capacity` / `executor-keep-alive-seconds` | `2` / `8` / `100` / `60` | 诊断专用线程池 `apmDiagnoseExecutor`（线程前缀 `apm-diagnose-`，拒绝策略 `CallerRunsPolicy`） |
+| `hisi.apm.diagnose.timeout-seconds` | `60` | 单次诊断的总时限 |
 | `hisi.apm.diagnose.llm-enabled` | `true` | LLM 诊断开关 |
-| `hisi.apm.diagnose.confidence-low-threshold` | `0.4` | 低置信度阈值 |
-| `hisi.apm.llm.provider` | `claude` | LLM 提供商（claude / openai-compatible） |
-| `hisi.apm.llm.model` | `claude-sonnet-4-20250514` | 模型名 |
+| `hisi.apm.diagnose.llm-timeout-seconds` | `45` | 单次 LLM 调用超时 |
+| `hisi.apm.diagnose.kg-enabled` | `true` | KG 丰富开关 |
+| `hisi.apm.diagnose.confidence-low-threshold` | `0.5` | 低于该置信度记 `LOW_CONFIDENCE` |
+| `hisi.apm.diagnose.llm.base-url` / `model` / `api-key` | 见 `application.yml` / 空 | 诊断 LLM 网关；环境变量 `APM_DIAGNOSE_LLM_API_KEY` |
+| `hisi.apm.diagnose.llm.timeout-seconds` / `max-concurrency` / `temperature` / `max-tokens` | `40` / `2` / `0.2` / `8192` | 诊断 LLM 参数 |
+| `apm.otel-agent-version` | `2.14.0` | OTel agent 版本 |
+| `apm.otel-agent-path` | 空 | 本地 agent JAR 路径；环境变量 `APM_OTEL_AGENT_PATH` |
+| `apm.otel-extension-path` | 空 | 扩展包路径（`TargetProcessManager` 读取） |
+| `apm.target-ready-timeout-seconds` | 代码 60，yml `${APM_TARGET_READY_TIMEOUT:600}` | 目标 JVM 启动 + agent 加载 + 端口监听的总超时 |
+| `apm.span-ttl-hours` | `24` | span 保留时长 |
+| `apm.target-shutdown-grace-seconds` | `5` | 关闭宽限期 |
+| `apm.otlp-receiver-port` | `0` | `ApmConfig` 中的字段 |
+
+`ApmCleanupService` 每 10 分钟清理过期 span。
 
 ---
 
-## 7. 错误处理
+## 9. 错误处理
 
 | 场景 | 处理 |
 |------|------|
-| protobuf 解析失败 | 返回 500，日志记录 payload 大小 |
-| 无异常 span | 标记报告 FAILED，errorCode = `DIAGNOSE_NO_EXCEPTION_SPANS` |
-| LLM 超时 | 标记报告 TIMEOUT，errorCode = `LLM_TIMEOUT` |
-| LLM 响应无效 | errorCode = `LLM_INVALID_RESPONSE` |
-| 去重竞争 | 使用先到的 reportId，后到者复用 |
-| 诊断超时 | 异步检查 deadline，超时标记 TIMEOUT |
+| agent 下载失败 / 扩展缺失 | 错误码 1001 / 1002 |
+| 超时未收到 span | 1004 |
+| 目标进程已退出 | 1005 |
+| OTLP 解析失败 / 接收队列过载 | 2001 / 2002 |
+| trace 不存在 | 3001 |
+| 同一 `(traceId, projectPath)` 并发诊断 | 共用同一个 `reportId` |
+| 该 trace 没有异常 span | `FAILED`，错误码 3006 |
+| 诊断超时 / 取消 | `TIMEOUT` 3003 / `CANCELLED` 3004 |
+| LLM 超时 / 响应无法解析 / 限流 | 4002 / 4004 / 4001 |
+| 置信度低于阈值 | `LOW_CONFIDENCE` |
+| 诊断控制器内的 404 / 409 / 校验失败 | 由控制器内的异常处理方法转成对应响应 |
 
 ---
 
-## 8. 已知问题与扩展点
+## 10. 已知问题与扩展点
 
 | 问题 | 说明 |
 |------|------|
-| ExceptionSpanIndex 为内存索引 | 重启丢失，需重新接收 trace |
-| KgEnricher 默认为 no-op | 需配置 Neo4j 连接才启用 KG 丰富 |
+| 诊断报告与索引只在内存 | `DiagnosisReportStore`、`ExceptionSpanIndex` 重启即失，诊断结果不落库 |
+| `/v1/traces` 受管理员拦截 | OTel agent 以 POST 上报，而写操作要求管理员令牌 |
+| `ApmClaudeLlmClient` 类名与协议不符 | 实际走 OpenAI 兼容的 `/chat/completions` |
+| 旧 wiki 的若干描述已不成立 | 报告状态、错误码、配置键均以本页为准 |
 
 | 扩展点 | 方式 |
-|--------|------|
-| 新增 LLM 提供商 | 实现 `LlmDiagnoser` 接口 |
-| 自定义 KG 丰富逻辑 | 实现 `KgEnricher` 接口 |
-| 自定义诊断提示词 | 修改 `FailureLocatorPromptBuilder` |
+|-------|------|
+| 换诊断模型 | 改 `hisi.apm.diagnose.llm.*`，或提供另一个 `LlmClient` bean |
+| 换 KG 丰富逻辑 | 提供 `KgEnricher` 实现 |
+| 调整插桩范围 | `KgMethodIncludeBuilder` 的深度与数量上限 |
 
 ---
 
-> **延伸阅读**：
-> - 知识图谱丰富来源 → [知识图谱构建](./知识图谱构建.md)
-> - LLM 抽象层 → [应用启动与全局配置](./应用启动与全局配置.md)
-> - 端到端 APM 诊断流程 → [04-数据流程](../04-数据流程/index.md)
+## 11. 依赖关系
+
+| 方向 | 依赖 | 用途 |
+|------|------|------|
+| 上游 | `io.opentelemetry.proto`、`protobuf-java-util` | OTLP 解码 |
+| 上游 | [Neo4j图存储与检索](./Neo4j图存储与检索.md) | `KgQueryFacade` 查方法节点与上游调用方 |
+| 上游 | `service/UnifiedTextService` | 默认 `LlmClient` |
+| 下游 | [修复引擎fixengine](./修复引擎fixengine.md) | 共用 `LlmClient` |
+
+---
+
+> **相关文档**：
+> - 架构总览 → [02-架构设计](../02-架构设计/index.md)
+> - span 表结构 → [06-数据模型](../06-数据模型/index.md)
+> - 接口全表 → [05-接口文档](../05-接口文档/index.md)

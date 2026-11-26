@@ -1,13 +1,15 @@
 # HiSi DevTool Backend CodeWiki
 
-> 自动生成于 2026-05-08，基于 `main` 分支当前 HEAD 版本
-> 本手册由 codewiki-generator 技能自动产出，如需更新请重新运行该技能
+> 自动生成于 2026-11-26，基于 `99d0037` 版本
+> 由 codewiki-generator 技能产出，如需更新请重新运行该技能
 
 ---
 
 ## 项目简介
 
-HiSi DevTool Backend 是面向开发者的**代码理解与运维平台**后端服务，核心能力包括：基于 Neo4j 的代码知识图谱（Java + Python）、向量 + 全文 + 图三层混合检索、调用链与影响分析、Claude CLI 终端会话编排、日志诊断与根因分析。是 hisi 开发工具套件（前端 `hisi-dev-tool-frontend`、MCP 服务 `hisi-mcp-server`）的核心后端。
+HiSi DevTool Backend 是面向研发的**代码理解与运维平台**后端：把 Java / Python / TS-JS-Vue 源码解析成 Neo4j 知识图谱，在图谱之上做混合检索、影响分析、架构诊断、需求评估、日志与 APM 故障诊断，并让 agent 在受控的工具清单内查证证据、给出结论、在工作台里自动修复技术债。
+
+本手册只覆盖后端（`hisi-dev-tool/`）。前端与 MCP 服务各有独立手册。
 
 ---
 
@@ -15,15 +17,15 @@ HiSi DevTool Backend 是面向开发者的**代码理解与运维平台**后端�
 
 | 维度 | 信息 |
 |------|------|
-| **项目类型** | Spring Boot 单体后端服务（多功能 DevTool 平台） |
-| **技术栈** | Java 17 + Spring Boot 3.2.0 + Spring Data Neo4j + Neo4j 5.11+ + SQLite + WebSocket + PTY4J + Playwright + ANTLR4 + JavaParser |
-| **架构风格** | 分层单体 + 模块化包（`controller / service / scanner / knowledgegraph / neo4j / agent / handler`） |
-| **代码规模** | 约 278 个 Java 源文件（`src/main/java`） |
-| **模块数量** | 10 个核心功能模块 |
-| **API 数量** | 约 162 个 REST 端点（23 个 Controller）+ Terminal WebSocket |
-| **存储** | Neo4j 5.11+（图 + 原生 VECTOR INDEX）+ SQLite（本地会话/任务/缓存） |
-| **AI 能力** | OpenAI 兼容 `/embeddings` + `/chat/completions`，默认使用 Qwen3-VL-Embedding-8B（4096 维）+ glm-4-flash |
-| **部署方式** | 可执行 jar（`mvn package` + `java -jar`），默认端口 8080 |
+| **项目类型** | Spring Boot 单体后端（多能力 DevTool 平台） |
+| **技术栈** | Java 17 + Spring Boot 3.5.16 + Neo4j（图 + 向量索引）+ SQLite + WebSocket / PTY4J + JavaParser + ANTLR4 + pi agent 运行时（Node） |
+| **架构风格** | 分层单体：接入层 → 应用层（声明 + 编排）→ 领域服务层 → 基础设施层 |
+| **代码规模** | 674 个 Java 源文件（主代码约 11.6 万行），246 个测试文件 |
+| **模块数量** | 19 个 |
+| **接口数量** | 49 个控制器、359 条 REST 映射（358 个不同的「方法 + 路径」），7 个 WebSocket 端点 |
+| **存储** | Neo4j（15 种节点标签）；SQLite（28 张表，启动时自动建） |
+| **agent** | 17 个 ReAct agent、7 条工作流，全部在 `AgentRegistry` 一处声明 |
+| **部署方式** | 可执行 jar；首次启动自动安装 pi 并按需构建 `hisi-mcp-server` |
 
 ---
 
@@ -33,30 +35,30 @@ HiSi DevTool Backend 是面向开发者的**代码理解与运维平台**后端�
 
 | 章节 | 说明 | 适合谁 |
 |------|------|--------|
-| [项目概览](01-项目概览/index.md) | 使命、技术栈、快速启动、核心概念 | 新成员 |
-| [术语表](09-术语表/index.md) | 项目专有名词、领域概念 | 所有读者 |
+| [项目概览](01-项目概览/index.md) | 使命、技术栈、项目结构、快速启动、核心概念、演进 | 新成员 |
+| [术语表](09-术语表/index.md) | 专有名词、缩写、易混淆术语、已退役术语 | 所有读者 |
 
 ### 理解设计（深入）
 
 | 章节 | 说明 | 适合谁 |
 |------|------|--------|
-| [架构设计](02-架构设计/index.md) | 分层、C4 图、技术选型、质量属性 | 架构师 |
-| [技术决策](08-技术决策/index.md) | ADR 决策记录、方案对比 | 架构师、负责人 |
+| [架构设计](02-架构设计/index.md) | C4 图、分层、模块依赖、LLM 调用架构、质量属性、跨切面 | 架构师、技术负责人 |
+| [技术决策](08-技术决策/index.md) | 16 条决策记录，每条都有代码注释或提交记录作依据 | 架构师、想了解历史的人 |
 
 ### 开发参考（实操）
 
 | 章节 | 说明 | 适合谁 |
 |------|------|--------|
-| [模块说明](03-模块说明/) | 各功能模块的职责、接口、内部结构 | 开发者 |
-| [数据流程](04-数据流程/index.md) | 知识图谱构建/混合检索/终端会话/日志诊断 端到端流 | 开发者、测试 |
-| [接口文档](05-接口文档/index.md) | 23 个 Controller 的 REST + WebSocket 接口 | 前后端开发者 |
-| [数据模型](06-数据模型/index.md) | Neo4j 图节点、SQLite 表、DTO 定义 | 开发者 |
+| 模块说明（见下方模块列表） | 各模块职责、内部结构、接口、依赖、配置、已知问题 | 开发者 |
+| [数据流程](04-数据流程/index.md) | 8 条核心流程、5 个状态机、校验与一致性规则 | 开发者、测试 |
+| [接口文档](05-接口文档/index.md) | 全部 359 条接口的路径、方法、鉴权；SSE 与 WebSocket | 前后端开发者 |
+| [数据模型](06-数据模型/index.md) | 28 张 SQLite 表的数据字典、Neo4j 图模型、枚举 | 开发者 |
 
 ### 运维部署（运营）
 
 | 章节 | 说明 | 适合谁 |
 |------|------|--------|
-| [部署运维](07-部署运维/index.md) | 环境变量、Neo4j 准备、构建启动 | 运维、DevOps |
+| [部署运维](07-部署运维/index.md) | 环境要求、全部配置键与环境变量、启动自检流程、健康检查、常见问题 | 运维、DevOps |
 
 ---
 
@@ -64,16 +66,25 @@ HiSi DevTool Backend 是面向开发者的**代码理解与运维平台**后端�
 
 | # | 模块 | 文件 | 关键词 | 层级 |
 |---|------|------|--------|------|
-| 1 | 应用启动与全局配置 | [应用启动与全局配置.md](03-模块说明/应用启动与全局配置.md) | Spring Boot 入口、CORS、Neo4j、代理、WebSocket、异常处理 | 基础设施 |
-| 2 | REST 接口层 | [REST接口层.md](03-模块说明/REST接口层.md) | 23 个 Controller、162 个端点、ApiResponse 包装 | 表现层 |
-| 3 | 知识图谱构建 | [知识图谱构建.md](03-模块说明/知识图谱构建.md) | JavaParser、Python ANTLR4、扫描器、增量更新 | 应用层 |
-| 4 | Neo4j 图存储与检索 | [Neo4j图存储与检索.md](03-模块说明/Neo4j图存储与检索.md) | MethodNode、混合检索、向量索引、RRF | 服务层 |
-| 5 | 终端与 WebSocket | [终端与WebSocket.md](03-模块说明/终端与WebSocket.md) | PTY4J、Claude CLI、TerminalWebSocketHandler | 表现层 |
-| 6 | 智能诊断与对话 | [智能诊断与对话.md](03-模块说明/智能诊断与对话.md) | DiagnosticAgent、Intent、DialogContext | 应用层 |
-| 7 | 影响分析与风险评估 | [影响分析与风险评估.md](03-模块说明/影响分析与风险评估.md) | impact / risk / suggestion / semantic | 服务层 |
-| 8 | 会话与工作区 | [会话与工作区.md](03-模块说明/会话与工作区.md) | ClaudeSession、WorkspaceSession、SQLite 持久化 | 服务层 |
-| 9 | 日志云与运维 | [日志云与运维.md](03-模块说明/日志云与运维.md) | LogCloudService、Playwright、根因分析 | 服务层 |
-| 10 | 技能市场与提示词 | [技能市场与提示词.md](03-模块说明/技能市场与提示词.md) | SkillService、PromptService、codeai-skills 资源 | 应用层 |
+| 1 | 应用启动与全局配置 | [应用启动与全局配置](03-模块说明/应用启动与全局配置.md) | 启动顺序、建表、JWT 鉴权、角色拦截、CORS、Neo4j 装配、日志 | 基础设施层 |
+| 2 | pi agent 底座 | [pi-agent底座](03-模块说明/pi-agent底座.md) | `AgentRegistry`、每流工具清单、上下文预算、pi 安装与运行 | 基础设施层 |
+| 3 | 工作流引擎 | [工作流引擎](03-模块说明/工作流引擎.md) | `DagExecutor`、检查点、确认门、澄清、SSE、统一工作流接口 | 应用层 |
+| 4 | 工作台与自动修复 | [工作台与自动修复](03-模块说明/工作台与自动修复.md) | 待办聚合、SDD 八阶段、方案确认门、迭代回路 | 应用层 |
+| 5 | 架构诊断 | [架构诊断](03-模块说明/架构诊断.md) | 四层坏味道、健康评分、快照、垂直领域、深度分析工作流 | 领域服务层 |
+| 6 | 知识图谱构建 | [知识图谱构建](03-模块说明/知识图谱构建.md) | 生成队列、多语言解析、聚合管道、向量与描述 | 领域服务层 |
+| 7 | Neo4j 图存储与检索 | [Neo4j图存储与检索](03-模块说明/Neo4j图存储与检索.md) | 节点与关系、约束与索引、混合检索、加权 RRF | 基础设施层 + 领域服务层 |
+| 8 | RAM 需求评估 | [RAM需求评估](03-模块说明/RAM需求评估.md) | 需求分析链、影响环、验证节点、对话助手 | 应用层 + 领域服务层 |
+| 9 | 影响分析与风险评估 | [影响分析与风险评估](03-模块说明/影响分析与风险评估.md) | 静态调用链、风险权重、回归用例 | 领域服务层 |
+| 10 | 合并影响分析 | [合并影响分析](03-模块说明/合并影响分析.md) | JGit diff、影响面、测试范围、SSE | 应用层 |
+| 11 | APM 故障诊断 | [APM故障诊断](03-模块说明/APM故障诊断.md) | OTLP 接收、调试会话、span 到图谱映射、诊断流水线 | 应用层 + 基础设施层 |
+| 12 | 智能诊断与对话 | [智能诊断与对话](03-模块说明/智能诊断与对话.md) | 通用对话 SSE、多 Agent 诊断框架 | 应用层 |
+| 13 | 日志云与运维 | [日志云与运维](03-模块说明/日志云与运维.md) | 日志拉取、v1 / v2 分析流水线、证据与验证、追问、运维接口 | 应用层 + 领域服务层 |
+| 14 | 修复引擎 fixengine | [修复引擎fixengine](03-模块说明/修复引擎fixengine.md) | 9 步修复流水线、worktree、复现用例 | 应用层 |
+| 15 | 技能市场与提示词 | [技能市场与提示词](03-模块说明/技能市场与提示词.md) | 技能安装、KG Skills 套件、MCP 安装、提示词模板 | 应用层 |
+| 16 | 远程项目管理 | [远程项目管理](03-模块说明/远程项目管理.md) | 远程仓库、克隆、项目分组、KG 定时调度、术语表、桥接扫描器 | 领域服务层 |
+| 17 | 会话与工作区 | [会话与工作区](03-模块说明/会话与工作区.md) | 终端会话、消息、工作区会话 | 领域服务层 |
+| 18 | REST 接口层 | [REST接口层](03-模块说明/REST接口层.md) | 49 个控制器、响应约定、鉴权矩阵、应用配置接口 | 接入层 |
+| 19 | 终端与 WebSocket | [终端与WebSocket](03-模块说明/终端与WebSocket.md) | 伪终端、`claude` CLI、7 个 WebSocket 端点、统一网关 | 接入层 + 基础设施层 |
 
 ---
 
@@ -81,20 +92,55 @@ HiSi DevTool Backend 是面向开发者的**代码理解与运维平台**后端�
 
 | 角色 | 路径 |
 |------|------|
-| 新成员入职 | 01-项目概览 → 09-术语表 → 02-架构设计 → 03-模块说明（按所属包） |
-| 知识图谱开发 | 03-模块说明/知识图谱构建 → 03-模块说明/Neo4j图存储与检索 → 04-数据流程 |
-| 接入新 LLM | 03-模块说明/应用启动与全局配置（embedding / text-model 段） → 08-技术决策（OpenAI 兼容协议） |
-| Bug 修复 | 04-数据流程 → 03-模块说明（相关模块） → 07-部署运维（日志） |
-| 接口对接 | 05-接口文档 → 06-数据模型 |
+| 新成员入职 | 项目概览 → 术语表 → 架构设计 → 所属模块文档 |
+| 做图谱或检索 | [知识图谱构建](03-模块说明/知识图谱构建.md) → [Neo4j图存储与检索](03-模块说明/Neo4j图存储与检索.md) → [数据流程](04-数据流程/index.md) |
+| 做 agent 相关功能 | [pi-agent底座](03-模块说明/pi-agent底座.md) → [工作流引擎](03-模块说明/工作流引擎.md) → 对应业务模块 |
+| 接口对接 | [接口文档](05-接口文档/index.md) → [REST接口层](03-模块说明/REST接口层.md)（鉴权矩阵） → [数据模型](06-数据模型/index.md) |
+| 排查问题 | [数据流程](04-数据流程/index.md)（找到对应流程） → 模块文档的「错误处理」 → [部署运维](07-部署运维/index.md) |
+| 部署 | [部署运维](07-部署运维/index.md) → [应用启动与全局配置](03-模块说明/应用启动与全局配置.md) |
+| 了解为什么这样设计 | [技术决策](08-技术决策/index.md) → [架构设计](02-架构设计/index.md) |
+
+---
+
+## 三分钟理解系统
+
+```mermaid
+flowchart LR
+    SRC["源码仓库"]:::entry
+    KG["知识图谱<br/>Neo4j"]:::data
+    AG["agent 流程<br/>经 pi 执行"]:::proc
+    OUT["结论与产物<br/>报告、待办、修复分支"]:::done
+    BASE["pi 底座<br/>工具清单 + 上下文预算"]:::core
+    WF["工作流引擎<br/>检查点 + 人在环"]:::core
+
+    SRC -->|"解析、向量化"| KG
+    KG -->|"检索、调用链"| AG
+    AG --> OUT
+    BASE --> AG
+    WF --> AG
+
+    classDef entry fill:#1565c0,stroke:#0d47a1,color:#fff
+    classDef data fill:#e8f5e9,stroke:#388e3c,color:#1b5e20
+    classDef proc fill:#e3f2fd,stroke:#1976d2,color:#0d47a1
+    classDef core fill:#fff8e1,stroke:#f57c00,color:#e65100
+    classDef done fill:#2e7d32,stroke:#1b5e20,color:#fff
+```
+
+读代码前先知道的三件事：
+
+1. **模型调用有两条路**。agent 类流程全部经 pi；向量、KG 描述生成、架构聚合标注、APM 诊断与修复引擎仍是直连客户端。边界见 [pi-agent底座](03-模块说明/pi-agent底座.md)。
+2. **agent 一处声明**。17 个 ReAct agent 和 7 条工作流都在 `AgentRegistry`；但只有 4 条工作流能经统一工作流接口启动，其余 3 条由各自的运行器驱动，见 [工作流引擎](03-模块说明/工作流引擎.md)。
+3. **错误语义不统一**。拦截器返回真实的 401 / 403；多数业务接口 HTTP 200、错误看响应体的 `code`。见 [REST接口层](03-模块说明/REST接口层.md)。
 
 ---
 
 ## 技术栈标签云
 
 ```
-Java 17 · Spring Boot 3.2.0 · Spring Data Neo4j · Neo4j 5.11+ · SQLite · Lombok ·
-JavaParser · ANTLR4 · PTY4J · Playwright · Jsoup · OkHttp · Caffeine · Reactor ·
-ONNX Runtime · DJL Tokenizers · WebSocket · JaCoCo · TestContainers
+Java 17 · Spring Boot 3.5.16 · Spring Web MVC · WebSocket · SSE · JWT ·
+Neo4j · Spring Data Neo4j · neo4j-harness · SQLite · JGit · PTY4J ·
+JavaParser · ANTLR4 · codegraph · Caffeine · Reactor · Jackson · FastJSON2 ·
+pi-coding-agent · hisi-mcp-server · JaCoCo · Testcontainers
 ```
 
 ---
@@ -103,11 +149,12 @@ ONNX Runtime · DJL Tokenizers · WebSocket · JaCoCo · TestContainers
 
 | 日期 | 版本 | 变更内容 |
 |------|------|---------|
-| 2026-05-08 | v1.0 | 初始生成（基于 codewiki-generator 技能） |
+| 2026-11-26 | v2 | 基于 `99d0037` 全量重写：模块文档由 14 份扩为 19 份，新增 pi agent 底座、工作台与自动修复、工作流引擎、架构诊断、修复引擎；全部接口、配置键、表名对照代码重新核实 |
+| 2026-05-08 | v1 | 初始生成 |
 
 ---
 
 > **延伸阅读**：
-> - 快速了解项目 → [01-项目概览](01-项目概览/index.md)
-> - 理解系统设计 → [02-架构设计](02-架构设计/index.md)
-> - 查阅接口定义 → [05-接口文档](05-接口文档/index.md)
+> - 快速了解项目 → [项目概览](01-项目概览/index.md)
+> - 理解系统设计 → [架构设计](02-架构设计/index.md)
+> - 查阅接口定义 → [接口文档](05-接口文档/index.md)

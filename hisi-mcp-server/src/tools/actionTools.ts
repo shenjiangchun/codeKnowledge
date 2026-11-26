@@ -1,7 +1,8 @@
 /**
  * RAM 对话助手的动作工具：以用户身份（HISI_SCOPE_TOKEN）调后端发起分析、提交澄清、确认节点。
  *
- * 令牌由 pi 会话的环境变量传入（后端 PiFlowClient.runWithToken → mcp.json 的 ${HISI_SCOPE_TOKEN} 引用）。
+ * 令牌由 pi 会话的环境变量传入（后端 PiFlowClient.runWithToken 启动 pi 时放入环境，pi 把自身环境
+ * 原样传给 stdio MCP 子进程——mcp.json 只写启动命令、不写 env，也不写 ${...} 占位引用）。
  * 没有令牌时一律返回明确的权限错误——动作工具绝不能以匿名身份执行。
  */
 import { getApiClient } from '../client/apiClient.js';
