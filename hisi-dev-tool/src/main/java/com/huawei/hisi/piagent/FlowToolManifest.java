@@ -56,12 +56,16 @@ public final class FlowToolManifest {
             "act_start_analysis", "act_start_status", "act_resume_session",
             "act_submit_clarification", "act_confirm_node");
 
-    /** 通用对话的只读工具：图谱 + 日志 + APM。 */
+    /**
+     * 通用对话的只读工具：图谱 + 日志 + APM。APM 只取查询类——发起会话、执行请求、停止会话会动被测应用，
+     * 不属于只读清单。
+     */
     static final List<String> CHAT_MCP = List.of(
             "hybrid_search", "kg_method_detail", "kg_method_by_class", "kg_root_entries",
             "kg_callees_tree", "kg_entry_points", "kg_bridges", "kg_dashboard", "kg_hotspots",
             "kg_domains", "kg_service_topology", "kg_blast_radius", "kg_api_consumers",
-            "log_query", "log_report", "log_report_status", "apm_spans", "apm_metrics");
+            "log_query", "log_report", "log_report_status",
+            "apm_list_traces", "apm_get_trace", "apm_get_report");
 
     private static final String MCP_PREFIX = "mcp__hisi_mcp_server__";
 

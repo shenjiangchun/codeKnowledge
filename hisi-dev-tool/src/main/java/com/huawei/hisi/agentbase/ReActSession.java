@@ -56,10 +56,11 @@ public class ReActSession {
     public Result run(AgentRegistry.ReactAgent agent, String sessionId, Path workdir,
                       String systemPrompt, String userPrompt,
                       Consumer<Map<String, Object>> eventSink, BooleanSupplier cancelled, String scopeToken) {
-        // skill 目录要等 pi 装好才同步出来，所以得先确认已安装，再解析 skill 路径
+        // skill 目录要等 pi 装好才同步出来，所以得先确认已安装，再解析 skill 路径；
+        // 没就绪（后台安装中或装失败）就直接交给 pi 客户端报"pi 未就绪"，不去碰还不存在的目录
         installer.ensureReady();
         List<Path> skills = new ArrayList<>();
-        for (String name : agent.skills()) {
+        for (String name : installer.ready() ? agent.skills() : List.<String>of()) {
             Path skill = installer.skillPath(name);
             if (java.nio.file.Files.isDirectory(skill)) {
                 skills.add(skill);

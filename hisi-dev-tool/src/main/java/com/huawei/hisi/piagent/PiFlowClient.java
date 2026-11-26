@@ -193,7 +193,9 @@ public class PiFlowClient {
         Map<String, String> env = new LinkedHashMap<>();
         env.put("PI_CODING_AGENT_DIR", installer.agentDir().toString());
         env.put("HISI_LLM_KEY", anthropicApiKey == null ? "" : anthropicApiKey);
-        // 动作工具以用户身份调后端时用；只读流不传（MCP 服务里拿不到就等于没权限）
+        // MCP 服务是 pi 拉起的子进程，直接继承这份环境：后端地址每次都给；动作工具以用户身份调后端时用的令牌
+        // 只在带用户的流里给——只读流的 MCP 进程里拿不到它，动作工具一律拒绝
+        env.put("HISI_API_URL", installer.backendBaseUrl());
         if (scopeToken != null && !scopeToken.isBlank()) {
             env.put("HISI_SCOPE_TOKEN", scopeToken);
         }

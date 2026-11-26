@@ -24,7 +24,8 @@ import java.util.concurrent.TimeUnit;
  * <ul>
  *   <li>{@code <agent-dir>/models.json}：网关 provider，apiKey 用 {@code $HISI_LLM_KEY} 环境插值——
  *       真实密钥由进程启动时注入环境变量，不落盘；</li>
- *   <li>{@code <agent-dir>/mcp.json}：hisi-mcp-server 的 stdio 连接（35 个只读工具）；</li>
+ *   <li>{@code <agent-dir>/mcp.json}：hisi-mcp-server 的 stdio 连接（35 个只读工具 + 5 个 act_* 动作工具，每个流按清单取子集）；
+ *       不写 env，MCP 子进程直接继承 pi 进程的环境；</li>
  *   <li>{@code <agent-dir>/settings.json}：pi 自带会话压缩的触发阈值与保留量（上下文管理的第二层）。</li>
  * </ul>
  */
@@ -42,6 +43,8 @@ public class PiAgentInstaller {
     // 可能被多个流的线程读写（ensureReady 会重入 ensure），要保证可见性
     private volatile Path installDir;
     private volatile Path agentDir;
+    /** pi 装好、配置写完之后的就绪标志；安装过程中保持 false，流这时调用 ensureReady() 会等 ensure() 结束。 */
+    private volatile boolean ready;
 
     public PiAgentInstaller(PiAgentProperties properties,
                             Environment environment) {
@@ -49,21 +52,36 @@ public class PiAgentInstaller {
         this.environment = environment;
     }
 
-    /** 启动时的自检：已安装直接过；没装（或上次没装完）就装到 {@code piagent.install-dir}。 */
+    /**
+     * 启动自检。已经装好就同步把配置写完（很快）；需要跑 npm 时（pi 没装、hisi-mcp-server 要构建）
+     * 转后台线程——远端慢网络上 npm 可能跑好几分钟，不能让启动卡在这里。
+     */
     @PostConstruct
-    public synchronized void ensure() {
-        if (!properties.isEnabled()) {
-            log.info("[PiAgent] 未启用，跳过安装");
+    void init() {
+        if (skipped()) {
             return;
         }
-        // 测试上下文（@SpringBootTest + test profile）不真正安装/写配置
-        for (String profile : environment.getActiveProfiles()) {
-            if ("test".equals(profile)) {
-                log.info("[PiAgent] test profile，跳过安装");
+        try {
+            installDir = resolve(properties.getInstallDir());
+            agentDir = resolve(properties.getAgentDir());
+            if (needsNpm()) {
+                log.info("[PiAgent] pi 未安装或 hisi-mcp-server 需要构建：转入后台执行，不阻塞启动（首次有流要用时会等它完成）");
+                Thread worker = new Thread(this::ensure, "pi-agent-install");
+                worker.setDaemon(true);
+                worker.start();
                 return;
             }
+        } catch (Exception e) {
+            log.error("[PiAgent] 安装目录不可用: {}", e.getMessage());
+            installDir = null;
+            return;
         }
-        if (ready()) {
+        ensure();
+    }
+
+    /** 自检与安装：已就绪直接返回；否则装 pi、构建 MCP、生成配置，全部完成才置就绪。 */
+    public synchronized void ensure() {
+        if (skipped() || ready()) {
             return;
         }
         try {
@@ -79,17 +97,47 @@ public class PiAgentInstaller {
             writeMcpJson();
             writeSettingsJson();
             syncSkills();
+            ready = true;
             log.info("[PiAgent] 就绪: cli={} agentDir={}", cliEntry(), agentDir);
         } catch (Exception e) {
             // 安装失败不阻断启动；但所有 agent 流都依赖 pi，装好之前它们都不可用——
             // 下一次有流要用 pi 时 ensureReady() 会再装一次，不需要重启后端
             log.error("[PiAgent] 安装/初始化失败，pi 相关功能在装好之前不可用（下次执行时会自动重试）: {}", e.getMessage());
+            ready = false;
             installDir = null;
         }
     }
 
+    /** 总开关关闭、或测试上下文（@SpringBootTest + test profile）时不安装、不写配置。 */
+    private boolean skipped() {
+        if (!properties.isEnabled()) {
+            log.info("[PiAgent] 未启用，跳过安装");
+            return true;
+        }
+        for (String profile : environment.getActiveProfiles()) {
+            if ("test".equals(profile)) {
+                log.info("[PiAgent] test profile，跳过安装");
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 需要跑 npm 的两件事：pi 没装好；hisi-mcp-server 的 dist 缺失或比源码旧。 */
+    private boolean needsNpm() throws Exception {
+        if (!piInstalled()) {
+            return true;
+        }
+        Path project = resolveMcpProject();
+        if (project == null) {
+            return false;
+        }
+        Path dist = project.resolve("dist").resolve("index.js");
+        return !Files.exists(dist) || mcpSourcesNewerThan(project, dist);
+    }
+
     /**
-     * 流要用 pi 之前调：已就绪直接返回；启动时没装上（网络抖动、装到一半被打断等）就在这里再装一次。
+     * 流要用 pi 之前调：已就绪直接返回；启动时没装上、或后台安装还在进行，就在这里等它装完。
      * 总开关关着时不重试。
      */
     public void ensureReady() {
@@ -104,7 +152,7 @@ public class PiAgentInstaller {
     }
 
     public Path agentDir() { return agentDir; }
-    public boolean ready() { return installDir != null; }
+    public boolean ready() { return ready; }
 
     /** skill 名 → pi skills 目录下的路径（供会话按声明装配 {@code --skill}）。 */
     public Path skillPath(String name) {
@@ -122,10 +170,10 @@ public class PiAgentInstaller {
     }
 
     private void ensurePackage() throws Exception {
-        Path packageDir = installDir.resolve("node_modules").resolve(PACKAGE);
-        if (isInstalled(packageDir.resolve("package.json"), cliEntry(), properties.getPackageVersion(), objectMapper)) {
+        if (piInstalled()) {
             return;
         }
+        Path packageDir = installDir.resolve("node_modules").resolve(PACKAGE);
         // 包目录在但入口不在（装到一半被打断）、或版本不对：npm 会认为已满足而什么都不做，先删掉再装
         if (Files.exists(packageDir)) {
             deleteRecursively(packageDir);
@@ -145,6 +193,12 @@ public class PiAgentInstaller {
         if (!Files.exists(cliEntry())) {
             throw new IllegalStateException("npm install 已结束但 pi 入口不存在：" + cliEntry());
         }
+    }
+
+    /** pi 本体是否装好：包版本与锁定版本一致，且 CLI 入口在。 */
+    private boolean piInstalled() {
+        return installDir != null && isInstalled(installDir.resolve("node_modules").resolve(PACKAGE).resolve("package.json"),
+                cliEntry(), properties.getPackageVersion(), objectMapper);
     }
 
     /**
@@ -203,17 +257,25 @@ public class PiAgentInstaller {
             log.warn("[PiAgent] 未找到 hisi-mcp-server 入口，跳过 mcp.json（MCP 工具不可用）");
             return;
         }
-        Map<String, Object> mcp = Map.of("mcpServers", Map.of("hisi-mcp-server", Map.of(
-                "command", "node",
-                "args", List.of(mcpDist),
-                "env", Map.of("HISI_API_URL", backendBaseUrl(),
-                        "HISI_SCOPE_TOKEN", "${HISI_SCOPE_TOKEN}"))));
+        Map<String, Object> mcp = Map.of("mcpServers",
+                Map.of("hisi-mcp-server", mcpServerEntry(Path.of(mcpDist))));
         Files.writeString(agentDir.resolve("mcp.json"),
                 objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(mcp), StandardCharsets.UTF_8);
     }
 
+    /**
+     * mcp.json 里只写启动命令，不写 {@code env}：pi 会把自身进程环境原样传给 stdio MCP 子进程（实测），
+     * {@code HISI_API_URL}、{@code HISI_SCOPE_TOKEN} 由 PiFlowClient 每次启动 pi 时按需放进环境。
+     *
+     * <p>不能在这里写 {@code ${HISI_SCOPE_TOKEN}} 这类环境变量引用：pi 把空值也当未设置、也不支持默认值写法，
+     * 只读流不带令牌时解析失败，整个 MCP 服务连接失败，所有只读 ReAct 流都拿不到工具（2026-11-26 真机故障）。
+     */
+    static Map<String, Object> mcpServerEntry(Path mcpDist) {
+        return Map.of("command", "node", "args", List.of(mcpDist.toString()));
+    }
+
     /** MCP 服务回头调后端用的地址：端口跟着 server.port 走，换端口启动时工具不会打到别的实例上。 */
-    private String backendBaseUrl() {
+    String backendBaseUrl() {
         return "http://localhost:" + environment.getProperty("server.port", "8080");
     }
 

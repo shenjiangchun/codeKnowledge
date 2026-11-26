@@ -8,6 +8,7 @@ import org.springframework.core.env.Environment;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
@@ -31,7 +32,17 @@ class PiAgentInstallerTest {
     Path dir;
 
     @Test
-    @DisplayName("包版本与锁定版本一致、CLI 入口在 → 已安装")
+    @DisplayName("mcp.json 的服务条目只有启动命令：不写 env，更不能有环境变量引用")
+    void mcpServerEntryHasOnlyCommandAndArgs() {
+        Map<String, Object> entry = PiAgentInstaller.mcpServerEntry(Path.of("D:/x/hisi-mcp-server/dist/index.js"));
+
+        assertThat(entry.keySet()).containsExactlyInAnyOrder("command", "args");
+        assertThat(entry.toString()).as("pi 把空值当未设置且不支持默认值，只读流不带令牌时引用会让 MCP 连接失败")
+                .doesNotContain("${");
+    }
+
+    @Test
+    @DisplayName("版本一致且 CLI 入口在 → 已安装")
     void matchingVersionWithCliEntryIsInstalled() throws Exception {
         writePackageJson(VERSION);
         touch(cli());

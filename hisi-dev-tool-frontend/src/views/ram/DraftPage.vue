@@ -1,18 +1,17 @@
 <script setup lang="ts">
 /**
- * RAM DraftPage (Wave-A refactor) — top-bar cost/status + DAG主视图 + 节点详情侧栏。
+ * RAM DraftPage — 顶栏（状态药丸 + 动作）+ DAG 主视图 + 节点详情。
  *
  * Layout:
  *   ┌─ top bar ───────────────────────────────────────────┐
- *   │ status pill │        spacer        │ actions        │
- *   ├─ DAG (horizontal 4-card) ───────────────────────────┤
- *   │  Clarify → Impact → Implement → Verify              │
- *   ├─ detail body (2-col) ───────────────────────────────┤
- *   │  Node detail (markdown + ring graph + …)  │ Events  │
- *   └─────────────────────────────────────────────────────┘
+ *   │ 标题 / #sid │ status pill │ spacer │ actions        │
+ *   ├─ clarify alert（仅在需要澄清时出现）                  │
+ *   ├─ DAG (horizontal 5-card) ───────────────────────────┤
+ *   │  Clarify → Impact → Implement → Verify → TechPlan   │
+ *   └─ detail body（单列：当前节点的进度 / 产物）───────────┘
  *
- * The DAG card a user clicks drives which "node detail" view is rendered on
- * the left of the body row. The right column always shows the live event feed.
+ * 点击 DAG 卡片决定详情区渲染哪个节点：影响面、技术方案有专属视图，
+ * 其余节点渲染 Markdown 产物；状态经 SSE 实时更新。
  *
  * Behavior preserved from the prior version:
  *   - Rejoins SSE on mount via {@code useRamSession.rejoin}
