@@ -206,10 +206,15 @@ public class PiAgentInstaller {
         Map<String, Object> mcp = Map.of("mcpServers", Map.of("hisi-mcp-server", Map.of(
                 "command", "node",
                 "args", List.of(mcpDist),
-                "env", Map.of("HISI_API_URL", "http://localhost:8080",
+                "env", Map.of("HISI_API_URL", backendBaseUrl(),
                         "HISI_SCOPE_TOKEN", "${HISI_SCOPE_TOKEN}"))));
         Files.writeString(agentDir.resolve("mcp.json"),
                 objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(mcp), StandardCharsets.UTF_8);
+    }
+
+    /** MCP 服务回头调后端用的地址：端口跟着 server.port 走，换端口启动时工具不会打到别的实例上。 */
+    private String backendBaseUrl() {
+        return "http://localhost:" + environment.getProperty("server.port", "8080");
     }
 
     /**
