@@ -56,6 +56,8 @@ public class ReActSession {
     public Result run(AgentRegistry.ReactAgent agent, String sessionId, Path workdir,
                       String systemPrompt, String userPrompt,
                       Consumer<Map<String, Object>> eventSink, BooleanSupplier cancelled, String scopeToken) {
+        // skill 目录要等 pi 装好才同步出来，所以得先确认已安装，再解析 skill 路径
+        installer.ensureReady();
         List<Path> skills = new ArrayList<>();
         for (String name : agent.skills()) {
             Path skill = installer.skillPath(name);

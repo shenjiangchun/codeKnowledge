@@ -39,8 +39,9 @@ public class PiAgentInstaller {
     private final Environment environment;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private Path installDir;
-    private Path agentDir;
+    // 可能被多个流的线程读写（ensureReady 会重入 ensure），要保证可见性
+    private volatile Path installDir;
+    private volatile Path agentDir;
 
     public PiAgentInstaller(PiAgentProperties properties,
                             Environment environment) {
@@ -48,8 +49,9 @@ public class PiAgentInstaller {
         this.environment = environment;
     }
 
+    /** 启动时的自检：已安装直接过；没装（或上次没装完）就装到 {@code piagent.install-dir}。 */
     @PostConstruct
-    public void ensure() {
+    public synchronized void ensure() {
         if (!properties.isEnabled()) {
             log.info("[PiAgent] 未启用，跳过安装");
             return;
@@ -60,6 +62,9 @@ public class PiAgentInstaller {
                 log.info("[PiAgent] test profile，跳过安装");
                 return;
             }
+        }
+        if (ready()) {
+            return;
         }
         try {
             installDir = resolve(properties.getInstallDir());
@@ -76,9 +81,20 @@ public class PiAgentInstaller {
             syncSkills();
             log.info("[PiAgent] 就绪: cli={} agentDir={}", cliEntry(), agentDir);
         } catch (Exception e) {
-            // 安装失败不阻断启动：所有流仍在关闭状态，切换开关时会再报错
-            log.error("[PiAgent] 初始化失败（不影响老流程，切流前需修复）: {}", e.getMessage());
+            // 安装失败不阻断启动；但所有 agent 流都依赖 pi，装好之前它们都不可用——
+            // 下一次有流要用 pi 时 ensureReady() 会再装一次，不需要重启后端
+            log.error("[PiAgent] 安装/初始化失败，pi 相关功能在装好之前不可用（下次执行时会自动重试）: {}", e.getMessage());
             installDir = null;
+        }
+    }
+
+    /**
+     * 流要用 pi 之前调：已就绪直接返回；启动时没装上（网络抖动、装到一半被打断等）就在这里再装一次。
+     * 总开关关着时不重试。
+     */
+    public void ensureReady() {
+        if (!ready() && properties.isEnabled()) {
+            ensure();
         }
     }
 
@@ -105,16 +121,14 @@ public class PiAgentInstaller {
         }
     }
 
-    private void ensurePackage() {
-        Path packageJson = installDir.resolve("node_modules").resolve(PACKAGE).resolve("package.json");
-        if (Files.exists(packageJson)) {
-            try {
-                Map<?, ?> meta = objectMapper.readValue(Files.readString(packageJson), Map.class);
-                if (properties.getPackageVersion().equals(String.valueOf(meta.get("version")))) {
-                    return;
-                }
-            } catch (Exception ignored) {
-            }
+    private void ensurePackage() throws Exception {
+        Path packageDir = installDir.resolve("node_modules").resolve(PACKAGE);
+        if (isInstalled(packageDir.resolve("package.json"), cliEntry(), properties.getPackageVersion(), objectMapper)) {
+            return;
+        }
+        // 包目录在但入口不在（装到一半被打断）、或版本不对：npm 会认为已满足而什么都不做，先删掉再装
+        if (Files.exists(packageDir)) {
+            deleteRecursively(packageDir);
         }
         log.info("[PiAgent] 安装 {}@{} 到 {}", PACKAGE, properties.getPackageVersion(), installDir);
         // Windows 上 npm 是 npm.cmd，ProcessBuilder 不能直接执行，需带扩展名
@@ -127,6 +141,25 @@ public class PiAgentInstaller {
                 PACKAGE + "@" + properties.getPackageVersion()));
         if (output == null) {
             throw new IllegalStateException("npm install 失败（查看后端日志）");
+        }
+        if (!Files.exists(cliEntry())) {
+            throw new IllegalStateException("npm install 已结束但 pi 入口不存在：" + cliEntry());
+        }
+    }
+
+    /**
+     * 装好的判据：包版本与锁定版本一致，且 CLI 入口文件在。
+     * 只看 package.json 不够——装到一半被打断时它可能已经落下，而入口还没有。
+     */
+    static boolean isInstalled(Path packageJson, Path cliEntry, String expectedVersion, ObjectMapper objectMapper) {
+        if (!Files.exists(cliEntry)) {
+            return false;
+        }
+        try {
+            Map<?, ?> meta = objectMapper.readValue(Files.readString(packageJson), Map.class);
+            return expectedVersion.equals(String.valueOf(meta.get("version")));
+        } catch (Exception ignored) {
+            return false;
         }
     }
 

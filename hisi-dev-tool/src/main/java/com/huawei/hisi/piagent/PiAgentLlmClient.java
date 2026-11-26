@@ -50,6 +50,8 @@ public class PiAgentLlmClient implements AgentLlmClient {
 
     @Override
     public boolean isAvailable() {
+        // 启动时没装上不算定局：调用方拿这个当开关，缺了就先补装，再回答
+        installer.ensureReady();
         return installer.ready() && properties.flowEnabled(FlowToolManifest.ONE_SHOT);
     }
 

@@ -94,8 +94,10 @@ public class PiFlowClient {
     public PiResult runWithToken(String flow, String sessionId, Path workdir, List<Path> skillPaths,
                                  String systemPrompt, String userPrompt, Consumer<Map<String, Object>> listener,
                                  java.util.function.BooleanSupplier cancelled, String scopeToken) {
+        // 启动时没装上不算定局：这里是所有流的必经入口，缺就在这儿再装一次
+        installer.ensureReady();
         if (!installer.ready()) {
-            throw new IllegalStateException("pi 未就绪（安装失败或未启用），无法执行流 " + flow);
+            throw new IllegalStateException("pi 未就绪（piagent.enabled=false，或安装失败——见后端日志 [PiAgent]），无法执行流 " + flow);
         }
         FlowToolManifest manifest = FlowToolManifest.forFlow(flow);
         boolean acquired = false;
