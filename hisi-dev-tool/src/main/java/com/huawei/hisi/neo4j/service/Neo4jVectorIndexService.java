@@ -64,10 +64,19 @@ public class Neo4jVectorIndexService {
     }
 
     /**
-     * 应用启动完成后检测 Neo4j 版本并创建向量索引
+     * 应用启动完成后检测 Neo4j 版本并创建向量索引。
+     *
+     * <p>索引的创建与上线等待可能长达几分钟（每个索引最多等 {@code INDEX_ONLINE_TIMEOUT_S} 秒），
+     * 不能拖住启动：转后台线程执行；就绪前查询走全表扫描回退，与初始化失败的行为一致。
      */
     @EventListener(ApplicationReadyEvent.class)
     public void initialize() {
+        Thread worker = new Thread(this::doInitialize, "neo4j-vector-index-init");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    private void doInitialize() {
         log.info("开始检测 Neo4j 版本和向量索引支持...");
 
         // 从 EmbeddingService 获取当前维度

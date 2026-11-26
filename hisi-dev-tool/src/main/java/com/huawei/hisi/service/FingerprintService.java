@@ -61,7 +61,7 @@ public class FingerprintService {
             return DEFAULT_FINGERPRINT;
         }
 
-        log.info("[FingerprintService] 输入长度: {}, 前200字符: {}",
+        log.debug("[FingerprintService] 输入长度: {}, 前200字符: {}",
                 logContent.length(),
                 logContent.length() > 200 ? logContent.substring(0, 200) + "..." : logContent);
 
@@ -71,9 +71,9 @@ public class FingerprintService {
         Matcher errorMatcher = ERROR_TYPE_PATTERN.matcher(logContent);
         if (errorMatcher.find()) {
             normalized.append(errorMatcher.group(1)).append("|");
-            log.info("[FingerprintService] 提取到错误类型: {}", errorMatcher.group(1));
+            log.debug("[FingerprintService] 提取到错误类型: {}", errorMatcher.group(1));
         } else {
-            log.info("[FingerprintService] 未找到错误类型模式");
+            log.debug("[FingerprintService] 未找到错误类型模式");
         }
 
         // Extract top 3 stack frames (class + method only, no line numbers)
@@ -86,17 +86,29 @@ public class FingerprintService {
             if (!isFrameworkClass(className)) {
                 normalized.append(className).append(".").append(methodName).append("|");
                 frameCount++;
-                log.info("[FingerprintService] 提取到栈帧 #{}: {}.{}", frameCount, className, methodName);
+                log.debug("[FingerprintService] 提取到栈帧 #{}: {}.{}", frameCount, className, methodName);
             }
         }
 
         if (frameCount == 0) {
-            log.warn("[FingerprintService] 未找到有效的非框架栈帧");
+            log.debug("[FingerprintService] 未找到有效的非框架栈帧");
+        }
+
+        // 没有错误类型、也没有非框架栈帧的日志行（普通 WARN 等）：按内容哈希。
+        // 不能落到同一个默认指纹——互不相同的日志行会被当成"重复日志"合并进同一份报告
+        // （真机：1000 条互不相关的告警全部计成同一 report 的出现次数）。
+        if (normalized.isEmpty()) {
+            String content = logContent.trim();
+            if (content.length() > 500) {
+                content = content.substring(0, 500);
+            }
+            log.debug("[FingerprintService] 无错误特征，按内容哈希（{} 字符）", content.length());
+            return md5Hash(content);
         }
 
         // Generate MD5 hash
         String normalizedStr = normalized.toString();
-        log.info("[FingerprintService] normalized长度: {}, 内容: {}",
+        log.debug("[FingerprintService] normalized长度: {}, 内容: {}",
                 normalizedStr.length(),
                 normalizedStr.length() > 100 ? normalizedStr.substring(0, 100) + "..." : normalizedStr);
 

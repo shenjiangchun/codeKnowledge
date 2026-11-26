@@ -23,6 +23,21 @@ class FingerprintServiceTest {
     // ==================== Fingerprint Generation Tests ====================
 
     @Test
+    @DisplayName("生成指纹 - 无错误特征的普通日志行按内容哈希，不再全部落到默认指纹")
+    void testFingerprintFallsBackToContentHashForNonErrorLines() {
+        String warn1 = "2026-11-26 22:38:49.941 [TaskBatchingWorker-target_localhost-14]  WARN c.n.eureka.util.batcher.TaskExecutors : Discarding 2 tasks of TaskBatchingWorker-target_localhost-14 due to permanent error";
+        String warn2 = "2026-11-26 22:38:53.794 [TaskBatchingWorker-target_localhost-8]  WARN c.n.eureka.util.batcher.TaskExecutors : Discarding 1 tasks of TaskBatchingWorker-target_localhost-8 due to permanent error";
+
+        String f1 = fingerprintService.generateFingerprint(warn1);
+        String f2 = fingerprintService.generateFingerprint(warn2);
+
+        assertThat(f1).as("不能是默认指纹，否则互不相同的日志会合并进同一份报告").isNotEqualTo("00000000000000000000000000000000");
+        assertThat(f2).as("不能是默认指纹").isNotEqualTo("00000000000000000000000000000000");
+        assertThat(f1).as("内容不同应产生不同指纹").isNotEqualTo(f2);
+        assertThat(fingerprintService.generateFingerprint(warn1)).as("相同内容应产生相同指纹").isEqualTo(f1);
+    }
+
+    @Test
     @DisplayName("生成指纹 - 从堆栈跟踪生成确定性指纹")
     void testGenerateFingerprintFromStackTrace() {
         String stackTrace = """
