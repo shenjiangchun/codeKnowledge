@@ -63,6 +63,11 @@ public class RamClaudeJsonClient {
                 ? configModel : FALLBACK_MODEL;
     }
 
+    /** 换上本次调用的系统提示词，其余选项（尤其是思考开关）原样保留。 */
+    private static SendOptions withSystemPrompt(SendOptions opts, String systemPrompt) {
+        return new SendOptions(opts.model(), opts.maxTokens(), opts.temperature(), systemPrompt, opts.thinkingDisabled());
+    }
+
     /** Returns {@code true} when an Anthropic API key is configured. */
     public boolean isAvailable() {
         return apiKey != null && !apiKey.isBlank();
@@ -87,8 +92,7 @@ public class RamClaudeJsonClient {
     public String callText(String systemPrompt,
                            String userPrompt,
                            SendOptions opts) {
-        SendOptions effective = new SendOptions(
-                opts.model(), opts.maxTokens(), opts.temperature(), systemPrompt);
+        SendOptions effective = withSystemPrompt(opts, systemPrompt);
 
         List<Map<String, Object>> messages = List.of(
                 Map.of("role", "user", "content", userPrompt));
@@ -199,8 +203,7 @@ public class RamClaudeJsonClient {
             return new JsonCallResult(json, List.of("单轮调用，无工具使用"));
         }
 
-        SendOptions effective = new SendOptions(
-                opts.model(), opts.maxTokens(), opts.temperature(), systemPrompt);
+        SendOptions effective = withSystemPrompt(opts, systemPrompt);
 
         List<Map<String, Object>> messages = new ArrayList<>();
         messages.add(Map.of("role", "user", "content", userPrompt));
@@ -326,8 +329,7 @@ public class RamClaudeJsonClient {
             return new JsonCallResult(json, List.of("单轮调用，无工具使用"));
         }
 
-        SendOptions effective = new SendOptions(
-                opts.model(), opts.maxTokens(), opts.temperature(), systemPrompt);
+        SendOptions effective = withSystemPrompt(opts, systemPrompt);
 
         List<String> reasoningSteps = new ArrayList<>();
         reasoningSteps.add("多轮对话，消息数=" + workingMessages.size());

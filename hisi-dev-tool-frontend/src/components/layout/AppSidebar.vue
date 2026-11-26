@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Document, Folder, Monitor, Shop, DataAnalysis, Setting, Cpu, MagicStick, Connection, User, Tools, ChatDotRound } from '@element-plus/icons-vue'
+import { Document, Folder, Monitor, Shop, DataAnalysis, Setting, Cpu, MagicStick, Connection, User, Tools, ChatDotRound, HomeFilled } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import { computed, reactive, watch } from 'vue'
 import type { Component } from 'vue'
@@ -7,7 +7,7 @@ import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 
 // Define menu key type that matches availableMenus keys
-type MenuKey = 'log-analysis' | 'project-management' | 'claude-terminal' | 'prompt-config' | 'skill-market' | 'kg-skills-kit' | 'knowledge-graph' | 'architecture-diagnosis' | 'settings' | 'apm-debug' | 'ram' | 'ram-demand' | 'ram-chat' | 'merge-analysis'
+type MenuKey = 'log-analysis' | 'project-management' | 'claude-terminal' | 'prompt-config' | 'skill-market' | 'kg-skills-kit' | 'knowledge-graph' | 'architecture-diagnosis' | 'settings' | 'apm-debug' | 'ram' | 'ram-demand' | 'ram-chat' | 'merge-analysis' | 'workbench'
 
 interface MenuItem {
   index: string
@@ -24,11 +24,17 @@ const authStore = useAuthStore()
 
 const baseMenuItems: MenuItem[] = [
   {
+    index: '/workbench',
+    title: '工作台',
+    icon: HomeFilled,
+    menuKey: 'workbench',
+    groupLabel: '分析工具'
+  },
+  {
     index: '/project',
     title: '项目管理',
     icon: Folder,
-    menuKey: 'project-management',
-    groupLabel: '分析工具'
+    menuKey: 'project-management'
   },
   {
     index: '/knowledge-graph',

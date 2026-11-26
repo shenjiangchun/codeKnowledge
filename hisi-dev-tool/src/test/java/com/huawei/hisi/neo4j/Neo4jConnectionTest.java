@@ -17,7 +17,7 @@ class Neo4jConnectionTest {
     void testConnection() {
         String uri = "neo4j://127.0.0.1:7687";
         String username = "neo4j";
-        String password = "12345678";
+        String password = Neo4jTestSupport.requirePassword();
 
         try (Driver driver = GraphDatabase.driver(uri, AuthTokens.basic(username, password));
              Session session = driver.session()) {
@@ -48,7 +48,7 @@ class Neo4jConnectionTest {
     void testConstraintsAndIndexes() {
         String uri = "neo4j://127.0.0.1:7687";
         String username = "neo4j";
-        String password = "12345678";
+        String password = Neo4jTestSupport.requirePassword();
 
         try (Driver driver = GraphDatabase.driver(uri, AuthTokens.basic(username, password));
              Session session = driver.session()) {

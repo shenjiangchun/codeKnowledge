@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { e2ePassword } from './helpers/credentials'
 
 /**
  * 项目现状分析 - 历史会话加载测试
@@ -29,7 +30,7 @@ test('历史会话加载测试', async ({ page }) => {
     // Fill credentials - use specific selectors for login tab
     const loginTab = dialog.locator('.el-tab-pane').first() // Login is the first tab
     await loginTab.locator('input[placeholder="请输入用户名"]').fill('root')
-    await loginTab.locator('input[placeholder="请输入密码"]').fill('123456')
+    await loginTab.locator('input[placeholder="请输入密码"]').fill(e2ePassword())
 
     // Submit - click the login button in the login tab
     const submitBtn = loginTab.locator('button:has-text("登录")')

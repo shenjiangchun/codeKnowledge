@@ -80,4 +80,19 @@ public class ArchDiagnosisSnapshotRepository {
         );
         return rows.isEmpty() ? null : rows.get(0);
     }
+
+    /** 取某项目最新一条快照（含全量报告体），供工作台聚合成待办。 */
+    public ArchDiagnosisSnapshot findLatestByScope(String scope) {
+        List<ArchDiagnosisSnapshot> rows = jdbcTemplate.query(
+            "SELECT * FROM architecture_diagnosis_snapshot WHERE scope = ? ORDER BY id DESC LIMIT 1",
+            ROW_MAPPER, scope
+        );
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    /** 快照覆盖过的所有项目路径（scope 即项目路径）。 */
+    public List<String> listScopes() {
+        return jdbcTemplate.queryForList(
+            "SELECT DISTINCT scope FROM architecture_diagnosis_snapshot ORDER BY scope", String.class);
+    }
 }

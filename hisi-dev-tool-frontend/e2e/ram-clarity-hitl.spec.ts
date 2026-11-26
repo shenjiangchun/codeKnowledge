@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test'
+import { e2ePassword } from './helpers/credentials'
 
 /**
  * RAM Workflow Intervention Points E2E Tests
@@ -34,7 +35,7 @@ async function ensureLoggedIn(page: Page): Promise<void> {
     const passwordInput = loginDialog.locator('input[placeholder="请输入密码"]').first()
 
     await usernameInput.fill('root')
-    await passwordInput.fill('123456')
+    await passwordInput.fill(e2ePassword())
 
     await loginDialog.locator('button:has-text("登录")').first().click()
 

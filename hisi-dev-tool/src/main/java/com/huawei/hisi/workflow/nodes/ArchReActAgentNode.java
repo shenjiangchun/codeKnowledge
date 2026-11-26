@@ -13,7 +13,7 @@ import com.huawei.hisi.workflow.agent.ArchAgentToolRegistry;
 import com.huawei.hisi.workflow.agent.ObservationTrimmer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
+
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -23,35 +23,34 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 架构深度分析 ReAct 智能体节点：在 {@link DeepseekJsonClient}（json_object 强制）
- * 之上跑手动 ReAct 循环 —— 推理 → 调只读工具查 KG → 观察 → 再推理，
- * 收敛后产出根因列表 + 四段式 Markdown 报告。
+ * 架构深度分析 ReAct 智能体节点的契约与报告组装基类：schema、查证规则提示词、
+ * 图引用校验、结构化 Markdown 报告与降级模板。
  *
- * <p>输出契约与旧根因/报告节点兼容：{@code {rootCauseResult, markdownReport, degraded}}。
- * 未收敛 / JSON 连续失败时降级为确定性模板报告（degraded=true），不阻断。</p>
+ * <p>手动 ReAct 循环已由 pi 会话平替（见 {@link com.huawei.hisi.workflow.v2.PiReActAgentNode}），
+ * 本类不再注册为 bean（注册表按名字收集 DagNode，残留的旧循环会顶掉 pi 版节点），
+ * 只保留 {@code {rootCauseResult, markdownReport, degraded}} 输出契约供 pi 版节点复用。
  */
 @Slf4j
-@Component
 public class ArchReActAgentNode implements DagNode {
 
-    static final String SCHEMA_NAME = "arch/react-step";
+    protected static final String SCHEMA_NAME = "arch/react-step";
 
-    private final DeepseekJsonClient llm;
-    private final ArchAgentToolRegistry registry;
-    private final ObservationTrimmer trimmer;
-    private final SchemaValidator validator;
+    protected final DeepseekJsonClient llm;
+    protected final ArchAgentToolRegistry registry;
+    protected final ObservationTrimmer trimmer;
+    protected final SchemaValidator validator;
     private final ArchDiagramGenerator diagramGenerator;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private final int maxSteps;
-    private final int observationMaxChars;
+    protected final int maxSteps;
+    protected final int observationMaxChars;
 
     public ArchReActAgentNode(DeepseekJsonClient llm,
                               ArchAgentToolRegistry registry,
                               ObservationTrimmer trimmer,
                               SchemaValidator validator,
                               ArchDiagramGenerator diagramGenerator,
-                              @Value("${arch.react.max-steps:6}") int maxSteps,
+                              @Value("${arch.react.max-steps:10}") int maxSteps,
                               @Value("${arch.react.observation-max-chars:2000}") int observationMaxChars) {
         this.llm = llm;
         this.registry = registry;
@@ -140,7 +139,7 @@ public class ArchReActAgentNode implements DagNode {
                     raw = Map.of("error", "未知工具：" + tool);
                     consecutiveFailures++;
                 } else {
-                    sink.emit("查询工具：" + tool);
+                    sink.emit("查询工具：" + tool + " args=" + args);
                     try {
                         raw = t.invoke(args, projectPaths);
                     } catch (Exception e) {
@@ -174,7 +173,7 @@ public class ArchReActAgentNode implements DagNode {
 
     /** 确定性图生成，失败降级为空列表，不阻断 ReAct 主流程。 */
     @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> generateDiagrams(Map<?, ?> evidencePack, List<String> projectPaths) {
+    protected List<Map<String, Object>> generateDiagrams(Map<?, ?> evidencePack, List<String> projectPaths) {
         try {
             List<Map<String, Object>> diagrams =
                     diagramGenerator.generate((Map<String, Object>) evidencePack, projectPaths);
@@ -185,7 +184,7 @@ public class ArchReActAgentNode implements DagNode {
         }
     }
 
-    private Map<String, Object> buildOutput(Map<?, ?> evidencePack,
+    protected Map<String, Object> buildOutput(Map<?, ?> evidencePack,
                                             Map<String, Object> finalAnswer, NodeEventSink sink,
                                             List<Map<String, Object>> diagrams) {
         Object issuesObj = finalAnswer.get("issues");
@@ -210,7 +209,7 @@ public class ArchReActAgentNode implements DagNode {
         return output;
     }
 
-    private Map<String, Object> buildDegradedOutput(Map<?, ?> evidencePack, NodeEventSink sink,
+    protected Map<String, Object> buildDegradedOutput(Map<?, ?> evidencePack, NodeEventSink sink,
                                                     List<Map<String, Object>> diagrams) {
         sink.emit("ReAct 未收敛，降级为模板报告");
         Map<String, Object> rootCauseResult = new LinkedHashMap<>();
@@ -336,7 +335,7 @@ public class ArchReActAgentNode implements DagNode {
         return md.toString();
     }
 
-    private Map<String, Object> parseStep(String json) {
+    protected Map<String, Object> parseStep(String json) {
         if (json == null || json.isBlank()) {
             return null;
         }
@@ -354,7 +353,7 @@ public class ArchReActAgentNode implements DagNode {
      * 无法枚举运行时动态产出的图 id，故在此补硬校验，根治 LLM 臆造/改写图 id
      * （如把 cycle_rings 写成 loop_rings、deployment_topology 写成 service_topology）。
      */
-    private ValidationResult validateDiagramRefs(Map<String, Object> stepResult,
+    protected ValidationResult validateDiagramRefs(Map<String, Object> stepResult,
                                                  List<Map<String, Object>> diagrams) {
         Set<String> validIds = diagrams.stream()
                 .map(d -> String.valueOf(d.get("id")))
@@ -391,7 +390,7 @@ public class ArchReActAgentNode implements DagNode {
         return new ValidationResult(violations.isEmpty(), List.of(), violations);
     }
 
-    private String systemPrompt(List<Map<String, Object>> diagrams) {
+    protected String systemPrompt(List<Map<String, Object>> diagrams) {
         StringBuilder sb = new StringBuilder();
         sb.append("你是资深软件架构诊断专家。基于给定的架构证据包，通过只读工具反复查询知识图谱，")
                 .append("归纳问题根因并生成结构化深度分析报告。\n\n")
@@ -440,10 +439,22 @@ public class ArchReActAgentNode implements DagNode {
                 .append("- executive_summary 用 2-4 句话概括整体架构健康度、最关键的 1-2 个风险与优先行动方向。\n")
                 .append("- 不要臆造图 id；不要输出 mermaid 代码，图已由生成器产出，你只负责引用与解读。\n\n")
                 .append("灰度验证职责（必须执行）：对证据包 issues 中的每条候选问题，")
-                .append("用只读工具逐条查证其真伪（如用 method_by_class/upstream/root_entries/interfaces/implementations 等")
-                .append("核对定位信息 className/methodName/nodeId 指向的真实代码），再给出 verdict：\n")
-                .append("凡涉及 impl-leak/实现类外泄/直接依赖实现类的候选问题，必须用 injection_scan 查源码声明类型：")
-                .append("声明为接口则判 false_positive（接口注入，非直接依赖实现类），声明为实现类才保留。\n")
+                .append("用只读工具查证其真伪（如用 method_by_class/upstream/root_entries/interfaces/implementations 等")
+                .append("核对定位信息 className/methodName/nodeId 指向的真实代码），再给出 verdict。\n")
+                .append("【抽样查证，不要逐条】同一类型的多条候选（例如多条 impl-leak/实现类外泄），")
+                .append("先抽 1-2 条代表查证：若代表都判 false_positive（如 injection_scan 返回 total=0），")
+                .append("且其余同类候选的定位信息相似，可整体判为该类型误报，不必再逐条调工具，")
+                .append("直接进入 final_answer；仅当代表查证为 confirmed 时，才对需区分的其余同类逐条查证。\n")
+                .append("凡涉及 impl-leak/实现类外泄/直接依赖实现类的候选问题，必须用 injection_scan 反向查询：")
+                .append("调 injection_scan {\"injectedType\": \"<被依赖的实现类全限定名>\"}，按返回判定：\n")
+                .append("- total=0（items 空）→ 无人直接注入该实现类 → false_positive（接口注入，非直接依赖实现类）；\n")
+                .append("- kind=interface → false_positive（声明为接口，Spring 接口注入）；\n")
+                .append("- kind=class → confirmed（直接依赖实现类属实）。\n")
+                .append("若 injection_scan 返回空或拿不准，用 grep_source {\"pattern\": \"<实现类简单名>\"} 直接查源码亲眼核对：")
+                .append("命中行只出现在实现类自身定义（impl 包）→ 无人直接注入 → false_positive；")
+                .append("命中其他类的 @Autowired/@Resource/@Inject 字段或构造器参数 → 直接依赖实现类 → confirmed。\n")
+                .append("注意：任何工具返回 scannedFileCount=0 都说明源码扫描未命中文件（项目路径可能不对），")
+                .append("此时不得判 false_positive，改在 reason 注明「无法核实」并保留原严重度。\n")
                 .append("- confirmed：查证属实，保留原严重度；\n")
                 .append("- false_positive：误报（如调用方为测试类触发的实现类外泄），不予采纳；\n")
                 .append("- downgraded：问题属实但严重度虚高，severity 给出下调后的等级，reason 说明为何虚高。\n")
@@ -454,7 +465,7 @@ public class ArchReActAgentNode implements DagNode {
         return sb.toString();
     }
 
-    private String userPrompt(Map<?, ?> evidencePack, List<Map<String, Object>> history) {
+    protected String userPrompt(Map<?, ?> evidencePack, List<Map<String, Object>> history) {
         Map<String, Object> ctx = new LinkedHashMap<>();
         ctx.put("evidencePack", evidencePack);
         ctx.put("history", history);
@@ -466,7 +477,7 @@ public class ArchReActAgentNode implements DagNode {
     }
 
     @SuppressWarnings("unchecked")
-    private static List<String> extractProjectPaths(Map<?, ?> evidencePack) {
+    protected static List<String> extractProjectPaths(Map<?, ?> evidencePack) {
         Object obj = evidencePack.get("projectPaths");
         if (obj instanceof List<?> list) {
             return list.stream().filter(o -> o instanceof String).map(o -> (String) o).toList();

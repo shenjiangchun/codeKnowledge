@@ -74,7 +74,8 @@ public class TestGenAgent {
 
     private String loadTemplate() {
         try (var reader = new BufferedReader(new InputStreamReader(
-                new ClassPathResource("prompt/test-gen-prompt.txt").getInputStream(),
+                // 显式带上本类的类加载器：agent 跑在自己的线程上，线程的上下文类加载器在可执行 jar 里可能看不到资源
+                new ClassPathResource("prompt/test-gen-prompt.txt", TestGenAgent.class.getClassLoader()).getInputStream(),
                 StandardCharsets.UTF_8))) {
             return reader.lines().collect(Collectors.joining("\n"));
         } catch (Exception e) {

@@ -362,6 +362,10 @@ public class LogAnalysisController {
 
     private int estimateRemainingTime(LogAnalysisReportEntity report) {
         String analysisStatus = report.getAnalysisStatus();
+        if (analysisStatus == null) {
+            // 通过 /analyze 创建的报告没有写 analysisStatus，按 pending 估算
+            return 120;
+        }
         if ("completed".equals(analysisStatus) || "failed".equals(analysisStatus)) {
             return 0;
         }

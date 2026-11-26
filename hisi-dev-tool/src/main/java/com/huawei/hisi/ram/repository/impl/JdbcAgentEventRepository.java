@@ -145,6 +145,13 @@ public class JdbcAgentEventRepository implements AgentEventRepository {
         return c == null ? 0L : c;
     }
 
+    @Override
+    public List<AgentEvent> findCheckpointsContaining(String payloadFragment, long createdAfterEpoch) {
+        return jdbc.query(
+                SELECT_COLS + " WHERE type = 'CHECKPOINT' AND payload LIKE ? AND created_at > ? ORDER BY created_at DESC",
+                mapper, "%" + payloadFragment + "%", createdAfterEpoch);
+    }
+
     private static Long nullableLong(Object o) {
         if (o == null) return null;
         if (o instanceof Number n) return n.longValue();

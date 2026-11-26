@@ -6,7 +6,7 @@ import com.huawei.hisi.ram.nodes.CodeContextItem;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
@@ -158,14 +158,60 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
             Language: All natural-language values in 简体中文.
             """;
 
+    /**
+     * 后续澄清轮次：不再给工具，只看用户的回答。之前轮次已经查到的代码位置随问答一起给进来，
+     * 这里的 schema 必须仍然包含 target_modules / target_methods —— 否则第一轮查到的目标方法
+     * 在后续轮次会被丢掉，影响面分析就拿不到要改的方法。
+     */
+    private static final String SYSTEM_PROMPT_WITH_HISTORY = """
+            You are a senior product analyst. You have already explored the project's
+            codebase in an earlier round and asked the user some questions. The user's
+            answers are provided below the request, together with the code locations
+            you found earlier.
+
+            ## MANDATORY Workflow
+            1. Read ALL prior Q&A rounds carefully — incorporate every answer.
+            2. Re-evaluate from scratch whether the requirement NOW meets ALL five
+               clarity criteria (intent unambiguous, acceptance criteria inferable,
+               scope complete, technical approach decided, material non-functional
+               targets stated).
+            3. If STILL unclear: set needs_clarification=true and ask NEW questions
+               only — never repeat questions the user already answered.
+            4. If NOW clear: set needs_clarification=false and fill ALL structured
+               fields completely.
+            5. Carry the code locations you found earlier (target_modules,
+               target_methods, code_analysis_summary) into your answer UNCHANGED,
+               unless the user's answers moved the work to different classes or
+               methods — then list the new ones. Do not drop them, do not invent ones
+               you never saw.
+
+            ## Output schema (PURE JSON only, no prose, no markdown fences):
+            {
+              "needs_clarification": true | false,
+              "clarify_questions": ["<decision question in 简体中文>", ...],
+              "intent": "<one short sentence>",
+              "project_paths": ["<path>", ...],
+              "acceptance_criteria": ["<testable AC>", ...],
+              "target_modules": ["<package/class found earlier>", ...],
+              "target_methods": ["<fully.qualified.ClassName#methodName>", ...],
+              "constraints": { "must": [...], "must_not": [...] },
+              "code_analysis_summary": "<现状/需求/差距 in 简体中文>"
+            }
+            Language: All natural-language values in 简体中文; keep code identifiers as-is.
+            """;
+
     private final ChatClient agentChatClient;
+    /** 不带记忆、不思考的 ChatClient：模型用大白话收尾时，用它把结论转成 JSON（见 {@link LlmJsonAnswer}）。 */
+    private final ChatClient formatter;
     private final StubClarifyLlmClient fallback;
     private final AgentTools agentTools;
 
     public ClaudeClarifyLlmClient(ChatClient agentChatClient,
                                    StubClarifyLlmClient fallback,
+                                   @Qualifier("extractionChatClient") ChatClient formatter,
                                    @Autowired(required = false) AgentTools agentTools) {
         this.agentChatClient = agentChatClient;
+        this.formatter = formatter;
         this.fallback = fallback;
         this.agentTools = agentTools;
     }
@@ -192,6 +238,9 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
         String systemPrompt;
         if (useTools) {
             systemPrompt = SYSTEM_PROMPT_WITH_TOOLS;
+        } else if (hasClarifyHistory && !hintPaths.isEmpty()) {
+            // 有项目、但已经问过用户：不再给工具，改成带着之前查到的代码位置只看回答
+            systemPrompt = SYSTEM_PROMPT_WITH_HISTORY;
         } else if (codeContext != null && !codeContext.isEmpty()) {
             systemPrompt = SYSTEM_PROMPT_WITH_CODE_CONTEXT;
         } else {
@@ -200,25 +249,24 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
 
         String userPrompt = buildUserPrompt(userRequest, hintPaths, hints, codeContext);
         try {
+            // 不用 entity(Map)：模型查完代码常用一段大白话收尾，按 JSON 直接解析会抛异常；交给 LlmJsonAnswer 兜住
             Map<String, Object> raw;
             if (useTools) {
-                raw = agentChatClient.prompt()
+                raw = LlmJsonAnswer.fromCall(agentChatClient.prompt()
                         .system(systemPrompt).user(userPrompt)
                         .toolContext(Map.of("projectPath", projectPath))
                         .tools(agentTools)
-                        .call()
-                        .entity(new ParameterizedTypeReference<Map<String, Object>>() {});
+                        .call(), formatter, systemPrompt);
             } else {
-                raw = agentChatClient.prompt()
+                raw = LlmJsonAnswer.fromCall(agentChatClient.prompt()
                         .system(systemPrompt).user(userPrompt)
-                        .call()
-                        .entity(new ParameterizedTypeReference<Map<String, Object>>() {});
+                        .call(), formatter, systemPrompt);
             }
 
             log.info("[RAM][ClaudeClarifyLlmClient] returned keys={} needs_clarification={}",
                     raw == null ? "null" : raw.keySet(),
                     raw == null ? null : raw.get("needs_clarification"));
-            return normalize(raw, userRequest, hintPaths);
+            return normalize(raw, userRequest, hintPaths, hints);
         } catch (Exception ex) {
             log.error("[RAM][ClaudeClarifyLlmClient] call FAILED — falling back to Stub. err={}", ex.toString(), ex);
             return fallback.extractRequirements(userRequest, hints);
@@ -272,6 +320,16 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
                 if (ans instanceof Map<?, ?> ansMap)
                     for (var entry : ansMap.entrySet())
                         sb.append("Q: ").append(entry.getKey()).append("\nA: ").append(entry.getValue()).append("\n");
+                // 这一轮提问时模型已经查到的代码位置：后面不再给工具，不带进来就再也拿不到了
+                if (round.get("analysis") instanceof Map<?, ?> analysis && hasCodeFindings(analysis)) {
+                    sb.append("Code locations already found in this round (carry them into the JSON):\n");
+                    for (String field : CODE_FINDING_LISTS) {
+                        if (analysis.get(field) instanceof List<?> found && !found.isEmpty())
+                            sb.append("- ").append(field).append(": ").append(found).append("\n");
+                    }
+                    if (analysis.get("code_analysis_summary") instanceof String summary && !summary.isBlank())
+                        sb.append("- code_analysis_summary: ").append(summary).append("\n");
+                }
                 sb.append("\n");
             }
             sb.append("=== End of clarification history ===\n\n");
@@ -281,10 +339,40 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
         return sb.toString();
     }
 
-    // ── Normalization (unchanged) ──
+    // ── Carry-forward of code findings across clarify rounds ──
+
+    private static final List<String> CODE_FINDING_LISTS = List.of("target_modules", "target_methods");
+
+    private static boolean hasCodeFindings(Map<?, ?> analysis) {
+        return CODE_FINDING_LISTS.stream().anyMatch(f -> analysis.get(f) instanceof List<?> l && !l.isEmpty());
+    }
+
+    /** 之前某一轮提问时已经查到的某个字段（从最近一轮往前找）。 */
+    private static Object earlierFinding(List<?> rounds, String field) {
+        for (int i = rounds.size() - 1; i >= 0; i--) {
+            if (rounds.get(i) instanceof Map<?, ?> round && round.get("analysis") instanceof Map<?, ?> analysis
+                    && hasValue(analysis.get(field))) {
+                return analysis.get(field);
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasValue(Object value) {
+        if (value == null) return false;
+        if (value instanceof List<?> list) return !list.isEmpty();
+        if (value instanceof Map<?, ?> map) return !map.isEmpty();
+        if (value instanceof String text) return !text.isBlank();
+        return true;
+    }
+
+    // ── Normalization ──
 
     @SuppressWarnings("unchecked")
-    private Map<String, Object> normalize(Map<String, Object> raw, String userRequest, List<String> hintPaths) {
+    private Map<String, Object> normalize(Map<String, Object> raw, String userRequest,
+                                          List<String> hintPaths, Map<String, Object> hints) {
+        List<?> rounds = hints != null && hints.get("clarify_history") instanceof List<?> history
+                ? history : List.of();
         Map<String, Object> out = new LinkedHashMap<>();
         boolean needsClarification = raw != null && Boolean.TRUE.equals(raw.get("needs_clarification"));
         List<String> clarifyQuestions = asStringList(raw == null ? null : raw.get("clarify_questions"));
@@ -298,15 +386,25 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
         out.put("project_paths", mergedPaths);
         out.put("projectHints", hintPaths);
         out.put("acceptance_criteria", asStringList(raw == null ? null : raw.get("acceptance_criteria")));
-        if (raw != null && raw.get("target_modules") != null)
-            out.put("target_modules", asStringList(raw.get("target_modules")));
-        if (raw != null && raw.get("target_methods") != null)
-            out.put("target_methods", asStringList(raw.get("target_methods")));
-        if (raw != null && raw.get("constraints") instanceof Map<?, ?> c)
-            out.put("constraints", c);
-        if (raw != null && raw.get("code_analysis_summary") instanceof String summary && !summary.isBlank())
-            out.put("code_analysis_summary", summary);
+        // 代码位置类字段：这次回答没带，就沿用之前某一轮用工具查到的（后面几轮没有工具，带不出来是常态）
+        putFinding(out, raw, "target_modules", rounds);
+        putFinding(out, raw, "target_methods", rounds);
+        putFinding(out, raw, "constraints", rounds);
+        putFinding(out, raw, "code_analysis_summary", rounds);
         return out;
+    }
+
+    private static void putFinding(Map<String, Object> out, Map<String, Object> raw, String field, List<?> rounds) {
+        Object value = raw == null ? null : raw.get(field);
+        if (value instanceof List<?> list) {
+            value = list.stream().filter(x -> x instanceof String).map(x -> (String) x).toList();
+        }
+        if (!hasValue(value)) {
+            value = earlierFinding(rounds, field);
+        }
+        if (hasValue(value)) {
+            out.put(field, value);
+        }
     }
 
     private List<String> asStringList(Object o) {

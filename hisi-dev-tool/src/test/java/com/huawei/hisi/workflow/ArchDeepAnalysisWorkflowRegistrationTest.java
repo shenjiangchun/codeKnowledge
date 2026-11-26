@@ -10,9 +10,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * arch-deep-analysis 工作流注册单测：类型可查、节点 1→2→3 顺序、
- * metadata skipHitl=true（一次性批处理分析，无节点间 HITL 门）。
- * 同时覆盖 registerWorkflow 的 fail-fast 校验（未知节点名在注册期即抛错）。
+ * arch-deep-analysis 工作流注册单测：类型可查、节点顺序、执行策略 metadata。
+ * arch_react_agent 由 pi 节点工厂在流程启动时创建（不再是注册表里的 bean）：
+ * 注册只登记、不校验，未知节点在解析时（resolveNodes / v2 控制器组装）才报错。
  */
 class ArchDeepAnalysisWorkflowRegistrationTest {
 
@@ -20,7 +20,8 @@ class ArchDeepAnalysisWorkflowRegistrationTest {
 
     @BeforeEach
     void setUp() {
-        // 模拟 registerBuiltIns 引用的全部节点 bean（名称与真实 DagNode.name() 一致）
+        // 模拟 registerBuiltIns 引用的全部节点 bean（名称与真实 DagNode.name() 一致）。
+        // arch_react_agent 不在其中：它由 ArchReActNodeV2Factory 按需创建。
         registry = new WorkflowRegistry(List.of(
                 stubNode("clarify"),
                 stubNode("impact"),
@@ -29,8 +30,7 @@ class ArchDeepAnalysisWorkflowRegistrationTest {
                 stubNode("tech_plan"),
                 stubNode("project_overview"),
                 stubNode("phase2_analysis"),
-                stubNode("arch_evidence_collect"),
-                stubNode("arch_react_agent")));
+                stubNode("arch_evidence_collect")));
         WorkflowAutoConfig.registerBuiltIns(registry);
     }
 
@@ -53,15 +53,18 @@ class ArchDeepAnalysisWorkflowRegistrationTest {
     }
 
     @Test
-    @DisplayName("节点顺序：证据收集 → ReAct 分析")
+    @DisplayName("节点顺序：证据收集 → ReAct 分析；react 节点由工厂提供，不在注册表里解析")
     void nodeOrderIsEvidenceThenReactAgent() {
         WorkflowDefinition def = registry.getWorkflow("arch-deep-analysis");
         assertThat(def.nodeNames()).containsExactly(
                 "arch_evidence_collect", "arch_react_agent");
-        // resolveNodes 按声明顺序可解析
-        assertThat(registry.resolveNodes(def.nodeNames()))
+        // 证据收集节点可从注册表解析；react 节点交给工厂，直接按名解析应明确报错
+        assertThat(registry.resolveNodes(List.of("arch_evidence_collect")))
                 .extracting(DagNode::name)
-                .containsExactly("arch_evidence_collect", "arch_react_agent");
+                .containsExactly("arch_evidence_collect");
+        assertThatThrownBy(() -> registry.resolveNodes(List.of("arch_react_agent")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("arch_react_agent");
     }
 
     @Test
@@ -74,10 +77,12 @@ class ArchDeepAnalysisWorkflowRegistrationTest {
     }
 
     @Test
-    @DisplayName("fail-fast：注册引用未知节点的工作流在注册期即抛错")
-    void registerWorkflowRejectsUnknownNode() {
-        assertThatThrownBy(() -> registry.registerWorkflow(new WorkflowDefinition(
-                "broken", "坏工作流", "desc", List.of("no_such_node"), java.util.Map.of())))
+    @DisplayName("注册只登记不校验；未知节点在解析期才抛错（工厂节点的存在使注册期校验不可能）")
+    void unknownNodesFailAtResolutionNotAtRegistration() {
+        registry.registerWorkflow(new WorkflowDefinition(
+                "broken", "坏工作流", "desc", List.of("no_such_node"), java.util.Map.of()));
+        assertThat(registry.getWorkflow("broken")).isNotNull();
+        assertThatThrownBy(() -> registry.resolveNodes(List.of("no_such_node")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("no_such_node");
     }

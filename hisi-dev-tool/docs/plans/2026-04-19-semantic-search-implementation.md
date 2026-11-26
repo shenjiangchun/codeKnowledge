@@ -806,14 +806,14 @@ Expected: Application started successfully
 
 ```bash
 # 清空现有 description
-curl -X POST "http://localhost:7474/db/neo4j/tx/commit" -u neo4j:12345678 \
+curl -X POST "http://localhost:7474/db/neo4j/tx/commit" -u neo4j:$NEO4J_PASSWORD \
   -d '{"statements":[{"statement":"MATCH (m:Method) SET m.description = null"}]}'
 
 # 重新生成向量（会触发描述生成）
 curl -X POST "http://localhost:8080/api/vector-generation/start?projectPath=xxx"
 
 # 检查生成的描述
-curl -s "http://localhost:7474/db/neo4j/tx/commit" -u neo4j:12345678 \
+curl -s "http://localhost:7474/db/neo4j/tx/commit" -u neo4j:$NEO4J_PASSWORD \
   -d '{"statements":[{"statement":"MATCH (m:Method) RETURN m.methodName, m.description LIMIT 5"}]}'
 ```
 

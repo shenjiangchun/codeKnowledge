@@ -26,13 +26,28 @@ public class GitExecutor {
         log.info("[GitExecutor] creating worktree branch={} from {} at {}",
                 branchName, targetBranch, worktreePath);
 
-        // delete stale branch if exists
-        runQuietly(repoPath, "git", "branch", "-D", branchName);
+        // 清掉同名旧分支（上次同名运行留下的）。第一次运行时本来就没有这个分支，不算错误
+        if (branchExists(repoPath, branchName)) {
+            exec(repoPath, "git", "branch", "-D", branchName);
+        }
 
         exec(repoPath,
                 "git", "worktree", "add", "-b", branchName, worktreePath, targetBranch);
 
         log.info("[GitExecutor] worktree created at {}", worktreePath);
+    }
+
+    private boolean branchExists(String repoPath, String branchName) {
+        try {
+            Process proc = new ProcessBuilder("git", "rev-parse", "--verify", "--quiet", "refs/heads/" + branchName)
+                    .directory(new File(repoPath))
+                    .redirectErrorStream(true)
+                    .start();
+            proc.getInputStream().readAllBytes();
+            return proc.waitFor(1, TimeUnit.MINUTES) && proc.exitValue() == 0;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /**
@@ -106,6 +121,43 @@ public class GitExecutor {
         } catch (Exception e) {
             log.error("[GitExecutor] current branch probe failed: {}", e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * 把分支推到 origin（同名分支，不合并）。凭据沿用本机 git 配置。
+     *
+     * @return 是否推送成功；失败只记日志并返回 false，不回滚本地提交
+     */
+    public boolean push(String worktreePath, String branchName) {
+        log.info("[GitExecutor] pushing branch={}", branchName);
+        try {
+            ProcessBuilder pb = new ProcessBuilder("git", "push", "-u", "origin", branchName);
+            pb.directory(new File(worktreePath));
+            pb.redirectErrorStream(true);
+            Process proc = pb.start();
+            StringBuilder output = new StringBuilder();
+            try (var reader = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append('\n');
+                }
+            }
+            boolean finished = proc.waitFor(DEFAULT_TIMEOUT_MINUTES, TimeUnit.MINUTES);
+            if (!finished) {
+                proc.destroyForcibly();
+                log.error("[GitExecutor] push timed out");
+                return false;
+            }
+            if (proc.exitValue() != 0) {
+                log.warn("[GitExecutor] push failed exit={}: {}", proc.exitValue(), output);
+                return false;
+            }
+            log.info("[GitExecutor] pushed {} to origin", branchName);
+            return true;
+        } catch (Exception e) {
+            log.warn("[GitExecutor] push error: {}", e.getMessage());
+            return false;
         }
     }
 

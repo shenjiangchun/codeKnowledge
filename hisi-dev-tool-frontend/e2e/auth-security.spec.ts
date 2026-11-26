@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { e2ePassword } from './helpers/credentials'
 
 /**
  * Authentication Security E2E Tests
@@ -92,7 +93,7 @@ test.describe('AUTH-03: Login failure - user not found', () => {
     // Fill form with non-existent user
     const inputs = loginDialog.locator('input')
     await inputs.nth(0).fill('nonexistentuser12345')
-    await inputs.nth(1).fill('123456')
+    await inputs.nth(1).fill(e2ePassword())
 
     // Submit
     const submitButton = loginDialog.locator('button[type="submit"]').first()
@@ -152,7 +153,7 @@ test.describe('AUTH-04: Login failure - empty password', () => {
     // Fill only password, leave username empty
     const inputs = loginDialog.locator('input')
     await inputs.nth(0).fill('')
-    await inputs.nth(1).fill('123456')
+    await inputs.nth(1).fill(e2ePassword())
 
     // Submit
     const submitButton = loginDialog.locator('button[type="submit"]').first()
@@ -191,7 +192,7 @@ test.describe('AUTH-05: Logout flow', () => {
 
     const inputs = loginDialog.locator('input')
     await inputs.nth(0).fill('root')
-    await inputs.nth(1).fill('123456')
+    await inputs.nth(1).fill(e2ePassword())
 
     const submitButton = loginDialog.locator('button[type="submit"]').first()
     await submitButton.click()
@@ -266,10 +267,10 @@ test.describe('AUTH-08: Regular user permission boundary', () => {
     const inputs = loginDialog.locator('input')
 
     // Try with a regular user account
-    // Note: This test assumes a 'testuser' account exists with password '123456'
+    // Note: This test assumes a 'testuser' account exists with password '见 helpers/credentials'
     // If no regular user exists, the test will fail at login
     await inputs.nth(0).fill('testuser')
-    await inputs.nth(1).fill('123456')
+    await inputs.nth(1).fill(e2ePassword())
 
     const submitButton = loginDialog.locator('button[type="submit"]').first()
     await submitButton.click()
@@ -333,7 +334,7 @@ test.describe('AUTH-09: Admin permission boundary', () => {
 
     const inputs = loginDialog.locator('input')
     await inputs.nth(0).fill('root')
-    await inputs.nth(1).fill('123456')
+    await inputs.nth(1).fill(e2ePassword())
 
     const submitButton = loginDialog.locator('button[type="submit"]').first()
     await submitButton.click()
@@ -386,7 +387,7 @@ test.describe('AUTH-10: Menu disabled without project selection', () => {
 
     const inputs = loginDialog.locator('input')
     await inputs.nth(0).fill('root')
-    await inputs.nth(1).fill('123456')
+    await inputs.nth(1).fill(e2ePassword())
 
     const submitButton = loginDialog.locator('button[type="submit"]').first()
     await submitButton.click()
@@ -510,7 +511,7 @@ test.describe('AUTH: Security edge cases', () => {
 
     const inputs = loginDialog.locator('input')
     await inputs.nth(0).fill('root')
-    await inputs.nth(1).fill('123456')
+    await inputs.nth(1).fill(e2ePassword())
 
     const submitButton = loginDialog.locator('button[type="submit"]').first()
     await submitButton.click()

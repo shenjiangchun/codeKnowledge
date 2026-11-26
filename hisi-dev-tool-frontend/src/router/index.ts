@@ -5,7 +5,13 @@ import { useAppStore } from '@/stores/app'
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    redirect: '/project'
+    redirect: '/workbench'
+  },
+  {
+    path: '/workbench',
+    name: 'Workbench',
+    component: () => import('@/views/workbench/WorkbenchView.vue'),
+    meta: { title: '工作台' }
   },
   {
     path: '/apm-debug',

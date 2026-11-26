@@ -205,7 +205,13 @@ function resetStates() {
   processLog.value = []
 }
 
-async function start() {
+async function start(defaultProject?: string) {
+  // 从页头的「AI 深度分析」按钮进来时面板里往往还没选项目：默认就用页头当前选中的项目，
+  // 否则按钮点下去只会弹一句「请先选择项目」
+  if (selectedProjectPaths.value.length === 0 && defaultProject
+      && props.availableProjects.some((p) => p.name === defaultProject)) {
+    selectedNames.value = [defaultProject]
+  }
   if (selectedProjectPaths.value.length === 0) {
     ElMessage.warning('请先选择项目')
     return

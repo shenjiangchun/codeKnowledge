@@ -14,7 +14,9 @@ import type {
   WorkflowConfirmRequest,
 } from '@/types/workflow'
 
-const BASE = '/workflow'
+// 接口版本。v2 的请求、响应、事件里的 nodeName 都与 v1 一致，区别是后端的 ReAct 节点换成了
+// 带历史压缩、可真正中止的实现，abort 之后不会继续跑。回滚时把这里改回 '/workflow'。
+const BASE = '/v2/workflow'
 
 const TOKEN_KEY = 'hisi-token'
 

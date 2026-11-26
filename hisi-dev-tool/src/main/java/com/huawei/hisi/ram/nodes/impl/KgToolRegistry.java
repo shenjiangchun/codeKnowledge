@@ -514,20 +514,19 @@ public class KgToolRegistry {
             for (Path file : files) {
                 if (lineCount >= MAX_GREP_LINES) break;
                 try {
-                    List<String> lines = Files.readAllLines(file);
+                    // 宽松解码：非 UTF-8（GBK 源码很常见）的文件不该整份搜不到
+                    List<String> lines = List.of(
+                            new String(Files.readAllBytes(file), java.nio.charset.StandardCharsets.UTF_8).split("\r?\n", -1));
                     for (int i = 0; i < lines.size() && lineCount < MAX_GREP_LINES; i++) {
-                        String line = lines.get(i);
-                        boolean match = caseSensitive
-                                ? line.contains(pattern)
-                                : line.toLowerCase().contains(pattern.toLowerCase());
-                        if (match) {
-                            matches.add(Map.of(
-                                    "file", root.relativize(file).toString().replace('\\', '/'),
-                                    "line", i + 1,
-                                    "content", truncate(line.trim(), 200)
-                            ));
-                            lineCount++;
+                        if (!com.huawei.hisi.agent.tools.GrepMatcher.matches(lines.get(i), pattern, caseSensitive)) {
+                            continue;
                         }
+                        matches.add(Map.of(
+                                "file", root.relativize(file).toString().replace('\\', '/'),
+                                "line", i + 1,
+                                "content", truncate(lines.get(i).trim(), 200)
+                        ));
+                        lineCount++;
                     }
                 } catch (IOException ignored) {
                     // skip binary/unreadable files

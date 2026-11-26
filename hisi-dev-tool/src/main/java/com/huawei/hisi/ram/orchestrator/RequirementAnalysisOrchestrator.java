@@ -13,7 +13,6 @@ import com.huawei.hisi.ram.repository.AgentSessionRepository;
 import com.huawei.hisi.workflow.DagExecutor;
 import com.huawei.hisi.workflow.DagNode;
 import com.huawei.hisi.workflow.ExecutionResult;
-import com.huawei.hisi.workflow.InputsHasher;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -57,8 +56,7 @@ public class RequirementAnalysisOrchestrator {
                                  Map<String, Object> userInput,
                                  List<DagNode> nodes) {
         AgentSession session = sessionRepo.save(AgentSession.newRunning(userId, SessionType.DEMAND));
-        storeInitialInput(session.getId(), userInput);
-        return executor.run(nodes, session.getId(), userInput);
+        return start(session, userInput, nodes);
     }
 
     /**
@@ -69,8 +67,18 @@ public class RequirementAnalysisOrchestrator {
     public ExecutionResult start(long existingSessionId,
                                  Map<String, Object> userInput,
                                  List<DagNode> nodes) {
-        storeInitialInput(existingSessionId, userInput);
-        return executor.run(nodes, existingSessionId, userInput);
+        return start(sessionRepo.findById(existingSessionId).orElse(null), userInput, nodes);
+    }
+
+    private ExecutionResult start(AgentSession session,
+                                  Map<String, Object> userInput,
+                                  List<DagNode> nodes) {
+        long sessionId = session == null ? -1L : session.getId();
+        // 首次运行和之后的每次续跑必须用同一套办法拼输入：检查点是按「节点输入」的哈希找回来的，
+        // 第一次少一个键、续跑时又多出来，人刚批准的结果就会因哈希对不上被丢弃并重算
+        Map<String, Object> input = rebuildInput(session, userInput, collectAllClarifyRounds(sessionId));
+        storeInitialInput(sessionId, input);
+        return executor.run(nodes, sessionId, input);
     }
 
     public ExecutionResult resume(long sessionId,
@@ -81,16 +89,27 @@ public class RequirementAnalysisOrchestrator {
         // Reconstruct the original input (userRequirement, projectHints, etc.)
         // from the event log, then accumulate ALL clarify answers from ALL rounds
         // so the LLM sees the full Q&A history on re-run.
-        Map<String, Object> merged = new LinkedHashMap<>(findSessionInitialInput(sessionId));
-        List<Map<String, Object>> allRounds = collectAllClarifyRounds(sessionId);
-        if (!allRounds.isEmpty()) {
-            merged.put("clarify_history", allRounds);
+        Map<String, Object> merged = rebuildInput(sessionRepo.findById(sessionId).orElse(null),
+                findSessionInitialInput(sessionId), collectAllClarifyRounds(sessionId));
+        return executor.run(nodes, sessionId, merged);
+    }
+
+    /**
+     * 用首次输入 + 全部澄清问答拼出这次运行的输入；项目路径按会话记录补齐，
+     * 保证同一会话每次拼出来的键一致。
+     */
+    private Map<String, Object> rebuildInput(AgentSession session,
+                                             Map<String, Object> initialInput,
+                                             List<Map<String, Object>> clarifyRounds) {
+        Map<String, Object> merged = new LinkedHashMap<>(initialInput);
+        if (!clarifyRounds.isEmpty()) {
+            merged.put("clarify_history", clarifyRounds);
         }
         // Override project paths from AgentSession so rerun uses the original project
-        sessionRepo.findById(sessionId).ifPresent(s -> {
-            injectProjectPaths(s, merged);
-        });
-        return executor.run(nodes, sessionId, merged);
+        if (session != null) {
+            injectProjectPaths(session, merged);
+        }
+        return merged;
     }
 
     /**
@@ -164,8 +183,11 @@ public class RequirementAnalysisOrchestrator {
      *
      * <p>Each round map contains:
      * <ul>
-     *   <li>{@code questions} — the {@code List<String>} from the CLARIFY_REQ</li>
-     *   <li>{@code answers} — the {@code Map<String, Object>} from the CLARIFY_RES</li>
+     *         <li>{@code questions} — the {@code List<String>} from the CLARIFY_REQ</li>
+     *         <li>{@code answers} — the {@code Map<String, Object>} from the CLARIFY_RES</li>
+     *         <li>{@code analysis} — the {@code Map<String, Object>} the LLM had already
+     *         extracted when it asked (target methods etc.), so later rounds — which run
+     *         without tools — can carry the code findings forward instead of losing them</li>
      * </ul>
      *
      * <p>A CLARIFY_REQ without a subsequent CLARIFY_RES (i.e. the most recent
@@ -179,6 +201,7 @@ public class RequirementAnalysisOrchestrator {
 
         // Pending CLARIFY_REQ waiting for its CLARIFY_RES pair
         List<String> pendingQuestions = null;
+        Map<String, Object> pendingAnalysis = null;
 
         for (AgentEvent ev : events) {
             if (ev.getType() == EventType.CLARIFY_REQ) {
@@ -189,6 +212,9 @@ public class RequirementAnalysisOrchestrator {
                             .map(q -> (String) q)
                             .toList();
                 }
+                pendingAnalysis = payload != null && payload.get("partialOutput") instanceof Map<?, ?> partial
+                        ? (Map<String, Object>) partial
+                        : null;
             } else if (ev.getType() == EventType.CLARIFY_RES && pendingQuestions != null) {
                 Map<String, Object> payload = parsePayload(ev.getPayload());
                 Map<String, Object> answers = Map.of();
@@ -198,8 +224,12 @@ public class RequirementAnalysisOrchestrator {
                 Map<String, Object> round = new LinkedHashMap<>();
                 round.put("questions", List.copyOf(pendingQuestions));
                 round.put("answers", answers);
+                if (pendingAnalysis != null && !pendingAnalysis.isEmpty()) {
+                    round.put("analysis", pendingAnalysis);
+                }
                 rounds.add(round);
                 pendingQuestions = null;
+                pendingAnalysis = null;
             }
         }
         return rounds;
@@ -233,15 +263,8 @@ public class RequirementAnalysisOrchestrator {
 
         // Reconstruct the SAME input that was used in the last successful DAG
         // run so that already-completed nodes cache-hit on their inputsHash.
-        Map<String, Object> fullInput = new LinkedHashMap<>(findSessionInitialInput(sessionId));
-        List<Map<String, Object>> allRounds = collectAllClarifyRounds(sessionId);
-        if (!allRounds.isEmpty()) {
-            fullInput.put("clarify_history", allRounds);
-        }
-        // Override project paths from AgentSession so rerun uses the original project
-        sessionRepo.findById(sessionId).ifPresent(s -> {
-            injectProjectPaths(s, fullInput);
-        });
+        Map<String, Object> fullInput = rebuildInput(sessionRepo.findById(sessionId).orElse(null),
+                findSessionInitialInput(sessionId), collectAllClarifyRounds(sessionId));
         return executor.run(nodes, sessionId, fullInput);
     }
 
@@ -305,15 +328,21 @@ public class RequirementAnalysisOrchestrator {
     }
 
     /**
-     * Appends a new CHECKPOINT with the user-edited output. The new inputsHash
-     * differs from the original, cascading cache misses to all downstream nodes.
+     * Appends a new CHECKPOINT with the user-edited output. It keeps the inputsHash
+     * of the checkpoint it replaces — the executor looks checkpoints up by the hash
+     * of the node's <em>input</em>, so a hash of the edited output would never match
+     * and the user's edit would be silently replaced by the original output. Because
+     * this node's output changes, every downstream node misses its cache and re-runs.
      */
     private void overwriteCheckpoint(long sessionId, String nodeName,
                                       Map<String, Object> editedOutput) {
-        String newHash = InputsHasher.hash(editedOutput);
+        String inputsHash = latestCheckpointHash(sessionId, nodeName);
+        if (inputsHash == null) {
+            return; // nothing to edit — no checkpoint for this node
+        }
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("nodeName", nodeName);
-        payload.put("inputsHash", newHash);
+        payload.put("inputsHash", inputsHash);
         payload.put("output", editedOutput);
         payload.put("edited", true);
         String key = "ckpt-edit-" + sessionId + "-" + nodeName + "-" + System.nanoTime();
@@ -322,12 +351,25 @@ public class RequirementAnalysisOrchestrator {
                 .type(EventType.CHECKPOINT)
                 .payload(toJson(payload))
                 .idempotencyKey(key)
-                .inputsHash(newHash)
+                .inputsHash(inputsHash)
                 .circuitState("OK")
                 .validatorStatus("OK")
                 .createdAt(System.currentTimeMillis() / 1000L)
                 .build();
         eventRepo.append(ev);
+    }
+
+    /** inputsHash carried by the newest CHECKPOINT of {@code nodeName}, or null when the node has none. */
+    private String latestCheckpointHash(long sessionId, String nodeName) {
+        List<AgentEvent> events = eventRepo.findBySessionId(sessionId);
+        for (int i = events.size() - 1; i >= 0; i--) {
+            AgentEvent ev = events.get(i);
+            if (ev.getType() != EventType.CHECKPOINT) continue;
+            Map<String, Object> payload = parsePayload(ev.getPayload());
+            if (payload == null || !nodeName.equals(payload.get("nodeName"))) continue;
+            return payload.get("inputsHash") instanceof String hash ? hash : null;
+        }
+        return null;
     }
 
     private String toJson(Map<String, Object> payload) {

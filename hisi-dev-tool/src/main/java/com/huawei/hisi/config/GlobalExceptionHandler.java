@@ -13,6 +13,9 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import org.springframework.web.servlet.ModelAndView;
+
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -81,7 +84,7 @@ public class GlobalExceptionHandler {
         log.error("[MissingParam] {} {}?{} | param='{}' type={} | message={}",
                 request.getMethod(),
                 request.getRequestURI(),
-                request.getQueryString(),
+                safeQuery(request),
                 ex.getParameterName(),
                 ex.getParameterType(),
                 ex.getMessage());
@@ -110,9 +113,16 @@ public class GlobalExceptionHandler {
      * @return 500 Internal Server Error 响应
      */
     @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<ApiResponse<Void>> handleRuntimeException(RuntimeException ex, HttpServletRequest request) {
+    public Object handleRuntimeException(RuntimeException ex, HttpServletRequest request) {
+        if (clientGone(ex, request)) {
+            // 流式接口上客户端断开有时被包成 RuntimeException 抛上来：同样不是错误，也不要再写响应
+            log.debug("[ClientDisconnected] {} {} | {}", request.getMethod(), request.getRequestURI(), rootMessage(ex));
+            ModelAndView handled = new ModelAndView();
+            handled.clear();
+            return handled;
+        }
         log.error("[RuntimeException] {} {}?{}",
-                request.getMethod(), request.getRequestURI(), request.getQueryString(), ex);
+                request.getMethod(), request.getRequestURI(), safeQuery(request), ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.error(500, "服务内部错误: " + ex.getMessage()));
     }
@@ -125,10 +135,19 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public Object handleException(Exception ex, HttpServletRequest request) {
+        if (clientGone(ex, request)) {
+            // 客户端断开（关页面、刷新、断网）不是服务端错误：流式接口写不回去是正常现象，响应也已经没法再写，
+            // 返回「已清空」的 ModelAndView 表示「已处理、无需再输出」，避免再往一条断掉的连接上写而抛出新的异常
+            log.debug("[ClientDisconnected] {} {} | {}", request.getMethod(), request.getRequestURI(), rootMessage(ex));
+            ModelAndView handled = new ModelAndView();
+            handled.clear();
+            return handled;
+        }
+
         log.error("[UnhandledException] {} {}?{} | exType={} | message={}",
                 request.getMethod(),
                 request.getRequestURI(),
-                request.getQueryString(),
+                safeQuery(request),
                 ex.getClass().getName(),
                 ex.getMessage(),
                 ex);
@@ -148,6 +167,50 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.error(500, "服务异常: " + ex.getMessage()));
+    }
+
+    private static final java.util.regex.Pattern SENSITIVE_QUERY = java.util.regex.Pattern.compile(
+            "(?i)([?&](?:token|access_token|password|passwd|secret|api_?key|authorization)=)[^&]*");
+
+    /** 写日志用的查询串：流式接口把登录 token 放在查询参数里（EventSource 设不了请求头），不能原样落盘。 */
+    static String safeQuery(HttpServletRequest request) {
+        String query = request.getQueryString();
+        if (query == null || query.isEmpty()) {
+            return "";
+        }
+        java.util.regex.Matcher matcher = SENSITIVE_QUERY.matcher("?" + query);
+        StringBuilder out = new StringBuilder();
+        while (matcher.find()) {
+            matcher.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(matcher.group(1) + "***"));
+        }
+        matcher.appendTail(out);
+        return out.substring(1);
+    }
+
+    private static final Set<String> STREAM_URI_MARKERS = Set.of("/stream");
+
+    /** 流式（SSE）请求：浏览器一断开，服务端再写就会抛 IO 异常，这不是服务端的错。 */
+    static boolean clientGone(Throwable ex, HttpServletRequest request) {
+        for (Throwable cause = ex; cause != null; cause = cause.getCause() == cause ? null : cause.getCause()) {
+            if (cause instanceof org.springframework.web.context.request.async.AsyncRequestNotUsableException) {
+                return true;
+            }
+        }
+        if (!(ex instanceof java.io.IOException)) {
+            return false;
+        }
+        String accept = request.getHeader("Accept");
+        String uri = request.getRequestURI();
+        return (accept != null && accept.contains("text/event-stream"))
+                || (uri != null && STREAM_URI_MARKERS.stream().anyMatch(uri::contains));
+    }
+
+    private static String rootMessage(Throwable ex) {
+        Throwable root = ex;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        return root.getClass().getSimpleName() + ": " + root.getMessage();
     }
 
     /**

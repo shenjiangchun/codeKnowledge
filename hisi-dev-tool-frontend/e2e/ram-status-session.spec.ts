@@ -1,11 +1,12 @@
 import { test, expect } from '@playwright/test'
+import { e2ePassword } from './helpers/credentials'
 
 /**
  * 项目现状分析 - 历史会话加载测试
  *
  * 测试步骤:
  * 1. 导航到首页
- * 2. 登录（用户名: root，密码: 123456）
+ * 2. 登录（用户名: root，密码: 见 helpers/credentials）
  * 3. 导航到 /ram/status
  * 4. 点击第一个历史会话卡片
  * 5. 验证: 页面显示"已完成"标签，显示报告内容（不是加载动画）
@@ -55,7 +56,7 @@ test.describe('RAM Status - Historical Session Loading', () => {
       const passwordInput = loginDialog.locator('input[type="password"]').first()
 
       await usernameInput.fill('root')
-      await passwordInput.fill('123456')
+      await passwordInput.fill(e2ePassword())
 
       // Click login button in dialog
       const submitButton = loginDialog.locator('button:has-text("登录"), button[type="submit"]').first()

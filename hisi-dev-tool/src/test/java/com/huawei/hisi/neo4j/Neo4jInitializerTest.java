@@ -19,7 +19,6 @@ class Neo4jInitializerTest {
 
     private static final String URI = "neo4j://127.0.0.1:7687";
     private static final String USERNAME = "neo4j";
-    private static final String PASSWORD = "12345678";
 
     /**
      * 唯一性约束列表
@@ -74,7 +73,7 @@ class Neo4jInitializerTest {
 
     @Test
     void initializeConstraintsAndIndexes() {
-        try (Driver driver = GraphDatabase.driver(URI, AuthTokens.basic(USERNAME, PASSWORD));
+        try (Driver driver = GraphDatabase.driver(URI, AuthTokens.basic(USERNAME, Neo4jTestSupport.requirePassword()));
              Session session = driver.session()) {
 
             int successCount = 0;

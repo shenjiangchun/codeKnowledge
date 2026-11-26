@@ -138,15 +138,26 @@ public class ArchAgentToolRegistry {
 
         tools.put("injection_scan", ArchAgentTool.of(
                 "injection_scan", "本地源码依赖注入扫描：区分接口注入(interface) vs 直接依赖实现类(class) vs 外部类型(external)，用于灰度验证实现类外泄/直接依赖实现类误报",
-                Map.of("className", "全限定类名（可选，返回该类的注入点明细）",
+                Map.of("className", "全限定类名（可选，返回【该类自身】的注入点明细，即它注入了哪些依赖）",
+                        "injectedType", "全限定类型名（可选，反向查询：返回所有直接声明该类型的注入点，即谁直接依赖了它；验证实现类外泄/直接依赖实现类误报时用它传实现类FQN）",
                         "packageFilter", "包名前缀（可选，返回该包下所有类的注入点明细）"),
                 (args, paths) -> {
                     String className = str(args, "className");
+                    String injectedType = str(args, "injectedType");
                     String pkg = str(args, "packageFilter");
+                    if (injectedType != null && !injectedType.isBlank()) {
+                        return sourceScan.injectionSitesByInjectedType(paths, injectedType);
+                    }
                     return (className != null || (pkg != null && !pkg.isBlank()))
                             ? sourceScan.injectionSites(paths, className, pkg)
                             : sourceScan.injectionSummary(paths);
                 }));
+
+        tools.put("grep_source", ArchAgentTool.of(
+                "grep_source", "本地源码关键字/类名检索（纯文本，不解析 AST）：返回命中文件与行，用于亲眼看某个类型的声明与引用位置，复核实现类外泄/直接依赖实现类",
+                Map.of("pattern", "关键字或类名（必填，建议传实现类简单名）",
+                        "limit", "返回命中行数上限（默认30）"),
+                (args, paths) -> sourceScan.grepSource(paths, str(args, "pattern"), intOr(args, "limit", 30))));
     }
 
     /** 解包 {@link ApiResponse}：成功返回 data，失败返回 error 摘要（不抛异常）。 */

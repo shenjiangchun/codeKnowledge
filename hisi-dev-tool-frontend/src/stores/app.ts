@@ -66,6 +66,7 @@ export const useAppStore = defineStore('app', () => {
     'prompt-config': true,
     'settings': true,
     'apm-debug': true,
+    'workbench': true, // 首页工作台：聚合所有项目的日志与架构待办
   }))
 
   // Actions

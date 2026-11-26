@@ -40,12 +40,11 @@ public class WorkflowRegistry {
     /**
      * Register a workflow definition.
      *
-     * <p>Fail-fast: all referenced node names must already be registered, so a
-     * misconfigured workflow is caught at registration time rather than at the
-     * first {@code /start} request.</p>
+     * <p>校验延迟到解析时（{@link #resolveNodes} / v2 控制器的节点组装）：arch_react_agent
+     * 由 {@code ArchReActNodeV2Factory} 在每次启动流程时创建（不再是 bean），注册期无从校验。
+     * 真正未知的节点会在流程启动时以同样的异常暴露。</p>
      */
     public void registerWorkflow(WorkflowDefinition def) {
-        resolveNodes(def.nodeNames());
         workflowRegistry.put(def.workflowType(), def);
         log.info("[WorkflowRegistry] registered workflow: type={} nodes={}",
                 def.workflowType(), def.nodeNames());
@@ -94,23 +93,5 @@ public class WorkflowRegistry {
             resolved.add(node);
         }
         return resolved;
-    }
-
-    /**
-     * Build and register a workflow from a list of node names.
-     *
-     * @throws IllegalArgumentException if any node name is not registered
-     */
-    public WorkflowDefinition buildWorkflow(String type, String displayName,
-                                            String description, List<String> nodeNames) {
-        // Validate all nodes exist
-        for (String name : nodeNames) {
-            if (!nodeRegistry.containsKey(name)) {
-                throw new IllegalArgumentException("Unknown node type: " + name);
-            }
-        }
-        WorkflowDefinition def = new WorkflowDefinition(type, displayName, description, nodeNames, Map.of());
-        registerWorkflow(def);
-        return def;
     }
 }

@@ -135,7 +135,7 @@ cd hisi-dev-tool
 docker compose -f docker-compose.neo4j.yml up -d
 
 # 设置必要环境变量（PowerShell 示例）
-$env:NEO4J_PASSWORD = "12345678"
+$env:NEO4J_PASSWORD = "<你的 Neo4j 密码>"
 $env:EMBEDDING_API_KEY = "sk-..."
 $env:TEXT_MODEL_API_KEY = "..."
 

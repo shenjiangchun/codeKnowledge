@@ -4,7 +4,7 @@
 
 - **URL**: neo4j://127.0.0.1:7687
 - **用户名**: neo4j
-- **密码**: 12345678
+- **密码**: 安装时自己设置的密码（不要写进文档或仓库）
 - **Browser**: http://localhost:7474
 
 ---
@@ -57,7 +57,7 @@ RETURN gds.version() AS gdsVersion;
 ### 方式 A: 通过 Neo4j Browser 手动执行
 
 1. 打开 http://localhost:7474
-2. 登录（neo4j / 12345678）
+2. 登录（neo4j / 你设置的密码）
 3. 复制以下脚本并执行：
 
 <details>

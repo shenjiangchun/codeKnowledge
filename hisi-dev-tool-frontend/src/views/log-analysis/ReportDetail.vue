@@ -16,11 +16,14 @@
               <el-icon style="margin-right: 4px"><SetUp /></el-icon>
               自动修复
             </el-button>
-            <el-button type="primary" :loading="reanalyzing" @click="handleReanalyze">重新分析</el-button>
+            <el-button type="primary" :loading="reanalyzing" :disabled="analyzing" @click="handleReanalyze">重新分析</el-button>
             <el-button @click="goBack">返回</el-button>
           </div>
         </div>
       </template>
+
+      <!-- DAG 实时进度条：重新分析期间，或报告仍在处理中时显示 -->
+      <NodeTimeline v-if="isProcessing" :events="nodeEvents" />
 
       <div v-if="report">
         <el-descriptions :column="2" border>
@@ -37,9 +40,6 @@
 
         <el-divider />
 
-        <!-- DAG 实时进度条 (processing 状态) -->
-        <NodeTimeline v-if="isProcessing" :events="nodeEvents" />
-
         <!-- 模式识别标签 (v3) -->
         <div v-if="report.patternType && report.patternType !== 'UNKNOWN'" class="pattern-tag-bar">
           <el-tag :type="getPatternTagType(report.patternType)" effect="dark" size="large">
@@ -53,31 +53,93 @@
           </el-tag>
         </div>
 
-        <!-- 错误摘要 -->
+        <!-- 错误摘要：后端返回的是对象；早期报告可能存成字符串，那时按 markdown 渲染 -->
         <div v-if="report.errorSummary" class="report-section">
           <h4 class="section-title">错误摘要</h4>
-          <div class="markdown-content error-summary" v-html="renderMarkdown(report.errorSummary)"></div>
+          <el-descriptions v-if="errorSummary" :column="1" border size="small">
+            <el-descriptions-item v-if="errorSummary.errorType" label="异常类型">{{ errorSummary.errorType }}</el-descriptions-item>
+            <el-descriptions-item v-if="errorSummary.rootCauseException" label="根因异常">{{ errorSummary.rootCauseException }}</el-descriptions-item>
+            <el-descriptions-item v-if="errorSummary.message" label="消息">{{ errorSummary.message }}</el-descriptions-item>
+            <el-descriptions-item v-if="errorSummary.stackTracePreview" label="堆栈预览">
+              <pre class="stack-preview">{{ errorSummary.stackTracePreview }}</pre>
+            </el-descriptions-item>
+          </el-descriptions>
+          <div v-else class="markdown-content error-summary" v-html="renderMarkdown(String(report.errorSummary))"></div>
         </div>
 
-        <!-- 根本原因 -->
+        <!-- 根本原因：正文是 markdown；v2 的报告另带验证结果与证据 -->
         <div v-if="report.rootCause" class="report-section">
-          <h4 class="section-title">根本原因</h4>
-          <div class="markdown-content root-cause" v-html="renderMarkdown(report.rootCause)"></div>
+          <h4 class="section-title">
+            根本原因
+            <el-tag v-if="rootCause?.confidence" :type="getConfidenceType(String(rootCause.confidence))" effect="plain" size="small">
+              置信度: {{ rootCause.confidence }}
+            </el-tag>
+          </h4>
+          <template v-if="rootCause">
+            <div v-if="rootCause.markdown" class="markdown-content root-cause" v-html="renderMarkdown(displayMarkdown(rootCause.markdown))"></div>
+            <div v-if="hypotheses.length" class="sub-section">
+              <div class="sub-title">验证结果</div>
+              <el-table :data="hypotheses" size="small" border>
+                <el-table-column label="结论" min-width="300">
+                  <template #default="{ row }">
+                    <div>{{ row.title }}</div>
+                    <div v-for="(reason, i) in row.reasons || []" :key="i" class="verify-reason">{{ reason }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="是否保留" width="92">
+                  <template #default="{ row }">{{ row.kept ? '保留' : '排除' }}</template>
+                </el-table-column>
+                <el-table-column label="置信度" width="84">
+                  <template #default="{ row }">{{ row.confidence || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="因果链" width="150">
+                  <template #default="{ row }">{{ chainStatusLabel(row.chainStatus) }}</template>
+                </el-table-column>
+              </el-table>
+            </div>
+            <div v-if="rootCause.evidenceAnchors?.length" class="sub-section">
+              <div class="sub-title">证据</div>
+              <el-table :data="rootCause.evidenceAnchors" size="small" border>
+                <el-table-column prop="id" label="编号" width="72" />
+                <el-table-column label="类型" width="140">
+                  <template #default="{ row }">{{ row.kindLabel || row.kind }}</template>
+                </el-table-column>
+                <el-table-column prop="summary" label="说明" min-width="320" />
+              </el-table>
+            </div>
+          </template>
+          <div v-else class="markdown-content root-cause" v-html="renderMarkdown(String(report.rootCause))"></div>
         </div>
 
-        <!-- 修复建议 -->
-        <div v-if="report.fixSuggestions" class="report-section">
+        <!-- 修复建议：带优先级的列表 -->
+        <div v-if="hasFixSuggestions" class="report-section">
           <h4 class="section-title">修复建议</h4>
-          <div class="markdown-content fix-suggestions" v-html="renderMarkdown(report.fixSuggestions)"></div>
+          <ul v-if="fixSuggestions.length" class="fix-list">
+            <li v-for="(fix, idx) in fixSuggestions" :key="idx" class="fix-item">
+              <div class="fix-head">
+                <el-tag :type="getPriorityType(fix.priority)" size="small" effect="dark">{{ fix.priority || 'P2' }}</el-tag>
+                <span class="fix-desc">{{ fix.description }}</span>
+              </div>
+              <div v-if="fix.affectedCode" class="fix-code">{{ fix.affectedCode }}</div>
+              <div v-if="fix.expectedEffect" class="fix-effect">预期效果：{{ fix.expectedEffect }}</div>
+            </li>
+          </ul>
+          <div v-else class="markdown-content fix-suggestions" v-html="renderMarkdown(String(report.fixSuggestions))"></div>
         </div>
 
-        <!-- 代码片段 -->
-        <div v-if="report.codeSnippets" class="report-section">
-          <h4 class="section-title">相关代码</h4>
-          <div class="markdown-content code-snippets" v-html="renderMarkdown(report.codeSnippets)"></div>
+        <!-- 关键堆栈帧 -->
+        <div v-if="hasCodeSnippets" class="report-section">
+          <h4 class="section-title">关键堆栈帧</h4>
+          <ul v-if="codeSnippets.length" class="frame-list">
+            <li v-for="(frame, idx) in codeSnippets" :key="idx" class="frame-item">
+              <code>{{ frame.className }}.{{ frame.methodName }}()</code>
+              <span v-if="frame.fileName" class="frame-loc">{{ frame.fileName }}<template v-if="frame.lineNumber">:{{ frame.lineNumber }}</template></span>
+            </li>
+          </ul>
+          <div v-else class="markdown-content code-snippets" v-html="renderMarkdown(String(report.codeSnippets))"></div>
         </div>
 
-        <el-empty v-if="!report.errorSummary && !report.rootCause && !report.fixSuggestions" description="暂无分析结果" />
+        <el-empty v-if="!report.errorSummary && !report.rootCause && !hasFixSuggestions" description="暂无分析结果" />
 
         <!-- 追问对话面板 (completed 状态) -->
         <FollowupPanel v-if="isCompleted" :report-id="reportId" />
@@ -111,14 +173,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { logAnalysisApi } from '@/api/logAnalysis'
 import { fixApi } from '@/api/fix'
 import type { FixSession } from '@/api/fix'
 import { SetUp } from '@element-plus/icons-vue'
-import type { DetailedAnalysisReport } from '@/types/log'
+import type {
+  DetailedAnalysisReport, ErrorSummary, RootCauseSection, FixSuggestion, StackFrameRef, HypothesisVerification
+} from '@/types/log'
 import { renderMarkdown } from '@/utils/markdown'
 import { downloadBlob } from '@/utils/download'
 import { useLogAnalysisWebSocket } from '@/composables/useLogAnalysisWebSocket'
@@ -135,12 +199,48 @@ const report = ref<DetailedAnalysisReport | null>(null)
 const fixSessions = ref<FixSession[]>([])
 
 // Real-time DAG progress via WebSocket
-const { events: nodeEvents, connect: connectWs } = useLogAnalysisWebSocket(() => reportId.value)
+const { events: nodeEvents, connected: wsConnected, connect: connectWs } = useLogAnalysisWebSocket(() => reportId.value)
+// 本页触发的「重新分析」进行中：此时报告详情接口会返回「尚未完成」，进度靠节点事件和任务状态轮询
+const analyzing = ref(false)
 const isProcessing = computed(() => {
   const s = report.value?.status?.toLowerCase()
-  return s === 'processing' || s === 'pending'
+  return analyzing.value || s === 'processing' || s === 'pending'
 })
 const isCompleted = computed(() => report.value?.status?.toLowerCase() === 'completed')
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+// 报告的四个内容字段都是结构化数据（对象 / 数组）；早期报告可能存成字符串，那时退回按 markdown 渲染
+const errorSummary = computed<ErrorSummary | null>(() =>
+  isRecord(report.value?.errorSummary) ? report.value!.errorSummary as ErrorSummary : null)
+const rootCause = computed<RootCauseSection | null>(() =>
+  isRecord(report.value?.rootCause) ? report.value!.rootCause as RootCauseSection : null)
+const fixSuggestions = computed<FixSuggestion[]>(() =>
+  Array.isArray(report.value?.fixSuggestions) ? report.value!.fixSuggestions as FixSuggestion[] : [])
+const codeSnippets = computed<StackFrameRef[]>(() =>
+  Array.isArray(report.value?.codeSnippets) ? report.value!.codeSnippets as StackFrameRef[] : [])
+const hypotheses = computed<HypothesisVerification[]>(() => rootCause.value?.verification?.hypotheses ?? [])
+const hasFixSuggestions = computed(() =>
+  !!report.value?.fixSuggestions && (typeof report.value.fixSuggestions === 'string' || fixSuggestions.value.length > 0))
+const hasCodeSnippets = computed(() =>
+  !!report.value?.codeSnippets && (typeof report.value.codeSnippets === 'string' || codeSnippets.value.length > 0))
+
+/** 报告正文里的证据引用写成 [[E3]]，展示时转成 [E3]，与证据表的编号一致 */
+const displayMarkdown = (text: string) =>
+  text.replace(/\[\[\s*E\s*(\d{1,3})\s*\]\]/g, '[E$1]').replace(/\[\[\s*未验证\s*\]\]/g, '[未验证引用]')
+
+const CHAIN_STATUS_LABELS: Record<string, string> = {
+  verified: '已由调用图证实',
+  stack_verified: '堆栈已证实',
+  at_throw_site: '根因落在抛出点',
+  unverified: '未证实',
+  unknown: '无法判断'
+}
+const chainStatusLabel = (status?: string) => (status && CHAIN_STATUS_LABELS[status]) || status || '-'
+
+const getPriorityType = (priority?: string) =>
+  priority === 'P0' ? 'danger' : priority === 'P1' ? 'warning' : 'info'
 
 const canAutoFix = computed(() => {
   const s = report.value?.status?.toLowerCase()
@@ -255,13 +355,65 @@ const loadReport = async () => {
   }
 }
 
+let statusTimer: ReturnType<typeof setTimeout> | null = null
+
+const stopStatusPolling = () => {
+  if (statusTimer) {
+    clearTimeout(statusTimer)
+    statusTimer = null
+  }
+}
+
+const scheduleStatusPoll = (delay: number) => {
+  stopStatusPolling()
+  statusTimer = setTimeout(pollStatus, delay)
+}
+
+/** 轮询任务状态，分析结束后重新加载报告。 */
+const pollStatus = async () => {
+  try {
+    const st = await logAnalysisApi.getStatus(reportId.value)
+    if (st.status === 'completed' || st.status === 'failed' || st.status === 'error') {
+      analyzing.value = false
+      if (st.status === 'completed') {
+        ElMessage.success('重新分析完成')
+      } else {
+        ElMessage.error('重新分析失败')
+      }
+      await loadReport()
+      return
+    }
+  } catch {
+    // 单次状态查询失败不影响轮询，下一轮重试
+  }
+  scheduleStatusPoll(3000)
+}
+
+/** 等 WebSocket 连上（最多 2 秒），避免漏掉第一个节点的事件。 */
+const waitForWs = async () => {
+  for (let i = 0; i < 20 && !wsConnected.value; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+}
+
+const startTracking = () => {
+  analyzing.value = true
+  scheduleStatusPoll(1000)
+}
+
 const handleReanalyze = async () => {
   reanalyzing.value = true
   try {
+    // 清掉上一轮的节点事件，连上进度通道后再触发，页面上能看到节点逐个执行
+    nodeEvents.value = []
+    connectWs()
+    await waitForWs()
     await logAnalysisApi.reanalyze(reportId.value)
-    ElMessage.success('已触发重新分析，请稍后刷新查看结果')
-    setTimeout(loadReport, 3000)
+    startTracking()
+    ElMessage.success('已触发重新分析')
   } catch {
+    analyzing.value = false
+    stopStatusPolling()
     ElMessage.error('触发重新分析失败')
   } finally {
     reanalyzing.value = false
@@ -286,10 +438,23 @@ const handleExportMd = async () => {
   }
 }
 
-onMounted(() => {
-  loadReport()
+onMounted(async () => {
+  // 报告可能仍在分析中（例如分析期间刷新了页面）：此时详情接口会返回「尚未完成」，先看任务状态
+  try {
+    const st = await logAnalysisApi.getStatus(reportId.value)
+    if (st?.status === 'processing' || st?.status === 'pending') {
+      connectWs()
+      startTracking()
+    } else {
+      await loadReport()
+    }
+  } catch {
+    await loadReport()
+  }
   loadFixSessions()
 })
+
+onUnmounted(stopStatusPolling)
 </script>
 
 <style scoped>
@@ -304,12 +469,91 @@ onMounted(() => {
 }
 
 .section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 15px;
   font-weight: 600;
   color: #303133;
   margin-bottom: 12px;
   padding-left: 10px;
   border-left: 3px solid #409eff;
+}
+
+/* 结构化展示：错误摘要 / 验证结果 / 证据 / 修复建议 / 关键堆栈帧 */
+.stack-preview {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.sub-section {
+  margin-top: 12px;
+}
+.sub-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #606266;
+  margin-bottom: 8px;
+}
+.verify-reason {
+  font-size: 12px;
+  color: #e6a23c;
+}
+.fix-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fix-item {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  background: #fff;
+}
+.fix-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.fix-desc {
+  flex: 1;
+  line-height: 1.6;
+}
+.fix-code {
+  margin-top: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #606266;
+  word-break: break-all;
+}
+.fix-effect {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #909399;
+}
+.frame-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.frame-item {
+  padding: 6px 0;
+  border-bottom: 1px dashed #ebeef5;
+  font-size: 13px;
+}
+.frame-item:last-child {
+  border-bottom: none;
+}
+.frame-loc {
+  margin-left: 8px;
+  color: #909399;
+  font-size: 12px;
 }
 
 .section-content {

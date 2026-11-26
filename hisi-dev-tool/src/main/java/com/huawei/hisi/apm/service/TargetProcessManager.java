@@ -379,6 +379,48 @@ public class TargetProcessManager {
     }
 
     /**
+     * 不带 OTel 探针、命令由调用方给出的启动方式（工作台的全链路 E2E 用它启动待验证服务）。
+     * 端口分配、就绪探测、输出捕获与关闭逻辑与 {@link #launch} 共用实现，只注入 SERVER_PORT。
+     */
+    public TargetProcessInfo launchPlain(String sessionId,
+                                         String projectPath,
+                                         String serviceName,
+                                         int targetPort,
+                                         List<String> command,
+                                         Consumer<TargetProcessInfo> callback,
+                                         Consumer<String> logConsumer) throws IOException {
+        if (processes.containsKey(sessionId)) {
+            throw new IllegalStateException("Session already has a running process: " + sessionId);
+        }
+        int resolvedPort = targetPort > 0 ? targetPort : allocatePort();
+
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.directory(new File(projectPath));
+        pb.redirectErrorStream(true);
+        Map<String, String> env = pb.environment();
+        env.put("SERVER_PORT", String.valueOf(resolvedPort));
+        log.info("[TargetProcess] Session {} launchPlain: workDir={} command={}",
+                sessionId, projectPath, command);
+
+        Process process = pb.start();
+        long pid = process.pid();
+        log.info("[TargetProcess] Session {} started PID {} on port {} (plain)", sessionId, pid, resolvedPort);
+
+        ManagedProcess mp = new ManagedProcess(process, sessionId, resolvedPort, "LAUNCHING", null, null);
+        Thread readerThread = createReaderThread(sessionId, process, mp, callback, projectPath, serviceName, logConsumer);
+        Thread readinessThread = createReadinessThread(sessionId, resolvedPort, mp, callback, projectPath, serviceName, pid);
+        ManagedProcess fullMp = new ManagedProcess(process, sessionId, resolvedPort, "LAUNCHING", readerThread, readinessThread);
+        processes.put(sessionId, fullMp);
+
+        TargetProcessInfo info = buildInfo(sessionId, projectPath, serviceName, resolvedPort, pid, "LAUNCHING");
+        notifyCallback(callback, info);
+
+        readerThread.start();
+        readinessThread.start();
+        return info;
+    }
+
+    /**
      * Return the last N lines from the process stdout ring buffer.
      *
      * @param sessionId session to query

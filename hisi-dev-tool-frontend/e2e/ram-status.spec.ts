@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { e2ePassword } from './helpers/credentials'
 
 const BASE_URL = 'http://localhost:5173';
 const BACKEND_URL = 'http://localhost:8080';
@@ -36,7 +37,7 @@ test.describe('项目现状分析创建流程', () => {
     const passwordInput = loginDialog.getByPlaceholder('请输入密码');
 
     await usernameInput.fill('root');
-    await passwordInput.fill('123456');
+    await passwordInput.fill(e2ePassword());
 
     // 点击登录按钮
     const submitButton = loginDialog.locator('button').filter({ hasText: '登录' }).first();
@@ -213,7 +214,7 @@ test.describe('项目现状分析创建流程', () => {
     await expect(loginDialog).toBeVisible({ timeout: 5000 });
 
     await loginDialog.getByPlaceholder('请输入用户名').fill('root');
-    await loginDialog.getByPlaceholder('请输入密码').fill('123456');
+    await loginDialog.getByPlaceholder('请输入密码').fill(e2ePassword());
     await loginDialog.locator('button').filter({ hasText: '登录' }).first().click();
 
     // 等待登录成功（验证用户信息出现）

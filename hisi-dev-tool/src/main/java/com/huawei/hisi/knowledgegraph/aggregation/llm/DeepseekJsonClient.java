@@ -29,8 +29,8 @@ public class DeepseekJsonClient {
     private static final int MAX_TOKENS = 16384;
     /** 连接超时（毫秒）。网关不可达时快速失败，避免无限挂起。 */
     private static final int CONNECT_TIMEOUT_MS = 10_000;
-    /** 读超时（毫秒）。json_object 强制下长输出（16k token）可能耗时数分钟。 */
-    private static final int READ_TIMEOUT_MS = 300_000;
+    /** 读超时（毫秒）。推理模型（deepseek-v4-pro-cc）思考链 + 长输出可能超过 5 分钟，放宽到 10 分钟。 */
+    private static final int READ_TIMEOUT_MS = 600_000;
 
     private final String apiUrl;
     private final String apiKey;

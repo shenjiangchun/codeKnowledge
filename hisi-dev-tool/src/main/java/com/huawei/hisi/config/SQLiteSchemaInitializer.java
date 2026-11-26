@@ -2,11 +2,14 @@ package com.huawei.hisi.config;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
+import java.security.SecureRandom;
+import java.util.Base64;
 
 /**
  * SQLite schema auto-initialization.
@@ -19,10 +22,14 @@ public class SQLiteSchemaInitializer {
 
     private final JdbcTemplate jdbcTemplate;
     private final PasswordEncoder passwordEncoder;
+    /** 管理员初始口令（配置 hisi.auth.root-password / 环境变量 HISI_ROOT_PASSWORD）；为空时首次启动随机生成。 */
+    private final String rootPassword;
 
-    public SQLiteSchemaInitializer(JdbcTemplate jdbcTemplate, PasswordEncoder passwordEncoder) {
+    public SQLiteSchemaInitializer(JdbcTemplate jdbcTemplate, PasswordEncoder passwordEncoder,
+                                   @Value("${hisi.auth.root-password:}") String rootPassword) {
         this.jdbcTemplate = jdbcTemplate;
         this.passwordEncoder = passwordEncoder;
+        this.rootPassword = rootPassword;
     }
 
     @PostConstruct
@@ -440,15 +447,31 @@ public class SQLiteSchemaInitializer {
         }
     }
 
-    private void seedRootAccount() {
+    /**
+     * 首次启动时创建管理员账号 root。初始口令取配置 {@code hisi.auth.root-password}（环境变量 HISI_ROOT_PASSWORD）；
+     * 没配置时生成一次性随机口令并打印在启动日志里。仓库是公开的，代码里不放固定的初始口令。
+     */
+    void seedRootAccount() {
         Integer rootCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM sys_user WHERE username = 'root'", Integer.class);
         if (rootCount != null && rootCount == 0) {
-            String encodedPassword = passwordEncoder.encode("123456");
+            boolean generated = rootPassword == null || rootPassword.isBlank();
+            String initialPassword = generated ? randomPassword() : rootPassword;
             jdbcTemplate.update(
                     "INSERT INTO sys_user (username, password, role) VALUES ('root', ?, 'ADMIN')",
-                    encodedPassword);
-            log.info("[SQLite] Seeded root admin account");
+                    passwordEncoder.encode(initialPassword));
+            if (generated) {
+                log.warn("[SQLite] Seeded root admin account with a one-time random password: {} "
+                        + "— log in and change it, or set hisi.auth.root-password (HISI_ROOT_PASSWORD)", initialPassword);
+            } else {
+                log.info("[SQLite] Seeded root admin account");
+            }
         }
+    }
+
+    private static String randomPassword() {
+        byte[] bytes = new byte[12];
+        new SecureRandom().nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 }

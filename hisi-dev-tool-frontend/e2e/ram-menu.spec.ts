@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { e2ePassword } from './helpers/credentials'
 
 /**
  * RAM (需求分析大师) 菜单测试
@@ -31,7 +32,7 @@ test.describe('需求分析大师菜单测试', () => {
       const passwordInput = page.locator('.el-dialog input[placeholder="请输入密码"]').first()
 
       await usernameInput.fill('root')
-      await passwordInput.fill('123456')
+      await passwordInput.fill(e2ePassword())
 
       // 点击登录按钮
       await page.locator('.el-dialog button:has-text("登录")').first().click()
@@ -84,7 +85,7 @@ test.describe('需求分析大师菜单测试', () => {
 
     if (dialogCount > 0) {
       await page.locator('.el-dialog input[placeholder="请输入用户名"]').first().fill('root')
-      await page.locator('.el-dialog input[placeholder="请输入密码"]').first().fill('123456')
+      await page.locator('.el-dialog input[placeholder="请输入密码"]').first().fill(e2ePassword())
       await page.locator('.el-dialog button:has-text("登录")').first().click()
       await expect(loginDialog).not.toBeVisible({ timeout: 10000 })
       await page.waitForLoadState('networkidle')

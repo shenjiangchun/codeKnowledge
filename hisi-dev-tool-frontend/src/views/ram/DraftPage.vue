@@ -502,7 +502,7 @@ onBeforeUnmount(() => {
         <el-tag size="small" effect="plain" class="sid-tag">#{{ sid.slice(0, 8) }}</el-tag>
       </div>
       <CostMeter :tokens="session.cost.value.tokens" :usd="session.cost.value.usd" />
-      <el-tag size="small" :type="session.status.value === 'error' ? 'danger' : 'info'">
+      <el-tag size="small" data-test="ram-session-status" :type="session.status.value === 'error' ? 'danger' : 'info'">
         {{ session.status.value }}
       </el-tag>
       <div class="topbar-spacer" />

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { e2ePassword, E2E_USERNAME } from './helpers/credentials'
 
 /**
  * 项目管理 API 集成测试 (with JWT Authentication)
@@ -8,7 +9,7 @@ import { test, expect } from '@playwright/test'
  * - 远端项目管理
  * - 项目分组管理
  *
- * Authentication: Uses JWT token (root/123456) with Authorization: Bearer header
+ * Authentication: Uses JWT token (root/见 helpers/credentials) with Authorization: Bearer header
  */
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080'
@@ -16,10 +17,10 @@ const API_BASE = `${BACKEND_URL}/api`
 
 test.setTimeout(60000)
 
-// Helper: Authenticate and get JWT token (root/123456)
+// Helper: Authenticate and get JWT token (root/见 helpers/credentials)
 async function getAuthToken(request: import('@playwright/test').APIRequestContext): Promise<string | null> {
   const loginResponse = await request.post(`${BACKEND_URL}/api/auth/login`, {
-    data: { username: 'root', password: '123456' }
+    data: { username: E2E_USERNAME, password: e2ePassword() }
   })
 
   if (!loginResponse.ok()) {

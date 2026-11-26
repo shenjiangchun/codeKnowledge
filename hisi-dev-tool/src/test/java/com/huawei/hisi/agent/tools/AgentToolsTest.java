@@ -139,6 +139,38 @@ class AgentToolsTest {
         @SuppressWarnings("unchecked")
         var matches = (List<Map<String, Object>>) result.get("matches");
         assertThat(matches).hasSize(1);
+        assertThat(matches.get(0)).containsEntry("line", 2);
+    }
+
+    @Test
+    @DisplayName("grepProject survives a non-UTF-8 file instead of failing the whole search")
+    void grepProject_survivesGbkFile(@TempDir Path tmpDir) throws Exception {
+        // GBK 编码的中文注释：按 UTF-8 逐行读会抛「Input length = 1」
+        Files.write(tmpDir.resolve("Legacy.java"),
+                "/* 老代码：GBK 编码 */\r\nint a = 0;\r\n".getBytes(java.nio.charset.Charset.forName("GBK")));
+        Files.writeString(tmpDir.resolve("New.java"), "class New {\n    // TODO fix me\n}");
+
+        var result = tools.grepProject(tmpDir.toString(), "TODO", null, false);
+
+        assertThat(result).doesNotContainKey("error");
+        assertThat(result).containsEntry("total", 1);
+    }
+
+    @Test
+    @DisplayName("grepProject matches regex alternation and still treats invalid patterns as literals")
+    void grepProject_supportsRegexAndLiteralFallback(@TempDir Path tmpDir) throws Exception {
+        Files.writeString(tmpDir.resolve("SkillMarketController.java"),
+                "public class SkillMarketController {\n    Map<String, Object> createSkill(String id) {\n    int other = 1;\n}\n");
+        Files.writeString(tmpDir.resolve("Print.java"), "System.out.println(x);\n");
+
+        // 模型会把多个关键词写成正则「或」；以前按字面量匹配，这种模式永远 0 条命中
+        @SuppressWarnings("unchecked")
+        var matches = (List<Map<String, Object>>) tools.grepProject(tmpDir.toString(), "skill-market|createSkill", null, false).get("matches");
+        assertThat(matches).hasSize(1);
+        assertThat(matches.get(0)).containsEntry("line", 2);
+
+        // 没配对的括号不是合法正则：按字面量也能搜到
+        assertThat(tools.grepProject(tmpDir.toString(), "println(", null, false)).containsEntry("total", 1);
     }
 
     @Test

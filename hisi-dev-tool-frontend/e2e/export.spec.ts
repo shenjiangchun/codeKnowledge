@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { e2ePassword } from './helpers/credentials'
 
 /**
  * 导出功能 E2E 测试
@@ -29,7 +30,7 @@ test.describe('导出功能测试', () => {
 
       const loginTab = dialog.locator('.el-tab-pane').first()
       await loginTab.locator('input[placeholder="请输入用户名"]').fill('root')
-      await loginTab.locator('input[placeholder="请输入密码"]').fill('123456')
+      await loginTab.locator('input[placeholder="请输入密码"]').fill(e2ePassword())
 
       const submitBtn = loginTab.locator('button:has-text("登录")')
       await submitBtn.click()

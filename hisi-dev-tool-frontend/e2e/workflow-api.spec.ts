@@ -1,19 +1,20 @@
 import { test, expect } from '@playwright/test'
+import { e2ePassword, E2E_USERNAME } from './helpers/credentials'
 
 /**
  * Workflow API Integration Tests (with JWT Authentication)
  *
  * Tests the unified workflow controller endpoints:
  * - API-WF-01: Start workflow (POST /api/ram/sessions)
- * - API-WF-02: Get workflow status (GET /api/workflow/sessions/:id/status)
- * - API-WF-03: Get workflow report (GET /api/workflow/sessions/:id/report)
- * - API-WF-04: Get workflow events (GET /api/workflow/sessions/:id/events)
+ * - API-WF-02: Get workflow status (GET /api/v2/workflow/sessions/:id/status)
+ * - API-WF-03: Get workflow report (GET /api/v2/workflow/sessions/:id/report)
+ * - API-WF-04: Get workflow events (GET /api/v2/workflow/sessions/:id/events)
  * - API-WF-05: Submit clarification (POST /api/ram/sessions/:id/clarify)
  * - API-WF-06: HITL confirmation (POST /api/ram/sessions/:id/confirm)
- * - API-WF-07: Abort workflow (POST /api/workflow/sessions/:id/abort)
- * - API-WF-08: Get workflow definitions (GET /api/workflow/definitions)
+ * - API-WF-07: Abort workflow (POST /api/v2/workflow/sessions/:id/abort)
+ * - API-WF-08: Get workflow definitions (GET /api/v2/workflow/definitions)
  *
- * Authentication: Uses JWT token (root/123456) with Authorization: Bearer header
+ * Authentication: Uses JWT token (root/见 helpers/credentials) with Authorization: Bearer header
  */
 
 const BASE_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
@@ -24,10 +25,10 @@ test.setTimeout(60000)
 // Helper: sleep
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
-// Helper: Authenticate and get JWT token (root/123456)
+// Helper: Authenticate and get JWT token (root/见 helpers/credentials)
 async function getAuthToken(request: import('@playwright/test').APIRequestContext): Promise<string | null> {
   const loginResponse = await request.post(`${BACKEND_URL}/api/auth/login`, {
-    data: { username: 'root', password: '123456' }
+    data: { username: E2E_USERNAME, password: e2ePassword() }
   })
 
   if (!loginResponse.ok()) {
@@ -78,7 +79,7 @@ test.describe('Workflow API Integration Tests', () => {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   test('API-WF-08: should return list of workflow definitions', async ({ request }) => {
-    const response = await request.get(`${BACKEND_URL}/api/workflow/definitions`, {
+    const response = await request.get(`${BACKEND_URL}/api/v2/workflow/definitions`, {
       headers: authHeaders(authToken)
     })
     expect(response.ok()).toBeTruthy()
@@ -102,7 +103,7 @@ test.describe('Workflow API Integration Tests', () => {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   test('API-WF-02: should return 404 for invalid sessionId', async ({ request }) => {
-    const response = await request.get(`${BACKEND_URL}/api/workflow/sessions/non-existent-session-id/status`, {
+    const response = await request.get(`${BACKEND_URL}/api/v2/workflow/sessions/non-existent-session-id/status`, {
       headers: authHeaders(authToken)
     })
     expect(response.status()).toBe(404)
@@ -119,7 +120,7 @@ test.describe('Workflow API Integration Tests', () => {
 
     await sleep(1000)
 
-    const response = await request.get(`${BACKEND_URL}/api/workflow/sessions/${sessionId}/status`, {
+    const response = await request.get(`${BACKEND_URL}/api/v2/workflow/sessions/${sessionId}/status`, {
       headers: authHeaders(authToken)
     })
     expect(response.ok()).toBeTruthy()
@@ -136,7 +137,7 @@ test.describe('Workflow API Integration Tests', () => {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   test('API-WF-03: should return 404 for invalid sessionId', async ({ request }) => {
-    const response = await request.get(`${BACKEND_URL}/api/workflow/sessions/non-existent-session-id/report`, {
+    const response = await request.get(`${BACKEND_URL}/api/v2/workflow/sessions/non-existent-session-id/report`, {
       headers: authHeaders(authToken)
     })
     expect(response.status()).toBe(404)
@@ -151,7 +152,7 @@ test.describe('Workflow API Integration Tests', () => {
 
     await sleep(1000)
 
-    const response = await request.get(`${BACKEND_URL}/api/workflow/sessions/${sessionId}/report`, {
+    const response = await request.get(`${BACKEND_URL}/api/v2/workflow/sessions/${sessionId}/report`, {
       headers: authHeaders(authToken)
     })
     expect(response.ok()).toBeTruthy()
@@ -166,7 +167,7 @@ test.describe('Workflow API Integration Tests', () => {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   test('API-WF-04: should return 404 for invalid sessionId', async ({ request }) => {
-    const response = await request.get(`${BACKEND_URL}/api/workflow/sessions/non-existent-session-id/events`, {
+    const response = await request.get(`${BACKEND_URL}/api/v2/workflow/sessions/non-existent-session-id/events`, {
       headers: authHeaders(authToken)
     })
     expect(response.status()).toBe(404)
@@ -181,7 +182,7 @@ test.describe('Workflow API Integration Tests', () => {
 
     await sleep(2000)
 
-    const response = await request.get(`${BACKEND_URL}/api/workflow/sessions/${sessionId}/events`, {
+    const response = await request.get(`${BACKEND_URL}/api/v2/workflow/sessions/${sessionId}/events`, {
       headers: authHeaders(authToken)
     })
     expect(response.ok()).toBeTruthy()
@@ -204,7 +205,7 @@ test.describe('Workflow API Integration Tests', () => {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   test('API-WF-07: should return 404 for invalid sessionId', async ({ request }) => {
-    const response = await request.post(`${BACKEND_URL}/api/workflow/sessions/non-existent-session-id/abort`, {
+    const response = await request.post(`${BACKEND_URL}/api/v2/workflow/sessions/non-existent-session-id/abort`, {
       headers: authHeaders(authToken),
       data: {}
     })
@@ -220,7 +221,7 @@ test.describe('Workflow API Integration Tests', () => {
 
     await sleep(500)
 
-    const abortResponse = await request.post(`${BACKEND_URL}/api/workflow/sessions/${sessionId}/abort`, {
+    const abortResponse = await request.post(`${BACKEND_URL}/api/v2/workflow/sessions/${sessionId}/abort`, {
       headers: authHeaders(authToken),
       data: {}
     })
@@ -228,7 +229,7 @@ test.describe('Workflow API Integration Tests', () => {
 
     await sleep(500)
 
-    const statusResponse = await request.get(`${BACKEND_URL}/api/workflow/sessions/${sessionId}/status`, {
+    const statusResponse = await request.get(`${BACKEND_URL}/api/v2/workflow/sessions/${sessionId}/status`, {
       headers: authHeaders(authToken)
     })
     expect(statusResponse.ok()).toBeTruthy()
@@ -383,7 +384,7 @@ test.describe('Workflow API Integration Tests', () => {
       return
     }
 
-    const response = await request.get(`${BACKEND_URL}/api/workflow/sessions/${sessionId}/stream`, {
+    const response = await request.get(`${BACKEND_URL}/api/v2/workflow/sessions/${sessionId}/stream`, {
       headers: { ...authHeaders(authToken), 'Accept': 'text/event-stream' }
     })
 
@@ -400,7 +401,7 @@ test.describe('Workflow API Integration Tests', () => {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   test('Nodes: should list available workflow nodes', async ({ request }) => {
-    const response = await request.get(`${BACKEND_URL}/api/workflow/nodes`, {
+    const response = await request.get(`${BACKEND_URL}/api/v2/workflow/nodes`, {
       headers: authHeaders(authToken)
     })
     expect(response.ok()).toBeTruthy()
@@ -492,7 +493,7 @@ test.describe('Workflow API Integration Tests', () => {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   test('Proxy: frontend should forward API requests', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/workflow/definitions`, {
+    const response = await request.get(`${BASE_URL}/api/v2/workflow/definitions`, {
       headers: authHeaders(authToken)
     })
     expect(response.ok()).toBeTruthy()

@@ -29,9 +29,11 @@ public class AgentConfig {
     @Primary
     ChatClient agentChatClient(AnthropicChatModel anthropicModel,
                                 ChatMemory chatMemory) {
+        // 记忆 advisor 用「带会话 ID 才生效」的版本：这个 ChatClient 还被需求分析的一次性抽取调用复用，
+        // 直接挂 PromptChatMemoryAdvisor 会让那些调用每次都抛 conversationId cannot be null
         return ChatClient.builder(anthropicModel)
                 .defaultAdvisors(
-                        PromptChatMemoryAdvisor.builder(chatMemory).build(),
+                        new OptionalMemoryAdvisor(chatMemory),
                         new SimpleLoggerAdvisor())
                 .build();
     }

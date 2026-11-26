@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test'
+import { e2ePassword } from './helpers/credentials'
 
 /**
  * Smoke Tests for HiSi DevTool Pages
@@ -13,7 +14,7 @@ test.describe.configure({ mode: 'parallel' })
 
 /**
  * Helper function to perform login
- * Uses root/123456 admin credentials
+ * Uses root/见 helpers/credentials admin credentials
  */
 async function loginAsAdmin(page: Page) {
   await page.goto('/')
@@ -29,7 +30,7 @@ async function loginAsAdmin(page: Page) {
     const passwordInput = page.locator('.el-dialog input').nth(1)
 
     await usernameInput.fill('root')
-    await passwordInput.fill('123456')
+    await passwordInput.fill(e2ePassword())
 
     // Submit login
     await page.locator('.el-dialog button[type="submit"], .el-dialog button:has-text("登录")').first().click()

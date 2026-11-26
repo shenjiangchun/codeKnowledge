@@ -155,18 +155,23 @@ public class AgentTools {
                     .toList();
             for (Path file : files) {
                 if (lineCount >= MAX_GREP_LINES) break;
-                for (String line : Files.readAllLines(file)) {
-                    if (lineCount >= MAX_GREP_LINES) break;
-                    boolean matched = matchCase
-                            ? line.contains(pattern)
-                            : line.toLowerCase().contains(pattern.toLowerCase());
-                    if (matched) {
-                        matches.add(Map.of(
-                                "file", root.relativize(file).toString().replace('\\', '/'),
-                                "line", lineCount + 1,
-                                "content", truncate(line.trim(), 200)));
-                        lineCount++;
+                List<String> lines;
+                try {
+                    lines = readLinesLeniently(file);
+                } catch (IOException e) {
+                    // 读不了的文件跳过：不能让一个文件（二进制、被占用）毁掉整次搜索
+                    continue;
+                }
+                for (int i = 0; i < lines.size() && lineCount < MAX_GREP_LINES; i++) {
+                    String line = lines.get(i);
+                    if (!GrepMatcher.matches(line, pattern, matchCase)) {
+                        continue;
                     }
+                    matches.add(Map.of(
+                            "file", root.relativize(file).toString().replace('\\', '/'),
+                            "line", i + 1,
+                            "content", truncate(line.trim(), 200)));
+                    lineCount++;
                 }
             }
         } catch (IOException e) {
@@ -174,6 +179,15 @@ public class AgentTools {
         }
         return Map.of("matches", matches, "total", lineCount,
                 "truncated", lineCount >= MAX_GREP_LINES);
+    }
+
+    /**
+     * 逐行读文本，遇到非 UTF-8 的内容不抛异常（GBK 源码在国内项目里很常见）：
+     * {@link Files#readAllLines} 在这种文件上会抛「Input length = 1」，以前整个搜索就此失败。
+     */
+    static List<String> readLinesLeniently(Path file) throws IOException {
+        return java.util.Arrays.asList(
+                new String(Files.readAllBytes(file), java.nio.charset.StandardCharsets.UTF_8).split("\r?\n", -1));
     }
 
     /**

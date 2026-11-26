@@ -79,7 +79,9 @@ public class SchemaValidator {
 
     private JsonSchema loadSchema(String schemaName) {
         String resourcePath = resolveResourcePath(schemaName);
-        ClassPathResource resource = new ClassPathResource(resourcePath);
+        // 显式用本类自己的类加载器：不带的话走「当前线程的上下文类加载器」，而 DAG 节点跑在 ForkJoinPool.commonPool 的
+        // 工作线程上——在 Spring Boot 可执行 jar 里，这些线程的上下文类加载器看不到 BOOT-INF/classes，schema 会时有时无
+        ClassPathResource resource = new ClassPathResource(resourcePath, SchemaValidator.class.getClassLoader());
         if (!resource.exists()) {
             throw new IllegalArgumentException(
                     "Unknown RAM schema: " + schemaName + " (looked for " + resourcePath + ")");

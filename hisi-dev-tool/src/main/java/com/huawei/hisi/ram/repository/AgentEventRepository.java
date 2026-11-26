@@ -32,4 +32,11 @@ public interface AgentEventRepository {
 
     /** Count events for a session filtered by type. */
     long countBySessionIdAndType(long sessionId, EventType type);
+
+    /**
+     * 跨会话扫描 payload 含指定片段的 CHECKPOINT 事件（按创建时间倒序，限定最早时间）。
+     * 工作台用它在 {@code agent_event} 里找架构深度分析的产出（{@code arch_react_agent} 节点的输出只存在这里）。
+     * 片段命中后仍需由调用方解析 payload 二次确认。
+     */
+    List<AgentEvent> findCheckpointsContaining(String payloadFragment, long createdAfterEpoch);
 }

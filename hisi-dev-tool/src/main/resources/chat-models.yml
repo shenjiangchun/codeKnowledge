@@ -4,13 +4,15 @@ chat:
       provider: zhipu
       max-context: 202752
       scenario-max-tokens:
-        chat: 4096
-        summary: 2048
-        long-form: 8192
+        # 会先思考的推理模型把输出预算也花在思考上：预算偏小时正文为空（stop_reason=max_tokens 且正文 0 字）
+        chat: 16384
+        summary: 8192
+        long-form: 16384
     "[claude-sonnet-4-5]":
       provider: anthropic
       max-context: 200000
       scenario-max-tokens:
-        chat: 4096
-        summary: 2048
-        long-form: 8192
+        # 会先思考的推理模型把输出预算也花在思考上：预算偏小时正文为空（stop_reason=max_tokens 且正文 0 字）
+        chat: 16384
+        summary: 8192
+        long-form: 16384

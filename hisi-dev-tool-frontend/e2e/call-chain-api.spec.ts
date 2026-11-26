@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test'
+import { e2ePassword, E2E_USERNAME } from './helpers/credentials'
 
 /**
  * Call Chain API E2E Tests (with JWT Authentication)
  *
- * Authentication: Uses JWT token (root/123456) with Authorization: Bearer header
+ * Authentication: Uses JWT token (root/见 helpers/credentials) with Authorization: Bearer header
  */
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080'
@@ -13,10 +14,10 @@ const TEST_PROJECT_PATH = process.env.TEST_PROJECT_PATH || 'C:/Users/47583/proje
 
 test.setTimeout(60000)
 
-// Helper: Authenticate and get JWT token (root/123456)
+// Helper: Authenticate and get JWT token (root/见 helpers/credentials)
 async function getAuthToken(request: import('@playwright/test').APIRequestContext): Promise<string | null> {
   const loginResponse = await request.post(`${BACKEND_URL}/api/auth/login`, {
-    data: { username: 'root', password: '123456' }
+    data: { username: E2E_USERNAME, password: e2ePassword() }
   })
 
   if (!loginResponse.ok()) {

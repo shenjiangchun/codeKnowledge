@@ -29,8 +29,10 @@ public class AdminOnlyInterceptor implements HandlerInterceptor {
 
         SecurityContext ctx = (SecurityContext) request.getAttribute(SecurityContext.ATTR_NAME);
 
-        // /api/workflow/** 全部端点（含 GET 流式/报告读取）要求登录：未携带有效 token 返回 401
-        if (uri.startsWith("/api/workflow/") && ctx == null) {
+        // /api/workflow/**、/api/v2/workflow/** 与 /api/workbench/** 的全部端点（含 GET 流式/报告读取）要求登录：
+        // 未携带有效 token 返回 401
+        if ((uri.startsWith("/api/workflow/") || uri.startsWith("/api/v2/workflow/")
+                || uri.startsWith("/api/workbench/")) && ctx == null) {
             writeError(response, HttpStatus.UNAUTHORIZED, 401, "请先登录后再执行此操作");
             return false;
         }

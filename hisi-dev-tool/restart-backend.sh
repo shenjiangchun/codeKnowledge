@@ -4,6 +4,15 @@
 
 echo "=== 后端重启脚本 ==="
 
+# 登录凭据不写在脚本里：取环境变量，或同目录下未入库的 .env.local（HISI_ADMIN_USER / HISI_ADMIN_PASSWORD）
+if [ -z "$HISI_ADMIN_PASSWORD" ] && [ -f "$(dirname "$0")/.env.local" ]; then
+    set -a; . "$(dirname "$0")/.env.local"; set +a
+fi
+if [ -z "$HISI_ADMIN_USER" ] || [ -z "$HISI_ADMIN_PASSWORD" ]; then
+    echo "未配置登录凭据：请设置环境变量 HISI_ADMIN_USER / HISI_ADMIN_PASSWORD，或写入 hisi-dev-tool/.env.local（已被 .gitignore 排除）"
+    exit 1
+fi
+
 # Step 1: 检查端口是否已释放
 echo ""
 echo "Step 1: 检查端口 8080..."
@@ -46,7 +55,7 @@ echo ""
 echo "Step 5: 登录获取 JWT token..."
 LOGIN_RESP=$(curl -s -X POST http://localhost:8080/api/auth/login \
     -H "Content-Type: application/json" \
-    -d '{"username": "root", "password": "123456"}' 2>/dev/null)
+    -d "{\"username\": \"$HISI_ADMIN_USER\", \"password\": \"$HISI_ADMIN_PASSWORD\"}" 2>/dev/null)
 
 TOKEN=$(echo "$LOGIN_RESP" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
 if [ -z "$TOKEN" ]; then

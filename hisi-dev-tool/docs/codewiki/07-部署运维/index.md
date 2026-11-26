@@ -19,7 +19,7 @@
 
 | 变量 | 必填 | 默认 | 说明 |
 |------|------|------|------|
-| `NEO4J_PASSWORD` | 是 | `12345678` | Neo4j 密码 |
+| `NEO4J_PASSWORD` | 是 | `<你的 Neo4j 密码>` | Neo4j 密码 |
 | `EMBEDDING_API_KEY` | 是 | — | OpenAI 兼容 embedding 服务 key |
 | `TEXT_MODEL_API_KEY` | 是 | — | OpenAI 兼容 chat 服务 key |
 | `DB_PASSWORD` | 否 | — | （旧）关系型 DB 密码，已废弃 |

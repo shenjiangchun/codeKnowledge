@@ -69,4 +69,26 @@ class SchemaValidatorTest {
         assertThrows(IllegalArgumentException.class,
                 () -> validator.validate("does.not.exist", Map.of()));
     }
+
+    @Test
+    void schemaLoadsEvenWhenTheThreadsContextClassLoaderCannotSeeTheClasspath() throws Exception {
+        // DAG 节点跑在 ForkJoinPool.commonPool 的工作线程上，这些线程的上下文类加载器不一定是应用自己的。
+        // 在 Spring Boot 可执行 jar 里，它若看不到 BOOT-INF/classes，不带类加载器的 ClassPathResource 就找不到 schema
+        SchemaValidator fresh = new SchemaValidator();
+        ValidationResult[] result = new ValidationResult[1];
+        Throwable[] failure = new Throwable[1];
+        Thread worker = new Thread(() -> {
+            try {
+                result[0] = fresh.validate("arch/react-step", Map.of());
+            } catch (Throwable t) {
+                failure[0] = t;
+            }
+        });
+        worker.setContextClassLoader(ClassLoader.getPlatformClassLoader());
+        worker.start();
+        worker.join();
+
+        assertNull(failure[0], "schema 的加载不应依赖线程的上下文类加载器：" + failure[0]);
+        assertNotNull(result[0]);
+    }
 }

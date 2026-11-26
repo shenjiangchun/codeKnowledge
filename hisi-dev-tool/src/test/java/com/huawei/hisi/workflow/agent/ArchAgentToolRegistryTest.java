@@ -7,9 +7,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -36,14 +40,14 @@ class ArchAgentToolRegistryTest {
     }
 
     @Test
-    @DisplayName("注册 19 个只读工具，顺序稳定")
-    void registersNineteenTools() {
-        assertThat(registry.tools()).hasSize(19);
+    @DisplayName("注册 20 个只读工具，顺序稳定")
+    void registersTwentyTools() {
+        assertThat(registry.tools()).hasSize(20);
         assertThat(registry.tools()).extracting(ArchAgentTool::name).containsExactly(
                 "dashboard", "dsm", "package_cycles", "module_cycles", "class_ego_net", "callees_tree",
                 "downstream", "upstream", "root_entries", "method_detail", "method_by_class", "blast_radius",
                 "implementations", "interfaces", "class_dependencies", "hotspots", "service_topology", "domains",
-                "injection_scan");
+                "injection_scan", "grep_source");
     }
 
     @Test
@@ -83,5 +87,38 @@ class ArchAgentToolRegistryTest {
     @DisplayName("未知工具：get 返回 null")
     void unknownToolReturnsNull() {
         assertThat(registry.get("no_such_tool")).isNull();
+    }
+
+    @Test
+    @DisplayName("injection_scan 带 injectedType：走反向查询，返回 items/total + scannedFileCount 诊断字段")
+    void injectionScan_injectedType_delegatesToReverseQuery() {
+        Object data = registry.get("injection_scan")
+                .invoke(Map.of("injectedType", "com.foo.UserServiceImpl"), List.of("/no/such/path"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> result = (Map<String, Object>) data;
+        assertThat(result).containsKey("items");
+        assertThat(result).containsKey("total");
+        assertThat(result).containsKey("scannedFileCount");
+        assertThat(result.get("scannedFileCount")).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("grep_source：按关键字检索源码，返回命中行与扫描计数")
+    void grepSource_delegatesToTextSearch(@TempDir Path root) throws IOException {
+        Files.createDirectories(root.resolve("com/example"));
+        Files.writeString(root.resolve("com/example/A.java"),
+                "package com.example;\npublic class A { void m() {} }\n");
+        Files.writeString(root.resolve("com/example/B.java"),
+                "package com.example;\npublic class B { A a; }\n");
+
+        Object data = registry.get("grep_source")
+                .invoke(Map.of("pattern", "A a"), List.of(root.toString()));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> result = (Map<String, Object>) data;
+        assertThat(result).containsKey("scannedFileCount");
+        assertThat(result.get("scannedFileCount")).isEqualTo(2);
+        assertThat((Integer) result.get("total")).isGreaterThanOrEqualTo(1);
     }
 }

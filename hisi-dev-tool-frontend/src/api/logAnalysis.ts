@@ -16,6 +16,10 @@ export interface AppLogConfig {
   lastPullAt?: number
 }
 
+// 分析流程的接口版本。v2 走「取证 → 假设 → 验证 → 综合」的新 agent 流，请求与响应结构与 v1 完全一致。
+// 回滚到旧流程时把这里改回 '/log' 即可；列表、导出、追问不在 agent 流内，仍用原接口。
+const LOG_FLOW_BASE = '/v2/log'
+
 export const logAnalysisApi = {
   // 查询日志
   queryLogs(data: LogQueryDto): Promise<LogQueryResponse> {
@@ -24,7 +28,7 @@ export const logAnalysisApi = {
 
   // 提交分析任务
   analyze(data: LogAnalyzeRequest): Promise<AnalyzeTaskResponse> {
-    return request.post('/log/analyze', data) as Promise<AnalyzeTaskResponse>
+    return request.post(`${LOG_FLOW_BASE}/analyze`, data) as Promise<AnalyzeTaskResponse>
   },
 
   // 获取报告列表
@@ -44,17 +48,17 @@ export const logAnalysisApi = {
 
   // 获取报告详情
   getReport(id: string): Promise<DetailedAnalysisReport> {
-    return request.get(`/log/report/${id}`) as Promise<DetailedAnalysisReport>
+    return request.get(`${LOG_FLOW_BASE}/report/${id}`) as Promise<DetailedAnalysisReport>
   },
 
   // 获取任务状态
   getStatus(id: string): Promise<ReportStatus> {
-    return request.get(`/log/report/${id}/status`)
+    return request.get(`${LOG_FLOW_BASE}/report/${id}/status`)
   },
 
   // 重新分析报告
   reanalyze(id: string): Promise<string> {
-    return request.post(`/log/report/${id}/reanalyze`)
+    return request.post(`${LOG_FLOW_BASE}/report/${id}/reanalyze`)
   },
 
   // 删除报告

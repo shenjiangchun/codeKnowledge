@@ -4,7 +4,7 @@ import com.huawei.hisi.agent.tools.AgentTools;
 import com.huawei.hisi.ram.nodes.TechPlanLlmClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -80,10 +80,14 @@ public class ClaudeTechPlanLlmClient implements TechPlanLlmClient {
             """;
 
     private final ChatClient agentChatClient;
+    /** 不带记忆、不思考的 ChatClient：模型用大白话收尾时，用它把结论转成 JSON（见 {@link LlmJsonAnswer}）。 */
+    private final ChatClient formatter;
     private final AgentTools agentTools;
 
-    public ClaudeTechPlanLlmClient(ChatClient agentChatClient, AgentTools agentTools) {
+    public ClaudeTechPlanLlmClient(ChatClient agentChatClient, AgentTools agentTools,
+                                   @Qualifier("extractionChatClient") ChatClient formatter) {
         this.agentChatClient = agentChatClient;
+        this.formatter = formatter;
         this.agentTools = agentTools;
     }
 
@@ -100,13 +104,13 @@ public class ClaudeTechPlanLlmClient implements TechPlanLlmClient {
             // Spring AI 1.1.8 ChatClient with automatic tool calling.
             // toolContext("projectPath" → projectPath) is consumed by AgentTools
             // @Tool methods via ToolContext — no custom sendOptions needed.
-            Map<String, Object> raw = agentChatClient.prompt()
+            // 不用 entity(Map)：模型查完代码常用一段大白话收尾，按 JSON 直接解析会抛异常；交给 LlmJsonAnswer 兜住
+            Map<String, Object> raw = LlmJsonAnswer.fromCall(agentChatClient.prompt()
                     .system(SYSTEM_PROMPT)
                     .user(userPrompt)
                     .toolContext(Map.of("projectPath", projectPath))
                     .tools(agentTools)
-                    .call()
-                    .entity(new ParameterizedTypeReference<Map<String, Object>>() {});
+                    .call(), formatter, SYSTEM_PROMPT);
 
             log.info("[RAM][ClaudeTechPlanLlmClient] returned keys={}",
                     raw == null ? "null" : raw.keySet());

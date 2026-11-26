@@ -46,13 +46,17 @@ public class AnthropicHttpClient {
     private final String apiKey;
     private final String apiUrl;
     private final String configuredModel;
+    /** 不带工具的一次性调用是否保留模型的思考；默认关闭，见 {@link #buildRequestBody}。 */
+    private final boolean singleTurnThinking;
 
     public AnthropicHttpClient(ProxyConfig proxyConfig,
                                @Value("${anthropic.api-key:}") String apiKey,
                                @Value("${anthropic.base-url:}") String baseUrl,
-                               @Value("${anthropic.model:}") String configuredModel) {
+                               @Value("${anthropic.model:}") String configuredModel,
+                               @Value("${anthropic.single-turn-thinking:false}") boolean singleTurnThinking) {
         this.proxyConfig = proxyConfig;
         this.apiKey = apiKey;
+        this.singleTurnThinking = singleTurnThinking;
         this.configuredModel = (configuredModel != null && !configuredModel.isBlank())
                 ? configuredModel : "claude-sonnet-4-20250514";
         String effective = (baseUrl != null && !baseUrl.isBlank()) ? baseUrl : DEFAULT_BASE_URL;
@@ -120,9 +124,9 @@ public class AnthropicHttpClient {
         });
     }
 
-    private Map<String, Object> buildRequestBody(List<Map<String, Object>> messages,
-                                                 List<ToolDefinition> tools,
-                                                 SendOptions opts) {
+    Map<String, Object> buildRequestBody(List<Map<String, Object>> messages,
+                                         List<ToolDefinition> tools,
+                                         SendOptions opts) {
         Map<String, Object> body = new LinkedHashMap<>();
         // Always use the model configured via anthropic.model (application-local.yml).
         // opts.model() carries a chat-models.yml logical key (e.g. "glm-5.1"), not a
@@ -131,6 +135,13 @@ public class AnthropicHttpClient {
         body.put("max_tokens", opts.maxTokens());
         body.put("temperature", opts.temperature());
         body.put("stream", true);
+        // 会先思考的模型把思考 token 也算在 max_tokens 里：不带工具的一次性调用（结构化抽取、方案生成）
+        // 提示词一长就「预算全花在思考上、正文为空」。所以单轮调用默认关闭思考；调用方显式要求关闭时一律关闭。
+        // 带工具的多轮调用（对话、ReAct）不在此列，由调用方的选项决定。
+        boolean singleTurn = tools == null || tools.isEmpty();
+        if (opts.thinkingDisabled() || (singleTurn && !singleTurnThinking)) {
+            body.put("thinking", Map.of("type", "disabled"));
+        }
         if (opts.systemPrompt() != null && !opts.systemPrompt().isBlank()) {
             body.put("system", opts.systemPrompt());
         }

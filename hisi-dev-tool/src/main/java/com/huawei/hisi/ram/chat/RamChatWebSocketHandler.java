@@ -20,6 +20,8 @@ public class RamChatWebSocketHandler extends TextWebSocketHandler {
 
     private final Map<String, WebSocketSession> sessionByRamSessionId = new ConcurrentHashMap<>();
     private final Map<String, String> ramSessionIdByWsId = new ConcurrentHashMap<>();
+    /** 已经提示过「客户端断开」的会话：同一轮里后续推不出去的事件不再逐条记日志。 */
+    private final java.util.Set<Long> disconnectedNotified = ConcurrentHashMap.newKeySet();
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -63,9 +65,13 @@ public class RamChatWebSocketHandler extends TextWebSocketHandler {
         String key = String.valueOf(sessionId);
         WebSocketSession session = sessionByRamSessionId.get(key);
         if (session == null || !session.isOpen()) {
-            log.warn("[RamChatWS] no active WebSocket session for sessionId={} — event dropped (client may have disconnected)", sessionId);
+            // 用户关掉页面后，后台这一轮可能还在跑：剩余事件推不出去是正常现象，只提示一次，不逐条告警
+            if (disconnectedNotified.add(sessionId)) {
+                log.info("[RamChatWS] sessionId={} 没有活跃的 WebSocket，本轮剩余事件不再推送（客户端已断开）", sessionId);
+            }
             return;
         }
+        disconnectedNotified.remove(sessionId);
         try {
             session.sendMessage(new TextMessage(JSON.toJSONString(event)));
         } catch (IOException e) {

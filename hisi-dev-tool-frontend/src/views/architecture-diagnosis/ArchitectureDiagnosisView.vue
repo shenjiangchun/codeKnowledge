@@ -412,7 +412,7 @@ const viewingSnapshot = computed(() => viewingSnapshotId.value != null)
 const methodChartRef = ref<HTMLDivElement>()
 const godChartRef = ref<HTMLDivElement>()
 const hubChartRef = ref<HTMLDivElement>()
-const deepPanel = ref<{ start: () => void; isRunning?: boolean } | null>(null)
+const deepPanel = ref<{ start: (defaultProject?: string) => void; isRunning?: boolean } | null>(null)
 const deepRunning = computed(() => deepPanel.value?.isRunning ?? false)
 
 // 报告请求序号：用于丢弃过期请求的返回，避免竞态下旧结果覆盖新结果
@@ -629,10 +629,10 @@ async function viewSnapshot(snapshotId: number) {
   }
 }
 
-/** 发起 AI 深度分析：切到深度分析 tab 并启动工作流 */
+/** 发起 AI 深度分析：切到深度分析 tab 并启动工作流（面板没另选项目时，就分析页头当前选中的项目） */
 function startDeepAnalysis() {
   activeTopTab.value = 'deep'
-  nextTick(() => deepPanel.value?.start())
+  nextTick(() => deepPanel.value?.start(realtimeProjectName.value))
 }
 
 // ──────────────────────────── 图表渲染 ────────────────────────────

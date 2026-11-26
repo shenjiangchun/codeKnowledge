@@ -1,11 +1,12 @@
 import { test, expect } from '@playwright/test'
+import { e2ePassword } from './helpers/credentials'
 
 /**
  * 登录流程 E2E 测试
  * 测试步骤:
  * 1. 导航到首页
  * 2. 点击"登录"按钮
- * 3. 输入用户名: root，密码: 123456
+ * 3. 输入用户名: root，密码: 见 helpers/credentials
  * 4. 点击登录按钮
  * 5. 验证成功：页面显示"root 管理员"
  */
@@ -46,7 +47,7 @@ test.describe('登录流程测试', () => {
     const passwordInput = inputs.nth(1)
 
     await usernameInput.fill('root')
-    await passwordInput.fill('123456')
+    await passwordInput.fill(e2ePassword())
 
     // 7. 点击登录按钮提交（对话框内的按钮）
     const submitButton = loginDialog.locator('button[type="submit"]').first()

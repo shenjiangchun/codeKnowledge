@@ -11,7 +11,7 @@ class GitCredentialServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new GitCredentialService("test-key-1234567890123456");
+        service = new GitCredentialService("test-key-0fedcba9876543210fedcba987654321");
     }
 
     @Test

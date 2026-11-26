@@ -112,6 +112,106 @@ public class ArchSourceScanService {
         return result;
     }
 
+    /**
+     * 反向查询：返回所有直接声明 {@code injectedType} 的注入点（谁直接依赖了这个类型）。
+     * 用于灰度验证「直接依赖实现类」——传实现类 FQN 得 kind=class 的注入点；
+     * 传接口 FQN 得 kind=interface 的注入点，据此区分接口注入与直接依赖实现类。
+     */
+    public Map<String, Object> injectionSitesByInjectedType(List<String> projectPaths, String injectedType) {
+        ScanResult scan = scan(projectPaths);
+
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (ClassInjection ci : scan.classes) {
+            for (Map<String, Object> inj : ci.injections) {
+                Object fqn = inj.get("fqn");
+                if (fqn != null && fqn.equals(injectedType)) {
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("className", ci.className);
+                    item.put("packageName", ci.packageName);
+                    item.put("filePath", ci.filePath);
+                    item.put("via", inj.get("via"));
+                    item.put("name", inj.get("name"));
+                    item.put("declaredType", inj.get("declaredType"));
+                    item.put("kind", inj.get("kind"));
+                    items.add(item);
+                }
+            }
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("scannedFileCount", scan.scannedFileCount);
+        result.put("items", items);
+        result.put("total", items.size());
+        result.put("truncated", scan.truncated);
+        return result;
+    }
+
+    /**
+     * 按关键字/类名在本地源码中 grep（纯文本匹配，不解析 AST），返回命中文件与行，
+     * 供 agent 亲眼核对某个类型的声明与引用位置（实现类外泄 / 直接依赖实现类复核）。
+     */
+    public Map<String, Object> grepSource(List<String> projectPaths, String pattern, int limit) {
+        if (pattern == null || pattern.isBlank()) {
+            return Map.of("error", "pattern is required");
+        }
+        List<Map<String, Object>> matches = new ArrayList<>();
+        int scannedFileCount = 0;
+        int total = 0;
+        boolean truncated = false;
+
+        for (String path : projectPaths) {
+            if (path == null || path.isBlank()) {
+                continue;
+            }
+            Path root = Path.of(path);
+            if (!Files.isDirectory(root)) {
+                continue;
+            }
+            try (Stream<Path> walk = Files.walk(root, 20)) {
+                for (Path file : (Iterable<Path>) walk::iterator) {
+                    if (!isJavaSource(file)) {
+                        continue;
+                    }
+                    if (scannedFileCount >= MAX_FILES) {
+                        truncated = true;
+                        break;
+                    }
+                    try {
+                        List<String> lines = Files.readAllLines(file);
+                        scannedFileCount++;
+                        for (int i = 0; i < lines.size(); i++) {
+                            if (lines.get(i).contains(pattern)) {
+                                total++;
+                                if (matches.size() < limit) {
+                                    Map<String, Object> m = new LinkedHashMap<>();
+                                    m.put("filePath", file.toString());
+                                    m.put("lineNumber", i + 1);
+                                    m.put("line", lines.get(i).trim());
+                                    matches.add(m);
+                                }
+                            }
+                        }
+                    } catch (IOException e) {
+                        log.debug("[ArchSourceScan] grep read failed {}: {}", file, e.getMessage());
+                    }
+                }
+            } catch (IOException e) {
+                log.warn("[ArchSourceScan] grep walk failed {}: {}", path, e.getMessage());
+            }
+        }
+
+        if (total > matches.size()) {
+            truncated = true;
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("scannedFileCount", scannedFileCount);
+        result.put("total", total);
+        result.put("matches", matches);
+        result.put("truncated", truncated);
+        return result;
+    }
+
     // ── 扫描：两遍（先建类型索引，再收注入点，因注入点解析需全局类型索引） ──
 
     private ScanResult scan(List<String> projectPaths) {

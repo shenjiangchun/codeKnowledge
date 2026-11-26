@@ -2,6 +2,7 @@ package com.huawei.hisi.workflow;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.huawei.hisi.agentflow.AgentFlowCancelledException;
 import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.AgentSession;
 import com.huawei.hisi.ram.model.EventType;
@@ -142,6 +143,13 @@ public class DagExecutor {
                 sessionRepo.updateStatus(sessionId, SessionStatus.WAITING_CLARIFY);
                 return new ExecutionResult(
                         sessionId, SessionStatus.WAITING_CLARIFY, executed, skipped, previousOutput);
+            } catch (AgentFlowCancelledException cancelled) {
+                // 用户主动中止：按失败收尾（会话状态由发起方还原为 ABORTED），但不当作错误打日志
+                log.info("[DagExecutor] sid={} node={} CANCELLED by user", sessionId, node.name());
+                appendError(sessionId, node.name(), cancelled);
+                sessionRepo.updateStatus(sessionId, SessionStatus.FAILED);
+                return new ExecutionResult(
+                        sessionId, SessionStatus.FAILED, executed, skipped, previousOutput);
             } catch (RuntimeException ex) {
                 log.error("[DagExecutor] sid={} node={} FAILED message={} type={}",
                         sessionId, node.name(), ex.getMessage(), ex.getClass().getName(), ex);
@@ -355,7 +363,10 @@ public class DagExecutor {
             if (!nodeName.equals(payload.get("nodeName"))) continue;
 
             if (ev.getType() == EventType.HITL_RES) return true;
-            if (ev.getType() == EventType.CHECKPOINT) break; // only look at the most recent cycle
+            if (ev.getType() == EventType.CHECKPOINT) {
+                // 用户编辑后提交的那份输出本身就是一次确认，不必再让人确认一遍自己改过的内容
+                return Boolean.TRUE.equals(payload.get("edited"));
+            }
         }
         return false;
     }

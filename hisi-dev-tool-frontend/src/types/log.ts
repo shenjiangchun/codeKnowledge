@@ -74,13 +74,77 @@ export interface ReportListResponse {
   list: Report[]
 }
 
+/** 错误摘要：后端返回的是对象，不是字符串 */
+export interface ErrorSummary {
+  errorType?: string
+  rootCauseException?: string
+  message?: string
+  stackTracePreview?: string
+}
+
+/** 一条证据：堆栈帧、图谱命中、源码、调用关系等 */
+export interface EvidenceAnchor {
+  id: string
+  kind?: string
+  kindLabel?: string
+  summary: string
+  className?: string
+  methodName?: string
+  nodeId?: string
+  filePath?: string
+  exact?: boolean
+}
+
+/** 对单条根因假设的验证结果（v2 分析才有） */
+export interface HypothesisVerification {
+  id?: string
+  title?: string
+  confidence?: string
+  // verified=已由调用图证实 stack_verified=堆栈已证实 at_throw_site=根因落在抛出点
+  // unverified=未证实 unknown=无法判断
+  chainStatus?: string
+  rootCauseInKg?: boolean
+  kept?: boolean
+  citedIds?: string[]
+  unknownIds?: string[]
+  reasons?: string[]
+}
+
+/** 根本原因：v1 与 v2 都含 rootCauseType / markdown / confidence；v2 另带证据与验证结果 */
+export interface RootCauseSection {
+  rootCauseType?: string
+  markdown?: string
+  confidence?: string
+  evidenceAnchors?: EvidenceAnchor[]
+  verification?: {
+    overall?: Record<string, unknown>
+    hypotheses?: HypothesisVerification[]
+  }
+}
+
+export interface FixSuggestion {
+  description?: string
+  priority?: string
+  affectedCode?: string
+  expectedEffect?: string
+}
+
+/** 关键堆栈帧 */
+export interface StackFrameRef {
+  className?: string
+  methodName?: string
+  lineNumber?: number | string
+  fileName?: string
+}
+
 export interface DetailedAnalysisReport {
   reportId: string
   status: string
-  errorSummary?: string
-  rootCause?: string
-  fixSuggestions?: string
-  codeSnippets?: string
+  // 四个内容字段都是结构化数据；旧报告可能存成字符串，所以保留字符串形式
+  errorSummary?: ErrorSummary | string
+  rootCause?: RootCauseSection | string
+  fixSuggestions?: FixSuggestion[] | string
+  codeSnippets?: StackFrameRef[] | string
   createdAt: string
   updatedAt: string
   occurrenceCount?: number  // 出现次数（同类错误合并计数）

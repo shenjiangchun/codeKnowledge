@@ -3,8 +3,8 @@ package com.huawei.hisi.ram.nodes.impl;
 import com.huawei.hisi.ram.nodes.ImplementLlmClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Primary;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -80,11 +80,15 @@ public class ClaudeImplementLlmClient implements ImplementLlmClient {
             """;
 
     private final ChatClient agentChatClient;
+    /** 不带记忆、不思考的 ChatClient：模型用大白话收尾时，用它把结论转成 JSON（见 {@link LlmJsonAnswer}）。 */
+    private final ChatClient formatter;
     private final StubImplementLlmClient fallback;
 
     public ClaudeImplementLlmClient(ChatClient agentChatClient,
-                                     StubImplementLlmClient fallback) {
+                                     StubImplementLlmClient fallback,
+                                     @Qualifier("extractionChatClient") ChatClient formatter) {
         this.agentChatClient = agentChatClient;
+        this.formatter = formatter;
         this.fallback = fallback;
     }
 
@@ -99,11 +103,11 @@ public class ClaudeImplementLlmClient implements ImplementLlmClient {
 
         String prompt = buildUserPrompt(impactOutput, acceptanceCriteria);
         try {
-            Map<String, Object> raw = agentChatClient.prompt()
+            // 不用 entity(Map)：模型用大白话收尾时按 JSON 解析会抛异常；交给 LlmJsonAnswer 兜住
+            Map<String, Object> raw = LlmJsonAnswer.fromCall(agentChatClient.prompt()
                     .system(SYSTEM_PROMPT)
                     .user(prompt)
-                    .call()
-                    .entity(new ParameterizedTypeReference<Map<String, Object>>() {});
+                    .call(), formatter, SYSTEM_PROMPT);
 
             log.info("[RAM][ClaudeImplementLlmClient] returned keys={}",
                     raw == null ? "null" : raw.keySet());

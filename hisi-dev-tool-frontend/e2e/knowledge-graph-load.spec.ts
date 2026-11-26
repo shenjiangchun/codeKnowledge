@@ -3,12 +3,13 @@
  *
  * Test steps:
  * 1. Navigate to http://localhost:5173
- * 2. Login (username: root, password: 123456)
+ * 2. Login (username: root, password: 见 helpers/credentials)
  * 3. Click sidebar "知识图谱"
  * 4. Verify: Page shows project list (at least demo-django)
  */
 
 import { test, expect } from '@playwright/test'
+import { e2ePassword } from './helpers/credentials'
 
 test.describe('Knowledge Graph Page Load Test', () => {
   test.beforeEach(async ({ page }) => {
@@ -45,7 +46,7 @@ test.describe('Knowledge Graph Page Load Test', () => {
       const passwordInput = loginDialog.getByPlaceholder('请输入密码')
 
       await usernameInput.fill('root')
-      await passwordInput.fill('123456')
+      await passwordInput.fill(e2ePassword())
 
       // Click login button inside dialog
       const submitLoginBtn = loginDialog.getByRole('button', { name: '登录' })

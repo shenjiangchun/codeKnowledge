@@ -115,4 +115,37 @@ class AdminOnlyInterceptorTest {
         assertThat(allowed).isFalse();
         verify(resp).setStatus(401);
     }
+
+    // ───────── v2 工作流路由（/api/v2/workflow/**）与 v1 采用同一套规则 ─────────
+
+    @Test
+    @DisplayName("v2 workflow GET 未登录：401 且拦截")
+    void v2WorkflowGetUnauthenticatedReturns401() throws Exception {
+        HttpServletRequest req = request("GET", "/api/v2/workflow/sessions/s1/stream", null);
+        HttpServletResponse resp = response();
+
+        assertThat(interceptor.preHandle(req, resp, new Object())).isFalse();
+        verify(resp).setStatus(401);
+    }
+
+    @Test
+    @DisplayName("v2 workflow GET 已登录（非管理员）：放行")
+    void v2WorkflowGetAuthenticatedNonAdminPasses() throws Exception {
+        HttpServletRequest req = request("GET", "/api/v2/workflow/sessions/s1/report",
+                new SecurityContext("alice", "USER"));
+        HttpServletResponse resp = response();
+
+        assertThat(interceptor.preHandle(req, resp, new Object())).isTrue();
+    }
+
+    @Test
+    @DisplayName("v2 workflow POST 已登录但非管理员：403")
+    void v2WorkflowPostNonAdminReturns403() throws Exception {
+        HttpServletRequest req = request("POST", "/api/v2/workflow/start",
+                new SecurityContext("alice", "USER"));
+        HttpServletResponse resp = response();
+
+        assertThat(interceptor.preHandle(req, resp, new Object())).isFalse();
+        verify(resp).setStatus(403);
+    }
 }

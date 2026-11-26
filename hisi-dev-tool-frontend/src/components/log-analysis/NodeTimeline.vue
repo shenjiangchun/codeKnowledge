@@ -2,8 +2,8 @@
 /**
  * NodeTimeline — 实时 DAG 节点执行进度条
  *
- * 显示日志分析 5 节点 DAG 的实时执行状态:
- * Parse → KgSearch → CodeContext → ClaudeAnalyze → Report
+ * 节点不写死：按 WebSocket 事件里出现的先后顺序显示，
+ * v1 的 5 节点与 v2 的 6 节点都能展示。
  */
 import { computed } from 'vue'
 import type { LogNodeEvent } from '@/composables/useLogAnalysisWebSocket'
@@ -20,20 +20,30 @@ const props = defineProps<{
   events: LogNodeEvent[]
 }>()
 
+/**
+ * 节点显示名。键是后端事件里的 nodeName（即节点的 name()），
+ * 同时覆盖 v1 与 v2 的节点名——v1 的 ParseNode / ReportNode 在 v2 里被原样复用。
+ */
 const NODE_LABELS: Record<string, string> = {
-  parse: '日志解析',
-  kg_search: '知识图谱检索',
-  code_context: '代码上下文',
-  claude_analyze: 'AI 根因分析',
-  report: '报告生成'
+  ParseNode: '日志解析',
+  KgSearchNode: '知识图谱检索',
+  CodeContextNode: '代码上下文',
+  ClaudeAnalyzeNode: 'AI 根因分析',
+  KgEvidenceV2: '图谱取证',
+  HypothesisV2: '根因假设',
+  VerifyV2: '验证',
+  SynthesisV2: '综合成文',
+  ReportNode: '报告生成'
 }
 
-const NODE_ORDER = ['parse', 'kg_search', 'code_context', 'claude_analyze', 'report']
-
 const nodeStates = computed<NodeState[]>(() => {
+  const order: string[] = []
   const states = new Map<string, Partial<NodeState>>()
 
   for (const event of props.events) {
+    // 只有节点级事件才对应时间线上的一项；DAG_COMPLETE 的 nodeName 是「_dag」，不是节点
+    if (event.type === 'DAG_COMPLETE') continue
+    if (!order.includes(event.nodeName)) order.push(event.nodeName)
     if (event.type === 'NODE_START') {
       states.set(event.nodeName, { status: 'running' })
     } else if (event.type === 'NODE_COMPLETE') {
@@ -49,7 +59,7 @@ const nodeStates = computed<NodeState[]>(() => {
     }
   }
 
-  return NODE_ORDER.map(name => ({
+  return order.map(name => ({
     name,
     label: NODE_LABELS[name] || name,
     status: (states.get(name)?.status || 'pending') as NodeState['status'],
@@ -81,9 +91,10 @@ function statusIcon(status: NodeState['status']): string {
       <el-tag v-if="isComplete" type="success" size="small">完成</el-tag>
       <el-tag v-else-if="nodeStates.some(n => n.status === 'running')" type="warning" size="small">执行中</el-tag>
       <el-tag v-else-if="nodeStates.some(n => n.status === 'error')" type="danger" size="small">失败</el-tag>
+      <el-tag v-else-if="nodeStates.length === 0" type="info" size="small">等待节点事件</el-tag>
     </div>
 
-    <div class="timeline-nodes">
+    <div v-if="nodeStates.length" class="timeline-nodes">
       <div
         v-for="(node, idx) in nodeStates"
         :key="node.name"
@@ -103,6 +114,7 @@ function statusIcon(status: NodeState['status']): string {
         </div>
       </div>
     </div>
+    <div v-else class="timeline-empty">分析尚未开始，节点启动后会在这里逐个显示。</div>
 
     <div v-if="totalDuration" class="timeline-footer">
       总耗时: {{ totalDuration }}ms
@@ -210,6 +222,10 @@ function statusIcon(status: NodeState['status']): string {
 .timeline-footer {
   margin-top: 12px;
   text-align: right;
+  font-size: 12px;
+  color: #909399;
+}
+.timeline-empty {
   font-size: 12px;
   color: #909399;
 }

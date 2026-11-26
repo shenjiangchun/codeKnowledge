@@ -11,11 +11,14 @@
 """
 
 import json
+import os
+import sys
 import requests
 import time
 
 # 从 application-local.yml 提取
-API_KEY = "a20e9da682604fd79e01d804a886002c.aOG4OuJm1N5l9NFl"
+# 密钥只从环境变量读（ZHIPU_API_KEY），不写进仓库
+API_KEY = os.environ.get("ZHIPU_API_KEY", "")
 BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
 MODEL = "glm-4-flash"
 
@@ -99,6 +102,9 @@ def call_api(payload: dict, label: str) -> dict:
 
 
 def main():
+    if not API_KEY:
+        sys.exit("请先设置环境变量 ZHIPU_API_KEY（密钥不放在仓库里）")
+
     print("=" * 60)
     print("🔬 智谱 glm-4-flash response_format 能力探测")
     print(f"   endpoint: {BASE_URL}/chat/completions")

@@ -13,7 +13,11 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -25,7 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Unified workflow API — a single entry point for all workflow types.
  *
- * <p>Endpoints (all under {@code /api/workflow}):
+ * <p>Endpoints (all under {@code /api/v2/workflow}, see {@link com.huawei.hisi.workflow.v2.WorkflowV2Controller}):
  * <ul>
  *   <li>{@code GET /definitions} – list registered workflow definitions.</li>
  *   <li>{@code GET /nodes} – list available node types.</li>
@@ -39,18 +43,19 @@ import java.util.concurrent.atomic.AtomicReference;
  *   <li>{@code POST /sessions/{sid}/rerun-from/{nodeName}} – rerun from a node.</li>
  *   <li>{@code POST /sessions/{sid}/abort} – abort the session.</li>
  * </ul>
+ *
+ * <p>不再单独注册为控制器：/api/workflow 前缀已退役（前端只走 /api/v2/workflow），
+ * 本类作为 {@link com.huawei.hisi.workflow.v2.WorkflowV2Controller} 的基类提供同一套端点实现。
  */
-@RestController
-@RequestMapping("/api/workflow")
 public class WorkflowController {
 
     private static final Logger log = LoggerFactory.getLogger(WorkflowController.class);
 
-    private final WorkflowRegistry registry;
-    private final SessionMappingService sessionMappingService;
-    private final AgentSessionRepository sessionRepository;
-    private final AgentEventRepository eventRepository;
-    private final DagExecutor dagExecutor;
+    protected final WorkflowRegistry registry;
+    protected final SessionMappingService sessionMappingService;
+    protected final AgentSessionRepository sessionRepository;
+    protected final AgentEventRepository eventRepository;
+    protected final DagExecutor dagExecutor;
 
     @Value("${ram.sse.timeout-ms:300000}")
     private long sseTimeoutMs = 300_000;
@@ -262,6 +267,13 @@ public class WorkflowController {
                 ScheduledFuture<?> f = futureRef.get();
                 if (f != null) f.cancel(true);
             } catch (Exception e) {
+                if (causedByDisconnectedClient(e)) {
+                    // 浏览器关页面、刷新或断网后连接已断：推送不出去是正常现象，停掉轮询即可，不是告警
+                    ScheduledFuture<?> f = futureRef.get();
+                    if (f != null) f.cancel(true);
+                    log.debug("[SSE] client disconnected handle={}", handle);
+                    return;
+                }
                 log.warn("[SSE] tick failed for handle={} error={}", handle, e.toString());
             }
         };
@@ -274,6 +286,17 @@ public class WorkflowController {
         emitter.onError(e -> future.cancel(true));
 
         return emitter;
+    }
+
+    /** 异常链里是否有「响应已经写不回去」（Spring 包装的 AsyncRequestNotUsableException 或底层的 IO 异常）。 */
+    static boolean causedByDisconnectedClient(Throwable ex) {
+        for (Throwable cause = ex; cause != null; cause = cause.getCause() == cause ? null : cause.getCause()) {
+            if (cause instanceof org.springframework.web.context.request.async.AsyncRequestNotUsableException
+                    || cause instanceof IOException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ──────────────────────────── Lifecycle endpoints ────────────────────────────
@@ -290,7 +313,7 @@ public class WorkflowController {
 
     // ──────────────────────────── Helpers ────────────────────────────
 
-    private Long resolveBackendId(String handle) {
+    protected Long resolveBackendId(String handle) {
         return sessionMappingService.resolveBackendId(handle);
     }
 

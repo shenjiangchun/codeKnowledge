@@ -89,6 +89,10 @@ text-model:
 # 独立的诊断 LLM 配置，与 text-model（用于 KG 描述生成）解耦。
 # api-key 留占位，真实 token 在 application-local.yml。
 hisi:
+  auth:
+    # 管理员 root 的初始口令（仅首次启动建库时使用）。仓库公开，口令不写在这里：
+    # 用环境变量 HISI_ROOT_PASSWORD 配置；留空则随机生成一个并打印在启动日志里，首次登录后请修改。
+    root-password: ${HISI_ROOT_PASSWORD:}
   apm:
     diagnose:
       llm:
@@ -136,8 +140,10 @@ cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
 
 # JWT 认证配置
+# 签名密钥用环境变量 JWT_SECRET 配置（至少 32 字节）。这里不放默认值：不配置时每次启动随机生成，
+# 重启后已签发的令牌会全部失效；本机开发可写进未入库的 application-local.yml 的 jwt.secret。
 jwt:
-  secret: ${JWT_SECRET:test1111111111111111111111111111111111}
+  secret: ${JWT_SECRET:}
   expiration-ms: 86400000  # 24小时
 
 # 影响分析配置
@@ -234,7 +240,7 @@ neo4j:
   uri: bolt://127.0.0.1:7687
   database: ${NEO4J_DATABASE:codeKnowledge}
   username: neo4j
-  password: ${NEO4J_PASSWORD:12345678}
+  password: ${NEO4J_PASSWORD:}
   pool:
     max-connection-pool-size: 50
     connection-timeout: 30s
@@ -345,3 +351,52 @@ maven:
     insecure: ${MAVEN_SSL_INSECURE:true}
     allowall: ${MAVEN_SSL_ALLOWALL:true}
     ignore-validity-dates: ${MAVEN_SSL_IGNORE_VALIDITY_DATES:true}
+# ==================== 首页工作台 ====================
+# 聚合日志分析 issue 与架构诊断 issue 为待办；自动修复按 SDD 流程在后台执行。
+workbench:
+  sync:
+    # 定时聚合同步开关与间隔（毫秒）
+    enabled: true
+    interval-ms: 600000
+  fix:
+    # 全局推送开关：关闭时即使方案里勾选「推送」也只在本地提交
+    push-enabled: true
+    # 同时运行的自动修复上限
+    max-concurrent-runs: 2
+    # 迭代上限：回归或 E2E 失败回到开发的轮数。真机上常见第 1 轮是用例自身写错（setUp、反射找字段），
+    # 第 2 轮修掉一部分，第 3 轮才全过；2 轮不够
+    max-iterations: 3
+
+# ==================== pi agent 基建 ====================
+# 统一 agent 运行时：所有 agent 流的 LLM 层经 pi 执行，每个流启动时注册自己的工具清单。
+piagent:
+  enabled: true
+  # pi 安装目录与配置目录（首次启动自动 npm install）
+  install-dir: ${user.home}/.hisi-devtool/pi
+  agent-dir: ${user.home}/.hisi-devtool/pi-agent
+  package-version: 1.6.0
+  registry: https://registry.npmmirror.com
+  # 模型网关（Anthropic 协议）
+  model-base-url: http://1.95.145.190:8888
+  model-provider: hisi-gw
+  model-id: deepseek-v4-pro-cc
+  # hisi-mcp-server 的 dist 入口（留空自动探测 ../hisi-mcp-server/dist/index.js）
+  mcp-dist-path: ""
+  max-concurrent-processes: 2
+  deadline-minutes: 60
+  # 通用上下文管理（所有 agent 流自动生效，不写在某个 agent 里）。两层：
+  #  1. 提交前预算：提示词超出 max-input-tokens 就保形压缩（长列表/长字段截短并标注），完整原文落盘到会话目录；
+  #  2. 运行中压缩：pi 自带的会话压缩，上下文超过「窗口 − reserve-tokens」时总结较早轮次，溢出时压缩后重试。
+  context:
+    # 单次提交（system + user）的 token 上限；给工具定义、工具结果与最终回答留出窗口
+    max-input-tokens: 32000
+    # pi 按 4 字符/token 估算上下文，对中文偏乐观，所以保留量比 pi 默认的 16384 大
+    compaction-reserve-tokens: 32000
+    compaction-keep-recent-tokens: 20000
+  # 每流开关：arch-react 是 pi 的唯一实现（手动 ReAct 循环已删除），默认开启；
+  # 其余流尚未切换到 pi，关闭走老 LLM 客户端，逐流验证后打开
+  flows:
+    arch-react: true
+    workbench-sdd: false
+    log-v2: false
+    ram: false
