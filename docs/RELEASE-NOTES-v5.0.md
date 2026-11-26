@@ -35,7 +35,8 @@
   - `piagent.*`：`enabled` / `install-dir` / `agent-dir`（默认 `lib/pi`、`lib/pi-agent`，后端项目内、已 gitignore）/ `package-version` / `registry` / `model-base-url` / `model-id` / `mcp-dist-path` / `max-concurrent-processes` / `deadline-minutes`；
   - `piagent.context.*`：`max-input-tokens` / `compaction-reserve-tokens` / `compaction-keep-recent-tokens`；
   - `piagent.flows.arch-react` / `one-shot`（其余 per-flow 开关为占位：迁移是 bean 级平替，开关未接线）；
-  - hisi-mcp-server 随后端启动自动构建（dist 缺失或源码更新时自动 `npm ci` + `tsc`），远端无需单独启动；
+  - hisi-mcp-server 随后端启动自动构建（dist 缺失或源码更新时自动 `npm ci` + `tsc`），远端无需单独启动；真机用「无 node_modules、无 dist」的全新副本实测：18 秒构建完成，拉起后 40 个工具（35 只读 + 5 `act_*`）；
+  - SQLite 结构无需手工建表：全新机器首次启动由各模块 initializer 自动创建（实测空目录首启建出 28 张表，本分支新增的工作台 3 张表 + 5 个索引在工作台接口上可用）；老库升级靠 `CREATE TABLE IF NOT EXISTS` 与幂等补列，本分支没有改既有表的列。顺手修了一处既有的首启顺序问题：KG 队列与架构分析两处启动恢复此前跑在建表之前，全新库首启会报 2 条 `no such table`（功能无害），现以 `@DependsOn` 约束顺序，空库首启 0 ERROR；
   - 移除：`spring.ai.*` 全块与 `chat-models.yml` 引用、`model-provider`（改内部常量）；本地密钥仍放 `application-local.yml` / `.env.local`。
 
 ### 架构诊断

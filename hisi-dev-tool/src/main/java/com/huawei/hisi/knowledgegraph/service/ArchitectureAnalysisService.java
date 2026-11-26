@@ -8,6 +8,7 @@ import com.huawei.hisi.knowledgegraph.repository.GenerationTaskRepository;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -25,6 +26,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * 混入会与 KG 任务抢队列、语义混乱。
  */
 @Slf4j
+// 启动恢复（@PostConstruct）要查 generation_task 表：全新库上得等建表 initializer 先跑完，否则首启报「no such table」
+@DependsOn("SQLiteSchemaInitializer")
 @Service
 public class ArchitectureAnalysisService {
 

@@ -7,6 +7,7 @@ import com.huawei.hisi.model.KnowledgeGraphTask;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -28,6 +29,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * - 消费：循环 take()，执行 KG 构建（内含自动触发向量生成），轮询等待向量任务完成，再取下一个
  */
 @Service
+// 启动恢复（@PostConstruct）要查 generation_task 表：全新库上得等建表 initializer 先跑完，否则首启报「no such table」
+@DependsOn("SQLiteSchemaInitializer")
 @Slf4j
 public class KgGenerationQueue {
 
