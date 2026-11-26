@@ -88,8 +88,8 @@ test('需求分析大师：以 v4.0 后端为项目走完澄清、确认、影�
     }
 
     const status = (await statusTag.innerText().catch(() => '')).trim()
-    // 终态的写法以失败提示为准：completed / error / failed / aborted
-    if (/^(completed|error|failed|aborted)$/i.test(status)) break
+    // 终态的写法以失败提示为准：已完成 / 失败 / 已中止
+    if (/^(已完成|失败|已中止)$/.test(status)) break
 
     if (Date.now() - lastLog > 60_000) {
       lastLog = Date.now()
@@ -101,7 +101,7 @@ test('需求分析大师：以 v4.0 后端为项目走完澄清、确认、影�
   let finalStatus = (await statusTag.innerText()).trim()
   // 四节点 DAG（澄清→影响面→实现→验证）跑完，页面状态就是 completed；
   // 技术方案是在这之后点「生成技术方案」单独触发的，不算在 DAG 的完成状态里
-  if (!techPlanTriggered && finalStatus === 'completed') {
+  if (!techPlanTriggered && finalStatus === '已完成') {
     const techPlan = page.getByRole('button', { name: '生成技术方案' }).first()
     await expect(techPlan).toBeVisible({ timeout: 60_000 })
     await techPlan.click()
@@ -115,7 +115,7 @@ test('需求分析大师：以 v4.0 后端为项目走完澄清、确认、影�
   for (;;) {
     if (await techPlanView.isVisible().catch(() => false)) break
     const status = (await statusTag.innerText().catch(() => '')).trim()
-    if (/^(error|failed|aborted)$/i.test(status)) {
+    if (/^(失败|已中止)$/.test(status)) {
       throw new Error(`技术方案生成失败，会话状态：${status}`)
     }
     if (Date.now() > planDeadline) {
@@ -127,7 +127,7 @@ test('需求分析大师：以 v4.0 后端为项目走完澄清、确认、影�
 
   test.info().annotations.push({ type: 'status', description: `最终状态 ${finalStatus}，技术方案${techPlanTriggered ? '已生成' : '未触发生成'}` })
   await page.screenshot({ path: test.info().outputPath('ram-demand-final.png'), fullPage: true })
-  expect(finalStatus, '需求分析应正常完成').toBe('completed')
+  expect(finalStatus, '需求分析应正常完成').toBe('已完成')
   expect(techPlanTriggered, '应出现并触发「生成技术方案」').toBe(true)
   await expect(techPlanView).not.toBeEmpty()
 })

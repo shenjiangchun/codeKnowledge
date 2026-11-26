@@ -4,7 +4,7 @@
  *
  * Layout:
  *   ┌─ top bar ───────────────────────────────────────────┐
- *   │ CostMeter | status tag |   spacer  | actions        │
+ *   │ status pill │        spacer        │ actions        │
  *   ├─ DAG (horizontal 4-card) ───────────────────────────┤
  *   │  Clarify → Impact → Implement → Verify              │
  *   ├─ detail body (2-col) ───────────────────────────────┤
@@ -23,7 +23,6 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { renderMarkdown } from '@/utils/markdown'
-import CostMeter from '@/components/ram/CostMeter.vue'
 import ClarifyModal from '@/components/ram/ClarifyModal.vue'
 import ConfirmModal from '@/components/ram/ConfirmModal.vue'
 import DagFlow from '@/components/ram/DagFlow.vue'
@@ -67,6 +66,18 @@ const {
 
 // Local UI state
 const activeNode = ref<DagNodeKey>('clarify')
+
+/** 状态 → 中文标签与颜色：把开发语义（running/clarify/confirm/…）转成页面语言。 */
+const STATUS_META: Record<string, { label: string; type: 'primary' | 'success' | 'warning' | 'danger' | 'info' }> = {
+  running: { label: '运行中', type: 'primary' },
+  clarify: { label: '待澄清', type: 'warning' },
+  confirm: { label: '待确认', type: 'warning' },
+  completed: { label: '已完成', type: 'success' },
+  error: { label: '失败', type: 'danger' },
+  failed: { label: '失败', type: 'danger' },
+  aborted: { label: '已中止', type: 'info' }
+}
+const statusMeta = computed(() => STATUS_META[session.status.value] ?? { label: session.status.value, type: 'info' })
 const showClarify = ref<boolean>(false)
 const showClarifyAlert = ref<boolean>(false)  // Controls clarify alert bar instead of auto-popup
 const showConfirm = ref<boolean>(false)
@@ -501,15 +512,15 @@ onBeforeUnmount(() => {
         <span class="title-text">需求分析大师</span>
         <el-tag size="small" effect="plain" class="sid-tag">#{{ sid.slice(0, 8) }}</el-tag>
       </div>
-      <CostMeter :tokens="session.cost.value.tokens" :usd="session.cost.value.usd" />
-      <el-tag size="small" data-test="ram-session-status" :type="session.status.value === 'error' ? 'danger' : 'info'">
-        {{ session.status.value }}
-      </el-tag>
+      <span class="status-pill" :class="'status-' + statusMeta.type" data-test="ram-session-status">
+        {{ statusMeta.label }}
+      </span>
       <div class="topbar-spacer" />
       <el-button
         v-if="canReopenClarify"
         type="warning"
         size="small"
+        plain
         @click="showClarify = true"
       >
         继续澄清
@@ -518,14 +529,17 @@ onBeforeUnmount(() => {
         v-if="canReopenConfirm"
         type="warning"
         size="small"
+        plain
         @click="showConfirm = true"
       >
         继续确认
       </el-button>
+      <span v-if="impactPayload || canTriggerTechPlan" class="topbar-divider" />
       <el-button
         v-if="impactPayload"
         type="primary"
         size="small"
+        plain
         data-test="goto-graph"
         @click="gotoGraph"
       >
@@ -540,19 +554,11 @@ onBeforeUnmount(() => {
       >
         生成技术方案
       </el-button>
-      <el-button
-        size="small"
-        :disabled="session.status.value !== 'running'"
-        @click="onAbort"
-      >
+      <span class="topbar-divider" />
+      <el-button size="small" text :disabled="session.status.value !== 'running'" @click="onAbort">
         中止
       </el-button>
-      <el-button
-        type="success"
-        size="small"
-        :loading="exportingMd"
-        @click="handleExportMd"
-      >
+      <el-button size="small" text :loading="exportingMd" @click="handleExportMd">
         导出 MD
       </el-button>
     </header>
@@ -682,18 +688,6 @@ onBeforeUnmount(() => {
         </div>
       </article>
 
-      <aside class="events">
-        <header class="events-header">
-          <span>事件流</span>
-          <el-tag size="small" type="info" effect="plain">{{ session.events.value.length }}</el-tag>
-        </header>
-        <ul class="event-list">
-          <li v-for="evt in session.events.value" :key="evt.seq" class="event-item">
-            <span class="seq">#{{ evt.seq }}</span>
-            <span class="type">{{ evt.type }}</span>
-          </li>
-        </ul>
-      </aside>
     </section>
 
     <ClarifyModal
@@ -727,11 +721,12 @@ onBeforeUnmount(() => {
 .topbar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   background: #ffffff;
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 10px 16px;
   border: 1px solid #ebeef5;
+  box-shadow: 0 1px 3px rgba(30, 41, 59, 0.04);
 }
 .topbar-title {
   display: flex;
@@ -755,6 +750,24 @@ onBeforeUnmount(() => {
 .topbar-spacer {
   flex: 1;
 }
+.topbar-divider {
+  width: 1px;
+  height: 16px;
+  background: #ebeef5;
+  margin: 0 2px;
+}
+.status-pill {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.status-primary { color: #2563eb; background: #dbeafe; }
+.status-success { color: #15803d; background: #dcfce7; }
+.status-warning { color: #b45309; background: #fef3c7; }
+.status-danger  { color: #b91c1c; background: #fee2e2; }
+.status-info    { color: #475569; background: #e2e8f0; }
 
 .clarify-alert {
   margin-bottom: 0;
@@ -776,25 +789,24 @@ onBeforeUnmount(() => {
 }
 
 .body {
-  display: grid;
-  grid-template-columns: 1fr 320px;
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
 }
 
-.detail,
-.events {
+.detail {
   background: #ffffff;
   border-radius: 12px;
   border: 1px solid #ebeef5;
+  box-shadow: 0 1px 3px rgba(30, 41, 59, 0.04);
   display: flex;
   flex-direction: column;
   min-height: 0;
+  flex: 1;
 }
 
-.detail-header,
-.events-header {
+.detail-header {
   padding: 12px 16px;
   border-bottom: 1px solid #f0f2f5;
   font-weight: 600;
@@ -831,33 +843,6 @@ onBeforeUnmount(() => {
 .detail-techplan-prompt .empty-hint {
   color: #c0c4cc;
   font-style: italic;
-}
-
-.event-list {
-  list-style: none;
-  margin: 0;
-  padding: 8px 0;
-  overflow: auto;
-  flex: 1;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-}
-.event-item {
-  padding: 6px 16px;
-  border-bottom: 1px solid #f5f7fa;
-  display: flex;
-  gap: 10px;
-}
-.event-item:hover {
-  background: #fafbfc;
-}
-.event-item .seq {
-  color: #909399;
-  min-width: 36px;
-}
-.event-item .type {
-  color: #606266;
-  word-break: break-all;
 }
 
 .md {
