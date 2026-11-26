@@ -23,6 +23,19 @@
 - **架构深度分析已平替为 pi**：真机（v4.0）给出 10–19 个问题、5 个视图、p0–p2 路线图，并正确过滤由测试类触发的 impl-leak 误报。
   - 输出格式并不总合规（首稿漏 `thought`、结论后拖工具调用标记、`evidence_appendix` 给成对象）→ 取第一个配对完整的 JSON、补默认值、字段纠偏，仍不符则带具体契约问题**自动修正**（上限 2 轮）。
   - 稳定性：页面用例连跑 3 次 3/3 通过（其中 2 次靠 1 轮自动修正）。
+- **全量平替（本轮）**：所有流的 LLM 入口统一到 pi。
+  - 统一入口与编排：`AgentRegistry` 声明 17 个 ReAct agent + 7 个 workflow；ReAct 编排 = 按声明装配（工具清单解析、skill 挂载、契约校验 + 修正轮）；workflow 编排 = `FlowEngine` 有序管道 + 既有 `DagExecutor`（责任链只用于节点内选择器），两种模式共用同一入口（`FlowEngine.resolve` / `ReActSession.run`）。
+  - 需求分析五个 LLM 节点（澄清 / 影响面 / 实现 / 验证 / 技术方案）换 pi 会话（`PiClarifyLlmClient` 等 @Primary 实现，旧 Claude 客户端转为抽象基类、只留提示词与回退）。
+  - 通用对话（`/api/chat`）与 RAM 对话助手（ram-chat）走 `ReActSession`；对话助手的 5 个动作工具（`act_*`）经 `HISI_SCOPE_TOKEN` → mcp.json 环境引用 → MCP 服务以用户 JWT 调后端，无令牌时明确拒绝（绝不匿名执行）。
+  - 一次性结构化调用（知识图谱生成等）走 one-shot 清单（无工具、关思考；`AgentLlmClient` 唯一实现为 `PiAgentLlmClient`）。
+  - 13 个 skill 文件随启动同步到 pi 目录（jar 内流式复制）。
+  - 保留一个直连客户端：批量 / 向量等非 agent 调用仍直连（GLM 文本、embedding），与 pi 无关。
+- **部署新增配置**（远端 `application-local.yml` 需补；均有默认值，可不动）：
+  - `piagent.*`：`enabled` / `install-dir` / `agent-dir`（默认 `lib/pi`、`lib/pi-agent`，后端项目内、已 gitignore）/ `package-version` / `registry` / `model-base-url` / `model-id` / `mcp-dist-path` / `max-concurrent-processes` / `deadline-minutes`；
+  - `piagent.context.*`：`max-input-tokens` / `compaction-reserve-tokens` / `compaction-keep-recent-tokens`；
+  - `piagent.flows.arch-react` / `one-shot`（其余 per-flow 开关为占位：迁移是 bean 级平替，开关未接线）；
+  - hisi-mcp-server 随后端启动自动构建（dist 缺失或源码更新时自动 `npm ci` + `tsc`），远端无需单独启动；
+  - 移除：`spring.ai.*` 全块与 `chat-models.yml` 引用、`model-provider`（改内部常量）；本地密钥仍放 `application-local.yml` / `.env.local`。
 
 ### 架构诊断
 - 本地源码注入扫描 `injection_scan`（区分接口注入与直接依赖实现类）；ReAct 提示词补充抽样查证规则（`scannedFileCount=0` 不得判误报）。
@@ -36,7 +49,7 @@
 - `/api/workflow` HTTP 前缀（前端与用例全部走 `/api/v2/workflow`；`WorkflowController` 保留为 v2 控制器基类）。
 - `WorkflowRegistry.buildWorkflow`（无引用）；工作流注册改为解析期校验（react 节点由工厂按次创建，注册期无从校验）。
 
-**未移除**：工作台 SDD、日志 v2、需求分析三个流尚未迁到 pi，仍在用旧 LLM 客户端（`RamClaudeJsonClient`、Spring AI `ChatClient`、`AgentLlmClient`）。
+**本轮新增移除**（全量平替）：`RamClaudeJsonClient`、`RamClaudeLlmAdapter`、`AgentTools`、`GrepMatcher`、`ClaudeSessionService(+Impl)`、`LogReportLookupTool`、`ProjectOverviewTool`、`ChatModelProperties`、`LlmJsonAnswer`、`AgentConfig`、`OptionalMemoryAdvisor`、`chat-models.yml` 与全部 `spring.ai` 配置（自动装配按类排除）。**保留**：批量 / 向量直连客户端（GLM 文本、embedding）与 `AgentLlmClient` 接口（唯一实现 `PiAgentLlmClient`）。
 
 ## 三、安全整改
 - 真实凭据移出追踪文件：智谱 Key（探测脚本改读 `ZHIPU_API_KEY`）、`.claude/settings.local.json` 内嵌的智谱 + 百度千帆 Key（抹除并停止追踪）。
@@ -77,6 +90,7 @@
 在线后端日志：两次启动窗口内 ERROR 均为 0；WARN 为 3 条已知启动噪声与 3 条「模型回答不是 JSON、已格式化转换」。
 
 ### 已知限制
+- 真机故障（已修，2026-11-26）：需求分析影响面节点 0 结果——GLM 把分解结果按行美化返回，旧兜底按行切分把 `"query": "xxx",` 这类 JSON 碎片当成子查询送检索（15 个碎片、0 结果、节点失败）。已重写 `QueryDecomposer` 响应解析（容忍尾随散文 / 裸数组 / 丢外层大括号；JSON 语法行永不进检索）+ 提示词要求单行输出；新增 8 例单测锁死各格式。
 - 需求分析的技术方案偏薄：会话 191 中影响面识别出 2 个待改方法，但技术方案的 `target_methods_detail`、时序图、流程图为空——模型首稿写成散文时经格式化转换（`LlmJsonAnswer`）细节易丢失，待单独治理。
 - 自动修复对「拆包循环」类结构性重构在 3 轮迭代内不收敛（run 16），看板如实标失败。
 - 工作台自动修复的 E2E 服务启动分支（`workbench.fix.e2e.start-service=true` 的接口用例）未在真实环境验证；本轮以 `start-service=false` 运行（v4.0 按约定不启动）。
