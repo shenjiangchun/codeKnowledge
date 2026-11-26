@@ -4,8 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hisi.neo4j.model.IntentType;
 import com.huawei.hisi.neo4j.model.SubQuery;
-import com.huawei.hisi.ram.nodes.impl.RamClaudeJsonClient;
-import com.huawei.hisi.ram.sdk.SendOptions;
+import com.huawei.hisi.agentflow.AgentLlmClient;
 import com.huawei.hisi.service.UnifiedTextService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,7 +21,7 @@ import java.util.stream.Collectors;
  * Decomposes a complex requirement intent into 3–15 focused sub-queries
  * tagged with intent types and confidence scores.
  *
- * <p>Uses Claude (via {@link RamClaudeJsonClient}) as the primary decomposer;
+ * <p>Uses the unified LLM interface as the primary decomposer;
  * falls back to {@link UnifiedTextService} (智谱 GLM) when Claude is unavailable;
  * only uses punctuation-based splitting when <em>both</em> LLMs are unavailable.</p>
  *
@@ -90,6 +89,8 @@ public class QueryDecomposer {
 
             返回 JSON: {"queries": [{"query": "子查询文本", "type": "SCHEDULE", "confidence": 0.9}, ...]}
 
+            输出要求：只输出一行 JSON，不要换行，不要 markdown 代码块，不要任何解释文字。
+
             示例：
             输入："添加支付回调处理，需要更新订单状态并发送通知"
             输出：{"queries": [
@@ -116,12 +117,12 @@ public class QueryDecomposer {
             ]}
             """;
 
-    private final RamClaudeJsonClient claude;
+    private final AgentLlmClient llm;
     private final UnifiedTextService textService;
 
-    public QueryDecomposer(RamClaudeJsonClient claude,
+    public QueryDecomposer(AgentLlmClient llm,
                            @Autowired(required = false) UnifiedTextService textService) {
-        this.claude = claude;
+        this.llm = llm;
         this.textService = textService;
     }
 
@@ -156,25 +157,22 @@ public class QueryDecomposer {
         }
 
         // Strategy 2: Claude (supplementary — when GLM unavailable)
-        if (claude.isAvailable()) {
+        if (llm.isAvailable()) {
             try {
-                Map<String, Object> result = claude.callJson(
-                        SYSTEM_PROMPT,
-                        intent,
-                        new SendOptions(claude.defaultModel(), 1024, 0.1, SYSTEM_PROMPT));
+                Map<String, Object> result = llm.completeJson(SYSTEM_PROMPT, intent, 1024);
 
                 List<SubQuery> queries = extractSubQueries(result);
                 if (!queries.isEmpty()) {
-                    log.info("[QueryDecomposer] Claude decomposed intent into {} sub-queries: {}",
+                    log.info("[QueryDecomposer] LLM decomposed intent into {} sub-queries: {}",
                             queries.size(), queries);
                     return queries;
                 }
-                log.warn("[QueryDecomposer] Claude returned empty queries — trying fallback split");
+                log.warn("[QueryDecomposer] LLM returned empty queries — trying fallback split");
             } catch (Exception ex) {
-                log.warn("[QueryDecomposer] Claude call failed — trying fallback split: {}", ex.getMessage());
+                log.warn("[QueryDecomposer] LLM call failed — trying fallback split: {}", ex.getMessage());
             }
         } else {
-            log.info("[QueryDecomposer] GLM unavailable, Claude also unavailable — using fallback split");
+            log.info("[QueryDecomposer] GLM unavailable, LLM also unavailable — using fallback split");
         }
 
         // Strategy 3: punctuation-based split (last resort)
@@ -216,10 +214,9 @@ public class QueryDecomposer {
     }
 
     /**
-     * Extract the {@code "queries"} array from Claude's JSON response,
+     * Extract the {@code "queries"} array from an LLM JSON response,
      * parsing each item as a SubQuery with type and confidence.
      */
-    @SuppressWarnings("unchecked")
     private List<SubQuery> extractSubQueries(Map<String, Object> result) {
         Object raw = result.get("queries");
         if (!(raw instanceof List<?> list)) {
@@ -229,21 +226,32 @@ public class QueryDecomposer {
 
         List<SubQuery> queries = new ArrayList<>();
         for (Object item : list) {
-            if (item instanceof String s && s.length() >= MIN_SUBQUERY_LENGTH) {
-                // Legacy string item — treat as GENERAL
-                queries.add(SubQuery.general(s));
-            } else if (item instanceof Map<?, ?> map) {
-                String query = (String) map.get("query");
-                if (query == null || query.length() < MIN_SUBQUERY_LENGTH) continue;
-
-                IntentType type = parseIntentType((String) map.get("type"));
-                double confidence = parseConfidence(map.get("confidence"));
-                queries.add(new SubQuery(query, type, confidence));
+            SubQuery sq = toSubQuery(item);
+            if (sq != null) {
+                queries.add(sq);
             }
         }
         return queries.size() > MAX_SUBQUERIES
                 ? List.copyOf(queries.subList(0, MAX_SUBQUERIES))
                 : List.copyOf(queries);
+    }
+
+    /** Convert a raw list item (string or map) into a SubQuery; invalid items return null. */
+    private SubQuery toSubQuery(Object item) {
+        if (item instanceof String s && s.length() >= MIN_SUBQUERY_LENGTH) {
+            // Legacy string item — treat as GENERAL
+            return SubQuery.general(s);
+        }
+        if (item instanceof Map<?, ?> map) {
+            String query = (String) map.get("query");
+            if (query == null || query.length() < MIN_SUBQUERY_LENGTH) {
+                return null;
+            }
+            IntentType type = parseIntentType((String) map.get("type"));
+            double confidence = parseConfidence(map.get("confidence"));
+            return new SubQuery(query, type, confidence);
+        }
+        return null;
     }
 
     /**
@@ -268,9 +276,15 @@ public class QueryDecomposer {
 
     /**
      * Parse the raw text response from GLM into a list of SubQueries.
-     * Handles: pure JSON, markdown-fenced JSON, and JSON embedded in prose.
+     * Handles: pure JSON, markdown-fenced JSON, JSON embedded in prose (head/tail),
+     * a bare JSON array, and a {@code "queries"} body that lost its outer braces.
+     *
+     * <p>GLM-4.7-Flash 实测会返回逐行美化的 JSON、带解释文字、甚至丢掉最外层大括号——
+     * 解析失败时旧实现按行切分，把 {@code "query": "xxx",} 这类 JSON 语法碎片当成子查询送进
+     * 检索（15 个碎片、0 结果，影响面节点直接失败）。现在的兜底只保留读起来像自然语言的整行，
+     * JSON 语法行一律丢弃；实在没有可用行时返回空列表，让调用方走下一级策略。</p>
      */
-    private List<SubQuery> parseJsonSubQueries(String raw) {
+    List<SubQuery> parseJsonSubQueries(String raw) {
         if (raw == null || raw.isBlank()) {
             return List.of();
         }
@@ -286,27 +300,79 @@ public class QueryDecomposer {
             }
         }
 
-        // Find JSON object if embedded in prose
-        if (!json.startsWith("{")) {
-            int brace = json.indexOf('{');
-            if (brace >= 0) {
-                json = json.substring(brace);
+        // Cut prose around the JSON payload: from the first { or [ to the last } or ]
+        int head = json.indexOf('{');
+        int headArr = json.indexOf('[');
+        if (head < 0 || (headArr >= 0 && headArr < head)) {
+            head = headArr;
+        }
+        if (head > 0) {
+            json = json.substring(head);
+        }
+        int tail = Math.max(json.lastIndexOf('}'), json.lastIndexOf(']'));
+        if (tail >= 0 && tail < json.length() - 1) {
+            json = json.substring(0, tail + 1);
+        }
+
+        // Object form: {"queries": [...]}
+        if (json.startsWith("{")) {
+            try {
+                Map<String, Object> map = MAPPER.readValue(json, new TypeReference<>() {});
+                List<SubQuery> queries = extractSubQueries(map);
+                if (!queries.isEmpty()) {
+                    return queries;
+                }
+            } catch (Exception ex) {
+                log.debug("[QueryDecomposer] Failed to parse GLM JSON object: {}", ex.getMessage());
             }
         }
 
-        try {
-            Map<String, Object> map = MAPPER.readValue(json, new TypeReference<>() {});
-            return extractSubQueries(map);
-        } catch (Exception ex) {
-            log.debug("[QueryDecomposer] Failed to parse GLM JSON response: {}", ex.getMessage());
-            // Last resort: split by newlines and treat each non-empty line as a GENERAL query
-            return Arrays.stream(json.split("[\n]"))
-                    .map(String::trim)
-                    .filter(s -> s.length() >= MIN_SUBQUERY_LENGTH && !s.startsWith("{") && !s.startsWith("```"))
-                    .limit(MAX_SUBQUERIES)
-                    .map(SubQuery::general)
-                    .collect(Collectors.toList());
+        // Bare-array form: [{"query": ...}, ...]
+        if (json.startsWith("[")) {
+            try {
+                List<Object> list = MAPPER.readValue(json, new TypeReference<>() {});
+                List<SubQuery> queries = list.stream()
+                        .map(this::toSubQuery)
+                        .filter(sq -> sq != null)
+                        .collect(Collectors.toList());
+                if (!queries.isEmpty()) {
+                    return queries;
+                }
+            } catch (Exception ex) {
+                log.debug("[QueryDecomposer] Failed to parse GLM JSON array: {}", ex.getMessage());
+            }
         }
+
+        // Body lost its outer braces: "queries": [...]
+        if (json.startsWith("\"queries\"")) {
+            try {
+                Map<String, Object> map = MAPPER.readValue("{" + json + "}", new TypeReference<>() {});
+                List<SubQuery> queries = extractSubQueries(map);
+                if (!queries.isEmpty()) {
+                    return queries;
+                }
+            } catch (Exception ex) {
+                log.debug("[QueryDecomposer] Failed to parse re-wrapped GLM JSON: {}", ex.getMessage());
+            }
+        }
+
+        // Last resort: keep only prose-looking lines — never JSON syntax fragments
+        List<SubQuery> lines = Arrays.stream(json.split("[\n]"))
+                .map(String::trim)
+                .filter(this::looksLikeProseQuery)
+                .limit(MAX_SUBQUERIES)
+                .map(SubQuery::general)
+                .collect(Collectors.toList());
+        return lines.isEmpty() ? List.of() : lines;
+    }
+
+    /** A line can serve as a fallback query only if it reads like prose, not JSON syntax. */
+    private boolean looksLikeProseQuery(String line) {
+        return line.length() >= MIN_SUBQUERY_LENGTH
+                && !line.startsWith("{")
+                && !line.startsWith("```")
+                && !line.contains("\":")
+                && !line.contains(": \"");
     }
 
     /**
