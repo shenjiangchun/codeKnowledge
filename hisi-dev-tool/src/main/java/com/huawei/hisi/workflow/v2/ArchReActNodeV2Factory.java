@@ -1,10 +1,10 @@
 package com.huawei.hisi.workflow.v2;
 
+import com.huawei.hisi.agentbase.ReActSession;
 import com.huawei.hisi.agentflow.AgentFlowCancelRegistry;
 import com.huawei.hisi.archdiagnosis.service.ArchDiagramGenerator;
 import com.huawei.hisi.knowledgegraph.aggregation.llm.DeepseekJsonClient;
 import com.huawei.hisi.piagent.PiAgentProperties;
-import com.huawei.hisi.piagent.PiFlowClient;
 import com.huawei.hisi.ram.contract.SchemaValidator;
 import com.huawei.hisi.workflow.DagNode;
 import com.huawei.hisi.workflow.agent.ArchAgentToolRegistry;
@@ -31,7 +31,7 @@ public class ArchReActNodeV2Factory {
     private final SchemaValidator validator;
     private final ArchDiagramGenerator diagramGenerator;
     private final AgentFlowCancelRegistry cancelRegistry;
-    private final PiFlowClient piClient;
+    private final ReActSession session;
     private final PiAgentProperties piProperties;
     private final int maxSteps;
     private final int observationMaxChars;
@@ -42,7 +42,7 @@ public class ArchReActNodeV2Factory {
                                   SchemaValidator validator,
                                   ArchDiagramGenerator diagramGenerator,
                                   AgentFlowCancelRegistry cancelRegistry,
-                                  PiFlowClient piClient,
+                                  ReActSession session,
                                   PiAgentProperties piProperties,
                                   @Value("${arch.react.max-steps:10}") int maxSteps,
                                   @Value("${arch.react.observation-max-chars:2000}") int observationMaxChars) {
@@ -52,7 +52,7 @@ public class ArchReActNodeV2Factory {
         this.validator = validator;
         this.diagramGenerator = diagramGenerator;
         this.cancelRegistry = cancelRegistry;
-        this.piClient = piClient;
+        this.session = session;
         this.piProperties = piProperties;
         this.maxSteps = maxSteps;
         this.observationMaxChars = observationMaxChars;
@@ -65,6 +65,7 @@ public class ArchReActNodeV2Factory {
                     "piagent.flows.arch-react 已关闭：手动 ReAct 循环已随本次版本移除，架构分析只能走 pi");
         }
         return new PiReActAgentNode(llm, registry, trimmer, validator, diagramGenerator,
-                maxSteps, observationMaxChars, piClient, cancelRegistry);
+                maxSteps, observationMaxChars, session, cancelRegistry);
     }
 }
+

@@ -1,9 +1,8 @@
 package com.huawei.hisi.ram.nodes.impact;
 
+import com.huawei.hisi.agentflow.AgentLlmClient;
 import com.huawei.hisi.ram.kg.KgMcpClient;
 import com.huawei.hisi.ram.kg.dto.Entry;
-import com.huawei.hisi.ram.nodes.impl.RamClaudeJsonClient;
-import com.huawei.hisi.ram.sdk.SendOptions;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -13,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Uses AI (via {@link RamClaudeJsonClient}) to classify upstream entry points
+ * Uses AI (via {@link AgentLlmClient}) to classify upstream entry points
  * as {@code DIRECT} or {@code INDIRECT} relative to a requirement.
  *
  * <p>When the AI is unavailable or the call fails, all entries are
@@ -24,17 +23,17 @@ import java.util.Map;
 @Component
 public class AffectedEntriesAnnotator {
 
-    private final RamClaudeJsonClient claude;
+    private final AgentLlmClient llm;
     private final KgMcpClient kg;
 
     /**
      * Constructs an annotator with the required AI and knowledge-graph clients.
      *
-     * @param claude the JSON-based Claude client for AI classification
-     * @param kg     the knowledge-graph MCP client (reserved for future enrichment)
+     * @param llm the LLM client for AI classification
+     * @param kg  the knowledge-graph MCP client (reserved for future enrichment)
      */
-    public AffectedEntriesAnnotator(RamClaudeJsonClient claude, KgMcpClient kg) {
-        this.claude = claude;
+    public AffectedEntriesAnnotator(AgentLlmClient llm, KgMcpClient kg) {
+        this.llm = llm;
         this.kg = kg;
     }
 
@@ -118,8 +117,8 @@ public class AffectedEntriesAnnotator {
         if (upstream == null || upstream.isEmpty()) {
             return new AnnotatedEntries(List.of(), List.of());
         }
-        if (!claude.isAvailable()) {
-            log.info("[AffectedEntriesAnnotator] Claude unavailable -- heuristic fallback");
+        if (!llm.isAvailable()) {
+            log.info("[AffectedEntriesAnnotator] LLM unavailable -- heuristic fallback");
             return heuristicFallback(upstream, targetNodeId);
         }
 
@@ -144,8 +143,7 @@ public class AffectedEntriesAnnotator {
                 sb.append("\n");
             }
 
-            Map<String, Object> result = claude.callJson(SYSTEM_PROMPT, sb.toString(),
-                    new SendOptions(claude.defaultModel(), 4096, 0.1, SYSTEM_PROMPT));
+            Map<String, Object> result = llm.completeJson(SYSTEM_PROMPT, sb.toString(), 4096);
 
             return parseAnnotationResult(result, upstream);
         } catch (Exception ex) {

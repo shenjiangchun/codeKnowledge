@@ -2,17 +2,12 @@ package com.huawei.hisi.ram.chat;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.huawei.hisi.agentbase.AgentRegistry;
+import com.huawei.hisi.agentbase.ReActSession;
 import com.huawei.hisi.ram.chat.dto.TurnResult;
-import com.huawei.hisi.ram.chat.tools.ProjectOverviewTool;
-import com.huawei.hisi.ram.config.ChatModelProperties;
 import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.EventType;
-import com.huawei.hisi.ram.nodes.impl.RamClaudeJsonClient;
-import com.huawei.hisi.ram.nodes.impl.StreamCallbacks;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
-import com.huawei.hisi.ram.sdk.SendOptions;
-import com.huawei.hisi.ram.sdk.ToolDefinition;
-import com.huawei.hisi.agent.tools.AgentTools;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,7 +15,6 @@ import org.springframework.stereotype.Component;
 import reactor.core.Disposable;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +24,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
 
 @Slf4j
 @Component
@@ -38,15 +31,12 @@ import java.util.function.Function;
 public class RamChatOrchestrator {
 
     private final AgentEventRepository eventRepository;
-    private final RamClaudeJsonClient claudeClient;
-    private final AgentTools agentTools;
+    /** 对话走统一运行时：声明 ram-chat（只读图谱 + 动作工具，动作带用户令牌）。 */
+    private final ReActSession reactSession;
     private final ChatContextBuilder contextBuilder;
     private final RamChatWebSocketHandler wsHandler;
     private final ObjectMapper objectMapper;
-    private final ChatModelProperties chatProps;
     private final TurnRegistry turnRegistry;
-
-    private static final String CHAT_SCENARIO = "chat";
 
     @Value("${ram.chat.timeout-seconds:300}")
     private long timeoutSeconds;
@@ -58,7 +48,11 @@ public class RamChatOrchestrator {
     });
 
     public TurnResult runTurn(long sessionId, String userText, String projectPath) {
-        return runTurn(sessionId, userText, List.of(projectPath));
+        return runTurn(sessionId, userText, List.of(projectPath), null);
+    }
+
+    public TurnResult runTurn(long sessionId, String userText, List<String> projectPaths) {
+        return runTurn(sessionId, userText, projectPaths, null);
     }
 
     /**
@@ -67,14 +61,19 @@ public class RamChatOrchestrator {
      * {@code STARTED} status; the actual streaming reaches the client via
      * WebSocket ({@code assistant_delta} / {@code tool_use_*} / {@code checkpoint}).
      *
+     * @param scopeToken 用户的 JWT（动作工具以用户身份调后端时用）；只读会话可传 null
      * @return the freshly assigned {@code turnId} (clients can use it to
      *         correlate incoming WebSocket events)
      */
     public String startTurnAsync(long sessionId, String userText, List<String> projectPaths) {
+        return startTurnAsync(sessionId, userText, projectPaths, null);
+    }
+
+    public String startTurnAsync(long sessionId, String userText, List<String> projectPaths, String scopeToken) {
         String turnId = UUID.randomUUID().toString();
         asyncExecutor.submit(() -> {
             try {
-                runTurnInternal(sessionId, turnId, userText, projectPaths);
+                runTurnInternal(sessionId, turnId, userText, projectPaths, scopeToken);
             } catch (RuntimeException e) {
                 log.error("[RamChatOrchestrator] async runTurn failed sessionId={} turnId={}: {}",
                         sessionId, turnId, e.getMessage(), e);
@@ -92,6 +91,10 @@ public class RamChatOrchestrator {
      * asynchronously.
      */
     public void injectAndContinue(long sessionId, String userContent, List<String> projectPaths) {
+        injectAndContinue(sessionId, userContent, projectPaths, null);
+    }
+
+    public void injectAndContinue(long sessionId, String userContent, List<String> projectPaths, String scopeToken) {
         log.info("[RamChatOrchestrator] inject sessionId={} contentLen={}", sessionId, userContent == null ? 0 : userContent.length());
         var interrupted = turnRegistry.interrupt(sessionId);
         if (interrupted.isPresent()) {
@@ -122,14 +125,15 @@ public class RamChatOrchestrator {
             wsPayload.put("createdAt", ev.getCreatedAt());
             wsHandler.pushEvent(sessionId, wsPayload);
         }
-        asyncExecutor.submit(() -> runTurn(sessionId, userContent, projectPaths));
+        asyncExecutor.submit(() -> runTurn(sessionId, userContent, projectPaths, scopeToken));
     }
 
-    public TurnResult runTurn(long sessionId, String userText, List<String> projectPaths) {
-        return runTurnInternal(sessionId, UUID.randomUUID().toString(), userText, projectPaths);
+    public TurnResult runTurn(long sessionId, String userText, List<String> projectPaths, String scopeToken) {
+        return runTurnInternal(sessionId, UUID.randomUUID().toString(), userText, projectPaths, scopeToken);
     }
 
-    private TurnResult runTurnInternal(long sessionId, String turnId, String userText, List<String> projectPaths) {
+    private TurnResult runTurnInternal(long sessionId, String turnId, String userText,
+                                       List<String> projectPaths, String scopeToken) {
         log.info("[RamChatOrchestrator] start turnId={} sessionId={} userText.len={}",
                 turnId, sessionId, userText.length());
 
@@ -147,85 +151,10 @@ public class RamChatOrchestrator {
         try {
             ChatContextBuilder.ChatContext ctx = contextBuilder.buildContext(sessionId, userText, projectPaths);
 
-            List<ToolDefinition> tools = agentTools.buildToolDefinitions();
-            String primaryPath = projectPaths != null && !projectPaths.isEmpty()
-                    ? projectPaths.get(0) : "";
-            Map<String, Function<Map<String, Object>, Object>> handlers =
-                    agentTools.buildToolHandlers(primaryPath);
-
             StringBuilder partialTextBuf = new StringBuilder();
-            StreamCallbacks callbacks = new StreamCallbacks() {
-                @Override
-                public void onAssistantDelta(String deltaText) {
-                    if (!isActive(sessionId, turnId)) {
-                        log.debug("[RamChatOrchestrator] dropping late assistant_delta for aborted turnId={}", turnId);
-                        return;
-                    }
-                    synchronized (partialTextBuf) {
-                        partialTextBuf.append(deltaText);
-                    }
-                    AgentEvent deltaEv = appendEvent(sessionId, EventType.ASSISTANT_DELTA, Map.of(
-                            "turnId", turnId,
-                            "delta", deltaText
-                    ), "delta-" + turnId + "-" + System.nanoTime());
-                    wsHandler.pushEvent(sessionId, wsEvent(deltaEv, sessionId, Map.of(
-                            "type", "assistant_delta",
-                            "turnId", turnId,
-                            "delta", deltaText
-                    )));
-                }
 
-                @Override
-                public void onToolUseStart(String toolName, Map<String, Object> input) {
-                    if (!isActive(sessionId, turnId)) {
-                        log.debug("[RamChatOrchestrator] dropping late tool_use_start for aborted turnId={}", turnId);
-                        return;
-                    }
-                    AgentEvent toolEv = appendEvent(sessionId, EventType.TOOL_USE, Map.of(
-                            "turnId", turnId,
-                            "toolName", toolName,
-                            "input", input
-                    ), "tool-use-" + turnId + "-" + System.nanoTime());
-                    wsHandler.pushEvent(sessionId, wsEvent(toolEv, sessionId, Map.of(
-                            "type", "tool_use_start",
-                            "turnId", turnId,
-                            "toolName", toolName,
-                            "input", input
-                    )));
-                }
-
-                @Override
-                public void onToolResult(String toolName, String resultContent) {
-                    if (!isActive(sessionId, turnId)) {
-                        log.debug("[RamChatOrchestrator] dropping late tool_result for aborted turnId={}", turnId);
-                        return;
-                    }
-                    AgentEvent resultEv = appendEvent(sessionId, EventType.TOOL_RESULT, Map.of(
-                            "turnId", turnId,
-                            "toolName", toolName,
-                            "result", resultContent
-                    ), "tool-result-" + turnId + "-" + System.nanoTime());
-                    wsHandler.pushEvent(sessionId, wsEvent(resultEv, sessionId, Map.of(
-                            "type", "tool_result",
-                            "turnId", turnId,
-                            "toolName", toolName,
-                            "result", resultContent
-                    )));
-                }
-
-                @Override
-                public void onRoundComplete(int round, String stopReason) {
-                    log.debug("[RamChatOrchestrator] turnId={} round={} stopReason={}",
-                            turnId, round, stopReason);
-                }
-            };
-
-            // Pre-register the active turn BEFORE scheduling the streaming call so that a
-            // POST /interrupt arriving between supplyAsync scheduling and Flux.subscribe
-            // callback firing cannot lose the race. We install a proxy Disposable that
-            // forwards dispose() to the real per-round Disposable once it becomes known;
-            // if interrupt() calls dispose() first, the disposableSink callback will
-            // observe proxyDisposable.isDisposed() and dispose the real one immediately.
+            // 中断经 TurnRegistry：cancelled 判定让统一运行时在中止轮次里结束 pi 进程。
+            // proxyDisposable 保持接口不变——统一运行时没有可 dispose 的订阅，取消只走判定。
             AtomicReference<Disposable> disposableRef = new AtomicReference<>();
             Disposable proxyDisposable = new Disposable() {
                 private volatile boolean disposed = false;
@@ -245,41 +174,23 @@ public class RamChatOrchestrator {
                     return disposed || (real != null && real.isDisposed());
                 }
             };
-            // Resolve the model id once per turn from the chat config so the
-            // ActiveTurn and SendOptions cannot disagree if config were to
-            // change between the two calls.
-            String modelId = chatProps.defaultModelId();
             turnRegistry.register(sessionId, new TurnRegistry.ActiveTurn(
-                    turnId, sessionId, proxyDisposable, partialTextBuf, Instant.now(), modelId));
+                    turnId, sessionId, proxyDisposable, partialTextBuf, Instant.now(), null));
 
-            // Use the V2 multi-turn path so the assistant's Markdown output is wrapped
-            // as {"text": "..."} instead of being parsed as JSON (which throws
-            // "Claude response is not valid JSON" whenever the model follows the
-            // system prompt's "使用 Markdown 输出" instruction).
-            List<Map<String, Object>> messages = List.of(
-                    Map.of("role", "user", "content", ctx.userPrompt()));
-
-            CompletableFuture<RamClaudeJsonClient.JsonCallResult> future = CompletableFuture.supplyAsync(() ->
-                    claudeClient.callJsonWithToolsAndStreamingMultiTurn(
+            ReActSession.Result result = CompletableFuture.supplyAsync(() -> reactSession.run(
+                            AgentRegistry.agent("ram-chat").orElseThrow(),
+                            "ram-chat-" + turnId.substring(0, 12),
+                            workdir(projectPaths),
                             ctx.systemPrompt(),
-                            messages,
-                            tools,
-                            handlers,
-                            SendOptions.forScenario(chatProps, modelId, CHAT_SCENARIO),
-                            callbacks,
-                            d -> {
-                                disposableRef.set(d);
-                                if (proxyDisposable.isDisposed()) {
-                                    d.dispose();
-                                }
-                            }
-            ), asyncExecutor);
-
-            RamClaudeJsonClient.JsonCallResult result = future
+                            ctx.userPrompt(),
+                            event -> forwardChatEvent(event, sessionId, turnId, partialTextBuf),
+                            () -> !isActive(sessionId, turnId),
+                            scopeToken),
+                    asyncExecutor)
                     .orTimeout(timeoutSeconds, TimeUnit.SECONDS)
                     .join();
 
-            String finalText = partialTextBuf.toString();
+            String finalText = result.text() == null ? "" : result.text();
             String summary = summarize(finalText);
 
             if (isActive(sessionId, turnId)) {
@@ -287,7 +198,7 @@ public class RamChatOrchestrator {
                         "turnId", turnId,
                         "summary", summary,
                         "finalText", finalText,
-                        "reasoningSteps", result.reasoning()
+                        "reasoningSteps", List.of()
                 ), "ckpt-" + turnId);
 
                 wsHandler.pushEvent(sessionId, wsEvent(ckptEv, sessionId, Map.of(
@@ -306,7 +217,7 @@ public class RamChatOrchestrator {
 
             turnRegistry.complete(sessionId, turnId);
 
-            return new TurnResult(turnId, "DONE", finalText, result.reasoning(), null);
+            return new TurnResult(turnId, "DONE", finalText, List.of(), result.note());
         } catch (Exception e) {
             log.error("[RamChatOrchestrator] failed turnId={}: {}", turnId, e.getMessage(), e);
             turnRegistry.complete(sessionId, turnId);
@@ -322,6 +233,67 @@ public class RamChatOrchestrator {
             )));
             return new TurnResult(turnId, "FAILED", null, List.of(), e.getMessage());
         }
+    }
+
+    /**
+     * pi 事件 → 前端熟悉的 WebSocket 事件（增量、工具调用与结果）。
+     * 中断后的迟到事件一律丢弃，与旧实现一致（TURN_INTERRUPTED 已封住这一轮）。
+     */
+    private void forwardChatEvent(Map<String, Object> event, long sessionId, String turnId, StringBuilder partialTextBuf) {
+        String type = String.valueOf(event.getOrDefault("type", ""));
+        if ("message_update".equals(type)) {
+            if (!(event.get("assistantMessageEvent") instanceof Map<?, ?> update)
+                    || !"text_delta".equals(String.valueOf(update.get("type")))
+                    || update.get("delta") == null) {
+                return;
+            }
+            if (!isActive(sessionId, turnId)) {
+                log.debug("[RamChatOrchestrator] dropping late assistant_delta for aborted turnId={}", turnId);
+                return;
+            }
+            String delta = String.valueOf(update.get("delta"));
+            synchronized (partialTextBuf) {
+                partialTextBuf.append(delta);
+            }
+            AgentEvent deltaEv = appendEvent(sessionId, EventType.ASSISTANT_DELTA, Map.of(
+                    "turnId", turnId, "delta", delta), "delta-" + turnId + "-" + System.nanoTime());
+            wsHandler.pushEvent(sessionId, wsEvent(deltaEv, sessionId, Map.of(
+                    "type", "assistant_delta", "turnId", turnId, "delta", delta)));
+        } else if ("tool_execution_start".equals(type)) {
+            if (!isActive(sessionId, turnId)) {
+                return;
+            }
+            String toolName = String.valueOf(event.getOrDefault("toolName", "?"));
+            Object input = event.getOrDefault("args", Map.of());
+            AgentEvent toolEv = appendEvent(sessionId, EventType.TOOL_USE, Map.of(
+                    "turnId", turnId, "toolName", toolName, "input", input),
+                    "tool-use-" + turnId + "-" + System.nanoTime());
+            wsHandler.pushEvent(sessionId, wsEvent(toolEv, sessionId, Map.of(
+                    "type", "tool_use_start", "turnId", turnId, "toolName", toolName, "input", input)));
+        } else if ("tool_execution_end".equals(type)) {
+            if (!isActive(sessionId, turnId)) {
+                return;
+            }
+            String toolName = String.valueOf(event.getOrDefault("toolName", "?"));
+            Object resultContent = event.get("result") != null ? event.get("result") : event.get("output");
+            AgentEvent resultEv = appendEvent(sessionId, EventType.TOOL_RESULT, Map.of(
+                    "turnId", turnId, "toolName", toolName, "result", resultContent),
+                    "tool-result-" + turnId + "-" + System.nanoTime());
+            wsHandler.pushEvent(sessionId, wsEvent(resultEv, sessionId, Map.of(
+                    "type", "tool_result", "turnId", turnId, "toolName", toolName,
+                    "result", resultContent)));
+        }
+    }
+
+    /** 会话工作目录：第一个项目路径；没有就退到进程目录。 */
+    private static java.nio.file.Path workdir(List<String> projectPaths) {
+        if (projectPaths != null && !projectPaths.isEmpty()) {
+            java.nio.file.Path path = java.nio.file.Path.of(projectPaths.get(0));
+            if (java.nio.file.Files.isDirectory(path)) {
+                return path;
+            }
+        }
+        return java.nio.file.Path.of(System.getProperty("user.dir"));
     }
 
     /**

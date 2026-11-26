@@ -2,8 +2,7 @@ package com.huawei.hisi.ram.nodes.impact;
 
 import com.huawei.hisi.ram.kg.KgMcpClient;
 import com.huawei.hisi.ram.kg.dto.Entry;
-import com.huawei.hisi.ram.nodes.impl.RamClaudeJsonClient;
-import com.huawei.hisi.ram.sdk.SendOptions;
+import com.huawei.hisi.agentflow.AgentLlmClient;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -13,8 +12,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.when;
 
 /**
@@ -24,7 +23,7 @@ import static org.mockito.Mockito.when;
 class AffectedEntriesAnnotatorTest {
 
     @Mock
-    RamClaudeJsonClient claude;
+    AgentLlmClient claude;
     @Mock
     KgMcpClient kg;
 
@@ -67,7 +66,7 @@ class AffectedEntriesAnnotatorTest {
                    "business_function", "协作交付端点",
                    "impact_mechanism", "deliver调用syncReqStatus",
                    "change_behavior", "交付后状态回卷")));
-        when(claude.callJson(anyString(), anyString(), any(SendOptions.class))).thenReturn(aiResponse);
+        when(claude.completeJson(anyString(), anyString(), anyInt())).thenReturn(aiResponse);
 
         AffectedEntriesAnnotator annotator = new AffectedEntriesAnnotator(claude, kg);
         List<Entry> upstream = List.of(new Entry("n1", "ReqController", "deliver", "CONTROLLER"));
@@ -86,7 +85,7 @@ class AffectedEntriesAnnotatorTest {
         // AI response without deep analysis fields (backward compat)
         Map<String, Object> aiResponse = Map.of("analysis", List.of(
             Map.of("nodeId", "n1", "relevance", "DIRECT", "reason", "直接相关")));
-        when(claude.callJson(anyString(), anyString(), any(SendOptions.class))).thenReturn(aiResponse);
+        when(claude.completeJson(anyString(), anyString(), anyInt())).thenReturn(aiResponse);
 
         AffectedEntriesAnnotator annotator = new AffectedEntriesAnnotator(claude, kg);
         List<Entry> upstream = List.of(new Entry("n1", "ReqController", "deliver", "CONTROLLER"));

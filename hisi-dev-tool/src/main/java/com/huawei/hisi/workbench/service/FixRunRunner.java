@@ -82,12 +82,23 @@ public class FixRunRunner {
         this.events = events;
         this.confirmGate = confirmGate;
         this.objectMapper = objectMapper;
+        // 阶段链与回退目标都在统一声明（AgentRegistry）里；配置值作为兜底（旧部署无声明时仍可用）
+        this.chain = com.huawei.hisi.agentbase.AgentRegistry.workflow("wb-autofix")
+                .map(def -> List.copyOf(def.nodes()))
+                .orElse(WorkbenchStages.ALL.stream().map(WorkbenchStages.Stage::key).toList());
+        this.retryTarget = com.huawei.hisi.agentbase.AgentRegistry.workflow("wb-autofix")
+                .flatMap(def -> java.util.Optional.ofNullable(def.policy().get("retryTarget")))
+                .map(String::valueOf).orElse("develop");
         this.maxIterations = maxIterations;
         this.handlers = new HashMap<>();
         for (StageHandler handler : stageHandlers) {
             this.handlers.put(handler.key(), handler);
         }
     }
+
+    /** 阶段链（来自统一声明的 wb-autofix 工作流）；回退目标（回归/E2E 失败回到开发）。 */
+    private final List<String> chain;
+    private final String retryTarget;
 
     public void submit(WorkbenchFixRun run) {
         pool.submit(() -> {
@@ -131,21 +142,21 @@ public class FixRunRunner {
         try {
             int index = run.getStageIndex();
             String rejectFeedback = null;
-            while (index < WorkbenchStages.ALL.size()) {
+            while (index < chain.size()) {
                 if (cancelRegistry.isCurrentCancelled()) {
                     throw new AgentFlowCancelledException();
                 }
-                WorkbenchStages.Stage stage = WorkbenchStages.of(index);
-                StageHandler handler = handlers.get(stage.key());
+                String stageKey = chain.get(index);
+                StageHandler handler = handlers.get(stageKey);
                 if (handler == null) {
-                    finish(run, WorkbenchFixRun.STATUS_FAILED, "阶段未实现：" + stage.key());
+                    finish(run, WorkbenchFixRun.STATUS_FAILED, "阶段未实现：" + stageKey);
                     return;
                 }
-                run.setCurrentStage(stage.key());
+                run.setCurrentStage(stageKey);
                 run.setStageIndex(index);
                 runRepository.save(run);
 
-                events.nodeStart(run.getSessionId(), stage.key());
+                events.nodeStart(run.getSessionId(), stageKey);
                 StageContext ctx = new StageContext(run, item, events, artifacts, rejectFeedback);
                 StageHandler.StageOutcome outcome;
                 try {
@@ -153,24 +164,24 @@ public class FixRunRunner {
                 } catch (AgentFlowCancelledException cancelled) {
                     throw cancelled;
                 } catch (Exception e) {
-                    log.error("[WorkbenchFix] runId={} 阶段 {} 异常", run.getId(), stage.key(), e);
+                    log.error("[WorkbenchFix] runId={} 阶段 {} 异常", run.getId(), stageKey, e);
                     outcome = StageHandler.StageOutcome.failed("阶段异常：" + e.getMessage());
                 }
                 events.flush(run.getSessionId());
 
                 if (outcome == null) {
-                    finish(run, WorkbenchFixRun.STATUS_FAILED, "阶段无结果：" + stage.key());
+                    finish(run, WorkbenchFixRun.STATUS_FAILED, "阶段无结果：" + stageKey);
                     return;
                 }
                 switch (outcome.kind()) {
                     case StageHandler.StageOutcome.FAILED -> {
-                        events.error(run.getSessionId(), stage.key(), outcome.message());
+                        events.error(run.getSessionId(), stageKey, outcome.message());
                         finish(run, WorkbenchFixRun.STATUS_FAILED, outcome.message());
                         return;
                     }
                     case StageHandler.StageOutcome.WAIT -> {
-                        events.checkpoint(run.getSessionId(), stage.key(), outcome.output() == null ? Map.of() : outcome.output());
-                        events.nodeComplete(run.getSessionId(), stage.key(), Map.of());
+                        events.checkpoint(run.getSessionId(), stageKey, outcome.output() == null ? Map.of() : outcome.output());
+                        events.nodeComplete(run.getSessionId(), stageKey, Map.of());
                         FixRunService.ConfirmResult result = pauseForConfirm(run, item);
                         if (result == null) {
                             // 等待超时：保持 WAITING_CONFIRM，线程退出；用户确认时会重新提交 runner
@@ -183,7 +194,7 @@ public class FixRunRunner {
                             // 确认：带着产物进入下一阶段；重读 DB 行拿到 confirm 写入的选项与推送选择
                             run = runRepository.findById(run.getId()).orElse(run);
                             rejectFeedback = null;
-                            remember(artifacts, stage.key(), outcome.output());
+                            remember(artifacts, stageKey, outcome.output());
                             index++;
                         } else {
                             // 驳回：带反馈重跑本阶段，之后会再次停下
@@ -194,29 +205,29 @@ public class FixRunRunner {
                         continue;
                     }
                     case StageHandler.StageOutcome.RETRY -> {
-                        events.checkpoint(run.getSessionId(), stage.key(), outcome.output() == null ? Map.of() : outcome.output());
-                        remember(artifacts, stage.key(), outcome.output());
+                        events.checkpoint(run.getSessionId(), stageKey, outcome.output() == null ? Map.of() : outcome.output());
+                        remember(artifacts, stageKey, outcome.output());
                         if (run.getIteration() >= maxIterations) {
-                            events.error(run.getSessionId(), stage.key(),
+                            events.error(run.getSessionId(), stageKey,
                                     "已达迭代上限（" + maxIterations + "）：" + outcome.message());
                             finish(run, WorkbenchFixRun.STATUS_FAILED, outcome.message());
                             return;
                         }
                         run.setIteration(run.getIteration() + 1);
-                        log.info("[WorkbenchFix] runId={} 第 {} 轮：{} 未通过，回到开发（{}）",
-                                run.getId(), run.getIteration(), stage.key(), outcome.message());
-                        events.log(run.getSessionId(), stage.key(),
+                        log.info("[WorkbenchFix] runId={} 第 {} 轮：{} 未通过，回到 {}（{}）",
+                                run.getId(), run.getIteration(), stageKey, retryTarget, outcome.message());
+                        events.log(run.getSessionId(), stageKey,
                                 "未通过（" + outcome.message() + "），回到迭代开发（第 " + run.getIteration() + " 轮）");
                         events.flush(run.getSessionId());
                         // 回到开发时把失败详情带上：开发阶段据此知道上一轮哪里没过
-                        artifacts.put("lastFailure", Map.of("stage", stage.key(), "message", outcome.message()));
-                        index = WorkbenchStages.indexOf("develop");
+                        artifacts.put("lastFailure", Map.of("stage", stageKey, "message", outcome.message()));
+                        index = chain.indexOf(retryTarget);
                         continue;
                     }
                     default -> {
-                        events.checkpoint(run.getSessionId(), stage.key(), outcome.output() == null ? Map.of() : outcome.output());
-                        events.nodeComplete(run.getSessionId(), stage.key(), Map.of());
-                        remember(artifacts, stage.key(), outcome.output());
+                        events.checkpoint(run.getSessionId(), stageKey, outcome.output() == null ? Map.of() : outcome.output());
+                        events.nodeComplete(run.getSessionId(), stageKey, Map.of());
+                        remember(artifacts, stageKey, outcome.output());
                         index++;
                     }
                 }

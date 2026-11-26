@@ -1,11 +1,11 @@
 package com.huawei.hisi.ram.nodes.impl;
 
-import com.huawei.hisi.agent.tools.AgentTools;
+import com.huawei.hisi.agentbase.AgentRegistry;
+import com.huawei.hisi.agentbase.ReActSession;
 import com.huawei.hisi.ram.nodes.CodeContextItem;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.ai.chat.client.ChatClient;
 
 import java.util.List;
 import java.util.Map;
@@ -13,19 +13,16 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
-import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
  * 多轮澄清：第一轮带着工具查过代码，之后的轮次没有工具、只看用户的回答。
  * 这几轮必须把已经查到的代码位置带下去——以前后续轮次的 schema 里没有 target_methods，
- * 影响面分析拿到的输入里就没有要改的方法。
+ * 影响面分析拿到的输入里就没有要改的方法。执行方式是 pi 会话，这里验证会话之上的行为。
  */
-@DisplayName("ClaudeClarifyLlmClient carries code findings across clarify rounds")
+@DisplayName("PiClarifyLlmClient carries code findings across clarify rounds")
 class ClaudeClarifyLlmClientCarryForwardTest {
 
     private static final Map<String, Object> HINTS = Map.of(
@@ -38,10 +35,8 @@ class ClaudeClarifyLlmClientCarryForwardTest {
                             "target_methods", List.of("com.x.SkillMarketController#getSkillList"),
                             "code_analysis_summary", "现状：列表不支持风险等级。"))));
 
-    private final ChatClient agent = mock(ChatClient.class, RETURNS_DEEP_STUBS);
-    private final ChatClient formatter = mock(ChatClient.class, RETURNS_DEEP_STUBS);
-    private final ClaudeClarifyLlmClient client = new ClaudeClarifyLlmClient(
-            agent, new StubClarifyLlmClient(), formatter, mock(AgentTools.class));
+    private final ReActSession session = mock(ReActSession.class);
+    private final PiClarifyLlmClient client = new PiClarifyLlmClient(session, new StubClarifyLlmClient());
 
     @Test
     @DisplayName("模型这轮没带代码位置时，沿用之前提问那轮查到的")
@@ -87,9 +82,7 @@ class ClaudeClarifyLlmClientCarryForwardTest {
 
         ArgumentCaptor<String> system = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> user = ArgumentCaptor.forClass(String.class);
-        // 打桩的那次调用也算一次调用，取真正发出去的那一次（最后一次）
-        verify(agent.prompt(), atLeast(1)).system(system.capture());
-        verify(agent.prompt().system(anyString()), atLeast(1)).user(user.capture());
+        verify(session).run(any(AgentRegistry.ReactAgent.class), anyString(), any(), system.capture(), user.capture(), any(), any(), any());
         assertThat(system.getValue())
                 .as("后续轮次的 schema 不能丢掉 target_methods")
                 .contains("\"target_methods\"").contains("\"code_analysis_summary\"");
@@ -97,11 +90,10 @@ class ClaudeClarifyLlmClientCarryForwardTest {
                 .as("提问那轮查到的代码位置要给模型看")
                 .contains("target_methods: [com.x.SkillMarketController#getSkillList]")
                 .contains("A: SkillMarketController");
-        // 这几轮没有工具可调：代码位置只能靠带进来的
-        verify(agent.prompt().system(anyString()), never()).tools(any(AgentTools.class));
     }
 
     private void answerWith(String json) {
-        when(agent.prompt().system(anyString()).user(anyString()).call().content()).thenReturn(json);
+        when(session.run(any(AgentRegistry.ReactAgent.class), anyString(), any(), anyString(), anyString(), any(), any(), any()))
+                .thenAnswer(inv -> ReActSession.Result.of(json, ReActSession.firstObject(json), null));
     }
 }

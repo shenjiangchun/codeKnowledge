@@ -3,7 +3,7 @@ package com.huawei.hisi.controller;
 import com.huawei.hisi.config.AgentTypeRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
+import com.huawei.hisi.agentbase.ReActSession;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,6 +16,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -32,7 +33,7 @@ import java.util.concurrent.Executors;
 @RequiredArgsConstructor
 public class AgentChatController {
 
-    private final ChatClient agentChatClient;
+    private final ReActSession reactSession;
     private final AgentTypeRegistry agentTypeRegistry;
 
     private final ExecutorService sseExecutor = Executors.newCachedThreadPool(r -> {
@@ -72,43 +73,22 @@ public class AgentChatController {
             try {
                 emitter.send(SseEmitter.event().name("session").data(sessionId));
 
-                // Stream using Spring AI ChatClient with per-agent system prompt
-                agentChatClient.prompt()
-                        .system(config.getSystemPrompt() != null ? config.getSystemPrompt() : "")
-                        .user(request.message())
-                        .stream()
-                        .chatResponse()
-                        .doOnNext(response -> {
-                            try {
-                                String token = response.getResult().getOutput().getText();
-                                if (token != null && !token.isEmpty()) {
-                                    emitter.send(SseEmitter.event()
-                                            .data("{\"choices\":[{\"delta\":{\"content\":\"" +
-                                                    escapeJson(token) + "\"}}]}"));
-                                }
-                            } catch (IOException e) {
-                                throw new RuntimeException("SSE send failed", e);
-                            }
-                        })
-                        .doOnComplete(() -> {
-                            try {
-                                emitter.send(SseEmitter.event().data("[DONE]"));
-                                emitter.complete();
-                            } catch (IOException e) {
-                                emitter.completeWithError(e);
-                            }
-                        })
-                        .doOnError(error -> {
-                            log.error("[AgentChat] Stream error: agentType={}", agentType, error);
-                            try {
-                                emitter.send(SseEmitter.event().name("error")
-                                        .data("AI service error"));
-                                emitter.complete();
-                            } catch (IOException e) {
-                                emitter.completeWithError(e);
-                            }
-                        })
-                        .blockLast();
+                // 通用对话走统一运行时（声明 chat：只读图谱/日志/APM 工具），增量经会话事件流回
+                com.huawei.hisi.agentbase.ReActSession.Result result = reactSession.run(
+                        com.huawei.hisi.agentbase.AgentRegistry.agent("chat").orElseThrow(),
+                        "chat-" + UUID.randomUUID().toString().substring(0, 12),
+                        java.nio.file.Path.of(System.getProperty("user.dir")),
+                        config.getSystemPrompt() != null ? config.getSystemPrompt() : "",
+                        request.message(),
+                        event -> forwardDelta(event, emitter),
+                        () -> false,
+                        null);
+                if (result.note() != null && (result.text() == null || result.text().isBlank())) {
+                    emitter.send(SseEmitter.event().name("error").data(result.note()));
+                } else {
+                    emitter.send(SseEmitter.event().data("[DONE]"));
+                }
+                emitter.complete();
             } catch (Exception e) {
                 log.error("[AgentChat] Fatal error: agentType={}", agentType, e);
                 try {
@@ -121,6 +101,25 @@ public class AgentChatController {
         });
 
         return ResponseEntity.ok(emitter);
+    }
+
+    /** 会话的文本增量 → SSE 的 OpenAI 风格 chunk。 */
+    private static void forwardDelta(Map<String, Object> event, SseEmitter emitter) {
+        if (!"message_update".equals(String.valueOf(event.get("type")))) {
+            return;
+        }
+        if (!(event.get("assistantMessageEvent") instanceof Map<?, ?> update)
+                || !"text_delta".equals(String.valueOf(update.get("type")))
+                || update.get("delta") == null) {
+            return;
+        }
+        String token = String.valueOf(update.get("delta"));
+        try {
+            emitter.send(SseEmitter.event()
+                    .data("{\"choices\":[{\"delta\":{\"content\":\"" + escapeJson(token) + "\"}}]}"));
+        } catch (IOException e) {
+            throw new RuntimeException("SSE send failed", e);
+        }
     }
 
     /** List configured agent types for frontend discovery. */

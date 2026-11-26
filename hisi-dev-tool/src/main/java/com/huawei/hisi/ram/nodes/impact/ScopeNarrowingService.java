@@ -3,8 +3,7 @@ package com.huawei.hisi.ram.nodes.impact;
 import com.huawei.hisi.ram.kg.KgMcpClient;
 import com.huawei.hisi.ram.kg.dto.MethodBodyInfo;
 import com.huawei.hisi.ram.kg.dto.Seed;
-import com.huawei.hisi.ram.nodes.impl.RamClaudeJsonClient;
-import com.huawei.hisi.ram.sdk.SendOptions;
+import com.huawei.hisi.agentflow.AgentLlmClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -60,11 +59,11 @@ public class ScopeNarrowingService {
             只返回 DIRECT 和 INDIRECT 的条目。IRRELEVANT 的直接省略。
             """;
 
-    private final RamClaudeJsonClient claude;
+    private final AgentLlmClient llm;
     private final KgMcpClient kg;
 
-    public ScopeNarrowingService(RamClaudeJsonClient claude, KgMcpClient kg) {
-        this.claude = claude;
+    public ScopeNarrowingService(AgentLlmClient llm, KgMcpClient kg) {
+        this.llm = llm;
         this.kg = kg;
     }
 
@@ -81,7 +80,7 @@ public class ScopeNarrowingService {
         if (candidates == null || candidates.isEmpty()) {
             return candidates != null ? candidates : List.of();
         }
-        if (!claude.isAvailable()) {
+        if (!llm.isAvailable()) {
             log.info("[ScopeNarrowingService] Claude unavailable — skipping AI filtering");
             return candidates;
         }
@@ -106,10 +105,7 @@ public class ScopeNarrowingService {
                 String userPrompt = buildUserPrompt(intent, batch, bodyMap);
 
                 try {
-                    Map<String, Object> result = claude.callJson(
-                            SYSTEM_PROMPT,
-                            userPrompt,
-                            new SendOptions(claude.defaultModel(), 8192, 0.1, SYSTEM_PROMPT));
+                    Map<String, Object> result = llm.completeJson(SYSTEM_PROMPT, userPrompt, 8192);
 
                     Set<String> batchRelevant = extractRelevantNodeIds(result);
                     allRelevantIds.addAll(batchRelevant);

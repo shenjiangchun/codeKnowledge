@@ -33,7 +33,8 @@ public class RamChatController {
     private final RamChatWebSocketHandler wsHandler;
 
     @PostMapping("/sessions")
-    public ApiResponse<CreateSessionResponse> createSession(@RequestBody CreateSessionRequest request) {
+    public ApiResponse<CreateSessionResponse> createSession(@RequestBody CreateSessionRequest request,
+                                                            jakarta.servlet.http.HttpServletRequest http) {
         if (request == null || request.projectPaths() == null || request.projectPaths().isEmpty()) {
             return ApiResponse.error(400, "projectPaths is required");
         }
@@ -51,7 +52,7 @@ public class RamChatController {
 
         // If initialQuestion provided, run first turn
         if (request.initialQuestion() != null && !request.initialQuestion().isBlank()) {
-            orchestrator.runTurn(saved.getId(), request.initialQuestion(), request.projectPaths());
+            orchestrator.runTurn(saved.getId(), request.initialQuestion(), request.projectPaths(), bearer(http));
         }
 
         return ApiResponse.success(new CreateSessionResponse(
@@ -64,7 +65,8 @@ public class RamChatController {
     @PostMapping("/{sid}/messages")
     public ApiResponse<SendMessageResponse> sendMessage(
             @PathVariable String sid,
-            @RequestBody SendMessageRequest request) {
+            @RequestBody SendMessageRequest request,
+            jakarta.servlet.http.HttpServletRequest http) {
         if (request == null || request.text() == null || request.text().isBlank()) {
             return ApiResponse.error(400, "text is required");
         }
@@ -84,7 +86,7 @@ public class RamChatController {
         // Async: return immediately with turnId; streaming reaches the client via WebSocket.
         // The previous synchronous call to orchestrator.runTurn(...) blocked the HTTP thread
         // for the full multi-tool turn, exceeding the frontend's 120s axios timeout.
-        String turnId = orchestrator.startTurnAsync(id, request.text(), projectPaths);
+        String turnId = orchestrator.startTurnAsync(id, request.text(), projectPaths, bearer(http));
         return ApiResponse.success(new SendMessageResponse(
                 turnId,
                 "STARTED",
@@ -158,7 +160,8 @@ public class RamChatController {
      * and 500 if serializing the interrupt payload fails.
      */
     @PostMapping("/{sid}/inject")
-    public ResponseEntity<?> inject(@PathVariable String sid, @RequestBody InjectRequest request) {
+    public ResponseEntity<?> inject(@PathVariable String sid, @RequestBody InjectRequest request,
+                                    jakarta.servlet.http.HttpServletRequest http) {
         if (request == null || request.content() == null || request.content().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "content is required"));
         }
@@ -176,7 +179,7 @@ public class RamChatController {
         }
 
         try {
-            orchestrator.injectAndContinue(id, request.content(), projectPaths);
+            orchestrator.injectAndContinue(id, request.content(), projectPaths, bearer(http));
         } catch (IllegalStateException e) {
             log.error("Failed to inject for session {}: {}", sid, e.getMessage());
             return ResponseEntity.status(500).body(Map.of("error", "internal_error"));
@@ -225,6 +228,16 @@ public class RamChatController {
     }
 
     /** Parse a sid path variable to Long; returns null on parse failure so callers can return 400. */
+    /** 请求里的用户 JWT（动作工具以用户身份调后端时用）；没有就返回 null。 */
+    private static String bearer(jakarta.servlet.http.HttpServletRequest http) {
+        String header = http.getHeader("Authorization");
+        if (header == null || !header.startsWith("Bearer ")) {
+            return null;
+        }
+        return header.substring("Bearer ".length()).trim();
+    }
+
+
     private static Long parseSid(String sid) {
         if (sid == null || sid.isBlank()) return null;
         try { return Long.parseLong(sid); } catch (NumberFormatException e) { return null; }

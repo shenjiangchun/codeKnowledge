@@ -1,5 +1,6 @@
 package com.huawei.hisi.workflow.v2;
 
+import com.huawei.hisi.agentbase.FlowEngine;
 import com.huawei.hisi.agentflow.AgentFlowCancelRegistry;
 import com.huawei.hisi.model.ApiResponse;
 import com.huawei.hisi.ram.model.AgentSession;
@@ -22,10 +23,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -35,7 +34,7 @@ import java.util.concurrent.CompletableFuture;
  * <p>继承 v1 控制器，所以会话读写端点（status / report / events / stream）是同一份代码，请求与响应完全一致。
  * 本类只重写两处：
  * <ul>
- *   <li>{@code start}：{@link #V2_WORKFLOWS} 里登记过的工作流类型，沿用 v1 定义的节点顺序与执行策略，
+ *   <li>{@code start}：节点链与执行策略取自统一声明（AgentRegistry），ReAct 节点按声明映射解析，
  *       只把其中的 ReAct 节点换成 v2 实现；其余类型与 v1 完全相同。</li>
  *   <li>{@code abort}：除了断开事件流，还为仍在运行的会话登记取消标记，让正在执行的节点真正停下来。</li>
  * </ul>
@@ -46,11 +45,8 @@ import java.util.concurrent.CompletableFuture;
 @RequestMapping("/api/v2/workflow")
 public class WorkflowV2Controller extends WorkflowController {
 
-    /** 启用 v2 流程的工作流类型。 */
-    static final Set<String> V2_WORKFLOWS = Set.of("arch-deep-analysis");
-
     private final AgentFlowCancelRegistry cancelRegistry;
-    private final ArchReActNodeV2Factory reactNodeFactory;
+    private final FlowEngine flowEngine;
 
     public WorkflowV2Controller(WorkflowRegistry registry,
                                 SessionMappingService sessionMappingService,
@@ -58,10 +54,10 @@ public class WorkflowV2Controller extends WorkflowController {
                                 AgentEventRepository eventRepository,
                                 DagExecutor dagExecutor,
                                 AgentFlowCancelRegistry cancelRegistry,
-                                ArchReActNodeV2Factory reactNodeFactory) {
+                                FlowEngine flowEngine) {
         super(registry, sessionMappingService, sessionRepository, eventRepository, dagExecutor);
         this.cancelRegistry = cancelRegistry;
-        this.reactNodeFactory = reactNodeFactory;
+        this.flowEngine = flowEngine;
     }
 
     @Override
@@ -79,8 +75,8 @@ public class WorkflowV2Controller extends WorkflowController {
             return ApiResponse.error(400, "input.projectPaths is required");
         }
 
-        List<DagNode> nodes = V2_WORKFLOWS.contains(request.workflowType())
-                ? v2Nodes(def) : registry.resolveNodes(def.nodeNames());
+        // 节点链与执行策略都来自统一声明（AgentRegistry）：bean 优先，ReAct 替代节点由映射解析
+        List<DagNode> nodes = flowEngine.resolve(def.nodeNames());
         ExecutionPolicy policy = ExecutionPolicy.fromMetadata(def.metadata());
 
         // 与 v1 一致：先种会话行并注册 UUID→id 映射，SSE 可以立即挂接
@@ -103,19 +99,7 @@ public class WorkflowV2Controller extends WorkflowController {
         return ApiResponse.success(new StartResponse(handle));
     }
 
-    /** 按 v1 定义的顺序取节点：ReAct 节点换成 v2 实现，其余节点与 v1 共用同一个实例。 */
-    List<DagNode> v2Nodes(WorkflowDefinition def) {
-        List<DagNode> nodes = new ArrayList<>(def.nodeNames().size());
-        for (String name : def.nodeNames()) {
-            DagNode node = PiReActAgentNode.NODE_NAME.equals(name)
-                    ? reactNodeFactory.create() : registry.getNode(name);
-            if (node == null) {
-                throw new IllegalArgumentException("Unknown node type: " + name);
-            }
-            nodes.add(node);
-        }
-        return nodes;
-    }
+    /** 工作流启动的取消标记处理与 v1 相同：中止请求给会话登记取消标记，正在执行的节点据此停下。 */
 
     /**
      * 在绑定了取消登记的线程里执行流程。节点因取消而中断时，执行器会把会话记成 FAILED，

@@ -1,36 +1,23 @@
 package com.huawei.hisi.ram.nodes.impl;
 
-import com.huawei.hisi.agent.tools.AgentTools;
-import com.huawei.hisi.ram.nodes.ClarifyLlmClient;
 import com.huawei.hisi.ram.nodes.CodeContextItem;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.context.annotation.Primary;
-import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * ChatClient-backed {@link ClarifyLlmClient} — replaces raw
- * {@link RamClaudeJsonClient} calls with Spring AI {@link ChatClient}.
- *
- * <p>Prompt selection and normalization logic unchanged.
- * LLM call replaced with {@code ChatClient.prompt().system(...).user(...).call().entity(Map.class)}.
- * Tool-use mode uses Spring AI 1.1.8 automatic tool calling via
- * {@link AgentTools}.
+ */
+/**
+ * 澄清阶段的提示词与结果归一化（基类）。执行方式由子类决定：当前是 pi 会话（{@link PiClarifyLlmClient}）。
  */
 @Slf4j
-@Primary
-@Component
-public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
+public abstract class ClaudeClarifyLlmClient {
 
     // ── System prompts (unchanged business logic) ──
 
-    private static final String SYSTEM_PROMPT = """
+    protected static final String SYSTEM_PROMPT = """
             You are a senior product analyst. Your job is to decide whether a
             developer's request is CLEAR ENOUGH to proceed, or whether you
             need to ask clarifying questions first.
@@ -92,7 +79,7 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
               in their original form (do NOT translate code identifiers).
             """;
 
-    private static final String SYSTEM_PROMPT_WITH_CODE_CONTEXT = """
+    protected static final String SYSTEM_PROMPT_WITH_CODE_CONTEXT = """
             You are a senior product analyst with access to the project's actual
             codebase. Semantic search results from the project's knowledge graph
             are provided below the user's request.
@@ -128,7 +115,7 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
             Language: All natural-language values in 简体中文.
             """;
 
-    private static final String SYSTEM_PROMPT_WITH_TOOLS = """
+    protected static final String SYSTEM_PROMPT_WITH_TOOLS = """
             You are a senior product analyst with DIRECT ACCESS to the project's
             codebase via the provided tools. You can search code, read source files,
             and trace call chains to understand the current implementation.
@@ -163,7 +150,7 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
      * 这里的 schema 必须仍然包含 target_modules / target_methods —— 否则第一轮查到的目标方法
      * 在后续轮次会被丢掉，影响面分析就拿不到要改的方法。
      */
-    private static final String SYSTEM_PROMPT_WITH_HISTORY = """
+    protected static final String SYSTEM_PROMPT_WITH_HISTORY = """
             You are a senior product analyst. You have already explored the project's
             codebase in an earlier round and asked the user some questions. The user's
             answers are provided below the request, together with the code locations
@@ -200,82 +187,15 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
             Language: All natural-language values in 简体中文; keep code identifiers as-is.
             """;
 
-    private final ChatClient agentChatClient;
-    /** 不带记忆、不思考的 ChatClient：模型用大白话收尾时，用它把结论转成 JSON（见 {@link LlmJsonAnswer}）。 */
-    private final ChatClient formatter;
-    private final StubClarifyLlmClient fallback;
-    private final AgentTools agentTools;
+    protected final StubClarifyLlmClient fallback;
 
-    public ClaudeClarifyLlmClient(ChatClient agentChatClient,
-                                   StubClarifyLlmClient fallback,
-                                   @Qualifier("extractionChatClient") ChatClient formatter,
-                                   @Autowired(required = false) AgentTools agentTools) {
-        this.agentChatClient = agentChatClient;
-        this.formatter = formatter;
+    public ClaudeClarifyLlmClient(StubClarifyLlmClient fallback) {
         this.fallback = fallback;
-        this.agentTools = agentTools;
     }
 
-    @Override
-    public Map<String, Object> extractRequirements(String userRequest, Map<String, Object> hints) {
-        return extractRequirements(userRequest, hints, List.of());
-    }
+    // ── Prompt building ──
 
-    @Override
-    @SuppressWarnings("unchecked")
-    public Map<String, Object> extractRequirements(String userRequest,
-                                                    Map<String, Object> hints,
-                                                    List<CodeContextItem> codeContext) {
-        List<String> hintPaths = extractProjectPaths(hints);
-        log.info("[RAM][ClaudeClarifyLlmClient] extractRequirements userRequest.len={} hintPaths={}",
-                userRequest == null ? 0 : userRequest.length(), hintPaths);
-
-        boolean hasClarifyHistory = hints != null
-                && hints.get("clarify_history") instanceof List<?> histList && !histList.isEmpty();
-        boolean useTools = agentTools != null && !hintPaths.isEmpty() && !hasClarifyHistory;
-        String projectPath = useTools ? hintPaths.get(0) : null;
-
-        String systemPrompt;
-        if (useTools) {
-            systemPrompt = SYSTEM_PROMPT_WITH_TOOLS;
-        } else if (hasClarifyHistory && !hintPaths.isEmpty()) {
-            // 有项目、但已经问过用户：不再给工具，改成带着之前查到的代码位置只看回答
-            systemPrompt = SYSTEM_PROMPT_WITH_HISTORY;
-        } else if (codeContext != null && !codeContext.isEmpty()) {
-            systemPrompt = SYSTEM_PROMPT_WITH_CODE_CONTEXT;
-        } else {
-            systemPrompt = SYSTEM_PROMPT;
-        }
-
-        String userPrompt = buildUserPrompt(userRequest, hintPaths, hints, codeContext);
-        try {
-            // 不用 entity(Map)：模型查完代码常用一段大白话收尾，按 JSON 直接解析会抛异常；交给 LlmJsonAnswer 兜住
-            Map<String, Object> raw;
-            if (useTools) {
-                raw = LlmJsonAnswer.fromCall(agentChatClient.prompt()
-                        .system(systemPrompt).user(userPrompt)
-                        .toolContext(Map.of("projectPath", projectPath))
-                        .tools(agentTools)
-                        .call(), formatter, systemPrompt);
-            } else {
-                raw = LlmJsonAnswer.fromCall(agentChatClient.prompt()
-                        .system(systemPrompt).user(userPrompt)
-                        .call(), formatter, systemPrompt);
-            }
-
-            log.info("[RAM][ClaudeClarifyLlmClient] returned keys={} needs_clarification={}",
-                    raw == null ? "null" : raw.keySet(),
-                    raw == null ? null : raw.get("needs_clarification"));
-            return normalize(raw, userRequest, hintPaths, hints);
-        } catch (Exception ex) {
-            log.error("[RAM][ClaudeClarifyLlmClient] call FAILED — falling back to Stub. err={}", ex.toString(), ex);
-            return fallback.extractRequirements(userRequest, hints);
-        }
-    }
-
-    // ── Prompt building (unchanged) ──
-
-    private String buildUserPrompt(String userRequest, List<String> hintPaths,
+    protected String buildUserPrompt(String userRequest, List<String> hintPaths,
                                     Map<String, Object> hints,
                                     List<CodeContextItem> codeContext) {
         StringBuilder sb = new StringBuilder();
@@ -369,7 +289,7 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
     // ── Normalization ──
 
     @SuppressWarnings("unchecked")
-    private Map<String, Object> normalize(Map<String, Object> raw, String userRequest,
+    protected Map<String, Object> normalize(Map<String, Object> raw, String userRequest,
                                           List<String> hintPaths, Map<String, Object> hints) {
         List<?> rounds = hints != null && hints.get("clarify_history") instanceof List<?> history
                 ? history : List.of();
@@ -412,7 +332,7 @@ public class ClaudeClarifyLlmClient implements ClarifyLlmClient {
         return List.of();
     }
 
-    private List<String> extractProjectPaths(Map<String, Object> hints) {
+    protected List<String> extractProjectPaths(Map<String, Object> hints) {
         if (hints == null) return List.of();
         Object raw = hints.get("projectHints");
         if (raw instanceof List<?> list)

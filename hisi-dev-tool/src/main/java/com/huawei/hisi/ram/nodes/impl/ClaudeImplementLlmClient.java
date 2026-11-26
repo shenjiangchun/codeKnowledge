@@ -1,11 +1,6 @@
 package com.huawei.hisi.ram.nodes.impl;
 
-import com.huawei.hisi.ram.nodes.ImplementLlmClient;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.context.annotation.Primary;
-import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -15,12 +10,19 @@ import java.util.Map;
  * ChatClient-backed {@link ImplementLlmClient} — replaces raw
  * {@link RamClaudeJsonClient} with Spring AI {@link ChatClient}.
  */
+/**
+ * 实现方案阶段的提示词与结果归一化（基类）。执行方式由子类决定：当前是 pi 会话（{@link PiImplementLlmClient}）。
+ */
 @Slf4j
-@Primary
-@Component
-public class ClaudeImplementLlmClient implements ImplementLlmClient {
+public abstract class ClaudeImplementLlmClient {
+    protected final StubImplementLlmClient fallback;
 
-    private static final String SYSTEM_PROMPT = """
+    public ClaudeImplementLlmClient(StubImplementLlmClient fallback) {
+        this.fallback = fallback;
+    }
+
+
+    protected static final String SYSTEM_PROMPT = """
             你是一名资深技术架构师，负责根据影响分析结果和验收标准，编写"需求实现方案"。
 
             你必须返回一个 JSON 对象（不要 prose、不要 markdown fences），结构如下：
@@ -79,46 +81,7 @@ public class ClaudeImplementLlmClient implements ImplementLlmClient {
             - JSON key、文件路径、类名/方法名、HTTP路由保持原样
             """;
 
-    private final ChatClient agentChatClient;
-    /** 不带记忆、不思考的 ChatClient：模型用大白话收尾时，用它把结论转成 JSON（见 {@link LlmJsonAnswer}）。 */
-    private final ChatClient formatter;
-    private final StubImplementLlmClient fallback;
-
-    public ClaudeImplementLlmClient(ChatClient agentChatClient,
-                                     StubImplementLlmClient fallback,
-                                     @Qualifier("extractionChatClient") ChatClient formatter) {
-        this.agentChatClient = agentChatClient;
-        this.formatter = formatter;
-        this.fallback = fallback;
-    }
-
-    @Override
-    @SuppressWarnings("unchecked")
-    public Map<String, Object> draft(Map<String, Object> impactOutput,
-                                     List<String> acceptanceCriteria,
-                                     String model) {
-        log.info("[RAM][ClaudeImplementLlmClient] draft impact.keys={} acs={}",
-                impactOutput == null ? "null" : impactOutput.keySet(),
-                acceptanceCriteria == null ? 0 : acceptanceCriteria.size());
-
-        String prompt = buildUserPrompt(impactOutput, acceptanceCriteria);
-        try {
-            // 不用 entity(Map)：模型用大白话收尾时按 JSON 解析会抛异常；交给 LlmJsonAnswer 兜住
-            Map<String, Object> raw = LlmJsonAnswer.fromCall(agentChatClient.prompt()
-                    .system(SYSTEM_PROMPT)
-                    .user(prompt)
-                    .call(), formatter, SYSTEM_PROMPT);
-
-            log.info("[RAM][ClaudeImplementLlmClient] returned keys={}",
-                    raw == null ? "null" : raw.keySet());
-            return normalize(raw, impactOutput, acceptanceCriteria, model);
-        } catch (Exception ex) {
-            log.error("[RAM][ClaudeImplementLlmClient] call FAILED: {}", ex.toString(), ex);
-            return fallback.draft(impactOutput, acceptanceCriteria, model);
-        }
-    }
-
-    private String buildUserPrompt(Map<String, Object> impactOutput, List<String> acs) {
+    protected String buildUserPrompt(Map<String, Object> impactOutput, List<String> acs) {
         StringBuilder sb = new StringBuilder();
         sb.append("Impact analysis output:\n");
         sb.append(impactOutput == null ? "{}" : impactOutput.toString()).append("\n\n");
@@ -133,7 +96,7 @@ public class ClaudeImplementLlmClient implements ImplementLlmClient {
     }
 
     @SuppressWarnings("unchecked")
-    private Map<String, Object> normalize(Map<String, Object> raw,
+    protected Map<String, Object> normalize(Map<String, Object> raw,
                                           Map<String, Object> impactOutput,
                                           List<String> acs,
                                           String model) {

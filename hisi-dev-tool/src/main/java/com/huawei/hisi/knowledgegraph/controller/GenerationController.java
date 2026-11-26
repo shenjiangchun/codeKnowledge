@@ -5,8 +5,8 @@ import com.huawei.hisi.knowledgegraph.util.ProjectPathResolver;
 import com.huawei.hisi.neo4j.repository.Neo4jMethodNodeRepository;
 import com.fasterxml.jackson.annotation.JsonClassDescription;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.beans.factory.annotation.Qualifier;
+import com.huawei.hisi.agentflow.AgentLlmClient;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,7 +14,7 @@ import java.util.*;
 
 /**
  * 生成中心控制器 — 测试建议 & 重构建议
- * 使用 extractionChatClient（无记忆 advisor 的 anthropic 中转 deepseek）via Spring AI 结构化输出，
+ * 使用统一 LLM 接口生成结构化建议，
  * 注入图谱数据（爆炸半径/热点/DSM 违规）作为 prompt context。
  * 结构化输出依赖 .entity() 强制（anthropic 走 tool use），避免文本解析脆弱性。
  */
@@ -23,15 +23,16 @@ import java.util.*;
 @Slf4j
 public class GenerationController {
 
-    private final ChatClient extractionChatClient;
+    private final AgentLlmClient llm;
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final Neo4jMethodNodeRepository methodNodeRepository;
     private final KnowledgeGraphController kgController;
 
     public GenerationController(
-            @Qualifier("extractionChatClient") ChatClient extractionChatClient,
+            AgentLlmClient llm,
             Neo4jMethodNodeRepository methodNodeRepository,
             KnowledgeGraphController kgController) {
-        this.extractionChatClient = extractionChatClient;
+        this.llm = llm;
         this.methodNodeRepository = methodNodeRepository;
         this.kgController = kgController;
     }
@@ -75,8 +76,12 @@ public class GenerationController {
             blastContext;
 
         try {
-            List<TestSuggestion> testCases = extractionChatClient.prompt().user(prompt).call()
-                .entity(new ParameterizedTypeReference<List<TestSuggestion>>() {});
+            Map<String, Object> generated = llm.completeJson(
+                    "你是架构分析专家，只输出一个 JSON 对象，字段：testCases（数组，元素含 scenario/type/priority），不要解释。",
+                    prompt, 4096);
+            List<TestSuggestion> testCases = objectMapper.convertValue(
+                    generated.getOrDefault("testCases", List.of()),
+                    new com.fasterxml.jackson.core.type.TypeReference<List<TestSuggestion>>() {});
             Map<String, Object> resp = new HashMap<>();
             resp.put("nodeId", nodeId);
             resp.put("testCases", testCases == null ? List.of() : testCases);
@@ -109,8 +114,12 @@ public class GenerationController {
             ctx;
 
         try {
-            List<RefactorSuggestion> suggestions = extractionChatClient.prompt().user(prompt).call()
-                .entity(new ParameterizedTypeReference<List<RefactorSuggestion>>() {});
+            Map<String, Object> generated = llm.completeJson(
+                    "你是架构重构专家，只输出一个 JSON 对象，字段：suggestions（数组，元素含 issue/direction/impact/priority），不要解释。",
+                    prompt, 4096);
+            List<RefactorSuggestion> suggestions = objectMapper.convertValue(
+                    generated.getOrDefault("suggestions", List.of()),
+                    new com.fasterxml.jackson.core.type.TypeReference<List<RefactorSuggestion>>() {});
             Map<String, Object> resp = new HashMap<>();
             resp.put("moduleName", moduleName);
             resp.put("suggestions", suggestions == null ? List.of() : suggestions);

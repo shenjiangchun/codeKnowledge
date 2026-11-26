@@ -14,51 +14,22 @@ spring:
   # 允许循环依赖（临时解决方案）
   main:
     allow-circular-references: true
-  # 双层配置：chat-models.yml（能力元数据，纳入版本控制）
-  # + application-local.yml（endpoint/apiKey 本地覆盖，.gitignore 排除）
+  autoconfigure:
+    # ChatClient 与 Spring AI 模型 bean 已全部移除（模型调用走 pi 或直连客户端）：
+    # 这些自动配置没有配置项可读，会直接启动失败，显式排除（类名以依赖 jar 里实际存在的为准）
+    exclude:
+      - org.springframework.ai.model.anthropic.autoconfigure.AnthropicChatAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiChatAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiEmbeddingAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiImageAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration
+  # 本机未入库的覆盖配置（endpoint/apiKey 等），远端部署同样用 application-local.yml
   config:
     import:
-      - classpath:chat-models.yml
       - optional:classpath:application-local.yml
-  ai:
-    anthropic:
-      api-key: ${ANTHROPIC_API_KEY:sk-placeholder}
-      base-url: ${ANTHROPIC_URL:https://api.anthropic.com}
-      chat:
-        options:
-          model: ${ANTHROPIC_MODEL:claude-sonnet-4-20250514}
-          temperature: 0.3
-          max-tokens: 32768
-    openai:
-      api-key: ${ZHIPU_API_KEY:sk-placeholder}
-      base-url: ${ZHIPU_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
-      chat:
-        options:
-          model: ${ZHIPU_TEXT_MODEL:GLM-4.7-Flash}
-          temperature: 0.1
-    retry:
-      max-attempts: 3
-      backoff:
-        initial-interval: 1000
-        multiplier: 2
-      on-http-codes: 429, 500, 502, 503
 
-server:
-  port: 8080
-  servlet:
-    context-path: /
-
-# ==================== 向量生成模型（Embedding） ====================
-# 用于代码语义向量化，支持任意 OpenAI 兼容的 /embeddings 端点
-# 前端「系统设置」可快速切换预置供应商或自定义
-embedding:
-  api-key: ${EMBEDDING_API_KEY:}
-  base-url: https://api.siliconflow.cn/v1
-  model: Qwen/Qwen3-VL-Embedding-8B
-  dimension: 4096
-  timeout: 30000
-  max-retries: 3
-  retry-base-delay-ms: 5000
   # 令牌桶限流
   qps: 25.0
   burst: 5
@@ -371,18 +342,19 @@ workbench:
 # 统一 agent 运行时：所有 agent 流的 LLM 层经 pi 执行，每个流启动时注册自己的工具清单。
 piagent:
   enabled: true
-  # pi 安装目录与配置目录（首次启动自动 npm install）
-  install-dir: ${user.home}/.hisi-devtool/pi
-  agent-dir: ${user.home}/.hisi-devtool/pi-agent
+  # pi 安装目录与配置目录：默认在后端项目内（lib/pi、lib/pi-agent，已 gitignore）。
+  # 首次启动自动 npm install（需要 node + npm）；每台拉取分支的机器各有自己的一份。
+  install-dir: lib/pi
+  agent-dir: lib/pi-agent
   package-version: 1.6.0
   registry: https://registry.npmmirror.com
   # 模型网关（Anthropic 协议）
   model-base-url: http://1.95.145.190:8888
-  model-provider: hisi-gw
   model-id: deepseek-v4-pro-cc
-  # hisi-mcp-server 的 dist 入口（留空自动探测 ../hisi-mcp-server/dist/index.js）
+  # hisi-mcp-server 的 dist 入口（留空自动探测 ../hisi-mcp-server，缺失或源码更新时启动即自动 npm ci + build）
   mcp-dist-path: ""
-  max-concurrent-processes: 2
+  # 每个流的每次模型调用都是一个 pi 进程：几个流并行时都要占槽位
+  max-concurrent-processes: 4
   deadline-minutes: 60
   # 通用上下文管理（所有 agent 流自动生效，不写在某个 agent 里）。两层：
   #  1. 提交前预算：提示词超出 max-input-tokens 就保形压缩（长列表/长字段截短并标注），完整原文落盘到会话目录；
@@ -393,10 +365,12 @@ piagent:
     # pi 按 4 字符/token 估算上下文，对中文偏乐观，所以保留量比 pi 默认的 16384 大
     compaction-reserve-tokens: 32000
     compaction-keep-recent-tokens: 20000
-  # 每流开关：arch-react 是 pi 的唯一实现（手动 ReAct 循环已删除），默认开启；
-  # 其余流尚未切换到 pi，关闭走老 LLM 客户端，逐流验证后打开
+  # 每流开关。arch-react 是 pi 的唯一实现（手动 ReAct 循环已删除）；
+  # one-shot 是各业务流的一次性结构化调用（AgentLlmClient）经 pi 执行的总开关；
+  # 其余流逐流迁移、验证后打开
   flows:
     arch-react: true
+    one-shot: true
     workbench-sdd: false
     log-v2: false
     ram: false

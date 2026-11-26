@@ -3,20 +3,16 @@ package com.huawei.hisi.loganalysis.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hisi.loganalysis.dto.FollowupMessageDto;
 import com.huawei.hisi.loganalysis.dto.FollowupSessionDto;
-import com.huawei.hisi.loganalysis.tool.LogReportLookupTool;
+import com.huawei.hisi.agentbase.AgentRegistry;
+import com.huawei.hisi.agentbase.ReActSession;
 import com.huawei.hisi.loganalysis.websocket.LogFollowupWebSocketHandler;
 import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.AgentSession;
 import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.model.SessionStatus;
 import com.huawei.hisi.ram.model.SessionType;
-import com.huawei.hisi.ram.nodes.impl.KgToolRegistry;
-import com.huawei.hisi.ram.nodes.impl.RamClaudeJsonClient;
-import com.huawei.hisi.ram.nodes.impl.StreamCallbacks;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
-import com.huawei.hisi.ram.sdk.SendOptions;
-import com.huawei.hisi.ram.sdk.ToolDefinition;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -45,9 +41,7 @@ import java.util.function.Function;
 @Service
 public class LogFollowupService {
 
-    private final RamClaudeJsonClient claudeClient;
-    private final KgToolRegistry kgToolRegistry;
-    private final LogReportLookupTool reportLookupTool;
+    private final ReActSession reactSession;
     private final LogFollowupWebSocketHandler wsHandler;
     private final AgentSessionRepository sessionRepository;
     private final AgentEventRepository eventRepository;
@@ -62,15 +56,11 @@ public class LogFollowupService {
         return t;
     });
 
-    public LogFollowupService(RamClaudeJsonClient claudeClient,
-                              KgToolRegistry kgToolRegistry,
-                              LogReportLookupTool reportLookupTool,
+    public LogFollowupService(ReActSession session,
                               LogFollowupWebSocketHandler wsHandler,
                               AgentSessionRepository sessionRepository,
                               AgentEventRepository eventRepository) {
-        this.claudeClient = claudeClient;
-        this.kgToolRegistry = kgToolRegistry;
-        this.reportLookupTool = reportLookupTool;
+        this.reactSession = session;
         this.wsHandler = wsHandler;
         this.sessionRepository = sessionRepository;
         this.eventRepository = eventRepository;
@@ -157,76 +147,30 @@ public class LogFollowupService {
         try {
             String systemPrompt = buildSystemPrompt(extractReportId(session.getUserId()));
             List<FollowupMessageDto> history = loadMessages(session.getId());
-            List<Map<String, Object>> messages = buildMessagesArray(history);
-
-            // Parse projectPath into list (supports comma-separated multi-project)
             List<String> projectPaths = parseProjectPaths(projectPathRaw);
+            String userPrompt = buildFollowupPrompt(history, projectPaths);
 
-            List<ToolDefinition> tools = new ArrayList<>();
-            tools.add(reportLookupTool.buildDefinition());
-
-            Map<String, Function<Map<String, Object>, Object>> handlers = new LinkedHashMap<>();
-            handlers.put("lookup_log_report", reportLookupTool.buildHandler(session.getUserId()));
-
-            if (!projectPaths.isEmpty() && kgToolRegistry.isAvailable()) {
-                tools.addAll(kgToolRegistry.buildToolDefinitions(projectPaths));
-                handlers.putAll(kgToolRegistry.buildToolHandlers(projectPaths));
-            }
-
-            StreamCallbacks callbacks = new StreamCallbacks() {
-                @Override
-                public void onAssistantDelta(String deltaText) {
-                    wsHandler.pushEvent(sessionId, Map.of(
-                            "type", "assistant_delta",
-                            "sessionId", sessionId,
-                            "delta", deltaText
-                    ));
-                }
-
-                @Override
-                public void onToolUseStart(String toolName, Map<String, Object> input) {
-                    wsHandler.pushEvent(sessionId, Map.of(
-                            "type", "tool_use",
-                            "sessionId", sessionId,
-                            "toolName", toolName,
-                            "input", input
-                    ));
-                }
-
-                @Override
-                public void onToolResult(String toolName, String resultContent) {
-                    wsHandler.pushEvent(sessionId, Map.of(
-                            "type", "tool_result",
-                            "sessionId", sessionId,
-                            "toolName", toolName,
-                            "result", truncateResult(resultContent)
-                    ));
-                }
-
-                @Override
-                public void onRoundComplete(int round, String assistantText) {
-                    // No-op for follow-up
-                }
-            };
-
-            CompletableFuture<RamClaudeJsonClient.JsonCallResult> future = CompletableFuture.supplyAsync(() ->
-                    claudeClient.callJsonWithToolsAndStreamingMultiTurn(
+            // 报告内容与图谱都经只读 MCP 工具查（log-report / kg_*）：统一运行时按声明装配
+            ReActSession.Result followup = CompletableFuture.supplyAsync(() -> reactSession.run(
+                            AgentRegistry.agent("log-followup").orElseThrow(),
+                            "lf-" + session.getUuid().substring(0, 12),
+                            workdir(projectPaths),
                             systemPrompt,
-                            messages,
-                            tools,
-                            handlers,
-                            SendOptions.defaults(),
-                            callbacks
-                    ), asyncExecutor);
-
-            RamClaudeJsonClient.JsonCallResult result = future
+                            userPrompt,
+                            event -> forwardEvent(event, sessionId),
+                            () -> false,
+                            null),
+                    asyncExecutor)
                     .orTimeout(timeoutSeconds, TimeUnit.SECONDS)
                     .join();
 
-            String finalText = extractFinalText(result.json());
+            String finalText = followup.text();
+            if (followup.note() != null && (finalText == null || finalText.isBlank())) {
+                throw new IllegalStateException(followup.note());
+            }
 
             appendMessage(session.getId(), "assistant",
-                    finalText != null ? finalText : "(no response)",
+                    finalText != null && !finalText.isBlank() ? finalText : "(no response)",
                     System.currentTimeMillis());
 
             sessionRepository.updateStatus(session.getId(), SessionStatus.DONE);
@@ -350,28 +294,50 @@ public class LogFollowupService {
         return List.of(projectPathRaw.trim());
     }
 
-    /**
-     * Build a multi-turn messages array from conversation history.
-     * Each message is a Map with "role" and "content" keys,
-     * suitable for the Claude Messages API.
-     */
-    private static List<Map<String, Object>> buildMessagesArray(List<FollowupMessageDto> messages) {
-        List<Map<String, Object>> result = new ArrayList<>(messages.size());
-        for (FollowupMessageDto msg : messages) {
-            result.add(Map.of("role", msg.role(), "content", msg.content()));
+    /** 把历史问答拼成一次用户消息：会话每次只追加，pi 在同一个会话里看不到旧消息，历史要随提示词带全。 */
+    private static String buildFollowupPrompt(List<FollowupMessageDto> history, List<String> projectPaths) {
+        StringBuilder prompt = new StringBuilder();
+        if (!history.isEmpty()) {
+            prompt.append("以下是本会话的历史问答：\n");
+            for (FollowupMessageDto message : history) {
+                prompt.append(message.role()).append(": ").append(message.content()).append('\n');
+            }
+            prompt.append('\n');
         }
-        return result;
+        if (!projectPaths.isEmpty()) {
+            prompt.append("要查的项目路径：").append(String.join("、", projectPaths)).append('\n');
+        }
+        prompt.append("请基于报告内容与代码/日志证据回答最后一条用户消息。需要报告细节用 log-report 工具查，"
+                + "需要代码与调用关系用图谱工具查，不要编造。");
+        return prompt.toString();
     }
 
-    @SuppressWarnings("unchecked")
-    private static String extractFinalText(Map<String, Object> json) {
-        if (json == null) return null;
-        Object text = json.get("text");
-        if (text instanceof String s && !s.isBlank()) return s;
-        Object summary = json.get("summary");
-        if (summary instanceof String s && !s.isBlank()) return s;
-        Object content = json.get("content");
-        if (content instanceof String s && !s.isBlank()) return s;
-        return json.toString();
+    /** pi 会话工作目录：第一个项目路径；没有就退到进程目录。 */
+    private static java.nio.file.Path workdir(List<String> projectPaths) {
+        if (!projectPaths.isEmpty()) {
+            java.nio.file.Path path = java.nio.file.Path.of(projectPaths.get(0));
+            if (java.nio.file.Files.isDirectory(path)) {
+                return path;
+            }
+        }
+        return java.nio.file.Path.of(System.getProperty("user.dir"));
+    }
+
+    /** pi 事件 → 前端熟悉的 WebSocket 事件（增量、工具调用与结果）。 */
+    private void forwardEvent(Map<String, Object> event, String sessionId) {
+        String type = String.valueOf(event.getOrDefault("type", ""));
+        if ("message_update".equals(type) && event.get("assistantMessageEvent") instanceof Map<?, ?> update
+                && "text_delta".equals(String.valueOf(update.get("type"))) && update.get("delta") != null) {
+            wsHandler.pushEvent(sessionId, Map.of("type", "assistant_delta", "sessionId", sessionId,
+                    "delta", update.get("delta")));
+        } else if ("tool_execution_start".equals(type)) {
+            wsHandler.pushEvent(sessionId, Map.of("type", "tool_use", "sessionId", sessionId,
+                    "toolName", event.getOrDefault("toolName", "?"), "input", event.getOrDefault("args", Map.of())));
+        } else if ("tool_execution_end".equals(type)) {
+            Object result = event.get("result") != null ? event.get("result") : event.get("output");
+            wsHandler.pushEvent(sessionId, Map.of("type", "tool_result", "sessionId", sessionId,
+                    "toolName", event.getOrDefault("toolName", "?"),
+                    "result", truncateResult(String.valueOf(result))));
+        }
     }
 }

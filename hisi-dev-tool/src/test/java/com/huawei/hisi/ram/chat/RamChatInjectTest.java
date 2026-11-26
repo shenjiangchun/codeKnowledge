@@ -2,12 +2,10 @@ package com.huawei.hisi.ram.chat;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.huawei.hisi.agentbase.ReActSession;
 import com.huawei.hisi.ram.chat.dto.TurnResult;
-import com.huawei.hisi.agent.tools.AgentTools;
-import com.huawei.hisi.ram.config.ChatModelProperties;
 import com.huawei.hisi.ram.model.AgentEvent;
 import com.huawei.hisi.ram.model.EventType;
-import com.huawei.hisi.ram.nodes.impl.RamClaudeJsonClient;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -31,6 +29,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -43,8 +42,7 @@ import static org.mockito.Mockito.when;
 class RamChatInjectTest {
 
     @Mock private AgentEventRepository eventRepository;
-    @Mock private RamClaudeJsonClient claudeClient;
-    @Mock private AgentTools agentTools;
+    @Mock private ReActSession reactSession;
     @Mock private ChatContextBuilder contextBuilder;
     @Mock private RamChatWebSocketHandler wsHandler;
     @Mock private TurnRegistry turnRegistry;
@@ -71,26 +69,19 @@ class RamChatInjectTest {
 
     @BeforeEach
     void setUp() {
-        ChatModelProperties chatProps = new ChatModelProperties();
-        ChatModelProperties.ModelSpec spec = new ChatModelProperties.ModelSpec();
-        spec.setScenarioMaxTokens(Map.of("chat", 4096));
-        chatProps.setModels(Map.of("glm-5.1", spec));
-
         RamChatOrchestrator real = new RamChatOrchestrator(
                 eventRepository,
-                claudeClient,
-                agentTools,
+                reactSession,
                 contextBuilder,
                 wsHandler,
                 objectMapper,
-                chatProps,
                 turnRegistry
         );
         ReflectionTestUtils.setField(real, "asyncExecutor", directExecutor());
         orchestrator = spy(real);
         // Prevent the real runTurn (which drives the whole LLM path) from firing.
         doReturn(new TurnResult("stub-turn", "DONE", "", List.of(), null))
-                .when(orchestrator).runTurn(anyLong(), anyString(), anyList());
+                .when(orchestrator).runTurn(anyLong(), anyString(), anyList(), isNull());
     }
 
     @Test
@@ -137,7 +128,7 @@ class RamChatInjectTest {
         assertThat(ws).containsEntry("seq", 9L);
 
         // (c) A new turn is started with the injected user text.
-        verify(orchestrator, times(1)).runTurn(eq(42L), eq("new message"), eq(List.of("/proj")));
+        verify(orchestrator, times(1)).runTurn(eq(42L), eq("new message"), eq(List.of("/proj")), isNull());
     }
 
     @Test
@@ -152,6 +143,6 @@ class RamChatInjectTest {
         verify(wsHandler, never()).pushEvent(anyLong(), any(Map.class));
 
         // (b) runTurn is still invoked with the injected user text.
-        verify(orchestrator, times(1)).runTurn(eq(42L), eq("new message"), eq(List.of("/proj")));
+        verify(orchestrator, times(1)).runTurn(eq(42L), eq("new message"), eq(List.of("/proj")), isNull());
     }
 }

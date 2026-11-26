@@ -2,6 +2,9 @@
 target/
 !.mvn/wrapper/maven-wrapper.jar
 
+# pi 运行时目录（首次启动 npm install；见 piagent.install-dir / agent-dir）
+lib/
+
 # IDE
 .idea/
 *.iml

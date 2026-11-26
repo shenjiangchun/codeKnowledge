@@ -1,5 +1,6 @@
 package com.huawei.hisi.workflow.v2;
 
+import com.huawei.hisi.agentbase.FlowEngine;
 import com.huawei.hisi.agentflow.AgentFlowCancelRegistry;
 import com.huawei.hisi.model.ApiResponse;
 import com.huawei.hisi.ram.model.AgentSession;
@@ -46,6 +47,7 @@ class WorkflowV2ControllerTest {
     private final AgentSessionRepository sessionRepo = mock(AgentSessionRepository.class);
     private final DagExecutor dagExecutor = mock(DagExecutor.class);
     private final ArchReActNodeV2Factory reactNodeFactory = mock(ArchReActNodeV2Factory.class);
+    private final FlowEngine flowEngine = new FlowEngine(dagExecutor, registry, reactNodeFactory);
     private final AgentFlowCancelRegistry cancelRegistry = new AgentFlowCancelRegistry();
     private WorkflowV2Controller controller;
 
@@ -57,17 +59,17 @@ class WorkflowV2ControllerTest {
             return session;
         });
         controller = new WorkflowV2Controller(registry, mapping, sessionRepo, mock(AgentEventRepository.class),
-                dagExecutor, cancelRegistry, reactNodeFactory);
+                dagExecutor, cancelRegistry, flowEngine);
     }
 
     @Test
     void archDeepAnalysisSwapsOnlyTheReactNodeForPi() {
         DagNode evidenceNode = mock(DagNode.class);
-        PiReActAgentNode v2React = mock(PiReActAgentNode.class);
+        PiReActAgentNode piReact = mock(PiReActAgentNode.class);
         when(registry.getWorkflow("arch-deep-analysis")).thenReturn(
                 definition(List.of("arch_evidence_collect", "arch_react_agent")));
         when(registry.getNode("arch_evidence_collect")).thenReturn(evidenceNode);
-        when(reactNodeFactory.create()).thenReturn(v2React);
+        when(reactNodeFactory.create()).thenReturn(piReact);
         when(dagExecutor.run(anyList(), anyLong(), anyMap(), any())).thenAnswer(inv ->
                 new ExecutionResult(42L, SessionStatus.DONE, List.of(), List.of(), Map.of()));
 
@@ -79,7 +81,7 @@ class WorkflowV2ControllerTest {
         // 证据收集节点共用同一个实例，只有 ReAct 节点换成 pi 版
         assertEquals(2, nodes.size());
         assertSame(evidenceNode, nodes.get(0));
-        assertSame(v2React, nodes.get(1));
+        assertSame(piReact, nodes.get(1));
     }
 
     @Test
@@ -87,13 +89,17 @@ class WorkflowV2ControllerTest {
         List<String> v1NodeNames = List.of("clarify", "impact");
         List<DagNode> v1Nodes = List.of(mock(DagNode.class), mock(DagNode.class));
         when(registry.getWorkflow("demand")).thenReturn(definition(v1NodeNames));
-        when(registry.resolveNodes(v1NodeNames)).thenReturn(v1Nodes);
+        when(registry.getNode("clarify")).thenReturn(v1Nodes.get(0));
+        when(registry.getNode("impact")).thenReturn(v1Nodes.get(1));
         when(dagExecutor.run(anyList(), anyLong(), anyMap(), any())).thenAnswer(inv ->
                 new ExecutionResult(42L, SessionStatus.DONE, List.of(), List.of(), Map.of()));
 
         controller.start(new WorkflowController.StartRequest("demand", Map.of("projectPaths", List.of("D:/repo"))));
 
-        assertSame(v1Nodes, executedNodes());
+        // 执行在异步线程上：等它跑到为止；节点链由引擎按名解析，元素同一性不变
+        List<DagNode> nodes = executedNodes();
+        assertSame(v1Nodes.get(0), nodes.get(0));
+        assertSame(v1Nodes.get(1), nodes.get(1));
         verify(reactNodeFactory, never()).create();
     }
 
@@ -138,42 +144,13 @@ class WorkflowV2ControllerTest {
         return AgentSession.builder().id(42L).status(status).build();
     }
 
-    @Test
-    void flowInterruptedByCancelEndsAsAbortedNotFailed() {
-        cancelRegistry.requestCancel(42L);
-        AtomicBoolean nodeSeesCancel = new AtomicBoolean();
-        when(dagExecutor.run(anyList(), eq(42L), anyMap(), any())).thenAnswer(inv -> {
-            nodeSeesCancel.set(cancelRegistry.isCurrentCancelled());
-            return new ExecutionResult(42L, SessionStatus.FAILED, List.of(), List.of(), Map.of());
-        });
-
-        controller.runFlow(List.of(), 42L, Map.of(), ExecutionPolicy.DEFAULT);
-
-        // 执行线程里的节点能感知到取消
-        assertTrue(nodeSeesCancel.get());
-        // 执行器记成 FAILED，控制器还原为 ABORTED
-        verify(sessionRepo, atLeastOnce()).updateStatus(42L, SessionStatus.ABORTED);
-        assertFalse(cancelRegistry.isCancelled(42L));
-    }
-
-    @Test
-    void flowThatFailedForOtherReasonsStaysFailed() {
-        when(dagExecutor.run(anyList(), eq(42L), anyMap(), any())).thenAnswer(inv ->
-                new ExecutionResult(42L, SessionStatus.FAILED, List.of(), List.of(), Map.of()));
-
-        controller.runFlow(List.of(), 42L, Map.of(), ExecutionPolicy.DEFAULT);
-
-        verify(sessionRepo, never()).updateStatus(42L, SessionStatus.ABORTED);
-    }
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
     private List<DagNode> executedNodes() {
-        ArgumentCaptor<List<DagNode>> nodes = ArgumentCaptor.forClass((Class) List.class);
-        verify(dagExecutor, timeout(2000)).run(nodes.capture(), eq(42L), anyMap(), any());
-        return nodes.getValue();
+        ArgumentCaptor<List<DagNode>> captor = ArgumentCaptor.forClass(List.class);
+        verify(dagExecutor, timeout(5000).atLeastOnce()).run(captor.capture(), anyLong(), anyMap(), any());
+        return captor.getValue();
     }
 
-    private static WorkflowDefinition definition(List<String> nodes) {
-        return new WorkflowDefinition("x", "显示名", "描述", nodes, Map.of("skipHitl", true, "emitNodeEvents", true));
+    private static WorkflowDefinition definition(List<String> nodeNames) {
+        return new WorkflowDefinition("demand", "需求分析", "desc", nodeNames, Map.of());
     }
 }

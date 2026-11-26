@@ -4,8 +4,7 @@ import com.huawei.hisi.knowledgegraph.model.BridgeStats;
 import com.huawei.hisi.ram.kg.dto.CallTreeNode;
 import com.huawei.hisi.ram.kg.dto.Entry;
 import com.huawei.hisi.ram.kg.dto.Seed;
-import com.huawei.hisi.ram.nodes.impl.RamClaudeJsonClient;
-import com.huawei.hisi.ram.sdk.SendOptions;
+import com.huawei.hisi.agentflow.AgentLlmClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -68,10 +67,10 @@ public class ProjectOverviewLlmClient {
             9. **绝对禁止**在 JSON 之外添加任何文本——只输出纯 JSON
             """;
 
-    private final RamClaudeJsonClient claude;
+    private final AgentLlmClient llm;
 
-    public ProjectOverviewLlmClient(RamClaudeJsonClient claude) {
-        this.claude = claude;
+    public ProjectOverviewLlmClient(AgentLlmClient llm) {
+        this.llm = llm;
     }
 
     /**
@@ -88,7 +87,7 @@ public class ProjectOverviewLlmClient {
             return List.of("main handler process service");
         }
 
-        if (!claude.isAvailable()) {
+        if (!llm.isAvailable()) {
             log.warn("[RAM][ProjectOverviewLlmClient] Claude unavailable — using fallback keywords");
             return fallbackKeywords(question);
         }
@@ -113,11 +112,8 @@ public class ProjectOverviewLlmClient {
                 """.formatted(question);
 
         try {
-            SendOptions opts = new SendOptions(claude.defaultModel(), 1024, 0.3,
-                    "你是一个技术关键词提取助手，只返回 JSON 格式结果。");
-            Map<String, Object> raw = claude.callJson(
-                    "你是一个技术关键词提取助手，只返回 JSON 格式结果。",
-                    keywordPrompt, opts);
+            Map<String, Object> raw = llm.completeJson(
+                    "你是一个技术关键词提取助手，只返回 JSON 格式结果。", keywordPrompt, 1024);
 
             if (raw != null && raw.get("keywords") instanceof List<?> list) {
                 List<String> keywords = list.stream()
@@ -189,7 +185,7 @@ public class ProjectOverviewLlmClient {
     public Map<String, Object> generate(ProjectOverviewNode.ProjectOverviewContext context, String projectPath, String question) {
         log.info("[RAM][ProjectOverviewLlmClient] generate for projectPath={} question={}", projectPath, question);
 
-        if (!claude.isAvailable()) {
+        if (!llm.isAvailable()) {
             log.warn("[RAM][ProjectOverviewLlmClient] Claude unavailable — returning minimal output");
             return minimalOutput(context, question);
         }
@@ -197,8 +193,7 @@ public class ProjectOverviewLlmClient {
         String userPrompt = buildUserPrompt(context, projectPath, question);
 
         try {
-            SendOptions opts = new SendOptions(claude.defaultModel(), 4096, 0.3, SYSTEM_PROMPT);
-            Map<String, Object> raw = claude.callJson(SYSTEM_PROMPT, userPrompt, opts);
+            Map<String, Object> raw = llm.completeJson(SYSTEM_PROMPT, userPrompt, 4096);
 
             log.info("[RAM][ProjectOverviewLlmClient] Claude returned keys={}",
                     raw == null ? "null" : raw.keySet());

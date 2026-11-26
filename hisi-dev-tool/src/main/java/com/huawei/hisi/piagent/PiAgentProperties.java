@@ -17,8 +17,11 @@ public class PiAgentProperties {
     /** 总开关。关闭时安装器与运行时都不工作，所有流走老实现。 */
     private boolean enabled = true;
 
-    /** 安装目录（后端首次启动时 npm install 到这里）。 */
-    private String installDir = "${user.home}/.hisi-devtool/pi";
+    /**
+     * 安装目录（后端首次启动时 npm install 到这里）。默认在后端项目目录内（lib/pi，gitignore），
+     * 与用户主目录解耦：每台拉取分支的机器各有自己的一份，远端无需共享路径。
+     */
+    private String installDir = "lib/pi";
 
     /** pi 包的锁定版本。 */
     private String packageVersion = "1.6.0";
@@ -26,19 +29,18 @@ public class PiAgentProperties {
     /** npm 源。 */
     private String registry = "https://registry.npmmirror.com";
 
-    /** 配置目录（models.json / mcp.json / skills）。 */
-    private String agentDir = "${user.home}/.hisi-devtool/pi-agent";
+    /** 配置目录（models.json / mcp.json / settings.json / skills），默认同样在项目内（lib/pi-agent）。 */
+    private String agentDir = "lib/pi-agent";
 
     /** 模型网关（Anthropic 协议）。 */
     private String modelBaseUrl = "http://1.95.145.190:8888";
-    private String modelProvider = "hisi-gw";
     private String modelId = "deepseek-v4-pro-cc";
 
     /** hisi-mcp-server 的 dist 入口（只读工具源）。 */
     private String mcpDistPath = "";
 
-    /** 同时运行的 pi 进程上限。 */
-    private int maxConcurrentProcesses = 2;
+    /** 同时运行的 pi 进程上限。每个流的每次模型调用都是一个进程，几个流并行时都要占槽位。 */
+    private int maxConcurrentProcesses = 4;
 
     /** 单次流的 deadline（分钟），超时 abort 并强杀进程。 */
     private int deadlineMinutes = 60;
@@ -46,6 +48,7 @@ public class PiAgentProperties {
     /** 每流开关：开启后该流的 LLM 层走 pi。arch-react 已是唯一实现（手动循环已删除），默认开启。 */
     private Map<String, Boolean> flows = Map.of(
             "arch-react", true,
+            "one-shot", true,
             "workbench-sdd", false,
             "log-v2", false,
             "ram", false);

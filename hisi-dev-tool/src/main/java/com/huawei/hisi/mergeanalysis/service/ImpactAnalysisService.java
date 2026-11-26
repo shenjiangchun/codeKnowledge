@@ -4,8 +4,7 @@ import com.huawei.hisi.mergeanalysis.model.DiffResult;
 import com.huawei.hisi.mergeanalysis.model.ImpactResult;
 import com.huawei.hisi.ram.kg.KgMcpClient;
 import com.huawei.hisi.ram.kg.dto.Entry;
-import com.huawei.hisi.ram.nodes.impl.RamClaudeJsonClient;
-import com.huawei.hisi.ram.sdk.SendOptions;
+import com.huawei.hisi.agentflow.AgentLlmClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -17,11 +16,11 @@ import java.util.stream.Collectors;
 public class ImpactAnalysisService {
 
     private final KgMcpClient kgClient;
-    private final RamClaudeJsonClient claudeClient;
+    private final AgentLlmClient llm;
 
-    public ImpactAnalysisService(KgMcpClient kgClient, RamClaudeJsonClient claudeClient) {
+    public ImpactAnalysisService(KgMcpClient kgClient, AgentLlmClient llm) {
         this.kgClient = kgClient;
-        this.claudeClient = claudeClient;
+        this.llm = llm;
     }
 
     private static final String SYSTEM_PROMPT = """
@@ -96,11 +95,10 @@ public class ImpactAnalysisService {
         String businessImpactSummary = "No LLM analysis available";
         String riskLevel = deriveRiskLevel(diffResult, allEntryPoints.size());
 
-        if (claudeClient.isAvailable()) {
+        if (llm.isAvailable()) {
             try {
                 String userPrompt = buildPrompt(diffResult, allEntryPoints);
-                Map<String, Object> response = claudeClient.callJson(SYSTEM_PROMPT, userPrompt,
-                        new SendOptions(claudeClient.defaultModel(), 2048, 0.3, null));
+                Map<String, Object> response = llm.completeJson(SYSTEM_PROMPT, userPrompt, 2048);
                 businessImpactSummary = String.valueOf(response.getOrDefault("businessImpactSummary", businessImpactSummary));
                 riskLevel = String.valueOf(response.getOrDefault("riskLevel", riskLevel));
             } catch (Exception e) {

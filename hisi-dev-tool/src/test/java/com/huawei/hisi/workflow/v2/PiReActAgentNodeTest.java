@@ -1,92 +1,94 @@
 package com.huawei.hisi.workflow.v2;
 
+import com.huawei.hisi.agentbase.AgentRegistry;
+import com.huawei.hisi.agentbase.ReActSession;
 import com.huawei.hisi.agentflow.AgentFlowCancelRegistry;
 import com.huawei.hisi.archdiagnosis.service.ArchDiagramGenerator;
 import com.huawei.hisi.knowledgegraph.aggregation.llm.DeepseekJsonClient;
-import com.huawei.hisi.piagent.PiFlowClient;
 import com.huawei.hisi.ram.contract.SchemaValidator;
 import com.huawei.hisi.workflow.NodeEventSink;
 import com.huawei.hisi.workflow.agent.ArchAgentToolRegistry;
 import com.huawei.hisi.workflow.agent.ObservationTrimmer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
- * pi 版 ReAct 节点与底座的衔接：pi 的最终输出要按契约校验但不能因为一个说明性字段把整份结论丢掉；
- * 底座的上下文管理动作要能显示在进度里。
+ * 架构 ReAct 节点在统一会话层之上的职责：按声明（arch-review）装配、把结论转成
+ * 输出契约（{@code rootCauseResult / markdownReport / diagrams / degraded}）、
+ * 把底座的上下文管理动作显示在进度里。契约校验与修正不再在节点里（见 {@link ReActSession}）。
  */
-@DisplayName("PiReActAgentNode contract and progress reporting")
+@DisplayName("PiReActAgentNode on top of ReActSession")
 class PiReActAgentNodeTest {
 
+    private final ReActSession session = mock(ReActSession.class);
     private final PiReActAgentNode node = new PiReActAgentNode(
             mock(DeepseekJsonClient.class), mock(ArchAgentToolRegistry.class), mock(ObservationTrimmer.class),
             new SchemaValidator(), mock(ArchDiagramGenerator.class), 10, 2000,
-            mock(PiFlowClient.class), mock(AgentFlowCancelRegistry.class));
+            session, new AgentFlowCancelRegistry());
 
     @Test
-    @DisplayName("pi 只给了 final_answer（没有 thought）：补默认值后契约通过")
-    void aFinalAnswerWithoutThoughtPassesTheContract() {
-        Map<String, Object> step = node.finalStep(
-                "{\"final_answer\":{\"issues\":[],\"report\":{\"executive_summary\":\"架构健康度低\"}}}");
+    @DisplayName("会话给出契约结论：按声明键装配，输出转换成节点契约")
+    void aContractResultBecomesTheNodeOutput() {
+        when(session.run(any(), anyString(), any(), anyString(), anyString(), any(), any(), isNull()))
+                .thenReturn(ReActSession.Result.of("{\"thought\":\"x\",\"final_answer\":{...}}",
+                        Map.of("thought", "x", "final_answer", Map.of(
+                                "issues", List.of(),
+                                "report", Map.of("executive_summary", "健康度低", "views", Map.of(), "roadmap", Map.of()))),
+                        null));
 
-        assertThat(step).isNotNull();
-        // 这里只关心 thought 不再是缺项（final_answer 内部的嵌套要求由真实结论负责）
-        assertThat(new SchemaValidator().validate("arch/react-step", step).missingFields())
-                .as("真机上模型漏掉 thought 时，缺项里只有它").doesNotContain("thought");
+        Map<String, Object> input = Map.of("evidencePack", Map.of(
+                "projectPaths", List.of("."), "issues", List.of(), "chapters", Map.of()));
+        Map<String, Object> output = node.execute(input, mock(NodeEventSink.class));
+
+        assertThat(output).containsKeys("rootCauseResult", "markdownReport", "diagrams", "degraded");
+        assertThat(output.get("degraded")).isEqualTo(false);
+        // 装配用的是统一声明里的键与只读清单
+        ArgumentCaptor<AgentRegistry.ReactAgent> agent = ArgumentCaptor.forClass(AgentRegistry.ReactAgent.class);
+        verify(session).run(agent.capture(), anyString(), any(), anyString(), anyString(), any(), any(), isNull());
+        assertThat(agent.getValue().key()).isEqualTo("arch-review");
+        assertThat(agent.getValue().flow()).isEqualTo("arch-react");
     }
 
     @Test
-    @DisplayName("结论前后带了说明文字和代码围栏：照样取得 final_answer")
-    void proseAndFencesAroundTheJsonAreTolerated() {
-        Map<String, Object> step = node.finalStep("结论如下：\n```json\n{\"thought\":\"查证完毕\",\"final_answer\":{\"issues\":[],\"report\":{}}}\n```\n以上。");
+    @DisplayName("会话没有产出 JSON：降级为模板报告，不抛异常")
+    void anUnparsableResultDegradesToTheTemplate() {
+        when(session.run(any(), anyString(), any(), anyString(), anyString(), any(), any(), isNull()))
+                .thenReturn(ReActSession.Result.of("", null, "pi 会话超时"));
 
-        assertThat(step).isNotNull();
-        assertThat(step.get("thought")).isEqualTo("查证完毕");
-        assertThat(new SchemaValidator().validate("arch/react-step", step).missingFields()).doesNotContain("thought");
+        Map<String, Object> input = Map.of("evidencePack", Map.of(
+                "projectPaths", List.of("."), "issues", List.of(), "chapters", Map.of()));
+        List<String> messages = new ArrayList<>();
+        Map<String, Object> output = node.execute(input, messages::add);
+
+        assertThat(output.get("degraded")).isEqualTo(true);
+        assertThat(messages).anyMatch(m -> m.contains("降级"));
     }
 
     @Test
-    @DisplayName("没有 final_answer：返回 null，由节点走降级")
-    void outputWithoutAFinalAnswerIsNull() {
-        assertThat(node.finalStep("证据不足，无法得出结论。")).isNull();
-        assertThat(node.finalStep("{\"thought\":\"只有思考\"}")).isNull();
-        assertThat(node.finalStep("")).isNull();
-    }
+    @DisplayName("会话被取消：抛取消异常让执行器收尾")
+    void aCancelledSessionThrows() {
+        when(session.run(any(), anyString(), any(), anyString(), anyString(), any(), any(), isNull()))
+                .thenReturn(ReActSession.Result.of("", null, "已取消"));
 
-    @Test
-    @DisplayName("真机踩到的两种不合契约输出：结论后面拖着工具调用标记、evidence_appendix 给成对象")
-    void theTwoMalformedShapesSeenLiveAreTolerated() {
-        String trailingToolMarkup = "{\"thought\":\"查证完毕\",\"final_answer\":{\"issues\":[],\"report\":{"
-                + "\"executive_summary\":\"摘要\",\"views\":{\"logical\":{\"insight\":\"洞察\"}},"
-                + "\"roadmap\":{\"p0\":[]},\"evidence_appendix\":\"附录\"}}}\n"
-                + "</｜｜DSML｜｜parameter>\n</｜｜DSML｜｜invoke>\n</｜｜DSML｜｜tool_calls>";
-        Map<String, Object> first = node.finalStep(trailingToolMarkup);
-        assertThat(first).isNotNull();
-        assertThat(new SchemaValidator().validate("arch/react-step", first).missingFields()).doesNotContain("thought");
+        Map<String, Object> input = Map.of("evidencePack", Map.of(
+                "projectPaths", List.of("."), "issues", List.of(), "chapters", Map.of()));
 
-        Map<String, Object> objectAppendix = node.finalStep("{\"thought\":\"查证完毕\",\"final_answer\":{\"issues\":[],\"report\":{"
-                + "\"executive_summary\":\"摘要\",\"views\":{\"logical\":{\"insight\":\"洞察\"}},\"roadmap\":{\"p0\":[]},"
-                + "\"evidence_appendix\":{\"sources\":[\"a\",\"b\"]}}}}");
-        assertThat(objectAppendix).isNotNull();
-        @SuppressWarnings("unchecked")
-        Map<String, Object> report = (Map<String, Object>) ((Map<String, Object>) objectAppendix.get("final_answer")).get("report");
-        assertThat(report.get("evidence_appendix")).isInstanceOf(String.class).asString().contains("\"sources\"");
-    }
-
-    @Test
-    @DisplayName("修正提示词带着具体的契约问题与上一份输出")
-    void theRepairPromptCarriesTheProblemAndThePreviousOutput() {
-        String prompt = PiReActAgentNode.repairPrompt("{\"final_answer\":{}}", "契约校验未过：[缺少 roadmap]");
-
-        assertThat(prompt).contains("契约校验未过：[缺少 roadmap]").contains("{\"final_answer\":{}}")
-                .contains("不要调用任何工具").contains("只输出一个 JSON 对象");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> node.execute(input, mock(NodeEventSink.class)))
+                .isInstanceOf(com.huawei.hisi.agentflow.AgentFlowCancelledException.class);
     }
 
     @Test
@@ -100,11 +102,13 @@ class PiReActAgentNodeTest {
         PiReActAgentNode.reportEvent(Map.of("type", "auto_compaction_start", "tokensBefore", 118000), sink);
         PiReActAgentNode.reportEvent(Map.of("type", "auto_compaction_end", "tokensBefore", 118000, "tokensAfter", 42000), sink);
         PiReActAgentNode.reportEvent(Map.of("type", "auto_compaction_end", "errorMessage", "summary truncated"), sink);
+        PiReActAgentNode.reportEvent(Map.of("type", "tool_execution_start", "toolName", "kg_method_detail"), sink);
 
-        assertThat(messages).hasSize(4);
+        assertThat(messages).hasSize(5);
         assertThat(messages.get(0)).contains("39.4").contains("8.7").contains("完整原文");
         assertThat(messages.get(1)).contains("上下文压缩");
         assertThat(messages.get(2)).contains("118000").contains("42000");
         assertThat(messages.get(3)).contains("上下文压缩失败").contains("summary truncated");
+        assertThat(messages.get(4)).contains("查询工具：kg_method_detail");
     }
 }

@@ -60,6 +60,24 @@ class FlowToolManifestTest {
     }
 
     @Test
+    void oneShotCallsGetNoToolsNoMcpAndNoThinking() {
+        FlowToolManifest manifest = FlowToolManifest.forFlow(FlowToolManifest.ONE_SHOT);
+
+        assertTrue(manifest.tools().isEmpty(), "一次性结构化调用不需要任何工具");
+        assertFalse(manifest.useMcp());
+        assertTrue(manifest.thinkingOff());
+        assertEquals(List.of("--no-tools", "--no-mcp", "--no-approve", "--no-context-files", "--thinking", "off"),
+                manifest.cliArgs());
+    }
+
+    @Test
+    void agentSessionsKeepTheGatewayThinkingDefault() {
+        for (String flow : List.of("arch-react", "log-analysis", "ram", "workbench-read", "workbench-dev")) {
+            assertFalse(FlowToolManifest.forFlow(flow).thinkingOff(), flow + " 是 agent 会话，思考与否沿用网关默认");
+        }
+    }
+
+    @Test
     void cliArgsProduceAllowlistAndExcludes() {
         List<String> args = FlowToolManifest.forFlow("workbench-dev").cliArgs();
         assertEquals(List.of("--tools", "--exclude-tools"), List.of(args.get(0), args.get(2)));

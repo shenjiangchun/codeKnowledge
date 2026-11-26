@@ -84,6 +84,16 @@ public class PiFlowClient {
     public PiResult run(String flow, String sessionId, Path workdir, List<Path> skillPaths,
                         String systemPrompt, String userPrompt, Consumer<Map<String, Object>> listener,
                         java.util.function.BooleanSupplier cancelled) {
+        return runWithToken(flow, sessionId, workdir, skillPaths, systemPrompt, userPrompt, listener, cancelled, null);
+    }
+
+    /**
+     * 带用户令牌的运行：动作工具（如 RAM 对话的发起分析/提交澄清）要以用户身份调后端，
+     * 令牌经 {@code HISI_SCOPE_TOKEN} 环境变量传给 MCP 服务（mcp.json 里用 ${HISI_SCOPE_TOKEN} 引用），不落盘。
+     */
+    public PiResult runWithToken(String flow, String sessionId, Path workdir, List<Path> skillPaths,
+                                 String systemPrompt, String userPrompt, Consumer<Map<String, Object>> listener,
+                                 java.util.function.BooleanSupplier cancelled, String scopeToken) {
         if (!installer.ready()) {
             throw new IllegalStateException("pi 未就绪（安装失败或未启用），无法执行流 " + flow);
         }
@@ -111,7 +121,7 @@ public class PiFlowClient {
                 notifyListener(listener, contextCompactionEvent(report));
             }
             return runProcess(flow, sessionId, sessionDir, workdir, skillPaths, fitted.systemPrompt(), fitted.userPrompt(),
-                    manifest, listener, cancelled);
+                    manifest, listener, cancelled, scopeToken);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("等待 pi 进程槽位被中断");
@@ -160,14 +170,15 @@ public class PiFlowClient {
 
     private PiResult runProcess(String flow, String sessionId, Path sessionDir, Path workdir, List<Path> skillPaths,
                                 String systemPrompt, String userPrompt, FlowToolManifest manifest,
-                                Consumer<Map<String, Object>> listener, java.util.function.BooleanSupplier cancelled) {
+                                Consumer<Map<String, Object>> listener, java.util.function.BooleanSupplier cancelled,
+                                String scopeToken) {
         List<String> command = new ArrayList<>();
         command.add("node");
         command.add(installer.cliEntry().toString());
         command.add("--mode"); command.add("rpc");
         command.add("--session-id"); command.add(sessionId);
         command.add("--session-dir"); command.add(sessionDir.toString());
-        command.add("--model"); command.add(properties.getModelProvider() + "/" + properties.getModelId());
+        command.add("--model"); command.add(modelRef(manifest));
         command.add("--system-prompt"); command.add(systemPrompt);
         command.addAll(manifest.cliArgs());
         if (skillPaths != null) {
@@ -180,6 +191,10 @@ public class PiFlowClient {
         Map<String, String> env = new LinkedHashMap<>();
         env.put("PI_CODING_AGENT_DIR", installer.agentDir().toString());
         env.put("HISI_LLM_KEY", anthropicApiKey == null ? "" : anthropicApiKey);
+        // 动作工具以用户身份调后端时用；只读流不传（MCP 服务里拿不到就等于没权限）
+        if (scopeToken != null && !scopeToken.isBlank()) {
+            env.put("HISI_SCOPE_TOKEN", scopeToken);
+        }
 
         PiProcess pi = null;
         RunState state = new RunState(listener);
@@ -311,6 +326,22 @@ public class PiFlowClient {
         return reason == null ? null : String.valueOf(reason);
     }
 
+    /** 助手消息里的模型报错（stopReason=error 时才有）；没有返回 null。 */
+    static String modelErrorOf(Map<String, Object> event) {
+        if (!isAssistant(event)) {
+            return null;
+        }
+        Object error = ((Map<?, ?>) event.get("message")).get("errorMessage");
+        return error == null ? null : String.valueOf(error);
+    }
+
+    /** 清单决定用哪个 provider：关思考的流走声明了推理能力的那个副本，pi 才会显式发送 thinking: disabled。 */
+    private String modelRef(FlowToolManifest manifest) {
+        String provider = PiAgentInstaller.MODEL_PROVIDER
+                + (manifest.thinkingOff() ? PiAgentInstaller.NO_THINK_PROVIDER_SUFFIX : "");
+        return provider + "/" + properties.getModelId();
+    }
+
     /**
      * 一次运行里从 pi 事件流累积的状态：最终文本、工具调用、结束原因，以及没拿到完整结论时的说明。
      */
@@ -321,6 +352,7 @@ public class PiFlowClient {
         final List<Map<String, Object>> toolCalls = new ArrayList<>();
         final AtomicReference<String> lastStopReason = new AtomicReference<>();
         final AtomicReference<String> compactionError = new AtomicReference<>();
+        final AtomicReference<String> modelError = new AtomicReference<>();
         private final Consumer<Map<String, Object>> listener;
 
         RunState(Consumer<Map<String, Object>> listener) {
@@ -337,6 +369,10 @@ public class PiFlowClient {
                 // message_end.message 是权威的完整消息：覆盖之前按增量拼出来的文本
                 replaceFinalText(event, finalText);
                 lastStopReason.set(stopReasonOf(event));
+                // 模型调用出错（鉴权失败、限流…）时 pi 照常「结束」：把原因记下来，别让调用方只看到空结果
+                if (modelErrorOf(event) != null) {
+                    modelError.set(modelErrorOf(event));
+                }
             } else if ("tool_execution_start".equals(type) || "tool_execution_end".equals(type)) {
                 toolCalls.add(event);
             } else if (isCompactionEvent(type)) {
@@ -350,7 +386,11 @@ public class PiFlowClient {
 
         /** 没拿到完整结论时的原因；正常结束返回 null。 */
         String note() {
-            String error = compactionError.get();
+            String error = modelError.get();
+            if (error != null) {
+                return "模型调用失败：" + error;
+            }
+            error = compactionError.get();
             if (error != null) {
                 return "pi 会话压缩失败：" + error;
             }

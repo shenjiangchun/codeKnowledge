@@ -81,6 +81,7 @@ import { handleKnowledgeGraphToolCall } from './knowledgeGraphTools.js';
 import { handleVectorToolCall } from './vectorTools.js';
 import { handleLogToolCall } from './logTools.js';
 import { handleApmToolCall } from './apmTools.js';
+import { actToolDefinitions, handleActToolCall, ACT_TOOLS } from './actionTools.js';
 import { normalizePathArgs } from '../utils/pathUtils.js';
 
 export const allToolDefinitions = [
@@ -88,6 +89,7 @@ export const allToolDefinitions = [
   ...vectorToolDefinitions,
   ...logToolDefinitions,
   ...apmToolDefinitions,
+  ...actToolDefinitions,
 ];
 
 /**
@@ -113,6 +115,10 @@ export async function handleToolCall(
 
   if (APM_TOOLS.includes(toolName)) {
     return handleApmToolCall(toolName, args);
+  }
+
+  if (ACT_TOOLS.includes(toolName as (typeof ACT_TOOLS)[number])) {
+    return handleActToolCall(toolName, args);
   }
 
   throw new Error(`Unknown tool: ${toolName}`);

@@ -1,12 +1,11 @@
 package com.huawei.hisi.workflow.v2;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.huawei.hisi.agentbase.AgentRegistry;
+import com.huawei.hisi.agentbase.ReActSession;
 import com.huawei.hisi.agentflow.AgentFlowCancelRegistry;
 import com.huawei.hisi.archdiagnosis.service.ArchDiagramGenerator;
 import com.huawei.hisi.knowledgegraph.aggregation.llm.DeepseekJsonClient;
-import com.huawei.hisi.piagent.PiFlowClient;
 import com.huawei.hisi.ram.contract.SchemaValidator;
-import com.huawei.hisi.ram.contract.ValidationResult;
 import com.huawei.hisi.workflow.NodeEventSink;
 import com.huawei.hisi.workflow.agent.ArchAgentToolRegistry;
 import com.huawei.hisi.workflow.agent.ObservationTrimmer;
@@ -14,20 +13,18 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * 架构深度分析的 pi 版 ReAct 节点：把「手动 ReAct 循环」换成 pi 会话——
- * pi 自己调用清单里的只读 MCP 工具查证，收敛后输出 final_answer。
+ * 架构深度分析的 ReAct 节点：装配方式与契约都来自统一声明（{@code arch-review}），
+ * 由 {@link ReActSession} 执行——pi 按只读清单调 MCP 工具查证，收敛后输出 final_answer；
+ * 输出不合契约时由会话层带问题自动修正（最多 2 轮），不再在这里手写修正循环。
  *
  * <p>节点名与 v1 相同（{@code arch_react_agent}，前端写死），输出契约不变
- * （{@code {rootCauseResult, markdownReport, diagrams, degraded}}）；prompt 的
- * 查证规则、schema 校验、diagramRefs 校验、降级模板全部复用父类。
- * 清单为 {@code arch-react}（纯只读：MCP 的 kg/hybrid 工具 + pi 的 read/grep/find/ls），
- * 不含任何写文件或执行命令的工具。
+ * （{@code {rootCauseResult, markdownReport, diagrams, degraded}}）；查证规则的提示词、
+ * 图引用校验、降级模板复用父类；查证方法的领域知识在 {@code architecture-review} skill 里。
  */
 @Slf4j
 public class PiReActAgentNode extends com.huawei.hisi.workflow.nodes.ArchReActAgentNode {
@@ -35,7 +32,10 @@ public class PiReActAgentNode extends com.huawei.hisi.workflow.nodes.ArchReActAg
     /** 与 v1 节点同名：事件、检查点、从节点重跑对前端保持一致。 */
     public static final String NODE_NAME = "arch_react_agent";
 
-    private final PiFlowClient piClient;
+    /** 统一声明里的 agent 键。 */
+    static final String AGENT_KEY = "arch-review";
+
+    private final ReActSession session;
     private final AgentFlowCancelRegistry cancelRegistry;
 
     public PiReActAgentNode(DeepseekJsonClient llm,
@@ -45,10 +45,10 @@ public class PiReActAgentNode extends com.huawei.hisi.workflow.nodes.ArchReActAg
                             ArchDiagramGenerator diagramGenerator,
                             int maxSteps,
                             int observationMaxChars,
-                            PiFlowClient piClient,
+                            ReActSession session,
                             AgentFlowCancelRegistry cancelRegistry) {
         super(llm, registry, trimmer, validator, diagramGenerator, maxSteps, observationMaxChars);
-        this.piClient = piClient;
+        this.session = session;
         this.cancelRegistry = cancelRegistry;
     }
 
@@ -80,160 +80,26 @@ public class PiReActAgentNode extends com.huawei.hisi.workflow.nodes.ArchReActAg
         String userPrompt = userPrompt(evidencePack, List.of());
         sink.emit("pi 会话启动：按只读清单查证中…");
 
-        PiFlowClient.PiResult result = piClient.run("arch-react", sessionId, workdir, null,
-                systemPrompt, userPrompt, event -> reportEvent(event, sink), cancelRegistry::isCurrentCancelled);
+        AgentRegistry.ReactAgent agent = AgentRegistry.agent(AGENT_KEY).orElseThrow();
+        ReActSession.Result result = session.run(agent, sessionId, workdir, systemPrompt, userPrompt,
+                event -> reportEvent(event, sink), cancelRegistry::isCurrentCancelled, null);
 
-        if (result.timedOut()) {
-            sink.emit("pi 会话超时，降级为模板报告");
-            return buildDegradedOutput(evidencePack, sink, diagrams);
-        }
-        if ("cancelled".equals(result.stopReason()) || "aborted".equals(result.stopReason())) {
-            throw new com.huawei.hisi.agentflow.AgentFlowCancelledException();
-        }
-        if (result.finalText().isBlank()) {
-            // 证据包不再由这里裁剪：提交前的预算检查与压缩是底座的能力（PiFlowClient → PromptBudget），所有流共用
-            sink.emit("pi 会话未产出结果（" + result.stopReason()
-                    + (result.note() == null ? "" : "：" + result.note()) + "），降级为模板报告");
-            return buildDegradedOutput(evidencePack, sink, diagrams);
-        }
-
-        // 结论要过契约（JSON 可解析、schema、图引用）。模型的输出格式并不总听话——真机上出现过结论后面
-        // 拖着工具调用标记、evidence_appendix 给成对象——不符时带着具体问题让它修正，而不是直接丢掉整份分析
-        String text = result.finalText();
-        Map<String, Object> finalAnswer = finalStep(text);
-        String problem = contractProblem(finalAnswer, diagrams);
-        for (int round = 1; problem != null && round <= REPAIR_ROUNDS; round++) {
-            sink.emit("结论不符合契约（" + problem + "），第 " + round + " 轮修正…");
-            PiFlowClient.PiResult repair = piClient.run("arch-react", sessionId + "-fix" + round, workdir, null,
-                    systemPrompt, repairPrompt(text, problem), event -> reportEvent(event, sink), cancelRegistry::isCurrentCancelled);
-            if ("cancelled".equals(repair.stopReason()) || "aborted".equals(repair.stopReason())) {
+        if (result.json() == null) {
+            if ("已取消".equals(result.note())) {
                 throw new com.huawei.hisi.agentflow.AgentFlowCancelledException();
             }
-            if (repair.timedOut() || repair.finalText().isBlank()) {
-                break;
-            }
-            text = repair.finalText();
-            finalAnswer = finalStep(text);
-            problem = contractProblem(finalAnswer, diagrams);
+            sink.emit(result.note() == null ? "pi 会话未产出结果，降级为模板报告"
+                    : result.note() + "，降级为模板报告");
+            return buildDegradedOutput(evidencePack, sink, diagrams);
         }
-        if (problem != null) {
-            sink.emit(problem + "，降级为模板报告");
+        Map<String, Object> step = result.json();
+        if (!(step.get("final_answer") instanceof Map<?, ?> fa)) {
+            sink.emit("pi 输出缺少 final_answer，降级为模板报告");
             return buildDegradedOutput(evidencePack, sink, diagrams);
         }
         @SuppressWarnings("unchecked")
-        Map<String, Object> answer = (Map<String, Object>) finalAnswer.get("final_answer");
+        Map<String, Object> answer = (Map<String, Object>) fa;
         return buildOutput(evidencePack, answer, sink, diagrams);
-    }
-
-    /** 结论不符契约时最多让模型修正几轮（每轮是一次只读 pi 会话）。 */
-    static final int REPAIR_ROUNDS = 2;
-
-    /** 契约问题描述；符合契约返回 null。 */
-    private String contractProblem(Map<String, Object> step, List<Map<String, Object>> diagrams) {
-        if (step == null) {
-            return "输出不是 JSON，或缺少 final_answer";
-        }
-        ValidationResult vr = validator.validate(SCHEMA_NAME, step);
-        if (!vr.passed()) {
-            return "契约校验未过：" + vr.missingFields() + vr.violations();
-        }
-        ValidationResult drVr = validateDiagramRefs(step, diagrams);
-        if (!drVr.passed()) {
-            return "图引用校验未过：" + drVr.violations();
-        }
-        return null;
-    }
-
-    /** 修正提示：带着具体的契约问题，在上一份结论的基础上改，不重新查证。 */
-    static String repairPrompt(String previousOutput, String problem) {
-        return "你上一次的输出没有通过契约校验。\n问题：" + problem + "\n\n"
-                + "请在上一份结论的基础上修正后重新输出，要求：\n"
-                + "1. 只输出一个 JSON 对象：{\"thought\":\"...\",\"final_answer\":{...}}，字段与系统提示词里的 schema 逐项一致；\n"
-                + "2. 不要调用任何工具，不要输出 JSON 以外的任何文字、说明或标记；\n"
-                + "3. 不改变已经查证过的结论，只修格式与不符的字段。\n\n"
-                + "上一份输出：\n" + previousOutput;
-    }
-
-    /**
-     * pi 的最终输出整理成契约里的一步。pi 模式没有逐步的 thought，这个字段只有说明作用：
-     * 模型漏掉它时不该把整份结论判成契约不符而丢弃，这里补一个默认值。
-     *
-     * @return 找不到带 final_answer 的 JSON 对象时返回 null
-     */
-    Map<String, Object> finalStep(String finalText) {
-        for (String candidate : jsonObjectCandidates(finalText)) {
-            Map<String, Object> step = parseStep(candidate);
-            if (step != null && step.get("final_answer") instanceof Map<?, ?>) {
-                step.putIfAbsent("thought", "pi 会话结论");
-                coerceEvidenceAppendix(step);
-                return step;
-            }
-        }
-        return null;
-    }
-
-    /** evidence_appendix 契约上是字符串；模型给了对象/数组时转成 JSON 文本，不因此丢掉整份结论。 */
-    @SuppressWarnings("unchecked")
-    private static void coerceEvidenceAppendix(Map<String, Object> step) {
-        if (step.get("final_answer") instanceof Map<?, ?> answer && answer.get("report") instanceof Map<?, ?> report
-                && report.get("evidence_appendix") != null && !(report.get("evidence_appendix") instanceof String)) {
-            ((Map<String, Object>) report).put("evidence_appendix", toJson(report.get("evidence_appendix")));
-        }
-    }
-
-    private static String toJson(Object value) {
-        try {
-            return new ObjectMapper().writeValueAsString(value);
-        } catch (Exception e) {
-            return String.valueOf(value);
-        }
-    }
-
-    /**
-     * 正文里每个「配对完整的 JSON 对象」片段，从最外层起逐个给出。
-     * 不能用「第一个 { 到最后一个 }」：模型会在结论后面拖上工具调用的标记文本，那样整段都解析不了。
-     */
-    static List<String> jsonObjectCandidates(String text) {
-        List<String> candidates = new ArrayList<>();
-        if (text == null || text.isBlank()) {
-            return candidates;
-        }
-        String trimmed = text.trim();
-        for (int start = trimmed.indexOf('{'); start >= 0 && candidates.size() < 50; start = trimmed.indexOf('{', start + 1)) {
-            int end = matchingBrace(trimmed, start);
-            if (end > start) {
-                candidates.add(trimmed.substring(start, end + 1));
-            }
-        }
-        return candidates;
-    }
-
-    /** {@code start} 处 '{' 的配对 '}' 位置，跳过字符串里的括号；配不上返回 -1。 */
-    private static int matchingBrace(String text, int start) {
-        int depth = 0;
-        boolean inString = false;
-        boolean escaped = false;
-        for (int i = start; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (inString) {
-                if (escaped) {
-                    escaped = false;
-                } else if (c == '\\') {
-                    escaped = true;
-                } else if (c == '"') {
-                    inString = false;
-                }
-                continue;
-            }
-            if (c == '"') {
-                inString = true;
-            } else if (c == '{') {
-                depth++;
-            } else if (c == '}' && --depth == 0) {
-                return i;
-            }
-        }
-        return -1;
     }
 
     /**

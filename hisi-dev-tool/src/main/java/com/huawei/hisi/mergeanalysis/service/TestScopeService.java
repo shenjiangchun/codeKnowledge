@@ -5,8 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hisi.mergeanalysis.model.DiffResult;
 import com.huawei.hisi.mergeanalysis.model.ImpactResult;
 import com.huawei.hisi.mergeanalysis.model.TestScopeResult;
-import com.huawei.hisi.ram.nodes.impl.RamClaudeJsonClient;
-import com.huawei.hisi.ram.sdk.SendOptions;
+import com.huawei.hisi.agentflow.AgentLlmClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -22,11 +21,11 @@ public class TestScopeService {
 
     private static final int ENTRY_THRESHOLD = 30;
 
-    private final RamClaudeJsonClient claudeClient;
+    private final AgentLlmClient llm;
     private final ObjectMapper objectMapper;
 
-    public TestScopeService(RamClaudeJsonClient claudeClient, ObjectMapper objectMapper) {
-        this.claudeClient = claudeClient;
+    public TestScopeService(AgentLlmClient llm, ObjectMapper objectMapper) {
+        this.llm = llm;
         this.objectMapper = objectMapper;
     }
 
@@ -87,8 +86,8 @@ public class TestScopeService {
         int entryCount = entries != null ? entries.size() : 0;
         log.info("[TestScope] Generating test scope for {} entry points", entryCount);
 
-        if (!claudeClient.isAvailable()) {
-            log.warn("[TestScope] Claude API not available, returning empty result");
+        if (!llm.isAvailable()) {
+            log.warn("[TestScope] LLM not available, returning empty result");
             return TestScopeResult.builder()
                     .groups(new ArrayList<>())
                     .regressionSuggestions(List.of("Claude API unavailable — manual test scope recommended"))
@@ -102,8 +101,7 @@ public class TestScopeService {
                     : buildDetailedPrompt(impactResult, diffResult);
 
             String systemPrompt = aggregated ? SYSTEM_PROMPT_AGGREGATED : SYSTEM_PROMPT_DETAILED;
-            Map<String, Object> response = claudeClient.callJson(systemPrompt, userPrompt,
-                    new SendOptions(claudeClient.defaultModel(), 8192, 0.3, null));
+            Map<String, Object> response = llm.completeJson(systemPrompt, userPrompt, 8192);
 
             TestScopeResult result = parseResponse(response, aggregated);
             log.info("[TestScope] Generated {} groups (mode={}, entryCount={})",

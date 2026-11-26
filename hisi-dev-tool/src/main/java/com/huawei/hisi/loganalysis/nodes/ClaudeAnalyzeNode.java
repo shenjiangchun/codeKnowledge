@@ -2,8 +2,7 @@ package com.huawei.hisi.loganalysis.nodes;
 
 import com.huawei.hisi.loganalysis.orchestrator.LogAnalysisDagNode;
 import com.huawei.hisi.ram.kg.dto.MethodBodyInfo;
-import com.huawei.hisi.ram.nodes.impl.RamClaudeJsonClient;
-import com.huawei.hisi.ram.sdk.SendOptions;
+import com.huawei.hisi.agentflow.AgentLlmClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -30,11 +29,11 @@ import java.util.stream.Collectors;
 @Component
 public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
 
-    private final RamClaudeJsonClient claudeClient;
+    private final AgentLlmClient llm;
     private final RoundPromptBuilder promptBuilder;
 
-    public ClaudeAnalyzeNode(RamClaudeJsonClient claudeClient, RoundPromptBuilder promptBuilder) {
-        this.claudeClient = claudeClient;
+    public ClaudeAnalyzeNode(AgentLlmClient llm, RoundPromptBuilder promptBuilder) {
+        this.llm = llm;
         this.promptBuilder = promptBuilder;
     }
 
@@ -48,7 +47,7 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
     public Map<String, Object> execute(Map<String, Object> input) {
         log.info("[ClaudeAnalyzeNode] 开始三轮递进分析 (v3)");
 
-        if (!claudeClient.isAvailable()) {
+        if (!llm.isAvailable()) {
             log.warn("[ClaudeAnalyzeNode] Claude API 未配置，返回基础分析");
             return fallbackAnalysis(input);
         }
@@ -67,8 +66,7 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
             log.info("[ClaudeAnalyzeNode] Round 1: 模式识别");
             String r1Sys = promptBuilder.buildRound1SystemPrompt();
             String r1User = promptBuilder.buildRound1UserPrompt(parsedError);
-            SendOptions r1Opts = new SendOptions(claudeClient.defaultModel(), 2000, 0.3, null);
-            round1Result = claudeClient.callJson(r1Sys, r1User, r1Opts);
+            round1Result = llm.completeJson(r1Sys, r1User, 2000);
             log.info("[ClaudeAnalyzeNode] Round 1 完成: patternType={}, confidence={}",
                     round1Result.get("patternType"), round1Result.get("patternConfidence"));
         } catch (Exception e) {
@@ -87,8 +85,7 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
             log.info("[ClaudeAnalyzeNode] Round 2: 因果推理 (pattern={})", patternType);
             String r2Sys = promptBuilder.buildRound2SystemPrompt(patternType);
             String r2User = promptBuilder.buildRound2UserPrompt(round1Result, codeBodies, callChains, entryPoints, entryPointsWithLayers);
-            SendOptions r2Opts = new SendOptions(claudeClient.defaultModel(), 8000, 0.3, null);
-            round2Markdown = claudeClient.callText(r2Sys, r2User, r2Opts);
+            round2Markdown = llm.completeText(r2Sys, r2User, 8000);
             log.info("[ClaudeAnalyzeNode] Round 2 完成: markdown 长度={}", round2Markdown.length());
         } catch (Exception e) {
             log.warn("[ClaudeAnalyzeNode] Round 2 失败，使用 Round1 假设: {}", e.getMessage());
@@ -105,8 +102,7 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
             log.info("[ClaudeAnalyzeNode] Round 3: 修复方案");
             String r3Sys = promptBuilder.buildRound3SystemPrompt();
             String r3User = promptBuilder.buildRound3UserPrompt(round2Markdown);
-            SendOptions r3Opts = new SendOptions(claudeClient.defaultModel(), 4000, 0.3, null);
-            round3Result = claudeClient.callJson(r3Sys, r3User, r3Opts);
+            round3Result = llm.completeJson(r3Sys, r3User, 4000);
             log.info("[ClaudeAnalyzeNode] Round 3 完成: suggestions={}",
                     round3Result.get("fixSuggestions") instanceof List<?> l ? l.size() : 0);
         } catch (Exception e) {
@@ -139,8 +135,7 @@ public class ClaudeAnalyzeNode implements LogAnalysisDagNode {
                     + buildCodeContextSection(codeBodies, callChains, entryPoints, entryPointsWithLayers)
                     + "\n请直接进行完整的根因分析，按 Round 2 的 markdown 格式输出（根因、详细分析、因果链、多因素叠加、时序、置信度）。\n";
 
-            SendOptions opts = new SendOptions(claudeClient.defaultModel(), 8000, 0.3, null);
-            String markdown = claudeClient.callText(systemPrompt, userPrompt, opts);
+            String markdown = llm.completeText(systemPrompt, userPrompt, 8000);
 
             output.put("rootCauseAnalysis", markdown);
             output.put("analysisConfidence", "unknown");

@@ -29,10 +29,9 @@ import java.util.concurrent.TimeUnit;
  * and returns the raw SSE {@code data:} lines as a {@link Flux}. Higher-level
  * parsing into typed events is the caller's responsibility.
  *
- * @deprecated 请使用 Spring AI {@code AnthropicChatModel} + {@code ChatClient}
- *             替代裸 HTTP 调用。当前保留用于 RamClaudeJsonClient tool-use 流程。
+ * 直连模型客户端的传输层：批量/向量等非 agent 调用经它访问模型网关，
+ * agent 流程走 pi（见 {@code com.huawei.hisi.agentbase}），两者互不混用。
  */
-@Deprecated(since = "5.0", forRemoval = true)
 @Slf4j
 @Component
 public class AnthropicHttpClient {
@@ -128,9 +127,7 @@ public class AnthropicHttpClient {
                                          List<ToolDefinition> tools,
                                          SendOptions opts) {
         Map<String, Object> body = new LinkedHashMap<>();
-        // Always use the model configured via anthropic.model (application-local.yml).
-        // opts.model() carries a chat-models.yml logical key (e.g. "glm-5.1"), not a
-        // real API model name — sending it upstream causes 503 from the relay server.
+        // 一律使用 anthropic.model（application-local.yml）配置的真实模型名。
         body.put("model", configuredModel);
         body.put("max_tokens", opts.maxTokens());
         body.put("temperature", opts.temperature());

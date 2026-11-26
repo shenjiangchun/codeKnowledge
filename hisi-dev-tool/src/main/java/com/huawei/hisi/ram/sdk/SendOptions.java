@@ -1,6 +1,5 @@
 package com.huawei.hisi.ram.sdk;
 
-import com.huawei.hisi.ram.config.ChatModelProperties;
 
 /**
  * Per-call options for {@link ClaudeSessionService#sendUserMessage}.
@@ -29,17 +28,6 @@ public record SendOptions(
         return new SendOptions(null, 4096, DEFAULT_TEMPERATURE, null);
     }
 
-    public static SendOptions forScenario(ChatModelProperties props, String modelId, String scenario) {
-        var spec = props.getModels().get(modelId);
-        if (spec == null) {
-            throw new IllegalArgumentException("unknown model: " + modelId);
-        }
-        Integer max = spec.getScenarioMaxTokens().get(scenario);
-        if (max == null) {
-            throw new IllegalArgumentException("unknown scenario: " + scenario);
-        }
-        return new SendOptions(modelId, max, DEFAULT_TEMPERATURE, null);
-    }
 
     /** 同样的选项，但显式关闭思考。 */
     public SendOptions withoutThinking() {

@@ -1,28 +1,18 @@
 package com.huawei.hisi.ram.nodes.impl;
 
-import com.huawei.hisi.agent.tools.AgentTools;
-import com.huawei.hisi.ram.nodes.TechPlanLlmClient;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * ChatClient-backed {@link TechPlanLlmClient} — replaces raw
- * {@link RamClaudeJsonClient} HTTP calls with Spring AI {@link ChatClient}.
- *
- * <p>Uses Spring AI 1.1.8 automatic tool calling when {@link AgentTools} KG
- * tools are available. Falls back to a prompt-only call when KG is not configured.
+ * 技术方案阶段的提示词与结果归一化（基类）。执行方式由子类决定：当前是 pi 会话（{@link PiTechPlanLlmClient}）。
  */
 @Slf4j
-@Component
-public class ClaudeTechPlanLlmClient implements TechPlanLlmClient {
+public abstract class ClaudeTechPlanLlmClient {
 
-    private static final String SYSTEM_PROMPT = """
+    protected static final String SYSTEM_PROMPT = """
             你是一名资深技术架构师，负责根据影响分析和实现方案，输出完整的技术方案文档。
             你可以使用提供的工具来深入分析代码结构、调用链、配置等，确保技术方案的准确性和完整性。
 
@@ -78,56 +68,7 @@ public class ClaudeTechPlanLlmClient implements TechPlanLlmClient {
             9. markdown_report 值中可以使用 markdown 语法，但换行必须用 \\\\n 转义
             10. 绝对禁止在 JSON 之外添加任何文本或说明——只输出纯 JSON
             """;
-
-    private final ChatClient agentChatClient;
-    /** 不带记忆、不思考的 ChatClient：模型用大白话收尾时，用它把结论转成 JSON（见 {@link LlmJsonAnswer}）。 */
-    private final ChatClient formatter;
-    private final AgentTools agentTools;
-
-    public ClaudeTechPlanLlmClient(ChatClient agentChatClient, AgentTools agentTools,
-                                   @Qualifier("extractionChatClient") ChatClient formatter) {
-        this.agentChatClient = agentChatClient;
-        this.formatter = formatter;
-        this.agentTools = agentTools;
-    }
-
-    @Override
-    public Map<String, Object> generate(Map<String, Object> impactOutput,
-                                         Map<String, Object> implementOutput,
-                                         String intent,
-                                         String projectPath) {
-        log.info("[RAM][ClaudeTechPlanLlmClient] generate intent={} projectPath={}", intent, projectPath);
-
-        String userPrompt = buildUserPrompt(impactOutput, implementOutput, intent);
-
-        try {
-            // Spring AI 1.1.8 ChatClient with automatic tool calling.
-            // toolContext("projectPath" → projectPath) is consumed by AgentTools
-            // @Tool methods via ToolContext — no custom sendOptions needed.
-            // 不用 entity(Map)：模型查完代码常用一段大白话收尾，按 JSON 直接解析会抛异常；交给 LlmJsonAnswer 兜住
-            Map<String, Object> raw = LlmJsonAnswer.fromCall(agentChatClient.prompt()
-                    .system(SYSTEM_PROMPT)
-                    .user(userPrompt)
-                    .toolContext(Map.of("projectPath", projectPath))
-                    .tools(agentTools)
-                    .call(), formatter, SYSTEM_PROMPT);
-
-            log.info("[RAM][ClaudeTechPlanLlmClient] returned keys={}",
-                    raw == null ? "null" : raw.keySet());
-
-            return normalize(raw, List.of());
-        } catch (Exception ex) {
-            log.error("[RAM][ClaudeTechPlanLlmClient] call FAILED: {}", ex.getMessage(), ex);
-            return minimalOutput(intent);
-        }
-    }
-
-    @Override
-    public boolean isAvailable() {
-        return true; // ChatClient always available with sk-placeholder
-    }
-
-    private String buildUserPrompt(Map<String, Object> impactOutput,
+    protected String buildUserPrompt(Map<String, Object> impactOutput,
                                    Map<String, Object> implementOutput,
                                    String intent) {
         StringBuilder sb = new StringBuilder();
@@ -141,7 +82,7 @@ public class ClaudeTechPlanLlmClient implements TechPlanLlmClient {
     }
 
     @SuppressWarnings("unchecked")
-    private Map<String, Object> normalize(Map<String, Object> raw, List<String> reasoning) {
+    protected Map<String, Object> normalize(Map<String, Object> raw, List<String> reasoning) {
         if (raw == null) return minimalOutput("");
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -169,7 +110,7 @@ public class ClaudeTechPlanLlmClient implements TechPlanLlmClient {
         return out;
     }
 
-    private Map<String, Object> minimalOutput(String intent) {
+    protected Map<String, Object> minimalOutput(String intent) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("target_methods_detail", List.of());
         out.put("sequence_diagrams", List.of());

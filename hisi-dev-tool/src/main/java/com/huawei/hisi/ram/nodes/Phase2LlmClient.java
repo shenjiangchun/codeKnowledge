@@ -7,8 +7,7 @@ import com.huawei.hisi.ram.kg.dto.MethodBodyInfo;
 import com.huawei.hisi.ram.kg.dto.Seed;
 import com.huawei.hisi.ram.model.DomainHint;
 import com.huawei.hisi.ram.model.Phase2Context;
-import com.huawei.hisi.ram.nodes.impl.RamClaudeJsonClient;
-import com.huawei.hisi.ram.sdk.SendOptions;
+import com.huawei.hisi.agentflow.AgentLlmClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -146,10 +145,10 @@ public class Phase2LlmClient {
             7. **绝对禁止**在 JSON 之外添加任何文本——只输出纯 JSON
             """;
 
-    private final RamClaudeJsonClient claude;
+    private final AgentLlmClient llm;
 
-    public Phase2LlmClient(RamClaudeJsonClient claude) {
-        this.claude = claude;
+    public Phase2LlmClient(AgentLlmClient llm) {
+        this.llm = llm;
     }
 
     /**
@@ -163,7 +162,7 @@ public class Phase2LlmClient {
         log.info("[RAM][Phase2LlmClient] generate for projectPath={} question={}",
                 projectPath, context.question());
 
-        if (!claude.isAvailable()) {
+        if (!llm.isAvailable()) {
             log.warn("[RAM][Phase2LlmClient] Claude unavailable — returning minimal output");
             return minimalOutput(context);
         }
@@ -171,8 +170,7 @@ public class Phase2LlmClient {
         String userPrompt = buildUserPrompt(context, projectPath);
 
         try {
-            SendOptions opts = new SendOptions(claude.defaultModel(), MAX_TOKENS, TEMPERATURE, SYSTEM_PROMPT);
-            Map<String, Object> raw = claude.callJson(SYSTEM_PROMPT, userPrompt, opts);
+            Map<String, Object> raw = llm.completeJson(SYSTEM_PROMPT, userPrompt, MAX_TOKENS);
 
             log.info("[RAM][Phase2LlmClient] Claude returned keys={}",
                     raw == null ? "null" : raw.keySet());

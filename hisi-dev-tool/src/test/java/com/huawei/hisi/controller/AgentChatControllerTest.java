@@ -12,13 +12,10 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-import reactor.core.publisher.Flux;
-
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -29,7 +26,7 @@ class AgentChatControllerTest {
 
     @Autowired private MockMvc mockMvc;
 
-    @MockBean private org.springframework.ai.chat.client.ChatClient agentChatClient;
+    @MockBean private com.huawei.hisi.agentbase.ReActSession reactSession;
     @MockBean private JwtTokenProvider jwtTokenProvider;
     @MockBean private AdminOnlyInterceptor adminOnlyInterceptor;
     @MockBean private AgentTypeRegistry agentTypeRegistry;
@@ -48,14 +45,9 @@ class AgentChatControllerTest {
                 .thenReturn(new AgentTypeRegistry.AgentTypeConfig("You are a code analysis expert.", "anthropic", null));
         when(agentTypeRegistry.get("dialog"))
                 .thenReturn(new AgentTypeRegistry.AgentTypeConfig("You are a dialog assistant.", "anthropic", null));
-        // Stub the streaming chain
-        var reqSpec = mock(org.springframework.ai.chat.client.ChatClient.ChatClientRequestSpec.class);
-        var streamSpec = mock(org.springframework.ai.chat.client.ChatClient.StreamResponseSpec.class);
-        when(agentChatClient.prompt()).thenReturn(reqSpec);
-        when(reqSpec.system(any(String.class))).thenReturn(reqSpec);
-        when(reqSpec.user(any(String.class))).thenReturn(reqSpec);
-        when(reqSpec.stream()).thenReturn(streamSpec);
-        when(streamSpec.chatResponse()).thenReturn(Flux.empty());
+        // 会话：无事件、空正文即结束（增量经事件监听器，测试里不发）
+        when(reactSession.run(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(com.huawei.hisi.agentbase.ReActSession.Result.of("", null, null));
     }
 
     @Test
