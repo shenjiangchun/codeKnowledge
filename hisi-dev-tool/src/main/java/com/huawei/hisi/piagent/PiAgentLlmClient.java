@@ -93,7 +93,25 @@ public class PiAgentLlmClient implements AgentLlmClient {
             throw new IllegalStateException("pi 未就绪，无法执行一次性调用");
         }
         long deadlineAt = System.currentTimeMillis() + callTimeoutSeconds * 1000L;
-        PiFlowClient.PiResult result = piClient.run(FlowToolManifest.ONE_SHOT, "llm-" + shortId(), workDir(), null,
+        PiFlowClient.PiResult result = runOnce(FlowToolManifest.ONE_SHOT, systemPrompt, userPrompt, deadlineAt);
+        if (result.note() != null && result.finalText().isBlank() && THINKING_OFF_REFUSED.matcher(result.note()).find()) {
+            // 有的模型不接受关闭思考（网关 400/1210「该模型始终思考，不支持关闭思考」）：
+            // 换成不关思考的清单把同样的提示词原样重试一次，远端不需要为模型改配置
+            log.info("[AgentLlm] 模型不支持关闭思考，改用不关思考的清单重试：{}", result.note());
+            result = runOnce(FlowToolManifest.ONE_SHOT_THINKING, systemPrompt, userPrompt, deadlineAt);
+        }
+        if (result.note() != null && result.finalText().isBlank()) {
+            throw new IllegalStateException("LLM 调用失败：" + result.note());
+        }
+        return result.finalText();
+    }
+
+    private static final java.util.regex.Pattern THINKING_OFF_REFUSED = java.util.regex.Pattern
+            .compile("不支持关闭思考|\"type\"\\s*:\\s*\"1210\"|always.think|thinking.*(not supported|cannot be disabled)",
+                    java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    private PiFlowClient.PiResult runOnce(String flow, String systemPrompt, String userPrompt, long deadlineAt) {
+        PiFlowClient.PiResult result = piClient.run(flow, "llm-" + shortId(), workDir(), null,
                 systemPrompt, userPrompt, null,
                 () -> Thread.currentThread().isInterrupted() || System.currentTimeMillis() > deadlineAt);
         if (Thread.currentThread().isInterrupted()) {
@@ -105,10 +123,7 @@ public class PiAgentLlmClient implements AgentLlmClient {
         if ("timeout".equals(result.stopReason())) {
             throw new AgentLlmTimeoutException("LLM 调用超过 pi 会话时限未返回");
         }
-        if (result.note() != null && result.finalText().isBlank()) {
-            throw new IllegalStateException("LLM 调用失败：" + result.note());
-        }
-        return result.finalText();
+        return result;
     }
 
     /** 正文里第一个能解析成 JSON 对象的片段（最外层优先）；整段都不是时返回 null。 */

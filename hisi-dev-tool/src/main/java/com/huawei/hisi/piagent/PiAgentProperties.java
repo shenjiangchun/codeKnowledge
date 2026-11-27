@@ -32,9 +32,12 @@ public class PiAgentProperties {
     /** 配置目录（models.json / mcp.json / settings.json / skills），默认同样在项目内（lib/pi-agent）。 */
     private String agentDir = "lib/pi-agent";
 
-    /** 模型网关（Anthropic 协议）。 */
-    private String modelBaseUrl = "http://1.95.145.190:8888";
-    private String modelId = "deepseek-v4-pro-cc";
+    /**
+     * 模型网关（Anthropic 协议）与模型 ID：只在 application.yml 定义（piagent.model-base-url / piagent.model-id），
+     * 这里不给默认值——一个值两处默认属于重复，改一处忘一处就是事故（远端要按自己的网关覆盖这两个键）。
+     */
+    private String modelBaseUrl;
+    private String modelId;
 
     /** 同时运行的 pi 进程上限。每个流的每次模型调用都是一个进程，几个流并行时都要占槽位。 */
     private int maxConcurrentProcesses = 4;

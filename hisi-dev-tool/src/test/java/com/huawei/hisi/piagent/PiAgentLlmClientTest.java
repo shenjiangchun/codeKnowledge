@@ -93,6 +93,34 @@ class PiAgentLlmClientTest {
     }
 
     @Test
+    @DisplayName("模型拒绝关闭思考（400/1210「该模型始终思考」）：用不关思考的清单原样重试一次")
+    void aModelThatAlwaysThinksRetriesWithThinkingEnabled() {
+        when(pi.run(eq(FlowToolManifest.ONE_SHOT), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any()))
+                .thenReturn(new PiFlowClient.PiResult("", List.of(), "agent_settled", false,
+                        "模型调用失败：400 {\"error\":{\"type\":\"1210\",\"message\":\"该模型始终思考，不支持关闭思考；请使用 low、high 或 max。\"},\"type\":\"error\"}"));
+        when(pi.run(eq(FlowToolManifest.ONE_SHOT_THINKING), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any()))
+                .thenReturn(new PiFlowClient.PiResult("{\"ok\": true}", List.of(), "agent_settled", false, null));
+
+        Map<String, Object> json = client(60).completeJson("系统", "用户", 4000);
+
+        assertThat(json).containsEntry("ok", true);
+        verify(pi).run(eq(FlowToolManifest.ONE_SHOT), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any());
+        verify(pi).run(eq(FlowToolManifest.ONE_SHOT_THINKING), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any());
+    }
+
+    @Test
+    @DisplayName("其他模型错误不触发关思考重试")
+    void otherModelErrorsDoNotRetryWithThinking() {
+        when(pi.run(anyString(), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any()))
+                .thenReturn(new PiFlowClient.PiResult("", List.of(), "agent_settled", false, "模型调用失败：401 Invalid token"));
+
+        assertThatThrownBy(() -> client(60).completeText("系统", "用户", 4000))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("401 Invalid token");
+        verify(pi, times(1)).run(anyString(), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any());
+    }
+
+    @Test
     @DisplayName("超过单次调用时限：抛超时异常")
     void aCallPastItsDeadlineTimesOut() {
         when(pi.run(anyString(), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any()))

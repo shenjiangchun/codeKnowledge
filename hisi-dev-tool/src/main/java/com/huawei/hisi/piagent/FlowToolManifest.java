@@ -109,6 +109,8 @@ public final class FlowToolManifest {
                     RAM_MCP, Level.EXEC, true, false);
             // 一次性结构化调用（方案、Spec、任务清单、假设…）：不需要任何工具，模型只负责按提示词作答
             case ONE_SHOT -> new FlowToolManifest(flow, List.of(), List.of(), Level.READ, false, true);
+            // 同上，但不关思考：模型拒绝关闭思考时（"该模型始终思考"，网关 400/1210）用它重试
+            case ONE_SHOT_THINKING -> new FlowToolManifest(flow, List.of(), List.of(), Level.READ, false, false);
             default -> new FlowToolManifest(flow, READ_BUILTIN, List.of(), Level.READ, false, false);
         };
     }
@@ -121,6 +123,9 @@ public final class FlowToolManifest {
 
     /** 一次性结构化调用的清单键：无工具、无 MCP、不思考。 */
     public static final String ONE_SHOT = "one-shot";
+
+    /** 一次性结构化调用的回退清单键：无工具、无 MCP，但不关思考（给拒绝关闭思考的模型用）。 */
+    public static final String ONE_SHOT_THINKING = "one-shot-thinking";
 
     /** 工作台开发阶段的清单键：pi 在 worktree 内读写文件、执行命令（编码 agent）。 */
     public static final String WORKBENCH_DEV = "workbench-dev";
