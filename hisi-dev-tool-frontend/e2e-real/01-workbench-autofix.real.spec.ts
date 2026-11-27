@@ -1,19 +1,23 @@
 import { expect, test } from '@playwright/test'
-import { api, loginToken, openAsAdmin, V4_BACKEND } from './helpers/real'
+
+import { api, loginToken, openAsAdmin, TARGET_PATH } from './helpers/real'
 
 /**
- * 技术债看板 + 自动修复 agent 流（真实后端、真实模型调用，被分析的项目是 v4.0 后端）。
+ * 技术债看板 + 自动修复 agent 流（真实后端、真实模型调用，被分析的项目是 java-spring-test）。
  *
- * 看板聚合 → 对一条 v4.0 的待办点「自动修复」→ 流水线出现 → 打开监视器 → 在方案确认门选方案并确认
+ * 看板聚合 → 对该项目的待办点「自动修复」→ 流水线出现 → 打开监视器 → 在方案确认门选方案并确认
  * → 跟到终态，断言跑完（DONE）且 8 个阶段全部完成。
- * 待办标题用环境变量 WB_ITEM_TITLE 指定。默认是一条日志分析的 NPE 待办：局部可验证的缺陷自动修复能收敛；
- * 「拆包循环」这类结构性重构在 3 轮迭代内不收敛（run 16 实证），不适合作为这条用例的对象。
+ *
+ * 待办来自对该项目做过的日志分析（由 03-log-analysis 用例或手工提交：一条指向
+ * UserServiceImpl.createUser 的 NullPointerException）。标题是模型/日志生成的、措辞会变，
+ * 所以不硬编码标题，按「项目 + 日志来源 + NPE」定位；可用环境变量 WB_ITEM_TITLE 覆盖。
+ * 被分析项目要有向量（影响面取证走混合检索），见 helpers/real.ts。
  */
-const ITEM_TITLE = process.env.WB_ITEM_TITLE ?? 'NullPointerException：2026-11-26 00:10:00.123'
+const ITEM_TITLE = process.env.WB_ITEM_TITLE ?? ''
 const GATE_TIMEOUT = 25 * 60_000
 const RUN_TIMEOUT = 60 * 60_000
 
-test('技术债看板聚合 v4.0 待办，自动修复流在监视器里确认方案并跑到终态', async ({ page, request }) => {
+test('技术债看板聚合待办，自动修复流在监视器里确认方案并跑到终态', async ({ page, request }) => {
   await openAsAdmin(page, request, '/workbench')
 
   // ── 看板：总览与待办表 ──
@@ -21,20 +25,18 @@ test('技术债看板聚合 v4.0 待办，自动修复流在监视器里确认�
   await expect(page.locator('.m-stat').first()).toContainText('技术债余额')
   await expect(page.locator('tbody tr').first()).toBeVisible()
 
-  // v4.0 的待办在看板上：架构（来源标成「架构·AI」）+ 日志分析产生的待办。
-  // 标题是模型生成的、措辞每次都可能变，只断言来源标记
-  const v4Rows = page.locator('tbody tr', { hasText: 'hisi-dev-tool' })
-  const v4Count = await v4Rows.count()
-  expect(v4Count, '看板上应有 v4.0 后端的待办').toBeGreaterThanOrEqual(10)
-  await expect(v4Rows.filter({ hasText: '架构·AI' }).first()).toBeVisible()
-  const targetRow = page.locator('tbody tr', { hasText: ITEM_TITLE }).first()
-  await expect(targetRow).toBeVisible()
+  // 本项目的待办在看板上。标题取自异常日志行（如
+  // 「NullPointerException：2026-11-27 10:00:00.000 ERROR [http-nio-8081-exec-5] c.example.controller.UserCo…」，
+  // 页面会截断），所以用日志行里稳定出现的包名片段定位，不硬编码整条标题
+  const TITLE_MARKER = 'c.example.controller.UserCo'
+  const projectRows = page.locator('tbody tr', { hasText: TITLE_MARKER })
+  const projectCount = await projectRows.count()
+  expect(projectCount, '看板上应有被分析项目（java-spring-test）的待办').toBeGreaterThanOrEqual(1)
 
-  // 按项目筛选：只留 v4.0 后端的待办
-  const v4Filter = page.locator('.m-proj', { hasText: 'hisi-dev-tool' }).first()
-  await v4Filter.click()
-  await expect(page.locator('tbody tr')).toHaveCount(v4Count)
-  await v4Filter.click()
+  const targetRow = ITEM_TITLE
+    ? page.locator('tbody tr', { hasText: ITEM_TITLE }).first()
+    : projectRows.filter({ hasText: '2026-11-27 10:00:00.000' }).first()
+  await expect(targetRow).toBeVisible()
 
   // ── 对这条待办点自动修复 ──
   const action = targetRow.locator('.c-actions .el-button').first()
@@ -67,10 +69,10 @@ test('技术债看板聚合 v4.0 待办，自动修复流在监视器里确认�
   const finalStatus = (await statusBadge.innerText()).trim()
   await monitor.screenshot({ path: test.info().outputPath('02-final.png') })
 
-  // 运行记录：确认跑的是 v4.0、落在了哪个分支、改了什么
+  // 运行记录：确认跑的是被分析项目、落在了哪个分支、改了什么
   const runs = await api(request, await loginToken(request), 'GET', '/api/workbench/runs')
-  const run = (runs.body?.data ?? []).find((r: { projectPath: string }) => r.projectPath === V4_BACKEND)
-  expect(run, '运行记录应指向 v4.0 后端').toBeTruthy()
+  const run = (runs.body?.data ?? []).find((r: { projectPath: string }) => r.projectPath === TARGET_PATH)
+  expect(run, '运行记录应指向被分析项目').toBeTruthy()
   test.info().annotations.push(
     { type: 'run', description: `runId=${run.id} status=${run.status} branch=${run.branchName ?? '-'} commit=${run.commitHash ?? '-'} error=${run.errorMessage ?? '-'}` },
     { type: 'worktree', description: String(run.worktreePath ?? '-') },

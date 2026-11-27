@@ -1,29 +1,33 @@
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { api, loginToken, openAsAdmin, V4_BACKEND, waitFor } from './helpers/real'
+
+import { api, loginToken, openAsAdmin, TARGET_PATH, waitFor } from './helpers/real'
 
 /**
- * 日志分析 agent 流（真实后端、真实模型调用），分析对象是 v4.0 后端。
+ * 日志分析 agent 流（真实后端、真实模型调用），分析对象是 java-spring-test。
  *
- * 前置：给 v4.0 提交一条异常日志——取 v4.0 代码里真实存在的空指针风险点
- * （SkillMarketController.getSkillList 第 190 行：技能项缺少 category 时 .equals 会空指针）。
- * 页面流程：分析报告页签 → 对这条报告点「重新分析」（页面触发 v2 分析流）→ 等分析完成 →「查看报告」
- * → 报告详情弹窗与详情页都给出根因、证据与修复建议。
+ * 前置：给项目提交一条异常日志——取项目代码里真实存在的空指针点
+ * （UserServiceImpl.createUser：email 为 null 时 trim() 抛 NPE，项目里有意保留给自动修复当靶子）。
+ * 页面流程：分析报告页签 → 对这条报告点「重新分析」（页面触发 v2 分析流）→ 等分析完成 →
+ * 「查看快照」弹窗与「查看报告」详情页都给出根因、证据与修复建议。
  */
 const STACK = [
-  'java.lang.NullPointerException: Cannot invoke "Object.equals(Object)" because the return value of "java.util.Map.get(Object)" is null',
-  '\tat com.huawei.hisi.controller.SkillMarketController.getSkillList(SkillMarketController.java:190)',
+  'java.lang.NullPointerException: Cannot invoke "String.trim()" because "email" is null',
+  '\tat com.example.service.UserServiceImpl.createUser(UserServiceImpl.java:26)',
+  '\tat com.example.controller.UserController.createUser(UserController.java:30)',
   '\tat java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)',
   '\tat org.springframework.web.servlet.DispatcherServlet.doDispatch(DispatcherServlet.java:1086)',
 ].join('\n')
-const MESSAGE = '2026-11-26 00:10:00.123 ERROR [http-nio-8081-exec-5] c.h.hisi.controller.SkillMarketController - Failed to list skill market items'
+const MESSAGE =
+  '2026-11-27 10:00:00.000 ERROR [http-nio-8081-exec-5] c.example.controller.UserController - Failed to create user'
+const SERVICE_NAME = 'java-spring-test'
 const ANALYZE_TIMEOUT = 25 * 60_000
 
-test('日志分析：在页面上对 v4.0 后端的异常报告重新分析并查看报告', async ({ page, request }) => {
+test('日志分析：在页面上对 java-spring-test 的异常报告重新分析并查看报告', async ({ page, request }) => {
   const token = await loginToken(request)
   let reportId = await findReport(token, request)
   if (!reportId) {
     const submitted = await api(request, token, 'POST', '/api/v2/log/analyze', {
-      message: MESSAGE, stackTrace: STACK, projectPath: V4_BACKEND, errorType: 'NullPointerException', serviceName: 'devTool',
+      message: MESSAGE, stackTrace: STACK, projectPath: TARGET_PATH, errorType: 'NullPointerException', serviceName: SERVICE_NAME,
     })
     reportId = String(submitted.body?.data?.reportId ?? '')
     expect(reportId, `提交分析失败：${JSON.stringify(submitted.body)?.slice(0, 200)}`).toBeTruthy()
@@ -49,29 +53,33 @@ test('日志分析：在页面上对 v4.0 后端的异常报告重新分析并�
   await page.reload()
   await page.getByRole('tab', { name: '分析报告' }).click()
   await expect(row).toContainText(/completed|已完成/)
-  await row.getByRole('button', { name: '查看报告' }).click()
-  const dialog = page.locator('.el-dialog', { hasText: '分析报告详情' })
+
+  // 「查看快照」：留在当前页，弹窗展示报告摘要
+  await row.getByRole('button', { name: '查看快照' }).click()
+  const dialog = page.locator('.el-dialog', { hasText: '报告快照' })
   await expect(dialog).toBeVisible()
   await expect(dialog).toContainText('NullPointerException')
   await page.screenshot({ path: test.info().outputPath('01-report-dialog.png') })
+  await dialog.locator('.el-dialog__headerbtn').click()
 
-  // 详情页：根因、证据、修复建议都基于 v4.0 的代码（根因正文里也会出现「修复建议」几个字，所以按小节标题定位）
-  await page.goto(`/log-analysis/report/${reportId}`)
+  // 详情页：根因、证据、修复建议都基于项目的代码（根因正文里也会出现「修复建议」几个字，所以按小节标题定位）
+  await row.getByRole('button', { name: '查看报告' }).click()
+  await expect(page).toHaveURL(new RegExp(`/log-analysis/report/${reportId}`), { timeout: 30_000 })
   const section = (title: string) =>
     page.locator('.report-section').filter({ has: page.locator('h4.section-title', { hasText: title }) })
   await expect(section('错误摘要')).toBeVisible()
   await expect(section('修复建议')).toBeVisible()
-  await expect(page.locator('body')).toContainText('getSkillList')
-  await expect(page.locator('body')).toContainText('SkillMarketController')
+  await expect(page.locator('body')).toContainText('createUser')
+  await expect(page.locator('body')).toContainText('UserServiceImpl')
   await page.screenshot({ path: test.info().outputPath('02-report-detail.png'), fullPage: true })
 })
 
-/** 已有的 v4.0 报告：错误类型、服务名与消息都对得上的那一条。 */
+/** 已有的本项目报告：错误类型与服务名都对得上的那一条。 */
 async function findReport(token: string, request: APIRequestContext) {
   const listed = await api(request, token, 'GET', '/api/log/reports?page=1&pageSize=50')
   const hit = (listed.body?.data?.list ?? []).find(
-    (r: { serviceName?: string; errorType?: string; errorMessage?: string; message?: string }) =>
-      r.serviceName === 'devTool' && r.errorType === 'NullPointerException',
+    (r: { serviceName?: string; errorType?: string }) =>
+      r.serviceName === SERVICE_NAME && r.errorType === 'NullPointerException',
   )
   return hit ? String(hit.reportId) : ''
 }

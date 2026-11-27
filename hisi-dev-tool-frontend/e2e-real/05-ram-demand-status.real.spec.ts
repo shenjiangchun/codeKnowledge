@@ -1,94 +1,23 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 
-import { loginToken, openAsAdmin } from './helpers/real'
+import { openAsAdmin } from './helpers/real'
 
 /**
- * 用有向量的小项目验证迁移后的 pi + 进程内 MCP 的页面级全链路：
- * java-spring-test（20 个方法、向量完整，UserController + UserService）。
- * v4.0 没有向量，影响面节点依赖的混合检索对任何查询都返回 0——那两条需求/现状流程在 v4.0 上必然失败，
- * 不能作为回归对象；本文件专跑小项目。
+ * RAM 需求分析大师 + 项目现状分析两条页面级全链路（真实后端、真实模型）。RAM 对话见 04。
  *
- * 注意：java-spring-test 不在后端 Git 仓库扫描范围（它不是 projects/ 的直接子目录、也没有 .git），
- * 所以下拉里没有它——需求/现状页面用「更多选择方式」手动输入路径；对话会话经接口创建后按 URL 打开。
+ * 被分析项目是 java-spring-test（有向量：20 个方法的 desc + code 向量齐全，见 helpers/real.ts）。
+ * 需求分析的影响面节点依赖混合检索，被分析项目必须有向量。
+ * 覆盖「需求分析大师」与「项目现状分析」两个页面（原 05/06 两个 v4.0 版用例已并入这里）。
+ *
+ * 技术方案断言排除「LLM不可用」占位输出：模型流失败时后端会回退成占位结果，
+ * 以前只断言「非空」，占位输出也算通过——那是一次假通过。
  */
-const PROJECT_PATH = 'C:/Users/47583/projects/hisi_dev_tool v5.0/test-projects/java-spring-test'
 const FLOW_TIMEOUT = 30 * 60_000
 
-async function pickProject(page: Page) {
-  // 折叠面板的标题里那个「更多选择方式」span 带 @click.stop，点它会挡住折叠开合：
-  // 先点 span 让 showAdvanced=true（内容渲染），再点箭头把面板展开
-  await page.locator('.advanced-toggle').first().click()
-  await page.locator('.el-collapse-item__arrow').first().click()
-  const manual = page.locator('[data-test="ram-project-manual"]')
-  await expect(manual).toBeVisible({ timeout: 10_000 })
-  await manual.fill(PROJECT_PATH)
-  await manual.press('Enter')
-  await expect(page.locator('.selected-project-hint')).toContainText('已选 1 个项目')
-}
-
-test('RAM 对话：小项目上问答，经 pi 调用进程内 MCP 工具', async ({ page, request }) => {
-  const token = await loginToken(request)
-  // 先建会话（不带 initialQuestion：带问题会让 POST 同步等完整回合，几分钟不返回——页面侧从不这么调），
-  // 再用消息接口异步发起第一问，与页面真实交互一致
-  const created = await request.post('http://localhost:8080/api/ram/chat/sessions', {
-    data: { projectPaths: [PROJECT_PATH], projectName: 'java-spring-test' },
-    headers: { Authorization: `Bearer ${token}` },
-    timeout: 60_000,
-  })
-  const body = await created.json().catch(() => undefined)
-  const sessionId = String(body?.data?.sessionId ?? '')
-  expect(sessionId, `创建对话会话失败：${JSON.stringify(body)?.slice(0, 200)}`).toBeTruthy()
-
-  const sent = await request.post(`http://localhost:8080/api/ram/chat/${sessionId}/messages`, {
-    data: { text: '这个项目里有哪些 HTTP 接口？列出接口路径和对应的方法名。' },
-    headers: { Authorization: `Bearer ${token}` },
-    timeout: 60_000,
-  })
-  expect(sent.status(), `发消息失败：${JSON.stringify(await sent.json().catch(() => undefined))?.slice(0, 200)}`).toBe(200)
-
-  await openAsAdmin(page, request, `/ram/chat/${sessionId}`)
-  await page.locator('.assistant-row').first().waitFor({ timeout: 10 * 60_000 })
-
-  // 等回答稳定：文本不再变化且没有还在执行的工具步骤。
-  // 「思考中...」不算稳定答案——回合可能还在后台执行；WS 断线期间后端不补发事件，只能重拉消息
-  let previous = ''
-  let lastProgress = Date.now()
-  let reloaded = false
-  const deadline = Date.now() + 10 * 60_000
-  for (;;) {
-    const text = await page.locator('.assistant-row').last().innerText({ timeout: 3_000 }).catch(() => '')
-    const toolStepsRunning = (await page.locator('.step-card .loading-icon').count()) > 0
-    const settled = text && !/思考中/.test(text) && text === previous && !toolStepsRunning
-    if (settled) break
-    if (text !== previous) {
-      previous = text
-      lastProgress = Date.now()
-    }
-    // 长时间没有进展：刷新页面重拉消息（模拟用户 F5，页面挂载时会从 REST 重载事件）
-    if (!reloaded && Date.now() - lastProgress > 2 * 60_000) {
-      reloaded = true
-      await page.reload()
-      await page.locator('.assistant-row').first().waitFor({ timeout: 30_000 })
-      continue
-    }
-    if (Date.now() > deadline) {
-      throw new Error(`回答未在 10 分钟内稳定，最后文本：${text.slice(0, 120)}`)
-    }
-    await page.waitForTimeout(3_000)
-  }
-  const text = await page.locator('.assistant-row').last().innerText()
-  expect(text.length, '对话应有回答').toBeGreaterThan(20)
-  const toolSteps = await page.locator('.step-card').count()
-  test.info().annotations.push({ type: 'tool-steps', description: `工具步骤卡片 ${toolSteps} 个` })
-  if (reloaded) {
-    test.info().annotations.push({ type: 'page-reload', description: '等待期间刷新过一次页面（WS 断线后通过重拉消息恢复）' })
-  }
-  await page.screenshot({ path: test.info().outputPath('mcp-chat.png'), fullPage: true })
-})
-
-test('需求分析：影响面节点在小项目上跑通（v4.0 无向量时该节点必挂）', async ({ page, request }) => {
+test('需求分析大师：澄清 → 确认 → 影响面 → 实现 → 验证 → 技术方案（真实输出，非占位）', async ({ page, request }) => {
   await openAsAdmin(page, request, '/ram/new')
-  await pickProject(page)
+  // openAsAdmin 已把被分析项目种进全局选中项；需求分析页会从那里恢复（不必在下拉里手动选）
+  await expect(page.locator('.selected-project-hint')).toContainText('已选 1 个项目', { timeout: 30_000 })
 
   const requirement = [
     '给用户接口增加一个按邮箱查询用户的方法：',
@@ -151,7 +80,7 @@ test('需求分析：影响面节点在小项目上跑通（v4.0 无向量时该
 
     const status = (await statusTag.innerText().catch(() => '')).trim()
     if (/^(已完成|失败|已中止)$/.test(status)) {
-      expect(status, '小项目有向量，影响面与后续节点不应失败').toBe('已完成')
+      expect(status, '被分析项目有向量，影响面与后续节点不应失败').toBe('已完成')
       break
     }
 
@@ -195,9 +124,9 @@ test('需求分析：影响面节点在小项目上跑通（v4.0 无向量时该
   await expect(techPlanView, '技术方案不应是模型不可用时的占位输出').not.toContainText('LLM不可用')
 })
 
-test('现状分析：小项目上生成报告（v4.0 上曾因取证慢触发 5 分钟超时）', async ({ page, request }) => {
+test('项目现状分析：生成有实质内容的报告', async ({ page, request }) => {
   await openAsAdmin(page, request, '/ram/status/new')
-  await pickProject(page)
+  await expect(page.locator('.selected-project-hint')).toContainText('已选 1 个项目', { timeout: 30_000 })
 
   await page.getByPlaceholder(/输入你想了解的问题/).fill(
     '这个项目的接口层与业务层是怎么划分的？主要涉及哪些类？',

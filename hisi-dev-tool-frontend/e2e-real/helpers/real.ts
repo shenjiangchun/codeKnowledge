@@ -7,13 +7,31 @@ import { E2E_USERNAME, e2ePassword } from '../../e2e/helpers/credentials'
  */
 export const BACKEND = 'http://localhost:8080'
 
-/** 被分析的项目：v4.0（应用里登记的「hisi开发工具」项目组）。 */
+/**
+ * 被分析的项目：test-projects/java-spring-test。
+ *
+ * 选它的唯一硬条件是「有向量」：需求分析的影响面节点依赖混合检索，没向量的项目上对任何查询都返回 0，
+ * 那条流程必然失败，不能作为回归对象（2026-11-27 普查：20 个方法全部带 desc+code 向量）。
+ * 它是独立的 git 仓库（4 个 Java 文件：UserController / UserService / UserServiceImpl / User），
+ * 项目里有意留了一个缺陷给自动修复当靶子（见 UserServiceImpl.createUser 的注释）。
+ * 之前用的 v4.0 后端有 4455 个节点但 0 向量，已全部迁走（V4_* 常量仅留给还没迁移的调用方）。
+ */
+export const TARGET_ROOT = 'C:/Users/47583/projects/hisi_dev_tool v5.0/test-projects'
+export const TARGET_PROJECTS = [
+  { name: 'java-spring-test', path: `${TARGET_ROOT}/java-spring-test` },
+]
+export const TARGET_NAME = TARGET_PROJECTS[0].name
+export const TARGET_PATH = TARGET_PROJECTS[0].path
+
+/** @deprecated v4.0 后端没有向量（4455 节点 / 0 向量），不能作为依赖检索的用例的被分析项目。 */
 export const V4_ROOT = 'C:/Users/47583/projects/hisi_dev_tool v4.0'
+/** @deprecated 同上。 */
 export const V4_PROJECTS = [
   { name: 'hisi-dev-tool', path: `${V4_ROOT}/hisi-dev-tool` },
   { name: 'hisi-dev-tool-frontend', path: `${V4_ROOT}/hisi-dev-tool-frontend` },
   { name: 'hisi-mcp-server', path: `${V4_ROOT}/hisi-mcp-server` },
 ]
+/** @deprecated 同上。 */
 export const V4_BACKEND = V4_PROJECTS[0].path
 
 /** 用真实接口登录，返回 token。 */
@@ -35,7 +53,7 @@ export async function openAsAdmin(page: Page, request: APIRequestContext, path: 
       localStorage.setItem('hisi-token', token as string)
       localStorage.setItem('hisi-selected-projects', JSON.stringify(projects))
     },
-    [token, V4_PROJECTS] as const,
+    [token, TARGET_PROJECTS] as const,
   )
   await page.goto(path)
 }
