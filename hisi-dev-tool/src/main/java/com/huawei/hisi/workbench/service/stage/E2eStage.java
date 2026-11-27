@@ -76,6 +76,14 @@ public class E2eStage implements StageHandler {
         Map<String, Object> spec = ctx.artifact("spec");
         List<Map<String, Object>> apiCases = TestsStage.testCases(spec, "api");
         List<Map<String, Object>> e2eCases = TestsStage.testCases(spec, "e2e");
+        // 项目里没有 @SpringBootApplication 启动类时，「启动服务做接口验证」物理上无法执行：
+        // 与配置里关掉 start-service 等同，这一阶段只验证构建。不是失败——Spec 提示词同样告知过模型
+        // 「没有启动类、不要依赖容器」，Spec 不写 api/e2e 用例是符合约定的。
+        boolean projectStartable = CommandRunner.hasSpringBootApplication(worktree);
+        if (!projectStartable) {
+            serviceE2e = false;
+            ctx.log("项目没有 @SpringBootApplication 启动类，E2E 阶段只验证构建，不启动服务");
+        }
         // 关闭了服务启动时 Spec 本来就不要求 api/e2e 用例（见 SpecStage），这一阶段只验证构建
         if (serviceE2e && apiCases.isEmpty() && e2eCases.isEmpty()) {
             ctx.publish("e2e", Map.of("passed", false, "steps", List.of("Spec 未定义 api/e2e 用例")));
@@ -100,8 +108,11 @@ public class E2eStage implements StageHandler {
         ctx.log("构建通过");
 
         if (!serviceE2e) {
-            // 配置里关掉了服务启动（被分析的项目不适合在本机拉起来）：这一阶段只验证构建与前端 E2E，并如实写明没有启动服务
-            steps.add("启动服务：已在配置中关闭（workbench.fix.e2e.start-service=false），未执行接口用例");
+            // 不启动服务做接口验证（配置关闭，或项目没有 @SpringBootApplication 启动类）：这一阶段只验证构建与前端 E2E，
+            // 并如实写明没有启动服务
+            steps.add(projectStartable
+                    ? "启动服务：已在配置中关闭（workbench.fix.e2e.start-service=false），未执行接口用例"
+                    : "启动服务：项目没有 @SpringBootApplication 启动类，无法启动，未执行接口用例");
             ctx.log(steps.get(steps.size() - 1));
             Map<String, Object> frontend = e2eCases.isEmpty() ? null : runFrontendE2e(worktree, e2eCases, ctx);
             boolean frontendOk = frontend == null || !Boolean.FALSE.equals(frontend.get("passed"));

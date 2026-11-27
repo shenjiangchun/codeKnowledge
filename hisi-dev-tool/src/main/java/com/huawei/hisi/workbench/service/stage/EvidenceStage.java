@@ -76,6 +76,15 @@ public class EvidenceStage implements StageHandler {
             String source = readSource(item.getProjectPath(), className);
             if (source != null) {
                 List<String> mappings = HttpMappingScanner.scanFile(source);
+                if (mappings.isEmpty()) {
+                    // 出问题的类不在接入层（Service/Repository 等没有 @*Mapping 注解）时，单类扫不出接口。
+                    // 回退到全项目扫描：修复可能触达 Controller，Spec 仍应有真实接口路径可依，
+                    // 否则 httpMappings 为空会让 Spec 合法地不写 api/e2e 用例，而 E2E 阶段又要求它们（互相矛盾）。
+                    mappings = HttpMappingScanner.scan(Path.of(item.getProjectPath()));
+                    if (mappings.size() > 40) {
+                        mappings = mappings.subList(0, 40);
+                    }
+                }
                 output.put("httpMappings", mappings);
                 for (String mapping : mappings) {
                     addAnchor(anchors, "http", "HTTP 入口：" + mapping);

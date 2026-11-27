@@ -50,8 +50,13 @@ class StageGuardsTest {
 
     /** 没有任何产物的上下文；事件落在独立的内存仓库里（守卫会先发布失败结果）。 */
     private static StageContext contextWith(Map<String, Object> artifacts) {
-        WorkbenchFixRun run = WorkbenchFixRun.builder().id(5L).itemKey("k1").sessionId(77L).worktreePath("/nowhere").build();
-        WorkbenchItem item = WorkbenchItem.builder().itemKey("k1").projectPath("/nowhere").title("t").build();
+        return contextWith(artifacts, "/nowhere");
+    }
+
+    /** 同上，可指定 worktree 路径（E2E 阶段会扫描它有没有 Spring Boot 启动类）。 */
+    private static StageContext contextWith(Map<String, Object> artifacts, String worktreePath) {
+        WorkbenchFixRun run = WorkbenchFixRun.builder().id(5L).itemKey("k1").sessionId(77L).worktreePath(worktreePath).build();
+        WorkbenchItem item = WorkbenchItem.builder().itemKey("k1").projectPath(worktreePath).title("t").build();
         return new StageContext(run, item, new WorkbenchEventSink(new InMemoryAgentEvents(), new ObjectMapper()),
                 artifacts, null);
     }
@@ -108,14 +113,34 @@ class StageGuardsTest {
     }
 
     @Test
-    void e2eFailsWhenTheSpecHasNoApiOrE2eCases() {
+    void e2eFailsWhenTheSpecHasNoApiOrE2eCases() throws Exception {
+        // 项目有启动类时，服务级 E2E 是可执行的：Spec 没定义 api/e2e 用例必须失败
+        java.nio.file.Path app = temp.resolve("src/main/java/demo/DemoApplication.java");
+        java.nio.file.Files.createDirectories(app.getParent());
+        java.nio.file.Files.writeString(app,
+                "package demo;\nimport org.springframework.boot.autoconfigure.SpringBootApplication;\n"
+                + "@SpringBootApplication\npublic class DemoApplication {}\n");
         Map<String, Object> spec = specOf(testCase("unit", "空服务时返回 503", "com.a.UserControllerTest#a", "断言 503"));
-        StageContext ctx = contextWith(Map.of("spec", spec));
 
-        StageHandler.StageOutcome outcome = new E2eStage(mock(TargetProcessManager.class)).execute(ctx);
+        StageHandler.StageOutcome outcome = new E2eStage(mock(TargetProcessManager.class)).execute(
+                contextWith(Map.of("spec", spec), temp.toString()));
 
         assertEquals(StageHandler.StageOutcome.FAILED, outcome.kind());
         assertTrue(outcome.message().contains("未定义"));
+    }
+
+    @Test
+    void e2eDoesNotDemandApiCasesWhenTheProjectHasNoBootableEntryPoint() {
+        // 项目没有 @SpringBootApplication 启动类时，服务级 E2E 物理上执行不了（与配置无关）：
+        // 不能再以「Spec 没有 api/e2e 用例」判失败——Spec 提示词同样告知过模型「没有启动类、不要依赖容器」。
+        // 真机：java-spring-test（纯 Java 夹具项目）上自动修复跑通全部前 7 阶段，死在 E2E 这一判。
+        Map<String, Object> spec = specOf(testCase("unit", "空服务时返回 503", "com.a.UserControllerTest#a", "断言 503"));
+        StageContext ctx = contextWith(Map.of("spec", spec), "/nowhere-no-boot-entry");
+
+        StageHandler.StageOutcome outcome = new E2eStage(mock(TargetProcessManager.class)).execute(ctx);
+
+        assertFalse(outcome.kind().equals(StageHandler.StageOutcome.FAILED) && outcome.message().contains("未定义"),
+                "不应因项目没有启动类而要求 Spec 提供 api/e2e 用例，实际：" + outcome.message());
     }
 
     @Test

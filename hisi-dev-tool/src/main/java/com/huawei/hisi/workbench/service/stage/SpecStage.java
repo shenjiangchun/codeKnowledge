@@ -114,6 +114,8 @@ public class SpecStage implements StageHandler {
 
         Map<String, Object> payload = null;
         List<String> problems = List.of("尚未生成");
+        // 项目没有启动类时 E2E 阶段启动不了服务：校验与 E2E 阶段共用同一个判定，两边不会互相矛盾
+        boolean projectStartable = CommandRunner.hasSpringBootApplication(Path.of(ctx.item().getProjectPath()));
         for (int attempt = 0; attempt < 2; attempt++) {
             String prompt = user.toString();
             if (attempt > 0) {
@@ -127,7 +129,7 @@ public class SpecStage implements StageHandler {
                 payload = null;
                 continue;
             }
-            problems = problemsOf(payload, mappings, serviceE2e);
+            problems = problemsOf(payload, mappings, serviceE2e, projectStartable);
             if (problems.isEmpty()) {
                 break;
             }
@@ -160,6 +162,16 @@ public class SpecStage implements StageHandler {
 
     /** @param serviceE2e 这次修复是否会启动服务做接口验证；不会时不要求 api / e2e 用例 */
     static List<String> problemsOf(Map<String, Object> payload, List<String> httpMappings, boolean serviceE2e) {
+        return problemsOf(payload, httpMappings, serviceE2e, true);
+    }
+
+    /**
+     * @param serviceE2e       这次修复是否会启动服务做接口验证；不会时不要求 api / e2e 用例
+     * @param projectStartable 项目有 {@code @SpringBootApplication} 启动类；没有时 E2E 阶段启动不了服务，
+     *                         要求 api/e2e 用例等于要求写必然执行不了的用例——同样不要求
+     */
+    static List<String> problemsOf(Map<String, Object> payload, List<String> httpMappings, boolean serviceE2e,
+                                   boolean projectStartable) {
         List<String> problems = new ArrayList<>();
         if (payload == null) {
             problems.add("没有返回内容");
@@ -211,8 +223,9 @@ public class SpecStage implements StageHandler {
         if (!hasRegression) {
             problems.add("至少需要 1 条 repro 或 unit 用例");
         }
-        // 没有启动服务做接口验证时写不出 api 用例；有接口且会启动服务时，必须有用例打到接口上
-        if (!hasEndToEnd && serviceE2e && !httpMappings.isEmpty()) {
+        // 没有启动服务做接口验证时写不出 api 用例；有接口且会启动服务时，必须有用例打到接口上。
+        // 项目本身没有启动类时 E2E 阶段启动不了服务（与配置无关），同样不要求。
+        if (!hasEndToEnd && serviceE2e && projectStartable && !httpMappings.isEmpty()) {
             problems.add("项目有 HTTP 接口，至少需要 1 条 api 或 e2e 用例");
         }
         return problems;

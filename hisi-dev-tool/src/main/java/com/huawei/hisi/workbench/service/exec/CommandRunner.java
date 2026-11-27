@@ -166,7 +166,8 @@ public class CommandRunner {
                 + "unit 用例请直接 new 被测类，或用 MockMvcBuilders.standaloneSetup，不要依赖容器启动\n";
     }
 
-    private static boolean hasSpringBootApplication(Path projectRoot) {
+    /** 项目里有 {@code @SpringBootApplication} 启动类才谈得上「启动服务做接口验证」；E2E 阶段据此降级。 */
+    public static boolean hasSpringBootApplication(Path projectRoot) {
         Path sourceRoot = projectRoot.resolve("src/main/java");
         if (!Files.isDirectory(sourceRoot)) {
             return false;
