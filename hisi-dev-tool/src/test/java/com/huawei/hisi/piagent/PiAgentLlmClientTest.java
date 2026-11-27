@@ -109,7 +109,7 @@ class PiAgentLlmClientTest {
     }
 
     @Test
-    @DisplayName("其他模型错误不触发关思考重试")
+    @DisplayName("其他模型错误不触发思考重试")
     void otherModelErrorsDoNotRetryWithThinking() {
         when(pi.run(anyString(), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any()))
                 .thenReturn(new PiFlowClient.PiResult("", List.of(), "agent_settled", false, "模型调用失败：401 Invalid token"));
@@ -118,6 +118,31 @@ class PiAgentLlmClientTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("401 Invalid token");
         verify(pi, times(1)).run(anyString(), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any());
+    }
+
+    @Test
+    @DisplayName("1210 之后记住模型不接受 off：后续调用直接走 low 档，不再先撞一次 1210")
+    void onceRefusedTheClientSkipsTheOffAttemptOnLaterCalls() {
+        // 第一次：off 被拒 → low 成功
+        when(pi.run(eq(FlowToolManifest.ONE_SHOT), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any()))
+                .thenReturn(new PiFlowClient.PiResult("", List.of(), "agent_settled", false,
+                        "模型调用失败：400 {\"error\":{\"type\":\"1210\",\"message\":\"该模型始终思考，不支持关闭思考\"}}"));
+        when(pi.run(eq(FlowToolManifest.ONE_SHOT_THINKING), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any()))
+                .thenReturn(new PiFlowClient.PiResult("第一次的结果", List.of(), "agent_settled", false, null));
+
+        PiAgentLlmClient client = client(60);
+        assertThat(client.completeText("系统", "用户", 4000)).isEqualTo("第一次的结果");
+        verify(pi, times(1)).run(eq(FlowToolManifest.ONE_SHOT), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any());
+        verify(pi, times(1)).run(eq(FlowToolManifest.ONE_SHOT_THINKING), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any());
+
+        // 第二次：off 不再被尝试，直接走 low
+        when(pi.run(eq(FlowToolManifest.ONE_SHOT_THINKING), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any()))
+                .thenReturn(new PiFlowClient.PiResult("第二次的结果", List.of(), "agent_settled", false, null));
+        assertThat(client.completeText("系统", "用户", 4000)).isEqualTo("第二次的结果");
+
+        // off 的调用总数仍是 1 次——第二次调用没再撞 1210
+        verify(pi, times(1)).run(eq(FlowToolManifest.ONE_SHOT), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any());
+        verify(pi, times(2)).run(eq(FlowToolManifest.ONE_SHOT_THINKING), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any());
     }
 
     @Test

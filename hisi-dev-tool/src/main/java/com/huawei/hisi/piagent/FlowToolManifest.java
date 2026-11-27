@@ -80,15 +80,19 @@ public final class FlowToolManifest {
     private final Set<String> tools = new LinkedHashSet<>();
     private final Level maxLevel;
     private final boolean useMcp;
-    /** 一次性结构化调用关掉模型思考：思考 token 算在输出预算里，提示词一长正文就为空。 */
-    private final boolean thinkingOff;
+    /**
+     * pi 的 {@code --thinking} 档位；{@code null} 表示不传（用模型默认档）。
+     * 一次性结构化调用关掉模型思考：思考 token 算在输出预算里，提示词一长正文就为空。
+     * 有的网关模型不接受 {@code off}（「该模型始终思考」400/1210），只能降到 {@code low}。
+     */
+    private final String thinkingLevel;
 
     private FlowToolManifest(String flow, List<String> builtin, List<String> mcpTools, Level maxLevel, boolean useMcp,
-                             boolean thinkingOff) {
+                             String thinkingLevel) {
         this.flow = flow;
         this.maxLevel = maxLevel;
         this.useMcp = useMcp;
-        this.thinkingOff = thinkingOff;
+        this.thinkingLevel = thinkingLevel;
         tools.addAll(builtin);
         for (String tool : mcpTools) {
             tools.add(MCP_PREFIX + tool);
@@ -98,20 +102,22 @@ public final class FlowToolManifest {
     /** 按流类型解析清单。未知流一律按纯只读处理（宁缺毋滥）。 */
     public static FlowToolManifest forFlow(String flow) {
         return switch (flow) {
-            case "arch-react" -> new FlowToolManifest(flow, READ_BUILTIN, ARCH_MCP, Level.READ, true, false);
-            case "log-analysis" -> new FlowToolManifest(flow, READ_BUILTIN, LOG_MCP, Level.READ, true, false);
-            case "ram" -> new FlowToolManifest(flow, READ_BUILTIN, RAM_MCP, Level.READ, true, false);
-            case "ram-act" -> new FlowToolManifest(flow, READ_BUILTIN, join(RAM_MCP, RAM_ACT_MCP), Level.READ, true, false);
-            case "chat-read" -> new FlowToolManifest(flow, READ_BUILTIN, CHAT_MCP, Level.READ, true, false);
-            case "workbench-read" -> new FlowToolManifest(flow, READ_BUILTIN, RAM_MCP, Level.READ, true, false);
+            case "arch-react" -> new FlowToolManifest(flow, READ_BUILTIN, ARCH_MCP, Level.READ, true, null);
+            case "log-analysis" -> new FlowToolManifest(flow, READ_BUILTIN, LOG_MCP, Level.READ, true, null);
+            case "ram" -> new FlowToolManifest(flow, READ_BUILTIN, RAM_MCP, Level.READ, true, null);
+            case "ram-act" -> new FlowToolManifest(flow, READ_BUILTIN, join(RAM_MCP, RAM_ACT_MCP), Level.READ, true, null);
+            case "chat-read" -> new FlowToolManifest(flow, READ_BUILTIN, CHAT_MCP, Level.READ, true, null);
+            case "workbench-read" -> new FlowToolManifest(flow, READ_BUILTIN, RAM_MCP, Level.READ, true, null);
             case WORKBENCH_DEV -> new FlowToolManifest(flow,
                     new ArrayList<>(java.util.stream.Stream.concat(READ_BUILTIN.stream(), WRITE_BUILTIN.stream()).toList()),
-                    RAM_MCP, Level.EXEC, true, false);
-            // 一次性结构化调用（方案、Spec、任务清单、假设…）：不需要任何工具，模型只负责按提示词作答
-            case ONE_SHOT -> new FlowToolManifest(flow, List.of(), List.of(), Level.READ, false, true);
-            // 同上，但不关思考：模型拒绝关闭思考时（"该模型始终思考"，网关 400/1210）用它重试
-            case ONE_SHOT_THINKING -> new FlowToolManifest(flow, List.of(), List.of(), Level.READ, false, false);
-            default -> new FlowToolManifest(flow, READ_BUILTIN, List.of(), Level.READ, false, false);
+                    RAM_MCP, Level.EXEC, true, null);
+            // 一次性结构化调用（方案、Spec、任务清单、假设…）：不需要任何工具，模型只负责按提示词作答。
+            // 优先关思考（最快）；网关模型不接受 off 时降级 low（见 ONE_SHOT_THINKING）
+            case ONE_SHOT -> new FlowToolManifest(flow, List.of(), List.of(), Level.READ, false, "off");
+            // 同上，但思考档位用 low：给「该模型始终思考，不支持关闭思考」（网关 400/1210）的模型用——
+            // 网关明确接受 low/high/max 档，low 是其中开销最小的一档
+            case ONE_SHOT_THINKING -> new FlowToolManifest(flow, List.of(), List.of(), Level.READ, false, "low");
+            default -> new FlowToolManifest(flow, READ_BUILTIN, List.of(), Level.READ, false, null);
         };
     }
 
@@ -133,7 +139,10 @@ public final class FlowToolManifest {
     public String flow() { return flow; }
     public boolean readOnly() { return maxLevel == Level.READ; }
     public boolean useMcp() { return useMcp; }
-    public boolean thinkingOff() { return thinkingOff; }
+    /** 传了 {@code --thinking} 档位时为真：这类流用声明了推理能力的 provider 副本（pi 才会按档位发请求）。 */
+    public boolean hasThinkingLevel() { return thinkingLevel != null; }
+    /** {@code --thinking} 的档位值（{@code off}/{@code low}/…），不传时为 {@code null}。 */
+    public String thinkingLevel() { return thinkingLevel; }
     public Set<String> tools() { return Set.copyOf(tools); }
 
     /** pi --tools 参数：全量白名单（含 mcp__ 前缀条目时 MCP 按白名单过滤）。 */
@@ -175,9 +184,9 @@ public final class FlowToolManifest {
         if (readOnly()) {
             args.add("--no-context-files");
         }
-        if (thinkingOff()) {
+        if (thinkingLevel != null) {
             args.add("--thinking");
-            args.add("off");
+            args.add(thinkingLevel);
         }
         return args;
     }

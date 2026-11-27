@@ -366,10 +366,10 @@ public class PiFlowClient {
         return error == null ? null : String.valueOf(error);
     }
 
-    /** 清单决定用哪个 provider：关思考的流走声明了推理能力的那个副本，pi 才会显式发送 thinking: disabled。 */
+    /** 清单决定用哪个 provider：传了 thinking 档位的流走声明了推理能力的那个副本，pi 才会按档位显式发请求。 */
     private String modelRef(FlowToolManifest manifest) {
         String provider = PiAgentInstaller.MODEL_PROVIDER
-                + (manifest.thinkingOff() ? PiAgentInstaller.NO_THINK_PROVIDER_SUFFIX : "");
+                + (manifest.hasThinkingLevel() ? PiAgentInstaller.NO_THINK_PROVIDER_SUFFIX : "");
         return provider + "/" + properties.getModelId();
     }
 

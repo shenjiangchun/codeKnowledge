@@ -38,6 +38,13 @@ public class PiAgentLlmClient implements AgentLlmClient {
     private final PiAgentProperties properties;
     private final int callTimeoutSeconds;
 
+    /**
+     * 当前模型拒绝了 {@code --thinking off}（网关 400/1210「该模型始终思考」）时置位：
+     * 之后的调用直接走 low 档清单，不再每次先撞一次 1210 再重试。
+     * 进程级缓存足够——模型能力在一次运行内不会变。
+     */
+    private volatile boolean thinkingOffRefused = false;
+
     public PiAgentLlmClient(PiFlowClient piClient,
                             PiAgentInstaller installer,
                             PiAgentProperties properties,
@@ -93,11 +100,13 @@ public class PiAgentLlmClient implements AgentLlmClient {
             throw new IllegalStateException("pi 未就绪，无法执行一次性调用");
         }
         long deadlineAt = System.currentTimeMillis() + callTimeoutSeconds * 1000L;
-        PiFlowClient.PiResult result = runOnce(FlowToolManifest.ONE_SHOT, systemPrompt, userPrompt, deadlineAt);
+        String flow = thinkingOffRefused ? FlowToolManifest.ONE_SHOT_THINKING : FlowToolManifest.ONE_SHOT;
+        PiFlowClient.PiResult result = runOnce(flow, systemPrompt, userPrompt, deadlineAt);
         if (result.note() != null && result.finalText().isBlank() && THINKING_OFF_REFUSED.matcher(result.note()).find()) {
             // 有的模型不接受关闭思考（网关 400/1210「该模型始终思考，不支持关闭思考」）：
-            // 换成不关思考的清单把同样的提示词原样重试一次，远端不需要为模型改配置
-            log.info("[AgentLlm] 模型不支持关闭思考，改用不关思考的清单重试：{}", result.note());
+            // 改用 low 档清单把同样的提示词原样重试一次，并记住——之后的调用不再试 off
+            thinkingOffRefused = true;
+            log.info("[AgentLlm] 模型不支持关闭思考，改用 low 档思考并记住：{}", result.note());
             result = runOnce(FlowToolManifest.ONE_SHOT_THINKING, systemPrompt, userPrompt, deadlineAt);
         }
         if (result.note() != null && result.finalText().isBlank()) {

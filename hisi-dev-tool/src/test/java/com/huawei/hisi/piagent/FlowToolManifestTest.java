@@ -60,20 +60,33 @@ class FlowToolManifestTest {
     }
 
     @Test
-    void oneShotCallsGetNoToolsNoMcpAndNoThinking() {
+    void oneShotCallsGetNoToolsNoMcpAndThinkingOffByDefault() {
         FlowToolManifest manifest = FlowToolManifest.forFlow(FlowToolManifest.ONE_SHOT);
 
         assertTrue(manifest.tools().isEmpty(), "一次性结构化调用不需要任何工具");
         assertFalse(manifest.useMcp());
-        assertTrue(manifest.thinkingOff());
+        assertTrue(manifest.hasThinkingLevel());
+        assertEquals("off", manifest.thinkingLevel(), "优先关思考（最快）；网关不接受时再降级 low");
         assertEquals(List.of("--no-tools", "--no-mcp", "--no-approve", "--no-context-files", "--thinking", "off"),
+                manifest.cliArgs());
+    }
+
+    @Test
+    void oneShotThinkingFallbackUsesTheLowLevelAcceptedByAlwaysThinkingGateways() {
+        FlowToolManifest manifest = FlowToolManifest.forFlow(FlowToolManifest.ONE_SHOT_THINKING);
+
+        assertTrue(manifest.tools().isEmpty());
+        assertFalse(manifest.useMcp());
+        // 网关 400/1210 明确只接受 low/high/max 档：low 是其中开销最小的一档
+        assertEquals("low", manifest.thinkingLevel());
+        assertEquals(List.of("--no-tools", "--no-mcp", "--no-approve", "--no-context-files", "--thinking", "low"),
                 manifest.cliArgs());
     }
 
     @Test
     void agentSessionsKeepTheGatewayThinkingDefault() {
         for (String flow : List.of("arch-react", "log-analysis", "ram", "workbench-read", "workbench-dev")) {
-            assertFalse(FlowToolManifest.forFlow(flow).thinkingOff(), flow + " 是 agent 会话，思考与否沿用网关默认");
+            assertFalse(FlowToolManifest.forFlow(flow).hasThinkingLevel(), flow + " 是 agent 会话，思考与否沿用网关默认");
         }
     }
 
