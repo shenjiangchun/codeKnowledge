@@ -293,7 +293,7 @@ public class KgSkillsKitController {
         ));
 
         guide.put("prerequisites", Arrays.asList(
-            "MCP 配置：确保 hisi-mcp-server 已在 Claude Code MCP 配置中",
+            "MCP 配置：后端自带 MCP 服务，地址 http://localhost:8080/mcp（streamable HTTP），把它接入 Claude Code 的 MCP 配置",
             "图谱生成：项目需先执行知识图谱生成才能检索",
             "后端服务：Neo4j 和后端服务正常运行"
         ));
@@ -367,7 +367,7 @@ description: 知识图谱混合检索 Skill。支持跨项目检索代码方法�
 ### 步骤 1：获取可用项目（动态查询）
 
 **必须先调用 MCP 工具获取已图谱化项目列表**：
-使用 MCP 工具：mcp__hisi-mcp-server__kg_list_projects
+使用 MCP 工具：kg_list_projects（由后端自带的 MCP 服务 http://localhost:8080/mcp 提供）
 
 ### 步骤 2：项目选择（支持多选）
 

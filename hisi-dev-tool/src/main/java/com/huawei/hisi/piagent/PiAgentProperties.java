@@ -36,9 +36,6 @@ public class PiAgentProperties {
     private String modelBaseUrl = "http://1.95.145.190:8888";
     private String modelId = "deepseek-v4-pro-cc";
 
-    /** hisi-mcp-server 的 dist 入口（只读工具源）。 */
-    private String mcpDistPath = "";
-
     /** 同时运行的 pi 进程上限。每个流的每次模型调用都是一个进程，几个流并行时都要占槽位。 */
     private int maxConcurrentProcesses = 4;
 

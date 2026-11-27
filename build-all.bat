@@ -5,24 +5,24 @@ setlocal enabledelayedexpansion
 :: ============================================================
 :: HiSi DevTool - Build All Script
 :: Usage:
-::   build-all.bat              Build all 3 projects
+::   build-all.bat              Build all projects
 ::   build-all.bat backend      Backend only
 ::   build-all.bat frontend     Frontend only
-::   build-all.bat mcp          MCP Server only
 ::   build-all.bat desktop      Electron desktop packaging
 ::   build-all.bat --with-test  Run tests during build
+::
+:: MCP tools are served in-process by the backend (Spring MCP server, /mcp);
+:: there is no separate MCP server to build or start.
 :: ============================================================
 
 set "ROOT_DIR=%~dp0"
 set "BACKEND_DIR=%ROOT_DIR%hisi-dev-tool"
 set "FRONTEND_DIR=%ROOT_DIR%hisi-dev-tool-frontend"
-set "MCP_DIR=%ROOT_DIR%hisi-mcp-server"
 set "DESKTOP_DIR=%ROOT_DIR%hisi-desktop"
 set "DIST_DIR=%ROOT_DIR%dist"
 
 set BUILD_BACKEND=1
 set BUILD_FRONTEND=1
-set BUILD_MCP=1
 set BUILD_DESKTOP=0
 set SKIP_TEST=1
 set HAS_ERROR=0
@@ -30,9 +30,8 @@ set HAS_ERROR=0
 :: Parse args
 :parse_args
 if "%~1"=="" goto :args_done
-if /i "%~1"=="backend"     set BUILD_FRONTEND=0& set BUILD_MCP=0
-if /i "%~1"=="frontend"    set BUILD_BACKEND=0& set BUILD_MCP=0
-if /i "%~1"=="mcp"         set BUILD_BACKEND=0& set BUILD_FRONTEND=0
+if /i "%~1"=="backend"     set BUILD_FRONTEND=0
+if /i "%~1"=="frontend"    set BUILD_BACKEND=0
 if /i "%~1"=="desktop"     set BUILD_DESKTOP=1
 if /i "%~1"=="--with-test" set SKIP_TEST=0
 shift
@@ -45,7 +44,7 @@ echo   HiSi DevTool Build
 echo ========================================================
 echo.
 echo   Root:      %ROOT_DIR%
-echo   Backend=%BUILD_BACKEND%  Frontend=%BUILD_FRONTEND%  MCP=%BUILD_MCP%
+echo   Backend=%BUILD_BACKEND%  Frontend=%BUILD_FRONTEND%
 echo   SkipTest=%SKIP_TEST%
 echo.
 
@@ -55,7 +54,7 @@ echo.
 if not "%BUILD_BACKEND%"=="1" goto :after_backend
 
 echo --------------------------------------------------------
-echo   [1/3] Building Backend (Spring Boot)
+echo   [1/2] Building Backend (Spring Boot)
 echo --------------------------------------------------------
 
 if not exist "%BACKEND_DIR%\pom.xml" (
@@ -97,7 +96,7 @@ if not "%BUILD_FRONTEND%"=="1" goto :after_frontend
 
 echo.
 echo --------------------------------------------------------
-echo   [2/3] Building Frontend (Vue 3 + TypeScript)
+echo   [2/2] Building Frontend (Vue 3 + TypeScript)
 echo --------------------------------------------------------
 
 if not exist "%FRONTEND_DIR%\package.json" (
@@ -133,43 +132,7 @@ popd
 :after_frontend
 
 :: ============================================================
-:: 3. MCP Server (TypeScript)
-:: ============================================================
-if not "%BUILD_MCP%"=="1" goto :after_mcp
-
-echo.
-echo --------------------------------------------------------
-echo   [3/3] Building MCP Server (TypeScript)
-echo --------------------------------------------------------
-
-if not exist "%MCP_DIR%\package.json" (
-    echo   [ERROR] package.json not found at "%MCP_DIR%"
-    set HAS_ERROR=1
-    goto :after_mcp
-)
-
-pushd "%MCP_DIR%"
-
-if not exist "node_modules" (
-    echo   [INFO] Installing dependencies...
-    call npm install --silent
-)
-
-call npm run build
-if !errorlevel! neq 0 (
-    echo   [FAIL] MCP Server build failed!
-    set HAS_ERROR=1
-    popd
-    goto :after_mcp
-)
-
-echo   [OK] MCP Server: dist/
-popd
-
-:after_mcp
-
-:: ============================================================
-:: 4. Collect artifacts into dist/
+:: 3. Collect artifacts into dist/
 :: ============================================================
 echo.
 echo --------------------------------------------------------
@@ -199,16 +162,6 @@ if exist "%FRONTEND_DIR%\dist" (
 )
 :skip_copy_frontend
 
-:: Copy MCP dist
-if not "%BUILD_MCP%"=="1" goto :skip_copy_mcp
-if exist "%MCP_DIR%\dist" (
-    if exist "%DIST_DIR%\mcp-server" rmdir /S /Q "%DIST_DIR%\mcp-server"
-    xcopy /E /I /Q /Y "%MCP_DIR%\dist" "%DIST_DIR%\mcp-server" >nul
-    copy /Y "%MCP_DIR%\package.json" "%DIST_DIR%\mcp-server\" >nul
-    echo   [OK] dist\mcp-server\
-)
-:skip_copy_mcp
-
 :: Copy default config
 if not exist "%DIST_DIR%\config" mkdir "%DIST_DIR%\config"
 if exist "%DIST_DIR%\config\application.yml" goto :skip_copy_config
@@ -219,13 +172,13 @@ if exist "%BACKEND_DIR%\src\main\resources\application.yml" (
 :skip_copy_config
 
 :: ============================================================
-:: 5. Generate start/stop scripts
+:: 4. Generate start/stop scripts
 :: ============================================================
 call :gen_start_script
 call :gen_stop_script
 
 :: ============================================================
-:: 6. Electron Desktop Packaging (optional, use: build-all.bat desktop)
+:: 5. Electron Desktop Packaging (optional, use: build-all.bat desktop)
 :: ============================================================
 if not "%BUILD_DESKTOP%"=="1" goto :after_desktop
 
@@ -244,12 +197,10 @@ if not exist "%DESKTOP_DIR%\package.json" (
 echo   [INFO] Copying artifacts to hisi-desktop/resources...
 if not exist "%DESKTOP_DIR%\resources\backend" mkdir "%DESKTOP_DIR%\resources\backend"
 if not exist "%DESKTOP_DIR%\resources\frontend" mkdir "%DESKTOP_DIR%\resources\frontend"
-if not exist "%DESKTOP_DIR%\resources\mcp-server" mkdir "%DESKTOP_DIR%\resources\mcp-server"
 if not exist "%DESKTOP_DIR%\resources\config" mkdir "%DESKTOP_DIR%\resources\config"
 
 if exist "%DIST_DIR%\hisi-backend.jar" copy /Y "%DIST_DIR%\hisi-backend.jar" "%DESKTOP_DIR%\resources\backend\" >nul
 if exist "%DIST_DIR%\frontend" xcopy /E /I /Q /Y "%DIST_DIR%\frontend" "%DESKTOP_DIR%\resources\frontend" >nul
-if exist "%DIST_DIR%\mcp-server" xcopy /E /I /Q /Y "%DIST_DIR%\mcp-server" "%DESKTOP_DIR%\resources\mcp-server" >nul
 if exist "%DIST_DIR%\config\application.yml" copy /Y "%DIST_DIR%\config\application.yml" "%DESKTOP_DIR%\resources\config\" >nul
 
 pushd "%DESKTOP_DIR%"
@@ -289,7 +240,6 @@ echo.
 echo   dist\
 echo     hisi-backend.jar     Backend fat-jar
 echo     frontend\            Frontend static files
-echo     mcp-server\          MCP Server
 echo     config\
 echo       application.yml    External config (editable)
 echo     start.bat            Start all services
@@ -315,20 +265,14 @@ exit /b 0
     echo echo.
     echo echo   HiSi DevTool Starting...
     echo echo.
-    echo echo [1/2] Starting backend ^(port 8080^)...
+    echo echo [1/1] Starting backend ^(port 8080^)...
     echo start "" /B java %%JAVA_OPTS%% -jar "%%APP_DIR%%hisi-backend.jar" --spring.config.additional-location="file:%%APP_DIR%%config/"
     echo echo [INFO] Waiting for backend...
     echo :wait_loop
     echo timeout /t 2 /nobreak ^>nul
     echo curl -s http://localhost:8080/ ^>nul 2^>^&1
     echo if %%errorlevel%% neq 0 goto :wait_loop
-    echo echo [OK] Backend ready
-    echo echo.
-    echo if exist "%%APP_DIR%%mcp-server\index.js" ^(
-    echo     echo [2/2] Starting MCP Server...
-    echo     start "" /B node "%%APP_DIR%%mcp-server\index.js"
-    echo     echo [OK] MCP Server started
-    echo ^)
+    echo echo [OK] Backend ready ^(MCP tools are served in-process at /mcp^)
     echo echo.
     echo echo   All services started!
     echo echo   Open: http://localhost:8080

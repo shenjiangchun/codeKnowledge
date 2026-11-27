@@ -34,7 +34,9 @@ public class CorsConfig implements WebMvcConfigurer {
                 .excludePathPatterns("/api/auth/**",
                         "/api/search/**",
                         "/api/vector-search/**",
-                        "/api/ram/**");
+                        "/api/ram/**",
+                        // 进程内 MCP 端点：只供本机 pi 进程调用（回环限制见 McpLoopbackFilter）
+                        "/mcp");
     }
 
     @Bean

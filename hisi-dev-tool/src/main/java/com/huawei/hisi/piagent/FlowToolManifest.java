@@ -40,15 +40,18 @@ public final class FlowToolManifest {
             "kg_hotspots", "kg_domains", "kg_service_topology", "kg_blast_radius",
             "kg_api_consumers", "kg_backend_deps", "hybrid_search");
 
-    /** 日志分析用到的 MCP 只读工具。 */
+    /**
+     * 日志分析用到的 MCP 只读工具。
+     * {@code kg_list_projects}：{@code hybrid_search} 的描述要求调用前先用它列出项目，所以带 hybrid_search 的清单都得有它。
+     */
     static final List<String> LOG_MCP = List.of(
-            "hybrid_search", "kg_method_detail", "kg_method_by_class", "kg_root_entries",
+            "hybrid_search", "kg_list_projects", "kg_method_detail", "kg_method_by_class", "kg_root_entries",
             "kg_callees_tree", "kg_entry_points", "kg_downstream", "kg_affecting",
             "kg_bridges", "kg_mybatis_sql", "log_query", "log_report", "log_report_status");
 
-    /** RAM 需求分析用到的 MCP 只读工具。 */
+    /** RAM 需求分析用到的 MCP 只读工具（{@code kg_list_projects} 的缘由同上）。 */
     static final List<String> RAM_MCP = List.of(
-            "hybrid_search", "kg_method_detail", "kg_method_by_class", "kg_callees_tree",
+            "hybrid_search", "kg_list_projects", "kg_method_detail", "kg_method_by_class", "kg_callees_tree",
             "kg_root_entries", "kg_entry_points", "kg_bridges", "kg_mybatis_sql");
 
     /** RAM 对话助手的动作工具：以用户身份发起分析、提交澄清、确认节点（每次运行带用户令牌）。 */
@@ -61,13 +64,17 @@ public final class FlowToolManifest {
      * 不属于只读清单。
      */
     static final List<String> CHAT_MCP = List.of(
-            "hybrid_search", "kg_method_detail", "kg_method_by_class", "kg_root_entries",
+            "hybrid_search", "kg_list_projects", "kg_method_detail", "kg_method_by_class", "kg_root_entries",
             "kg_callees_tree", "kg_entry_points", "kg_bridges", "kg_dashboard", "kg_hotspots",
             "kg_domains", "kg_service_topology", "kg_blast_radius", "kg_api_consumers",
             "log_query", "log_report", "log_report_status",
             "apm_list_traces", "apm_get_trace", "apm_get_report");
 
-    private static final String MCP_PREFIX = "mcp__hisi_mcp_server__";
+    /**
+     * 进程内 MCP 服务的工具在 pi 里的前缀：pi 把服务名里除字母、数字、下划线以外的字符归一成下划线
+     * （{@code hisi-mcp-inproc → hisi_mcp_inproc}）。
+     */
+    private static final String MCP_PREFIX = "mcp__" + PiAgentInstaller.MCP_SERVER_NAME.replace('-', '_') + "__";
 
     private final String flow;
     private final Set<String> tools = new LinkedHashSet<>();

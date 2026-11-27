@@ -29,7 +29,7 @@ const oneFingerGuide = ref({
     { name: 'kg-diagnose', desc: '日志诊断，定位根因', cmd: '/kg-diagnose 分析这个错误日志的根因' }
   ],
   prerequisites: [
-    'MCP hisi-mcp-server 已配置并连接',
+    '后端 MCP 服务已接入（后端自带，地址 http://localhost:8080/mcp）',
     '项目已执行知识图谱生成',
     'Neo4j 和后端服务正常运行'
   ],

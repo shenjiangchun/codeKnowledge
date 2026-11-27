@@ -25,6 +25,17 @@ spring:
       - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration
       - org.springframework.ai.model.openai.autoconfigure.OpenAiImageAutoConfiguration
       - org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration
+  # 进程内 MCP 服务端（pi 经 streamable HTTP 连接；只监听本机回环——见 McpLoopbackFilter）
+  ai:
+    mcp:
+      server:
+        enabled: true
+        name: hisi-mcp-inproc
+        version: 1.0.0
+        type: SYNC
+        protocol: STREAMABLE
+        streamable-http:
+          mcp-endpoint: /mcp
   # 本机未入库的覆盖配置（endpoint/apiKey 等），远端部署同样用 application-local.yml
   config:
     import:
@@ -351,8 +362,7 @@ piagent:
   # 模型网关（Anthropic 协议）
   model-base-url: http://1.95.145.190:8888
   model-id: deepseek-v4-pro-cc
-  # hisi-mcp-server 的 dist 入口（留空自动探测 ../hisi-mcp-server，缺失或源码更新时启动即自动 npm ci + build）
-  mcp-dist-path: ""
+  # MCP 工具由后端进程内的 Spring 原生 MCP 服务端提供（/mcp），不再有独立的 Node 版 MCP 服务与启动时构建
   # 每个流的每次模型调用都是一个 pi 进程：几个流并行时都要占槽位
   max-concurrent-processes: 4
   deadline-minutes: 60

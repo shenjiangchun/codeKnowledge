@@ -32,13 +32,23 @@ class PiAgentInstallerTest {
     Path dir;
 
     @Test
-    @DisplayName("mcp.json 的服务条目只有启动命令：不写 env，更不能有环境变量引用")
-    void mcpServerEntryHasOnlyCommandAndArgs() {
-        Map<String, Object> entry = PiAgentInstaller.mcpServerEntry(Path.of("D:/x/hisi-mcp-server/dist/index.js"));
+    @DisplayName("只读配置的 MCP 条目只有 type 与 url：绝不带令牌请求头（pi 解析不到会让整个服务连不上）")
+    void readOnlyMcpEntryNeverCarriesTheTokenHeader() {
+        Map<String, Object> entry = PiAgentInstaller.inprocServerEntry("http://localhost:8080/mcp", false);
 
-        assertThat(entry.keySet()).containsExactlyInAnyOrder("command", "args");
-        assertThat(entry.toString()).as("pi 把空值当未设置且不支持默认值，只读流不带令牌时引用会让 MCP 连接失败")
+        assertThat(entry.keySet()).containsExactlyInAnyOrder("type", "url");
+        assertThat(entry.get("url")).isEqualTo("http://localhost:8080/mcp");
+        assertThat(entry.toString()).as("只读流不带令牌，任何环境变量引用都会让 MCP 服务连接失败")
                 .doesNotContain("${");
+    }
+
+    @Test
+    @DisplayName("带令牌的配置目录：MCP 条目带令牌请求头的环境变量引用，磁盘上不出现真实令牌")
+    void actMcpEntryCarriesOnlyATokenReference() {
+        Map<String, Object> entry = PiAgentInstaller.inprocServerEntry("http://localhost:8080/mcp", true);
+
+        assertThat(entry.keySet()).containsExactlyInAnyOrder("type", "url", "headers");
+        assertThat(entry.get("headers")).isEqualTo(Map.of("X-Scope-Token", "${HISI_SCOPE_TOKEN}"));
     }
 
     @Test

@@ -89,7 +89,6 @@ run_test "0.2 projects/list" GET "/api/projects/list" "200"
 run_test "0.3 scan-git-repos" GET "/api/projects/scan-git-repos" "200"
 run_test "0.4 diagnosis/health" GET "/api/diagnosis/health" "200 500"
 run_test "0.5 dialog/health" GET "/api/dialog/health" "200 500"
-run_test "0.6 mcp/info" GET "/api/mcp/info" "200 500"
 run_test "0.7 skills/list" GET "/api/skills/list" "200"
 echo ""
 
