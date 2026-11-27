@@ -12,8 +12,9 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-
 import org.springframework.web.servlet.ModelAndView;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -125,6 +126,20 @@ public class GlobalExceptionHandler {
                 request.getMethod(), request.getRequestURI(), safeQuery(request), ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.error(500, "服务内部错误: " + ex.getMessage()));
+    }
+
+    /**
+     * 接口不存在：返回 404，而不是落进兜底的 500「服务异常」。
+     *
+     * <p>Spring 找不到对应处理器时，请求会落到静态资源处理器并抛 {@link NoResourceFoundException}
+     * （或 {@link NoHandlerFoundException}）。这是客户端调错了地址，不是服务端故障：
+     * 以前它被兜底 handler 包成 500，排障时会把「接口没实现」误判成「服务挂了」，还在错误日志里刷 ERROR。
+     */
+    @ExceptionHandler({NoResourceFoundException.class, NoHandlerFoundException.class})
+    public ResponseEntity<ApiResponse<Void>> handleNoResource(Exception ex, HttpServletRequest request) {
+        log.warn("[NotFound] {} {}", request.getMethod(), request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.error(404, "接口不存在: " + request.getRequestURI()));
     }
 
     /**
