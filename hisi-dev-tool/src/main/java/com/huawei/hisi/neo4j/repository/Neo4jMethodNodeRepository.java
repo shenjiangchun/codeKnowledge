@@ -156,11 +156,13 @@ public interface Neo4jMethodNodeRepository extends Neo4jRepository<MethodNode, S
     );
 
     /**
-     * [诊断] 检查向量索引的配置信息
+     * [诊断] 检查向量索引的配置信息。
+     * SQL 那个索引名用 sql_node_vector_index——SQL 向量检索（Neo4jSqlNodeRepository）实际查询的就是它；
+     * sql_vector_index 是已废弃的旧名（Neo4jInitializer 启动时会 DROP），查它永远得到空。
      */
     @Query("""
         SHOW INDEXES YIELD name, type, state, options
-        WHERE name IN ['method_description_vector_index', 'method_code_vector_index', 'sql_vector_index']
+        WHERE name IN ['method_description_vector_index', 'method_code_vector_index', 'sql_node_vector_index']
         RETURN {name: name, type: type, state: state, options: options} AS info
         """)
     List<Map<String, Object>> diagnosticCheckVectorIndexes();

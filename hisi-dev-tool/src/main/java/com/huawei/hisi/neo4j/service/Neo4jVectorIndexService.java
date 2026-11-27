@@ -33,6 +33,19 @@ public class Neo4jVectorIndexService {
     private static final int INDEX_ONLINE_TIMEOUT_S = 120;
 
     /**
+     * 本服务负责「创建并等待上线」的向量索引（label + property；维度运行时取自 EmbeddingService）。
+     *
+     * <p>SQL 向量索引不在这里，由 {@code Neo4jInitializer} 管理：同 label + property 的第二个向量索引
+     * 会被 Neo4j 的等价索引限制静默忽略（{@code CREATE … IF NOT EXISTS} 不报错也不创建）。
+     * 以前这里还建一个同 label+property 的 {@code sql_vector_index}，与 Initializer 建的
+     * {@code sql_node_vector_index} 每次启动互相挤掉对方：谁后建谁 no-op，本服务轮询不到自己那个就等满
+     * 120 秒，把 {@code vectorIndexAvailable} 拖成 false，全部向量检索降级成全表扫描。
+     */
+    static final List<VectorIndexConfig> MANAGED_INDEXES = List.of(
+            new VectorIndexConfig("method_description_vector_index", "Method", "descriptionEmbedding", 0),
+            new VectorIndexConfig("method_code_vector_index", "Method", "codeEmbedding", 0));
+
+    /**
      * 向量索引配置（启动时根据 EmbeddingService 维度动态构建）
      */
     private List<VectorIndexConfig> vectorIndexes;
@@ -83,11 +96,11 @@ public class Neo4jVectorIndexService {
         embeddingDimension = embeddingService.getEmbeddingDimension();
         log.info("当前 Embedding 维度: {}", embeddingDimension);
 
-        vectorIndexes = List.of(
-            new VectorIndexConfig("method_description_vector_index", "Method", "descriptionEmbedding", embeddingDimension),
-            new VectorIndexConfig("method_code_vector_index", "Method", "codeEmbedding", embeddingDimension),
-            new VectorIndexConfig("sql_vector_index", "Sql", "sqlEmbedding", embeddingDimension)
-        );
+        // 清单只有 MANAGED_INDEXES 一处；维度此时才已知，按它填入
+        int dim = embeddingDimension;
+        vectorIndexes = MANAGED_INDEXES.stream()
+                .map(c -> new VectorIndexConfig(c.indexName(), c.label(), c.property(), dim))
+                .toList();
 
         try {
             // 1. 检测 Neo4j 版本
@@ -383,9 +396,10 @@ public class Neo4jVectorIndexService {
     }
 
     /**
-     * 向量索引配置
+     * 向量索引配置。包私有：回归测试要读 {@link #MANAGED_INDEXES} 的 label/property，
+     * 与 Neo4jInitializer 管理的索引做「不得同 label+property」的一致性检查。
      */
-    private record VectorIndexConfig(
+    record VectorIndexConfig(
         String indexName,
         String label,
         String property,

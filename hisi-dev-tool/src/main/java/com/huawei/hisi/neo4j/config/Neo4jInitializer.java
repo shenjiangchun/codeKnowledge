@@ -159,6 +159,9 @@ public class Neo4jInitializer {
         "DROP INDEX entrypoint_pub_path IF EXISTS",
         "DROP INDEX sql_pub_path IF EXISTS",
         "DROP INDEX service_pub_path IF EXISTS",
+        // 已废弃的旧 SQL 向量索引（与 sql_node_vector_index 同 label+property）。必须保留这条 DROP：
+        // 它还在的时候，上面 reconcileVectorIndexes 建 sql_node_vector_index 会被 Neo4j 的等价索引限制
+        // 静默忽略——老的库靠这条语句才能迁移过来；新库上是幂等的空操作。
         "DROP INDEX sql_vector_index IF EXISTS",
         "DROP CONSTRAINT service_name_unique IF EXISTS"
     );
@@ -298,7 +301,16 @@ public class Neo4jInitializer {
                 Integer actual = actualDimensions.get(spec.name());
                 if (actual == null) {
                     session.run(spec.createCypher(expectedDimension)).consume();
-                    log.info("[Neo4jInitializer] 向量索引已创建: {} (dim={})", spec.name(), expectedDimension);
+                    // CREATE … IF NOT EXISTS 不报错不等于建成了：同 label+property 已有另一个向量索引时
+                    // （Neo4j 的等价索引限制），这条语句是静默空操作。所以回查一次，按实际情况记日志，
+                    // 不能无条件打印「已创建」——那会在索引根本不存在时让人以为一切正常。
+                    if (readVectorIndexDimensions(session).containsKey(spec.name())) {
+                        log.info("[Neo4jInitializer] 向量索引已创建: {} (dim={})", spec.name(), expectedDimension);
+                    } else {
+                        log.warn("[Neo4jInitializer] 向量索引未创建成功（CREATE 未报错但索引不存在，通常是同 label+property "
+                                + "已有另一个向量索引）: {} (label={}, property={})，请人工核对",
+                                spec.name(), spec.label(), spec.property());
+                    }
                 } else if (actual != expectedDimension) {
                     // 维度不一致：不做破坏性 DROP 重建，仅告警保留现状，交由人工核对（防御性加固）
                     log.warn("[Neo4jInitializer] 向量索引维度不一致，保留现状未重建: {} ({} -> {})，请人工核对",
