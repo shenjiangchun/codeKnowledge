@@ -17,7 +17,7 @@
  * - Manual-path fallback toggle for paths outside the scanned roots
  * - appId options merged with project options in a single dropdown
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAppStore } from '@/stores/app'
@@ -32,7 +32,6 @@ const router = useRouter()
 const appStore = useAppStore()
 
 const statusQuestion = ref<string>('')
-const projectPaths = ref<string[]>([])
 const manualInput = ref<string>('')
 const projects = ref<GitRepositoryInfo[]>([])
 const loadingProjects = ref<boolean>(false)
@@ -82,17 +81,23 @@ const allOptions = computed<ProjectOption[]>(() => {
 // 选择值（appId:xxx 或 path:xxx 格式）
 const selectedValues = ref<string[]>([])
 
-// 从 selectedValues 解析出实际的 projectPaths
-watch(selectedValues, (vals) => {
+// 手动输入的路径不在下拉选项里，单独记录
+const manualPaths = ref<string[]>([])
+
+// 项目路径 = 下拉选项解析出的路径 + 手动输入的路径
+const projectPaths = computed<string[]>(() => {
   const paths = new Set<string>()
-  for (const v of vals) {
+  for (const v of selectedValues.value) {
     const opt = allOptions.value.find(o => o.value === v)
     if (opt) {
       opt.paths.forEach(p => paths.add(p))
     }
   }
-  projectPaths.value = [...paths]
-}, { immediate: true })
+  for (const p of manualPaths.value) {
+    paths.add(p)
+  }
+  return [...paths]
+})
 
 async function loadGroups(): Promise<void> {
   loadingGroups.value = true
@@ -113,8 +118,8 @@ function addManualPath(): void {
     ElMessage.warning('该路径已添加')
     return
   }
-  projectPaths.value = [...projectPaths.value, path]
-  // 同步添加到 selectedValues
+  manualPaths.value = [...manualPaths.value, path]
+  // 同步到 selectedValues：只用于下拉里显示已选标签，路径以 manualPaths 为准
   selectedValues.value = [...selectedValues.value, `path:${path}`]
   manualInput.value = ''
 }
@@ -158,8 +163,7 @@ async function loadProjects(): Promise<void> {
   // Pre-populate from app store if available.
   const fromStore = appStore.selectedProjects?.map(p => p.path).filter(Boolean) as string[]
   if (fromStore && fromStore.length > 0 && projectPaths.value.length === 0) {
-    projectPaths.value = fromStore
-    // 同步到 selectedValues
+    // 同步到 selectedValues；路径解析统一走 projectPaths 计算属性
     selectedValues.value = fromStore.map(p => `path:${p}`)
   }
 }

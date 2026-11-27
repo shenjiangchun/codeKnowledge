@@ -38,6 +38,12 @@ export function useRamChatWebSocket() {
       connected.value = true
       reconnectAttempts.value = 0
       startHeartbeat()
+      // 断线期间可能错过本轮剩余事件：重连成功后从 REST 拉一次最新事件，
+      // 避免界面停在「思考中...」（后端不会给重连的 WS 补发历史事件）
+      const sid = store.currentSessionId
+      if (sid) {
+        store.selectSession(sid).catch(() => undefined)
+      }
     }
 
     ws.value.onmessage = (event) => {
