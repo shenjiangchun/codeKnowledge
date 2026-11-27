@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -159,6 +160,30 @@ public class PiFlowClient {
         return event;
     }
 
+    /**
+     * 系统提示词不放进命令行，而是写进会话目录里的文件、只把路径传给 pi
+     * （{@code --system-prompt <text|path>}：给出已存在文件的路径时读取其内容，语义同为「替换默认提示词」）。
+     *
+     * <p>原因：Windows 上 {@link ProcessBuilder} 把 argv 拼成命令行时，对含双引号的参数转义不完整——
+     * 提示词正文里的 {@code "} 会打乱参数边界，把其中一段泄漏成独立参数，被 pi 当成未知选项直接退出
+     * （真机：技术方案节点的提示词含 Mermaid 示例，pi 报 {@code Unknown option: -->|是|}，exitValue=1）。
+     * 是否触发取决于双引号出现的位置，属于定时炸弹；走文件则与内容完全无关。
+     * 空提示词保持原样直传，不产生文件。
+     */
+    static String systemPromptArg(Path sessionDir, String systemPrompt) {
+        if (systemPrompt == null || systemPrompt.isEmpty()) {
+            return systemPrompt == null ? "" : systemPrompt;
+        }
+        Path file = sessionDir.resolve("system-prompt.md");
+        try {
+            Files.createDirectories(sessionDir);
+            Files.writeString(file, systemPrompt, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new IllegalStateException("无法写入系统提示词文件: " + file, e);
+        }
+        return file.toString();
+    }
+
     private static void notifyListener(Consumer<Map<String, Object>> listener, Map<String, Object> event) {
         if (listener == null) {
             return;
@@ -181,7 +206,7 @@ public class PiFlowClient {
         command.add("--session-id"); command.add(sessionId);
         command.add("--session-dir"); command.add(sessionDir.toString());
         command.add("--model"); command.add(modelRef(manifest));
-        command.add("--system-prompt"); command.add(systemPrompt);
+        command.add("--system-prompt"); command.add(systemPromptArg(sessionDir, systemPrompt));
         command.addAll(manifest.cliArgs());
         if (skillPaths != null) {
             for (Path skill : skillPaths) {
