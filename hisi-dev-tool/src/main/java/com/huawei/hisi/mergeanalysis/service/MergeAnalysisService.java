@@ -6,7 +6,9 @@ import com.huawei.hisi.ram.model.AgentSession;
 import com.huawei.hisi.ram.model.EventType;
 import com.huawei.hisi.ram.model.SessionStatus;
 import com.huawei.hisi.ram.model.SessionType;
+import com.huawei.hisi.agentbase.AgentRegistry;
 import com.huawei.hisi.workflow.DagExecutor;
+import com.huawei.hisi.workflow.ExecutionPolicy;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +31,14 @@ public class MergeAnalysisService {
     private final ObjectMapper objectMapper;
 
     private final ExecutorService asyncExecutor = Executors.newFixedThreadPool(2);
+
+    /**
+     * 执行策略取自 {@code AgentRegistry} 里 {@code merge-analysis} 的声明（{@code skipHitl=true}）。
+     * 合入分析是一次性分析流，页面上没有节点间确认入口：此前走 {@link DagExecutor#run(List, long, Map)}
+     * 的无策略重载，拿到默认策略开了确认门，非首次运行时每个非末位节点后都会停在 WAITING_HITL，且无从确认。
+     */
+    private static final ExecutionPolicy EXECUTION_POLICY = ExecutionPolicy.fromMetadata(
+            AgentRegistry.workflow("merge-analysis").map(w -> w.policy()).orElse(Map.of()));
 
     public MergeAnalysisService(AgentSessionRepository sessionRepository,
                                 AgentEventRepository eventRepository,
@@ -81,7 +91,7 @@ public class MergeAnalysisService {
                 }
 
                 log.info("[MergeAnalysis] Session {} — starting DAG execution", sessionId);
-                dagExecutor.run(dagNodes.nodes(), sessionId, input);
+                dagExecutor.run(dagNodes.nodes(), sessionId, input, EXECUTION_POLICY);
                 log.info("[MergeAnalysis] Session {} — completed", sessionId);
 
             } catch (Exception e) {
@@ -114,7 +124,7 @@ public class MergeAnalysisService {
                 // Merge-analysis doesn't have clarify rounds, but we keep the pattern for consistency
 
                 log.info("[MergeAnalysis] Session {} — rerunning from node {} with projectPath={}", sessionId, nodeName, projectPath);
-                dagExecutor.run(dagNodes.nodes(), sessionId, input);
+                dagExecutor.run(dagNodes.nodes(), sessionId, input, EXECUTION_POLICY);
                 log.info("[MergeAnalysis] Session {} — rerun completed", sessionId);
 
             } catch (Exception e) {

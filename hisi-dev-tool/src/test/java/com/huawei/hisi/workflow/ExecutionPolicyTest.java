@@ -9,8 +9,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 执行策略单测：默认策略保持既有 HITL 门行为；metadata 派生策略可关闭门。
- * 既有调用方（RAM / MergeAnalysis / 3-arg run）零改动、零行为变化由本类与
- * {@code DagExecutorTest}（真实 SQLite 集成）共同保障。
+ * 默认策略（3 参 run）与 RAM 的行为不变由本类与 {@code DagExecutorTest}（真实 SQLite 集成）保障。
+ * 合入分析已改为显式传入其注册表声明（{@code skipHitl=true}），不再走 3 参 run——
+ * 见 {@code MergeAnalysisHitlGateRegressionTest}。
  */
 class ExecutionPolicyTest {
 

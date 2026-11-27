@@ -102,9 +102,9 @@ public final class AgentRegistry {
                 Map.of("skipHitl", true, "emitNodeEvents", true),
                 "解码 → 证据收集 → 根因探查 → 校验 → 综合 → 报告");
         workflow("merge-analysis", "合并影响分析",
-                List.of("diff", "impact", "test_scope", "report"),
+                List.of("diff_extract", "impact_analysis", "test_scope"),
                 Map.of("skipHitl", true, "emitNodeEvents", true),
-                "diff → 影响面 → 测试范围 → 报告");
+                "diff 提取 → 影响面 → 测试范围");
     }
 
     private static void react(String key, String flow, List<String> skills,

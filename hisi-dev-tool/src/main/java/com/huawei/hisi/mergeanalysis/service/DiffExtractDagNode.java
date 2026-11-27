@@ -4,11 +4,14 @@ import com.huawei.hisi.mergeanalysis.model.DiffResult;
 import com.huawei.hisi.workflow.ClarifyRequiredException;
 import com.huawei.hisi.workflow.DagNode;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/** 注册为 bean：合入分析的节点链才能被 {@code WorkflowRegistry} 解析，专用入口与通用 /v2/workflow 入口同源。 */
 @Slf4j
+@Component
 public class DiffExtractDagNode implements DagNode {
 
     private final DiffExtractService diffExtractService;

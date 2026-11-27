@@ -90,10 +90,10 @@ class AgentRegistryTest {
     void nodeNamesComeFromKnownSets() {
         List<String> stageKeys = List.of("evidence", "proposal", "spec", "tasks", "develop", "tests", "e2e", "ship");
         List<String> knownBeans = List.of("arch_evidence_collect", "clarify", "impact", "implement", "verify",
-                "tech_plan", "project_overview", "phase2_analysis");
+                "tech_plan", "project_overview", "phase2_analysis",
+                "diff_extract", "impact_analysis", "test_scope");
         // 已声明、尚未接线的工作流节点（迁移到对应节点时逐个替换）
-        List<String> plannedNodes = List.of("decode", "collect", "hypothesis", "synthesis", "report",
-                "diff", "test_scope");
+        List<String> plannedNodes = List.of("decode", "collect", "hypothesis", "synthesis", "report");
         for (AgentRegistry.Workflow workflow : AgentRegistry.workflows().values()) {
             for (String node : workflow.nodes()) {
                 assertThat(stageKeys.contains(node) || knownBeans.contains(node) || plannedNodes.contains(node)
