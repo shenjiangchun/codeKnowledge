@@ -168,8 +168,12 @@ async function loadProjects(): Promise<void> {
   // Pre-populate from app store if available.
   const fromStore = appStore.selectedProjects?.map(p => p.path).filter(Boolean) as string[]
   if (fromStore && fromStore.length > 0 && projectPaths.value.length === 0) {
-    // 同步到 selectedValues；路径解析统一走 projectPaths 计算属性
-    selectedValues.value = fromStore.map(p => `path:${p}`)
+    // 从全局选中的项目恢复。路径必须记进 manualPaths：store 里的路径（正斜杠）与后端扫描出的
+    // 下拉选项路径（反斜杠）未必逐字相等，只靠 selectedValues 从下拉解析会得到 0 个项目——
+    // 页面显示着已选标签，提交时却一个项目都不带。
+    manualPaths.value = [...manualPaths.value, ...fromStore]
+    // 同步到 selectedValues，仅用于在下拉里显示已选标签
+    selectedValues.value = [...selectedValues.value, ...fromStore.map(p => `path:${p}`)]
   }
 }
 

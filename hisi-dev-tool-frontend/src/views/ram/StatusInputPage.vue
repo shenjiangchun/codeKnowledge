@@ -163,8 +163,10 @@ async function loadProjects(): Promise<void> {
   // Pre-populate from app store if available.
   const fromStore = appStore.selectedProjects?.map(p => p.path).filter(Boolean) as string[]
   if (fromStore && fromStore.length > 0 && projectPaths.value.length === 0) {
-    // 同步到 selectedValues；路径解析统一走 projectPaths 计算属性
-    selectedValues.value = fromStore.map(p => `path:${p}`)
+    // 从全局选中的项目恢复。路径必须记进 manualPaths（原因见 InputPage 同处注释）：
+    // 只靠 selectedValues 从下拉解析，路径写法不一致时会得到 0 个项目
+    manualPaths.value = [...manualPaths.value, ...fromStore]
+    selectedValues.value = [...selectedValues.value, ...fromStore.map(p => `path:${p}`)]
   }
 }
 
