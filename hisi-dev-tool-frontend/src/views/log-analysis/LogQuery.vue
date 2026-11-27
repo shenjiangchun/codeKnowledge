@@ -424,10 +424,13 @@
                 {{ formatReportTime(row.updatedAt) }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="280">
+            <el-table-column label="操作" width="360">
               <template #default="{ row }">
                 <el-button type="primary" link size="small" @click="viewReportDetail(row)" :disabled="row.status !== 'completed'">
                   查看报告
+                </el-button>
+                <el-button type="info" link size="small" @click="viewReportSnapshot(row)">
+                  查看快照
                 </el-button>
                 <el-button type="warning" link size="small" @click="handleReanalyzeReport(row)" :disabled="row.status === 'pending' || row.status === 'processing'" :loading="row.reanalyzing">
                   重新分析
@@ -636,8 +639,8 @@
       </div>
     </el-dialog>
 
-    <!-- 报告详情弹窗 -->
-    <el-dialog v-model="reportDetailVisible" title="分析报告详情" width="800px">
+    <!-- 报告快照弹窗 -->
+    <el-dialog v-model="reportDetailVisible" title="报告快照" width="800px">
       <div class="report-detail" v-if="selectedReport">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="报告ID">{{ selectedReport.reportId }}</el-descriptions-item>
@@ -1029,7 +1032,14 @@ const clearAllPollingTimers = () => {
   pollingTimers.clear()
 }
 
-const viewReportDetail = async (report: Report) => {
+/** 查看报告：跳转到完整报告详情页（含五节点分析时间线） */
+const viewReportDetail = (report: Report) => {
+  if (!report.reportId) return
+  router.push(`/log-analysis/report/${report.reportId}`)
+}
+
+/** 查看快照：不离开当前页，弹窗展示报告摘要与根因、修复建议 */
+const viewReportSnapshot = async (report: Report) => {
   try {
     const res = await logAnalysisApi.getReport(report.reportId)
     selectedReport.value = res
