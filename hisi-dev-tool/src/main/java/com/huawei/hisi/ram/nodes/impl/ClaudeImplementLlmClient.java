@@ -7,10 +7,6 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * ChatClient-backed {@link ImplementLlmClient} — replaces raw
- * {@link RamClaudeJsonClient} with Spring AI {@link ChatClient}.
- */
-/**
  * 实现方案阶段的提示词与结果归一化（基类）。执行方式由子类决定：当前是 pi 会话（{@link PiImplementLlmClient}）。
  */
 @Slf4j

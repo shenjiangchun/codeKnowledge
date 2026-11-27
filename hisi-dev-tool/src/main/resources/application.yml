@@ -376,11 +376,8 @@ piagent:
     compaction-reserve-tokens: 32000
     compaction-keep-recent-tokens: 20000
   # 每流开关。arch-react 是 pi 的唯一实现（手动 ReAct 循环已删除）；
-  # one-shot 是各业务流的一次性结构化调用（AgentLlmClient）经 pi 执行的总开关；
-  # 其余流逐流迁移、验证后打开
+  # one-shot 是各业务流的一次性结构化调用（AgentLlmClient）经 pi 执行的总开关
+  # （也是唯一实现）。会话型流的迁移开关在接线前不预置。
   flows:
     arch-react: true
     one-shot: true
-    workbench-sdd: false
-    log-v2: false
-    ram: false

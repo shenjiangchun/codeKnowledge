@@ -7,7 +7,8 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 
 /**
- * pi 基建配置。每流一个开关（piagent.flows.*），关闭时走老 LLM 客户端实现，可独立回退。
+ * pi 基建配置。两个已接线的开关：{@code piagent.flows.arch-react}（pi 是唯一实现）
+ * 与 {@code piagent.flows.one-shot}（各业务流一次性结构化调用经 pi 执行的总开关，也是唯一实现）。
  */
 @Data
 @Component
@@ -55,13 +56,10 @@ public class PiAgentProperties {
      */
     private String oneShotThinkingLevel = "off";
 
-    /** 每流开关：开启后该流的 LLM 层走 pi。arch-react 已是唯一实现（手动循环已删除），默认开启。 */
+    /** 每流开关：arch-react 已是 pi 唯一实现（手动循环已删除）；one-shot 是各业务流结构化调用经 pi 的总开关。 */
     private Map<String, Boolean> flows = Map.of(
             "arch-react", true,
-            "one-shot", true,
-            "workbench-sdd", false,
-            "log-v2", false,
-            "ram", false);
+            "one-shot", true);
 
     /** 通用上下文管理：所有流提交给 pi 的提示词在发出前都先做预算检查与保形压缩（见 {@link com.huawei.hisi.piagent.context.PromptBudget}）。 */
     private Context context = new Context();

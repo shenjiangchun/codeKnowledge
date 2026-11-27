@@ -10,7 +10,7 @@ import StageDots from './StageDots.vue'
 import StagePanel from './StagePanel.vue'
 import { workbenchApi } from '@/api/workbench'
 import { useFixRunStream } from '@/composables/useFixRunStream'
-import type { FixRunDetail, WorkbenchItem } from '@/types/workbench'
+import type { WorkbenchItem } from '@/types/workbench'
 
 const props = defineProps<{ runId: number; item: WorkbenchItem }>()
 const emit = defineEmits<{ (e: 'close'): void }>()

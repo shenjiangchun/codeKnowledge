@@ -4,11 +4,9 @@ import com.huawei.hisi.agentbase.AgentRegistry;
 import com.huawei.hisi.agentbase.ReActSession;
 import com.huawei.hisi.agentflow.AgentFlowCancelRegistry;
 import com.huawei.hisi.archdiagnosis.service.ArchDiagramGenerator;
-import com.huawei.hisi.knowledgegraph.aggregation.llm.DeepseekJsonClient;
-import com.huawei.hisi.ram.contract.SchemaValidator;
+import com.huawei.hisi.workflow.DagNode;
 import com.huawei.hisi.workflow.NodeEventSink;
 import com.huawei.hisi.workflow.agent.ArchAgentToolRegistry;
-import com.huawei.hisi.workflow.agent.ObservationTrimmer;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.file.Files;
@@ -27,7 +25,7 @@ import java.util.UUID;
  * 图引用校验、降级模板复用父类；查证方法的领域知识在 {@code architecture-review} skill 里。
  */
 @Slf4j
-public class PiReActAgentNode extends com.huawei.hisi.workflow.nodes.ArchReActAgentNode {
+public class PiReActAgentNode extends com.huawei.hisi.workflow.nodes.ArchReActAgentNode implements DagNode {
 
     /** 与 v1 节点同名：事件、检查点、从节点重跑对前端保持一致。 */
     public static final String NODE_NAME = "arch_react_agent";
@@ -38,16 +36,11 @@ public class PiReActAgentNode extends com.huawei.hisi.workflow.nodes.ArchReActAg
     private final ReActSession session;
     private final AgentFlowCancelRegistry cancelRegistry;
 
-    public PiReActAgentNode(DeepseekJsonClient llm,
-                            ArchAgentToolRegistry registry,
-                            ObservationTrimmer trimmer,
-                            SchemaValidator validator,
+    public PiReActAgentNode(ArchAgentToolRegistry registry,
                             ArchDiagramGenerator diagramGenerator,
-                            int maxSteps,
-                            int observationMaxChars,
                             ReActSession session,
                             AgentFlowCancelRegistry cancelRegistry) {
-        super(llm, registry, trimmer, validator, diagramGenerator, maxSteps, observationMaxChars);
+        super(registry, diagramGenerator);
         this.session = session;
         this.cancelRegistry = cancelRegistry;
     }
@@ -60,6 +53,11 @@ public class PiReActAgentNode extends com.huawei.hisi.workflow.nodes.ArchReActAg
     @Override
     public String agentId() {
         return "arch-react-agent-pi";
+    }
+
+    @Override
+    public Map<String, Object> execute(Map<String, Object> input) {
+        return execute(input, msg -> {});
     }
 
     @Override

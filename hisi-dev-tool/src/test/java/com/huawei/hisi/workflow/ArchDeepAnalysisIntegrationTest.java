@@ -1,19 +1,20 @@
 package com.huawei.hisi.workflow;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.huawei.hisi.agentbase.AgentRegistry;
+import com.huawei.hisi.agentbase.ReActSession;
+import com.huawei.hisi.agentflow.AgentFlowCancelRegistry;
 import com.huawei.hisi.archdiagnosis.service.ArchDiagnosisReportService;
 import com.huawei.hisi.archdiagnosis.service.ArchDiagramGenerator;
 import com.huawei.hisi.archdiagnosis.service.ArchSourceScanService;
-import com.huawei.hisi.knowledgegraph.aggregation.llm.DeepseekJsonClient;
 import com.huawei.hisi.knowledgegraph.controller.KnowledgeGraphController;
-import com.huawei.hisi.ram.contract.SchemaValidator;
 import com.huawei.hisi.ram.model.SessionStatus;
 import com.huawei.hisi.ram.repository.AgentEventRepository;
 import com.huawei.hisi.ram.repository.AgentSessionRepository;
 import com.huawei.hisi.workflow.agent.ArchAgentToolRegistry;
-import com.huawei.hisi.workflow.agent.ObservationTrimmer;
 import com.huawei.hisi.workflow.nodes.ArchEvidenceCollectNode;
-import com.huawei.hisi.workflow.nodes.ArchReActAgentNode;
+import com.huawei.hisi.workflow.v2.PiReActAgentNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -35,8 +37,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 两节点真实链路集成测试：证据收集 → ReAct 智能体（真实 react-step schema 校验），
- * 经 {@link DagExecutor} 线性执行后会话 DONE，末节点输出含四段式 markdownReport。
+ * 两节点真实链路集成测试：证据收集 → pi ReAct 智能体（{@code arch-review} 统一声明，
+ * ReActSession 以 mock 会话回放 final_answer），经 {@link DagExecutor} 线性执行后
+ * 会话 DONE，末节点输出含四段式 markdownReport。
  *
  * <p>本测试直接暴露两节点间的数据契约（evidencePack 透传给 ReAct 节点），
  * 防止单节点各自为政导致 {@code previousOutput} 整体替换后契约断裂。</p>
@@ -117,17 +120,33 @@ class ArchDeepAnalysisIntegrationTest {
     @Mock
     private KnowledgeGraphController kgController;
     @Mock
-    private DeepseekJsonClient reactLlm;
+    private ReActSession reactSession;
+    @Mock
+    private AgentFlowCancelRegistry cancelRegistry;
     @Mock
     private AgentEventRepository eventRepo;
     @Mock
     private AgentSessionRepository sessionRepo;
 
     private DagExecutor executor;
+    private final ObjectMapper mapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
         executor = new DagExecutor(eventRepo, sessionRepo, new ObjectMapper());
+    }
+
+    private PiReActAgentNode piNode() {
+        return new PiReActAgentNode(
+                new ArchAgentToolRegistry(kgController, new ArchSourceScanService()),
+                new ArchDiagramGenerator(kgController), reactSession, cancelRegistry);
+    }
+
+    private void replyWith(String finalAnswerJson) throws Exception {
+        Map<String, Object> json = mapper.readValue(finalAnswerJson, new TypeReference<>() {});
+        when(reactSession.run(any(AgentRegistry.ReactAgent.class), anyString(), any(),
+                anyString(), anyString(), any(), any(), any()))
+                .thenReturn(ReActSession.Result.of("", json, null));
     }
 
     private static Map<String, Object> report() {
@@ -141,17 +160,14 @@ class ArchDeepAnalysisIntegrationTest {
 
     @Test
     @DisplayName("两节点完整链路：会话 DONE，末节点输出含四段式 markdownReport")
-    void fullPipelineReachesDoneWithReport() {
+    void fullPipelineReachesDoneWithReport() throws Exception {
         when(reportService.generate(anyList(), anyString(), eq(false))).thenReturn(report());
-        when(reactLlm.chatJson(anyString(), anyString(),
-                org.mockito.ArgumentMatchers.<Class<String>>any())).thenReturn(VALID_FINAL_ANSWER_JSON);
+        replyWith(VALID_FINAL_ANSWER_JSON);
         when(sessionRepo.findById(anyLong())).thenReturn(Optional.empty());
         when(eventRepo.findBySessionId(anyLong())).thenReturn(List.of());
 
         List<DagNode> nodes = List.of(
-                new ArchEvidenceCollectNode(reportService, kgController),
-                new ArchReActAgentNode(reactLlm, new ArchAgentToolRegistry(kgController, new ArchSourceScanService()),
-                        new ObservationTrimmer(), new SchemaValidator(), new ArchDiagramGenerator(kgController), 6, 2000));
+                new ArchEvidenceCollectNode(reportService, kgController), piNode());
         ExecutionPolicy policy = ExecutionPolicy.fromMetadata(Map.of("skipHitl", true));
 
         ExecutionResult result = executor.run(nodes, 1L,
@@ -172,21 +188,18 @@ class ArchDeepAnalysisIntegrationTest {
 
     @Test
     @DisplayName("灰度验证：verdict 逐条透传到 AI 报告，结果不回写看板（persist=false）")
-    void grayscaleVerdictsFlowToAiReportOnly() {
+    void grayscaleVerdictsFlowToAiReportOnly() throws Exception {
         Map<String, Object> report = report();
         report.put("issues", List.of(
                 Map.of("source", "a.impl.FooServiceImpl", "sourceLevel", "impl-leak", "severity", "HIGH",
                         "message", "实现类外泄", "className", "a.impl.FooServiceImpl")));
         when(reportService.generate(anyList(), anyString(), eq(false))).thenReturn(report);
-        when(reactLlm.chatJson(anyString(), anyString(),
-                org.mockito.ArgumentMatchers.<Class<String>>any())).thenReturn(GRAYSCALE_FINAL_ANSWER_JSON);
+        replyWith(GRAYSCALE_FINAL_ANSWER_JSON);
         when(sessionRepo.findById(anyLong())).thenReturn(Optional.empty());
         when(eventRepo.findBySessionId(anyLong())).thenReturn(List.of());
 
         List<DagNode> nodes = List.of(
-                new ArchEvidenceCollectNode(reportService, kgController),
-                new ArchReActAgentNode(reactLlm, new ArchAgentToolRegistry(kgController, new ArchSourceScanService()),
-                        new ObservationTrimmer(), new SchemaValidator(), new ArchDiagramGenerator(kgController), 6, 2000));
+                new ArchEvidenceCollectNode(reportService, kgController), piNode());
         ExecutionPolicy policy = ExecutionPolicy.fromMetadata(Map.of("skipHitl", true));
 
         ExecutionResult result = executor.run(nodes, 1L,

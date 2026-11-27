@@ -3,13 +3,9 @@ package com.huawei.hisi.workflow.v2;
 import com.huawei.hisi.agentbase.ReActSession;
 import com.huawei.hisi.agentflow.AgentFlowCancelRegistry;
 import com.huawei.hisi.archdiagnosis.service.ArchDiagramGenerator;
-import com.huawei.hisi.knowledgegraph.aggregation.llm.DeepseekJsonClient;
 import com.huawei.hisi.piagent.PiAgentProperties;
-import com.huawei.hisi.ram.contract.SchemaValidator;
 import com.huawei.hisi.workflow.DagNode;
 import com.huawei.hisi.workflow.agent.ArchAgentToolRegistry;
-import com.huawei.hisi.workflow.agent.ObservationTrimmer;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -25,37 +21,22 @@ import org.springframework.stereotype.Component;
 @Component
 public class ArchReActNodeV2Factory {
 
-    private final DeepseekJsonClient llm;
     private final ArchAgentToolRegistry registry;
-    private final ObservationTrimmer trimmer;
-    private final SchemaValidator validator;
     private final ArchDiagramGenerator diagramGenerator;
     private final AgentFlowCancelRegistry cancelRegistry;
     private final ReActSession session;
     private final PiAgentProperties piProperties;
-    private final int maxSteps;
-    private final int observationMaxChars;
 
-    public ArchReActNodeV2Factory(DeepseekJsonClient llm,
-                                  ArchAgentToolRegistry registry,
-                                  ObservationTrimmer trimmer,
-                                  SchemaValidator validator,
+    public ArchReActNodeV2Factory(ArchAgentToolRegistry registry,
                                   ArchDiagramGenerator diagramGenerator,
                                   AgentFlowCancelRegistry cancelRegistry,
                                   ReActSession session,
-                                  PiAgentProperties piProperties,
-                                  @Value("${arch.react.max-steps:10}") int maxSteps,
-                                  @Value("${arch.react.observation-max-chars:2000}") int observationMaxChars) {
-        this.llm = llm;
+                                  PiAgentProperties piProperties) {
         this.registry = registry;
-        this.trimmer = trimmer;
-        this.validator = validator;
         this.diagramGenerator = diagramGenerator;
         this.cancelRegistry = cancelRegistry;
         this.session = session;
         this.piProperties = piProperties;
-        this.maxSteps = maxSteps;
-        this.observationMaxChars = observationMaxChars;
     }
 
     /** 每次启动流程创建一个新 pi 节点实例，与旧节点的用法保持一致。 */
@@ -64,8 +45,7 @@ public class ArchReActNodeV2Factory {
             throw new IllegalStateException(
                     "piagent.flows.arch-react 已关闭：手动 ReAct 循环已随本次版本移除，架构分析只能走 pi");
         }
-        return new PiReActAgentNode(llm, registry, trimmer, validator, diagramGenerator,
-                maxSteps, observationMaxChars, session, cancelRegistry);
+        return new PiReActAgentNode(registry, diagramGenerator, session, cancelRegistry);
     }
 }
 

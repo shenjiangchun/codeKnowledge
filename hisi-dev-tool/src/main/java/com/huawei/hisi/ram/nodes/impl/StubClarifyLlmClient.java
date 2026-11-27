@@ -10,11 +10,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Stub {@link ClarifyLlmClient} — fallback used when Claude API key is absent.
+ * Stub {@link ClarifyLlmClient} — 确定性兜底：LLM 不可用/输出不合契约时归一化回退。
  *
- * <p>{@link ClaudeClarifyLlmClient} is {@code @Primary} and delegates to this
- * stub internally when the API key is not configured. This bean must NOT be
- * {@code @Primary} to avoid ambiguity.</p>
+ * <p>{@link PiClarifyLlmClient}（{@code @Primary}）注入本桩做 normalize 兜底。
+ * 本 bean 不得标 {@code @Primary}，否则与 pi 实现歧义。</p>
  */
 @Component
 public class StubClarifyLlmClient implements ClarifyLlmClient {

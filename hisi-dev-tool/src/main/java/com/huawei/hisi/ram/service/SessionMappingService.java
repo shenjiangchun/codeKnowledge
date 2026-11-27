@@ -16,7 +16,7 @@ import java.util.Optional;
 /**
  * Shared service for managing frontend UUID handle to backend long session ID mapping.
  *
- * <p>Used by all RAM controllers (RamController, RamStatusController, RamPhase2Controller)
+ * <p>Used by all RAM controllers (RamController, RamStatusController, RamPhase2V2Controller)
  * to resolve frontend session handles and track new session creations.
  */
 @Service

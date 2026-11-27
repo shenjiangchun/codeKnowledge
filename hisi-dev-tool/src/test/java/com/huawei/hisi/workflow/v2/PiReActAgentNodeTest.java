@@ -4,11 +4,8 @@ import com.huawei.hisi.agentbase.AgentRegistry;
 import com.huawei.hisi.agentbase.ReActSession;
 import com.huawei.hisi.agentflow.AgentFlowCancelRegistry;
 import com.huawei.hisi.archdiagnosis.service.ArchDiagramGenerator;
-import com.huawei.hisi.knowledgegraph.aggregation.llm.DeepseekJsonClient;
-import com.huawei.hisi.ram.contract.SchemaValidator;
 import com.huawei.hisi.workflow.NodeEventSink;
 import com.huawei.hisi.workflow.agent.ArchAgentToolRegistry;
-import com.huawei.hisi.workflow.agent.ObservationTrimmer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -36,8 +33,7 @@ class PiReActAgentNodeTest {
 
     private final ReActSession session = mock(ReActSession.class);
     private final PiReActAgentNode node = new PiReActAgentNode(
-            mock(DeepseekJsonClient.class), mock(ArchAgentToolRegistry.class), mock(ObservationTrimmer.class),
-            new SchemaValidator(), mock(ArchDiagramGenerator.class), 10, 2000,
+            mock(ArchAgentToolRegistry.class), mock(ArchDiagramGenerator.class),
             session, new AgentFlowCancelRegistry());
 
     @Test

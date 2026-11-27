@@ -8,11 +8,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Stub {@link ImplementLlmClient} — fallback used when Claude API key is absent.
+ * Stub {@link ImplementLlmClient} — 确定性兜底：LLM 不可用/输出不合契约时归一化回退。
  *
- * <p>{@link ClaudeImplementLlmClient} is {@code @Primary} and delegates to this
- * stub internally when the API key is not configured. This bean must NOT be
- * {@code @Primary} to avoid ambiguity.</p>
+ * <p>{@link PiImplementLlmClient}（{@code @Primary}）经基类
+ * {@link ClaudeImplementLlmClient} 注入本桩做 normalize 兜底。本 bean 不得标
+ * {@code @Primary}，否则与 pi 实现歧义。</p>
  */
 @Component
 public class StubImplementLlmClient implements ImplementLlmClient {

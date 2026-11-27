@@ -170,26 +170,6 @@ export interface StartPhase2Payload {
   focusAreas?: string[]  // Optional focus areas
 }
 
-export interface Phase2StartResponse {
-  phase2SessionId: string
-  status: string
-}
-
-export interface Phase2ReportResponse {
-  status: string
-  report: Record<string, unknown>
-}
-
-/** Start Phase2 precise location analysis based on Phase1 session. */
-export function startPhase2Analysis(payload: StartPhase2Payload): Promise<Phase2StartResponse> {
-  return request.post('/ram/status/phase2/start', payload)
-}
-
-/** Get Phase2 analysis report. */
-export function getPhase2Report(sessionId: string): Promise<Phase2ReportResponse> {
-  return request.get(`/ram/status/phase2/${sessionId}/report`)
-}
-
 // ──────────────── Phase2 V2 Multi-Agent Orchestration ────────────────
 
 export interface Phase2V2StartResponse {

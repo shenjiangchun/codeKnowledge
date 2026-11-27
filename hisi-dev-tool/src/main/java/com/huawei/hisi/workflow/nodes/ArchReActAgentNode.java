@@ -1,177 +1,37 @@
 package com.huawei.hisi.workflow.nodes;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hisi.archdiagnosis.service.ArchDiagramGenerator;
-import com.huawei.hisi.knowledgegraph.aggregation.llm.DeepseekJsonClient;
-import com.huawei.hisi.ram.contract.SchemaValidator;
-import com.huawei.hisi.ram.contract.ValidationResult;
-import com.huawei.hisi.workflow.DagNode;
 import com.huawei.hisi.workflow.NodeEventSink;
 import com.huawei.hisi.workflow.agent.ArchAgentTool;
 import com.huawei.hisi.workflow.agent.ArchAgentToolRegistry;
-import com.huawei.hisi.workflow.agent.ObservationTrimmer;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 
-
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
- * 架构深度分析 ReAct 智能体节点的契约与报告组装基类：schema、查证规则提示词、
- * 图引用校验、结构化 Markdown 报告与降级模板。
+ * 架构深度分析 ReAct 智能体节点的契约与报告组装基类：查证规则提示词、
+ * 图生成、结构化 Markdown 报告与降级模板。
  *
  * <p>手动 ReAct 循环已由 pi 会话平替（见 {@link com.huawei.hisi.workflow.v2.PiReActAgentNode}），
- * 本类不再注册为 bean（注册表按名字收集 DagNode，残留的旧循环会顶掉 pi 版节点），
- * 只保留 {@code {rootCauseResult, markdownReport, degraded}} 输出契约供 pi 版节点复用。
+ * 本类不再是 {@code DagNode}，也不注册为 bean，只保留
+ * {@code {rootCauseResult, markdownReport, diagrams, degraded}} 输出契约供 pi 版节点复用。
  */
 @Slf4j
-public class ArchReActAgentNode implements DagNode {
+public class ArchReActAgentNode {
 
-    protected static final String SCHEMA_NAME = "arch/react-step";
-
-    protected final DeepseekJsonClient llm;
     protected final ArchAgentToolRegistry registry;
-    protected final ObservationTrimmer trimmer;
-    protected final SchemaValidator validator;
     private final ArchDiagramGenerator diagramGenerator;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    protected final int maxSteps;
-    protected final int observationMaxChars;
-
-    public ArchReActAgentNode(DeepseekJsonClient llm,
-                              ArchAgentToolRegistry registry,
-                              ObservationTrimmer trimmer,
-                              SchemaValidator validator,
-                              ArchDiagramGenerator diagramGenerator,
-                              @Value("${arch.react.max-steps:10}") int maxSteps,
-                              @Value("${arch.react.observation-max-chars:2000}") int observationMaxChars) {
-        this.llm = llm;
+    public ArchReActAgentNode(ArchAgentToolRegistry registry, ArchDiagramGenerator diagramGenerator) {
         this.registry = registry;
-        this.trimmer = trimmer;
-        this.validator = validator;
         this.diagramGenerator = diagramGenerator;
-        this.maxSteps = maxSteps;
-        this.observationMaxChars = observationMaxChars;
     }
 
-    @Override
-    public String name() {
-        return "arch_react_agent";
-    }
-
-    @Override
-    public String agentId() {
-        return "arch-react-agent-v1";
-    }
-
-    @Override
-    public Map<String, Object> execute(Map<String, Object> input) {
-        return execute(input, msg -> {});
-    }
-
-    @Override
-    public Map<String, Object> execute(Map<String, Object> input, NodeEventSink sink) {
-        if (input == null || !(input.get("evidencePack") instanceof Map<?, ?> evidencePack)) {
-            throw new IllegalArgumentException("evidencePack is required (upstream arch_evidence_collect output)");
-        }
-        List<String> projectPaths = extractProjectPaths(evidencePack);
-        // 图生成器在 ReAct 前运行：确定性产出，供 LLM 在 views.diagramRefs 中引用，降级时仍保留
-        List<Map<String, Object>> diagrams = generateDiagrams(evidencePack, projectPaths);
-
-        List<Map<String, Object>> history = new ArrayList<>();
-        Map<String, Object> finalAnswer = null;
-        int consecutiveFailures = 0;
-
-        for (int step = 1; step <= maxSteps; step++) {
-            sink.emit("推理（第 " + step + " 轮）…");
-            String json = llm.chatJson(systemPrompt(diagrams), userPrompt(evidencePack, history), String.class);
-            Map<String, Object> stepResult = parseStep(json);
-            if (stepResult == null) {
-                consecutiveFailures++;
-                if (consecutiveFailures >= 2) {
-                    sink.emit("连续解析失败，提前终止");
-                    break;
-                }
-                continue;
-            }
-            ValidationResult vr = validator.validate(SCHEMA_NAME, stepResult);
-            if (!vr.passed()) {
-                consecutiveFailures++;
-                sink.emit("第 " + step + " 轮契约校验未过：" + vr.missingFields() + vr.violations());
-                if (consecutiveFailures >= 2) {
-                    break;
-                }
-                continue;
-            }
-            // 运行时补验 diagramRefs：引用的图 id 必须真实存在（静态 JSON Schema 无法枚举动态图 id）
-            ValidationResult drVr = validateDiagramRefs(stepResult, diagrams);
-            if (!drVr.passed()) {
-                consecutiveFailures++;
-                sink.emit("第 " + step + " 轮图引用校验未过：" + drVr.violations());
-                if (consecutiveFailures >= 2) {
-                    break;
-                }
-                continue;
-            }
-            consecutiveFailures = 0;
-
-            if (stepResult.get("final_answer") instanceof Map<?, ?> fa) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> answer = (Map<String, Object>) fa;
-                finalAnswer = answer;
-                break;
-            }
-            if (stepResult.get("action") instanceof Map<?, ?> action) {
-                String tool = (String) action.get("tool");
-                @SuppressWarnings("unchecked")
-                Map<String, Object> args = action.get("args") instanceof Map<?, ?> m
-                        ? (Map<String, Object>) m : Map.of();
-                Object raw;
-                ArchAgentTool t = registry.get(tool);
-                if (t == null) {
-                    raw = Map.of("error", "未知工具：" + tool);
-                    consecutiveFailures++;
-                } else {
-                    sink.emit("查询工具：" + tool + " args=" + args);
-                    try {
-                        raw = t.invoke(args, projectPaths);
-                    } catch (Exception e) {
-                        log.warn("[ArchReActAgentNode] tool {} failed: {}", tool, e.getMessage());
-                        raw = Map.of("error", e.getMessage());
-                    }
-                }
-                String observation = trimmer.trim(raw, observationMaxChars);
-                sink.emit("观察到：" + observation);
-                Map<String, Object> record = new LinkedHashMap<>();
-                record.put("thought", stepResult.get("thought"));
-                record.put("action", action);
-                record.put("observation", observation);
-                history.add(record);
-                if (consecutiveFailures >= 2) {
-                    break;
-                }
-                continue;
-            }
-            consecutiveFailures++;
-            sink.emit("第 " + step + " 轮无 action/final_answer");
-            if (consecutiveFailures >= 2) {
-                break;
-            }
-        }
-
-        return finalAnswer != null
-                ? buildOutput(evidencePack, finalAnswer, sink, diagrams)
-                : buildDegradedOutput(evidencePack, sink, diagrams);
-    }
-
-    /** 确定性图生成，失败降级为空列表，不阻断 ReAct 主流程。 */
+    /** 确定性图生成，失败降级为空列表，不阻断主流程。 */
     @SuppressWarnings("unchecked")
     protected List<Map<String, Object>> generateDiagrams(Map<?, ?> evidencePack, List<String> projectPaths) {
         try {
@@ -333,61 +193,6 @@ public class ArchReActAgentNode implements DagNode {
                     .append("，等级 ").append(evidencePack.get("grade")).append("\n");
         }
         return md.toString();
-    }
-
-    protected Map<String, Object> parseStep(String json) {
-        if (json == null || json.isBlank()) {
-            return null;
-        }
-        try {
-            return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
-        } catch (Exception e) {
-            log.warn("[ArchReActAgentNode] step parse failed: {}", e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * 运行时校验 diagramRefs：引用的图 id 必须真实存在于图生成器产物。
-     * 静态 JSON Schema（react-step.json）只能约束 diagramRefs 为 string[]，
-     * 无法枚举运行时动态产出的图 id，故在此补硬校验，根治 LLM 臆造/改写图 id
-     * （如把 cycle_rings 写成 loop_rings、deployment_topology 写成 service_topology）。
-     */
-    protected ValidationResult validateDiagramRefs(Map<String, Object> stepResult,
-                                                 List<Map<String, Object>> diagrams) {
-        Set<String> validIds = diagrams.stream()
-                .map(d -> String.valueOf(d.get("id")))
-                .collect(Collectors.toSet());
-        List<String> violations = new ArrayList<>();
-        Object fa = stepResult.get("final_answer");
-        if (!(fa instanceof Map<?, ?> faMap)) {
-            return new ValidationResult(true, List.of(), violations);
-        }
-        Object report = faMap.get("report");
-        if (!(report instanceof Map<?, ?> reportMap)) {
-            return new ValidationResult(true, List.of(), violations);
-        }
-        Object views = reportMap.get("views");
-        if (!(views instanceof Map<?, ?> viewsMap)) {
-            return new ValidationResult(true, List.of(), violations);
-        }
-        for (Object v : viewsMap.values()) {
-            if (!(v instanceof Map<?, ?> viewMap)) {
-                continue;
-            }
-            Object refs = viewMap.get("diagramRefs");
-            if (!(refs instanceof List<?> list)) {
-                continue;
-            }
-            for (Object ref : list) {
-                String s = String.valueOf(ref);
-                if (s.isBlank() || validIds.contains(s)) {
-                    continue;
-                }
-                violations.add("diagramRefs 引用不存在的图 id：" + s + "（可用：" + validIds + "）");
-            }
-        }
-        return new ValidationResult(violations.isEmpty(), List.of(), violations);
     }
 
     protected String systemPrompt(List<Map<String, Object>> diagrams) {
