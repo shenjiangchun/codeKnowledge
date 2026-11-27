@@ -121,6 +121,21 @@ class PiAgentLlmClientTest {
     }
 
     @Test
+    @DisplayName("配置 piagent.one-shot.thinking-level=low 时，从第一次调用起就走 low 档清单，不试 off")
+    void lowLevelConfiguredSkipsTheOffAttemptEntirely() {
+        properties.setOneShotThinkingLevel("low");
+        when(pi.run(eq(FlowToolManifest.ONE_SHOT_THINKING), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any()))
+                .thenReturn(new PiFlowClient.PiResult("{\"ok\": true}", List.of(), "agent_settled", false, null));
+
+        Map<String, Object> json = client(60).completeJson("系统", "用户", 4000);
+
+        assertThat(json).containsEntry("ok", true);
+        verify(pi, never()).run(eq(FlowToolManifest.ONE_SHOT), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any());
+        verify(pi, times(1)).run(eq(FlowToolManifest.ONE_SHOT_THINKING), anyString(), any(), isNull(), anyString(), anyString(), isNull(), any());
+        properties.setOneShotThinkingLevel("off");
+    }
+
+    @Test
     @DisplayName("1210 之后记住模型不接受 off：后续调用直接走 low 档，不再先撞一次 1210")
     void onceRefusedTheClientSkipsTheOffAttemptOnLaterCalls() {
         // 第一次：off 被拒 → low 成功

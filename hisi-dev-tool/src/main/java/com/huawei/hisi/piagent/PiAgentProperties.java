@@ -45,6 +45,16 @@ public class PiAgentProperties {
     /** 单次流的 deadline（分钟），超时 abort 并强杀进程。 */
     private int deadlineMinutes = 60;
 
+    /**
+     * 一次性结构化调用（one-shot）的思考档位：{@code off}（默认，最快；本地模型接受）或 {@code low}。
+     *
+     * <p>远端网关的模型「始终思考」时，{@code off} 必被拒（400/1210，只接受 low/high/max 档）。
+     * 远端在 {@code application-local.yml} 里配 {@code piagent.one-shot.thinking-level: low} 即可
+     * 从第一次调用起就不撞 1210（不配时仍有运行时自愈：首次被拒后进程内记住、改用 low，
+     * 但每次重启后的第一次调用会多一条 WARN）。
+     */
+    private String oneShotThinkingLevel = "off";
+
     /** 每流开关：开启后该流的 LLM 层走 pi。arch-react 已是唯一实现（手动循环已删除），默认开启。 */
     private Map<String, Boolean> flows = Map.of(
             "arch-react", true,
