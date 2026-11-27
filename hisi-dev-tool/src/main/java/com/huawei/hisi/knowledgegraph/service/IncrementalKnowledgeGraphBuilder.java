@@ -94,8 +94,16 @@ public class IncrementalKnowledgeGraphBuilder {
      * @param projectPath the project path
      * @return refresh result with statistics
      */
+    /**
+     * 增量刷新，默认补齐后处理，与全量构建结果等价。
+     *
+     * <p>增量重建的变更节点没有向量、没有度/热点/分层等聚合属性——不跑后处理时「增量结果」
+     * 与「全量结果」不等价（对照实验实证 2026-11-27：被改方法的 codeEmbedding 缺失、inDegree 缺失）。
+     * 两个后处理都只补缺失：向量走断点续传（已有 descriptionEmbedding 的方法跳过），
+     * 未变更方法的向量原样保留，增量耗时优势不受影响。
+     */
     public RefreshResult incrementalRefresh(String projectPath) {
-        return incrementalRefresh(projectPath, false, false);
+        return incrementalRefresh(projectPath, true, true);
     }
 
     /**

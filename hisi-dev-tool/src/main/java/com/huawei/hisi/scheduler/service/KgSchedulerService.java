@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @Slf4j
@@ -100,7 +101,9 @@ public class KgSchedulerService {
         }
     }
 
-    /** git pull 拉取最新代码（branch 非空用 git pull origin <branch>，否则跟随当前分支） */
+    /** git pull 拉取最新代码（branch 非空用 git pull origin <branch>，否则跟随当前分支）。
+     *  限时 5 分钟且持续消费子进程输出：网络卡住时不能永久占用调度线程（线程池只有 2 个），
+     *  输出写满管道缓冲时 git 会阻塞在 write 上、永远等不到 exit。 */
     private void gitPull(KgSchedule schedule) {
         File dir = new File(schedule.getProjectPath());
         if (!new File(dir, ".git").exists()) {
@@ -119,11 +122,28 @@ public class KgSchedulerService {
             pb.directory(dir);
             pb.redirectErrorStream(true);
             Process p = pb.start();
-            int exit = p.waitFor();
-            if (exit == 0) {
+            // 消费输出，避免管道缓冲满让子进程阻塞
+            Thread drain = new Thread(() -> {
+                try (var in = p.getInputStream()) {
+                    byte[] buf = new byte[8192];
+                    while (in.read(buf) >= 0) {
+                        // 丢弃即可：内容只是 pull 的进度/统计，成功与否看退出码
+                    }
+                } catch (Exception ignored) {
+                }
+            }, "kg-scheduler-git-drain");
+            drain.setDaemon(true);
+            drain.start();
+            boolean exited = p.waitFor(5, TimeUnit.MINUTES);
+            if (!exited) {
+                p.destroyForcibly();
+                log.warn("[KgScheduler] git pull 超时（5 分钟）已强杀: {}", schedule.getProjectPath());
+                return;
+            }
+            if (p.exitValue() == 0) {
                 log.info("[KgScheduler] git pull 成功: {}", schedule.getProjectPath());
             } else {
-                log.warn("[KgScheduler] git pull 失败（exit={}）: {}", exit, schedule.getProjectPath());
+                log.warn("[KgScheduler] git pull 失败（exit={}）: {}", p.exitValue(), schedule.getProjectPath());
             }
         } catch (Exception e) {
             log.warn("[KgScheduler] git pull 异常（跳过，不中断增量）: {}", e.getMessage());
