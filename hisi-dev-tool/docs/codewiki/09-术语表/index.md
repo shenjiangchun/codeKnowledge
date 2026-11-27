@@ -262,7 +262,7 @@ flowchart TD
 | 工具清单（`FlowToolManifest`） | 技能（skill） | 清单决定能用哪些工具；技能是提示词正文 |
 | 上下文预算（`PromptBudget`） | 会话压缩 | 前者在提交前处理输入；后者在运行中处理增长的上下文 |
 | 技能市场条目 | pi skill | 前者安装到项目的 `.claude/` 给编码助手用；后者是后端 agent 流的提示词 |
-| `hisi-mcp-server` | `ram.mcp.RamMcpServer` | 前者是独立的 Node 子项目；后者是后端进程内的工具派发门面 |
+| 进程内 MCP（`mcp` 包） | `ram.mcp.RamMcpServer` | 前者是给 pi 的 40 个 MCP 工具（`@McpTool`，`/mcp`）；后者是 RAM 自己 REST 端点用的进程内工具派发门面 |
 | 检查点（`CHECKPOINT` 事件） | 检查点节点（`GenerationCheckpoint`） | 前者是工作流节点产物；后者是全量图谱构建的 commit 记录 |
 
 ---

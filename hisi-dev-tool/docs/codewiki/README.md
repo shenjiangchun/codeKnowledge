@@ -9,7 +9,7 @@
 
 HiSi DevTool Backend 是面向研发的**代码理解与运维平台**后端：把 Java / Python / TS-JS-Vue 源码解析成 Neo4j 知识图谱，在图谱之上做混合检索、影响分析、架构诊断、需求评估、日志与 APM 故障诊断，并让 agent 在受控的工具清单内查证证据、给出结论、在工作台里自动修复技术债。
 
-本手册只覆盖后端（`hisi-dev-tool/`）。前端与 MCP 服务各有独立手册。
+本手册只覆盖后端（`hisi-dev-tool/`）。前端有独立手册；MCP 是后端的进程内服务，见 [进程内MCP工具](03-模块说明/进程内MCP工具.md)。
 
 ---
 
@@ -21,11 +21,11 @@ HiSi DevTool Backend 是面向研发的**代码理解与运维平台**后端：�
 | **技术栈** | Java 17 + Spring Boot 3.5.16 + Neo4j（图 + 向量索引）+ SQLite + WebSocket / PTY4J + JavaParser + ANTLR4 + pi agent 运行时（Node） |
 | **架构风格** | 分层单体：接入层 → 应用层（声明 + 编排）→ 领域服务层 → 基础设施层 |
 | **代码规模** | 674 个 Java 源文件（主代码约 11.6 万行），246 个测试文件 |
-| **模块数量** | 19 个 |
+| **模块数量** | 20 个 |
 | **接口数量** | 49 个控制器、359 条 REST 映射（358 个不同的「方法 + 路径」），7 个 WebSocket 端点 |
 | **存储** | Neo4j（15 种节点标签）；SQLite（28 张表，启动时自动建） |
 | **agent** | 17 个 ReAct agent、7 条工作流，全部在 `AgentRegistry` 一处声明 |
-| **部署方式** | 可执行 jar；首次启动自动安装 pi 并按需构建 `hisi-mcp-server` |
+| **部署方式** | 可执行 jar；首次启动自动安装 pi（npm）；MCP 为进程内服务，随后端一起启动 |
 
 ---
 
@@ -80,11 +80,12 @@ HiSi DevTool Backend 是面向研发的**代码理解与运维平台**后端：�
 | 12 | 智能诊断与对话 | [智能诊断与对话](03-模块说明/智能诊断与对话.md) | 通用对话 SSE、多 Agent 诊断框架 | 应用层 |
 | 13 | 日志云与运维 | [日志云与运维](03-模块说明/日志云与运维.md) | 日志拉取、v1 / v2 分析流水线、证据与验证、追问、运维接口 | 应用层 + 领域服务层 |
 | 14 | 修复引擎 fixengine | [修复引擎fixengine](03-模块说明/修复引擎fixengine.md) | 9 步修复流水线、worktree、复现用例 | 应用层 |
-| 15 | 技能市场与提示词 | [技能市场与提示词](03-模块说明/技能市场与提示词.md) | 技能安装、KG Skills 套件、MCP 安装、提示词模板 | 应用层 |
+| 15 | 技能市场与提示词 | [技能市场与提示词](03-模块说明/技能市场与提示词.md) | 技能安装、KG Skills 套件、提示词模板 | 应用层 |
 | 16 | 远程项目管理 | [远程项目管理](03-模块说明/远程项目管理.md) | 远程仓库、克隆、项目分组、KG 定时调度、术语表、桥接扫描器 | 领域服务层 |
 | 17 | 会话与工作区 | [会话与工作区](03-模块说明/会话与工作区.md) | 终端会话、消息、工作区会话 | 领域服务层 |
 | 18 | REST 接口层 | [REST接口层](03-模块说明/REST接口层.md) | 49 个控制器、响应约定、鉴权矩阵、应用配置接口 | 接入层 |
 | 19 | 终端与 WebSocket | [终端与WebSocket](03-模块说明/终端与WebSocket.md) | 伪终端、`claude` CLI、7 个 WebSocket 端点、统一网关 | 接入层 + 基础设施层 |
+| 20 | 进程内 MCP 工具 | [进程内MCP工具](03-模块说明/进程内MCP工具.md) | 40 个 `@McpTool` 工具、会话作用域、动作工具令牌链路 | 接入层 |
 
 ---
 
@@ -94,7 +95,7 @@ HiSi DevTool Backend 是面向研发的**代码理解与运维平台**后端：�
 |------|------|
 | 新成员入职 | 项目概览 → 术语表 → 架构设计 → 所属模块文档 |
 | 做图谱或检索 | [知识图谱构建](03-模块说明/知识图谱构建.md) → [Neo4j图存储与检索](03-模块说明/Neo4j图存储与检索.md) → [数据流程](04-数据流程/index.md) |
-| 做 agent 相关功能 | [pi-agent底座](03-模块说明/pi-agent底座.md) → [工作流引擎](03-模块说明/工作流引擎.md) → 对应业务模块 |
+| 做 agent 相关功能 | [pi-agent底座](03-模块说明/pi-agent底座.md) → [进程内MCP工具](03-模块说明/进程内MCP工具.md) → [工作流引擎](03-模块说明/工作流引擎.md) → 对应业务模块 |
 | 接口对接 | [接口文档](05-接口文档/index.md) → [REST接口层](03-模块说明/REST接口层.md)（鉴权矩阵） → [数据模型](06-数据模型/index.md) |
 | 排查问题 | [数据流程](04-数据流程/index.md)（找到对应流程） → 模块文档的「错误处理」 → [部署运维](07-部署运维/index.md) |
 | 部署 | [部署运维](07-部署运维/index.md) → [应用启动与全局配置](03-模块说明/应用启动与全局配置.md) |
@@ -140,7 +141,7 @@ flowchart LR
 Java 17 · Spring Boot 3.5.16 · Spring Web MVC · WebSocket · SSE · JWT ·
 Neo4j · Spring Data Neo4j · neo4j-harness · SQLite · JGit · PTY4J ·
 JavaParser · ANTLR4 · codegraph · Caffeine · Reactor · Jackson · FastJSON2 ·
-pi-coding-agent · hisi-mcp-server · JaCoCo · Testcontainers
+pi-coding-agent · Spring AI MCP server · json-schema-validator · JaCoCo · Testcontainers
 ```
 
 ---
@@ -149,6 +150,7 @@ pi-coding-agent · hisi-mcp-server · JaCoCo · Testcontainers
 
 | 日期 | 版本 | 变更内容 |
 |------|------|---------|
+| 2026-11-27 | v3 | MCP 迁入进程内（删除 Node 版 `hisi-mcp-server` 与 `McpController`），新增「进程内MCP工具」篇；pi 安装、启动自检、MCP 配置相关章节同步更新 |
 | 2026-11-26 | v2 | 基于 `99d0037` 全量重写：模块文档由 14 份扩为 19 份，新增 pi agent 底座、工作台与自动修复、工作流引擎、架构诊断、修复引擎；全部接口、配置键、表名对照代码重新核实 |
 | 2026-05-08 | v1 | 初始生成 |
 

@@ -523,12 +523,6 @@ flowchart LR
 | POST | `/api/kg-skills-kit/install-all` | 管理 | — |
 | POST | `/api/kg-skills-kit/uninstall-all` | 管理 | — |
 | GET | `/api/kg-skills-kit/guide` | 公开 | — |
-| GET | `/api/mcp/info` | 公开 | 返回 `Map` |
-| GET | `/api/mcp/download` | 公开 | 下载安装包 |
-| POST | `/api/mcp/install` | 管理 | SSE 安装进度 |
-| GET | `/api/mcp/status` | 公开 | 参数 `mcpDir`；返回 `Map` |
-| GET | `/api/mcp/config-template` | 公开 | 返回 `Map` |
-| GET | `/api/mcp/install-script` | 公开 | 返回 `Map` |
 | GET | `/api/prompts` | 公开 | 模板列表 |
 | GET | `/api/prompts/{key}` | 公开 | 单个模板 |
 | PUT | `/api/prompts/{key}` | 管理 | `{content, variables}` |
@@ -580,7 +574,6 @@ flowchart LR
 | `POST /api/chat/{agentType}` | 命名事件 `session`；未命名 `data` 为 `{"choices":[{"delta":{"content":"<增量>"}}]}`；结束 `data: [DONE]`；出错为命名事件 `error` |
 | `GET /api/ram/sessions/{sid}/stream`、`GET /api/v2/workflow/sessions/{sid}/stream` | 每个 tick 发注释行 `heartbeat`；按 `seq` 回放 `{seq, type, payload}`；补发合成事件 `CLARIFY_REQUIRED`、`HITL_REQUIRED`、`RUN_COMPLETED`、`RUN_FAILED`、`RUN_ABORTED` 后关流 |
 | `GET /api/merge-analysis/sessions/{sid}/stream` | 回放事件；结束时补发 `RUN_COMPLETED` 或 `RUN_FAILED` |
-| `POST /api/mcp/install` | 命名事件为进度类型（如 `info`、`error`），`data` 为消息文本 |
 | `POST /api/diagnosis/analyze/stream` | agent 执行事件 |
 
 ```mermaid

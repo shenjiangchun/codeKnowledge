@@ -34,9 +34,9 @@
 | 形态 | 例子 |
 |------|------|
 | `ApiResponse<T>` | 绝大多数业务接口 |
-| 裸领域对象 | `ImpactPredictionController`（`ResponseEntity<ImpactReport>` 等）、`McpController`（`Map`）、`SemanticSearchController.semanticSearchV2`（`Map`）、`OtlpReceiverController` |
-| SSE | `AgentChatController.chat`、`RamController.stream`、`MergeAnalysisController.stream`、`WorkflowController.stream`、`McpController.installMcp`（均为 `SseEmitter`，`produces = text/event-stream`） |
-| 文件下载 | `SessionController.exportSession`、`LogAnalysisController`（导出 md / zip）、`MergeAnalysisController.exportReportMd`、`RamController.exportSessionAsMd`、`ArchitectureDiagnosisController.exportReport`、`OpsController.downloadLogs`、`McpController.downloadMcp` |
+| 裸领域对象 | `ImpactPredictionController`（`ResponseEntity<ImpactReport>` 等）、`SemanticSearchController.semanticSearchV2`（`Map`）、`OtlpReceiverController` |
+| SSE | `AgentChatController.chat`、`RamController.stream`、`MergeAnalysisController.stream`、`WorkflowController.stream`（均为 `SseEmitter`，`produces = text/event-stream`） |
+| 文件下载 | `SessionController.exportSession`、`LogAnalysisController`（导出 md / zip）、`MergeAnalysisController.exportReportMd`、`RamController.exportSessionAsMd`、`ArchitectureDiagnosisController.exportReport`、`OpsController.downloadLogs` |
 
 SSE 与文件下载接口的协议细节见 [05-接口文档](../05-接口文档/index.md) 与 [终端与WebSocket](./终端与WebSocket.md)。
 
@@ -80,7 +80,6 @@ SSE 与文件下载接口的协议细节见 [05-接口文档](../05-接口文档
 | `DiagnosisController` | `/api/diagnosis` | 6 | 2 / 0 / 4 | [智能诊断与对话](./智能诊断与对话.md) |
 | `ImpactPredictionController` | `/api/impact` | 6 | 2 / 0 / 4 | [影响分析与风险评估](./影响分析与风险评估.md) |
 | `KgSkillsKitController` | `/api/kg-skills-kit` | 6 | 2 / 0 / 4 | [技能市场与提示词](./技能市场与提示词.md) |
-| `McpController` | `/api/mcp` | 6 | 5 / 0 / 1 | [技能市场与提示词](./技能市场与提示词.md) |
 | `RemoteProjectController` | `/api/remote-projects` | 6 | 1 / 0 / 5 | [远程项目管理](./远程项目管理.md) |
 | `ApmTestCaseController` | `/api/apm/test-cases` | 5 | 2 / 0 / 3 | [APM故障诊断](./APM故障诊断.md) |
 | `FixSessionController` | `/api/fix/sessions` | 5 | 3 / 0 / 2 | [修复引擎fixengine](./修复引擎fixengine.md) |

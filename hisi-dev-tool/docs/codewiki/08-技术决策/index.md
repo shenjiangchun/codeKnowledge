@@ -199,7 +199,7 @@ pi 自带的会话压缩解决「会话越跑越大」，但不会动用户消�
 | 安装位置 | 默认在后端项目目录内（`lib/pi`、`lib/pi-agent`，已 gitignore）；注释：每台拉取分支的机器各有自己的一份，远端无需共享路径 |
 | 已装判据 | 包版本等于锁定版本，且 CLI 入口文件存在（装到一半被打断不算已装） |
 | 失败处理 | 安装失败不阻断启动；`ensureReady()` 在流执行前再装一次 |
-| `hisi-mcp-server` | `dist` 缺失或源码更新时启动就地构建；注释：远端拉取分支后不再需要手工 `npm install` / `tsc` |
+| 进程内 MCP | MCP 工具由后端进程内的 Spring 原生 MCP 服务端（`/mcp`）提供，删除 Node 版 `hisi-mcp-server` 与启动时构建（提交 `4b6cbca`） |
 | 回调地址 | `mcp.json` 里的后端地址取 `server.port` |
 
 ---

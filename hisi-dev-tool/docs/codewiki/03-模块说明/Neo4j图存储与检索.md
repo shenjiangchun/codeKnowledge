@@ -337,7 +337,7 @@ sequenceDiagram
 | 上游 | `knowledgegraph.binding.service.ProjectBindingService` | 路径展开 |
 | 下游 | [知识图谱构建](./知识图谱构建.md) | 节点写入与聚合落库 |
 | 下游 | [影响分析与风险评估](./影响分析与风险评估.md)、[RAM需求评估](./RAM需求评估.md)、[日志云与运维](./日志云与运维.md)、[架构诊断](./架构诊断.md) | 检索与图查询 |
-| 下游 | `hisi-mcp-server` 的 `hybrid_search` 等工具 | 经后端检索接口间接使用（工具清单见 [pi-agent底座](./pi-agent底座.md)） |
+| 下游 | 进程内 MCP 的 `hybrid_search` 等工具 | 经后端检索接口间接使用（工具清单见 [进程内MCP工具](./进程内MCP工具.md)） |
 
 ---
 

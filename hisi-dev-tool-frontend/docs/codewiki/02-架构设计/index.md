@@ -18,8 +18,7 @@ flowchart TB
     subgraph 本系统
         FE["hisi-dev-tool-frontend<br/>Vue 3 单页应用"]
     end
-    BE[("hisi-dev-tool 后端")]
-    MCP["hisi-mcp-server"]
+    BE[("hisi-dev-tool 后端<br/>（含进程内 MCP /mcp）")]
 
     U1 --> FE
     U2 --> FE
@@ -27,21 +26,18 @@ flowchart TB
     FE -->|"HTTP /api"| BE
     FE -->|"SSE /api"| BE
     FE -->|"WebSocket /ws"| BE
-    FE -.->|"仅在文案中提及"| MCP
 
     style FE fill:#1565c0,color:#fff,stroke:#0d47a1
     style U1 fill:#e3f2fd,stroke:#1976d2,color:#0d47a1
     style U2 fill:#e3f2fd,stroke:#1976d2,color:#0d47a1
     style U3 fill:#e3f2fd,stroke:#1976d2,color:#0d47a1
     style BE fill:#fce4ec,stroke:#c62828,color:#b71c1c
-    style MCP fill:#fce4ec,stroke:#c62828,color:#b71c1c
 ```
 
 | 角色 / 系统 | 类型 | 交互方式 | 数据流向 |
 |------------|------|---------|---------|
 | 开发者、测试、管理员 | 人员 | 浏览器 | 发起分析、查看结果、人工确认 |
-| `hisi-dev-tool` | 系统 | HTTP、SSE、WebSocket | 前端发请求与消息；后端回数据、推事件 |
-| `hisi-mcp-server` | 系统 | 无直接交互 | 只在 KG Skills 套件页的前置条件文案里出现 |
+| `hisi-dev-tool` | 系统 | HTTP、SSE、WebSocket | 前端发请求与消息；后端回数据、推事件（MCP `/mcp` 由后端进程内提供，前端不直接调用） |
 
 ### 1.2 容器图
 

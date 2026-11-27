@@ -1,5 +1,7 @@
 # HiSi 日志分析 Skill
 
+> 工具由后端进程内 MCP 服务（`hisi-mcp-inproc`，streamable HTTP `/mcp`）提供，见 CodeWiki「进程内MCP工具」篇。
+
 ## 目的
 基于日志数据进行根因分析和问题诊断
 

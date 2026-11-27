@@ -45,7 +45,7 @@ flowchart TB
 |------------|------|---------|---------|
 | 开发者 | 人员 | 浏览器 | 提问、触发分析、确认方案 |
 | `hisi-dev-tool-frontend` | 系统 | REST + SSE + 7 个 WebSocket 端点 | 请求 / 事件流 |
-| 编码助手与 MCP 客户端 | 系统 | REST（经 `hisi-mcp-server` 的工具） | 只读查询为主 |
+| 编码助手与 MCP 客户端 | 系统 | REST / 进程内 MCP（streamable HTTP `/mcp`） | 只读查询为主 |
 | Neo4j | 系统 | Bolt（外部）或进程内 harness | 图数据的读写 |
 | SQLite | 文件 | JDBC | 会话、任务、报告、待办 |
 | 模型网关与向量服务 | 系统 | HTTPS | agent 流经 pi；批量与部分单次调用直连 |
@@ -65,9 +65,9 @@ flowchart TD
         DOM["领域服务层<br/>图谱构建、检索、RAM 节点、日志节点<br/>架构诊断、APM 流水线"]:::process
         INFRA["基础设施层<br/>Repository、Neo4j Driver、直连 LLM 客户端<br/>JGit、PTY4J、ProcessBuilder"]:::process
         PAC["piagent 运行时<br/>PiAgentInstaller / PiFlowClient"]:::process
+        MCP["进程内 MCP 服务<br/>（streamable HTTP /mcp）"]:::process
     end
     PI["pi 子进程<br/>每次模型调用一个"]:::ext
-    MCP["hisi-mcp-server<br/>stdio，按会话拉起"]:::ext
     NEO[("Neo4j")]:::data
     SQL[("SQLite<br/>28 张表")]:::data
     GW["模型网关 / 向量服务"]:::ext
@@ -80,8 +80,7 @@ flowchart TD
     APPS --> PAC
     PAC --> PI
     PI --> GW
-    PI --> MCP
-    MCP -->|"HTTP 回调"| WEB
+    PI -->|"streamable HTTP /mcp"| MCP
     INFRA --> NEO
     INFRA --> SQL
     INFRA --> GW
@@ -98,7 +97,7 @@ flowchart TD
 |------|------|------|-----------|---------|
 | 后端进程 | Spring Boot 3.5.16、Java 17 | 全部业务逻辑与接口 | `server.port`（默认 8080） | — |
 | pi 子进程 | `@earendil-works/pi-coding-agent`（Node） | 执行 agent 的模型调用与工具调用 | 无（stdio JSONL） | 会话目录在 pi 配置目录下 |
-| `hisi-mcp-server` | Node | 给 pi 提供图谱、日志、APM 的只读工具与动作工具 | 无（stdio）；回调后端 HTTP | — |
+| 进程内 MCP 服务 | Spring AI MCP server（webmvc，`@McpTool`） | 给 pi 与外部客户端提供 KG、日志、APM、动作等 40 个工具 | streamable HTTP `/mcp`（后端进程内） | — |
 | Neo4j | 5.11+ 或 harness | 知识图谱与向量索引 | 7687 或进程内 | 图数据 |
 | SQLite | `sqlite-jdbc` | 本地元数据 | 文件 | 28 张表 |
 
@@ -409,7 +408,7 @@ flowchart LR
 
 | 项目 | 说明 |
 |------|------|
-| 部署单元 | 一个可执行 jar；pi 与 `hisi-mcp-server` 在后端首次启动时就地安装 / 构建 |
+| 部署单元 | 一个可执行 jar；pi 在后端首次启动时就地安装（npm）；MCP 是进程内服务，随后端一起启动 |
 | 实例数 | 按单实例设计：会话映射、确认等待、终端 PTY、多个缓存都在进程内存 |
 | 数据库 | SQLite 单文件；Neo4j 外部或嵌入式 |
 | 环境 | `dev`（仅 yml 里的 profile 名，无独立文件）、`prod`（`application-prod.yml`）、`local`（本机覆盖） |

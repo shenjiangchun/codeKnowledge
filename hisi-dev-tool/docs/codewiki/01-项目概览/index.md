@@ -12,7 +12,7 @@
 
 > 把仓库源码变成可查询的知识图谱，在此基础上做影响分析、架构诊断、需求评估、日志与 APM 故障诊断，并让 agent 在受控的工具清单内查证证据、给出结论，甚至在工作台里自动修复技术债。
 
-本手册只覆盖后端（`hisi-dev-tool/`）。前端（`hisi-dev-tool-frontend`）与 MCP 服务（`hisi-mcp-server`）各自有独立的手册。
+本手册只覆盖后端（`hisi-dev-tool/`）。前端（`hisi-dev-tool-frontend`）有独立的手册；MCP 工具由后端进程内的服务提供，见 [进程内MCP工具](../03-模块说明/进程内MCP工具.md)。
 
 ### 1.2 目标用户
 
@@ -30,7 +30,7 @@
 |------|------|
 | **做** | Java / Python / TS-JS-Vue 知识图谱；混合检索；调用链、桥接、DSM 查询；静态影响分析；需求评估工作流；架构诊断；日志根因分析；APM 调试与诊断；合并影响分析；工作台待办与 SDD 自动修复；浏览器终端；提示词与技能管理 |
 | **不做** | 代码托管；IDE；独立的向量数据库（向量存在 Neo4j 里）；前端界面的实现（在另一个子项目） |
-| **由同仓其他子项目承担** | MCP 工具服务（`hisi-mcp-server`）；请求采集（`hisi-capture-spring-boot-starter`） |
+| **由同仓其他子项目承担** | 请求采集（`hisi-capture-spring-boot-starter`）；前端界面的实现（在另一个子项目） |
 
 ---
 
@@ -80,7 +80,7 @@ flowchart LR
         DIR["直连模型客户端"]:::proc2
     end
     PI["pi 子进程（Node ≥ 22.19）"]:::ext
-    MCPS["hisi-mcp-server（Node）"]:::ext
+    MCPS["进程内 MCP 服务<br/>（streamable HTTP /mcp）"]:::ext
     NEO[("Neo4j")]:::data
     SQL[("SQLite")]:::data
     LLM["模型网关 / 向量服务"]:::ext
@@ -176,7 +176,7 @@ hisi-dev-tool/
 | 子项目 | 关系 | 交互方式 |
 |--------|------|---------|
 | `hisi-dev-tool-frontend` | 前端 | REST + SSE + WebSocket |
-| `hisi-mcp-server` | MCP 工具服务 | 后端启动时构建它；pi 按会话以 stdio 拉起它；它回调后端 REST |
+| 进程内 MCP 服务 | MCP 工具 | 随 jar 一起发布；pi 按会话以 streamable HTTP 连 `/mcp`；工具直接调后端服务 |
 | `hisi-capture-spring-boot-starter` | 请求采集 | 产出 `HISI_CAPTURE` 信封，由日志分析解析 |
 | `hisi-otel-extension` | 同仓的 OTel 扩展目录 | 后端有配置键 `apm.otel-extension-path`；两者的对应关系未在本次阅读中确认 |
 
@@ -210,7 +210,7 @@ mvn spring-boot:run
 mvn clean package -DskipTests && java -jar target/devTools-1.0.0.jar
 ```
 
-首次启动会自动建表、安装 pi、按需构建 `hisi-mcp-server`，并在日志里打印 `root` 的初始口令（未配置 `HISI_ROOT_PASSWORD` 时为随机口令）。
+首次启动会自动建表、安装 pi（MCP 工具由进程内服务提供，无需另行构建），并在日志里打印 `root` 的初始口令（未配置 `HISI_ROOT_PASSWORD` 时为随机口令）。
 
 ### 4.3 验证运行
 

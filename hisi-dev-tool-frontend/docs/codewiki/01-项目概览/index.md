@@ -10,7 +10,7 @@
 
 > `hisi-dev-tool-frontend` 是 HiSi DevTool 的 Web 前端：为后端的代码知识图谱、智能体分析与调试能力提供一个单页应用，让开发者在一个界面里完成"理解代码 → 分析问题 → 修复问题"的闭环。
 
-本手册只覆盖前端。后端（`hisi-dev-tool`）与 MCP 服务（`hisi-mcp-server`）各有自己的手册。
+本手册只覆盖前端。后端（`hisi-dev-tool`）有自己的手册；MCP 工具由后端的进程内服务提供（`/mcp`），前端不直接使用。
 
 ### 1.2 目标用户
 
@@ -282,8 +282,7 @@ flowchart TD
 
 | 项目 | 关系 | 交互方式 |
 |------|------|---------|
-| `hisi-dev-tool`（后端） | 唯一的服务端依赖 | HTTP `/api/*`、SSE、WebSocket `/ws/*` |
-| `hisi-mcp-server` | 不直接交互 | 只在 KG Skills 套件页的上手指南文案中被提到是前置条件 |
+| `hisi-dev-tool`（后端） | 唯一的服务端依赖 | HTTP `/api/*`、SSE、WebSocket `/ws/*`（MCP `/mcp` 也由后端进程内提供） |
 | `hisi-capture-spring-boot-starter` 等 | 不直接交互 | — |
 
 ---

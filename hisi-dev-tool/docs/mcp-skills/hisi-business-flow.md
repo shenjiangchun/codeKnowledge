@@ -1,5 +1,7 @@
 # HiSi 业务流分析 Skill
 
+> 工具由后端进程内 MCP 服务（`hisi-mcp-inproc`，streamable HTTP `/mcp`）提供，见 CodeWiki「进程内MCP工具」篇。
+
 ## 目的
 分析接口的完整业务调用流程
 
@@ -7,10 +9,10 @@
 用户提供一个URI或接口名，需要了解完整的调用链路
 
 ## 步骤
-1. 使用 `kg_call_chain_by_key` 获取入口方法的调用链
-2. 使用 `kg_method_detail` 获取关键方法的详细信息
-3. 使用 `kg_callees` 分析下游依赖
-4. 使用 `kg_callers` 分析上游调用方
+1. 使用 `hybrid_search` 定位 URI 对应的入口方法（或先 `kg_entry_points` 按 entryType 过滤找入口）
+2. 使用 `kg_root_entries` 获取根入口点与直接调用方
+3. 使用 `kg_callees_tree` 获取下游调用树（含深度与循环检测，适合生成链路图）
+4. 使用 `kg_method_detail` 获取关键方法的详细信息
 5. 组织成完整的业务流程图
 
 ## 输出格式

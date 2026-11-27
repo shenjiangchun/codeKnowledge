@@ -21,7 +21,7 @@
 |-----------|-------------|---------|
 | agent 与工作流的唯一声明（`AgentRegistry`） | 各节点的业务逻辑 | [工作流引擎](./工作流引擎.md) 与各业务模块 |
 | pi 的安装、版本校验、配置文件生成、skill 同步 | npm / node 本身的安装 | 部署环境（见 [部署运维](../07-部署运维/index.md)） |
-| 每流工具清单与 pi 启动参数 | 工具的实际实现 | `hisi-mcp-server`（独立子项目） |
+| 每流工具清单与 pi 启动参数 | 工具的实际实现 | [进程内MCP工具](./进程内MCP工具.md)（`com.huawei.hisi.mcp` 的 `@McpTool` 方法） |
 | 并发槽位、deadline、取消、进程回收 | git 提交与推送 | 后端业务代码（清单里不含 git 工具） |
 | 提交前上下文预算与保形压缩 | 运行中的会话压缩 | pi 自带能力，由 `settings.json` 设定阈值 |
 
@@ -78,7 +78,7 @@ flowchart TD
     end
 
     PIP["pi 子进程<br/>@earendil-works/pi-coding-agent"]:::ext
-    MCP["hisi-mcp-server<br/>（stdio，只读工具源）"]:::ext
+    MCP["进程内 MCP 服务<br/>（streamable HTTP /mcp）"]:::ext
     GW["模型网关（Anthropic 协议）"]:::ext
     EV[("agent_event 表")]:::data
 
@@ -186,12 +186,12 @@ flowchart TD
 | 内置只读 `READ_BUILTIN` | `read`、`grep`、`find`、`ls`、`codemode` |
 | 内置写/执行 `WRITE_BUILTIN` | `write`、`edit`、`bash` |
 | `ARCH_MCP` | `kg_select_scope`、`kg_list_projects`、`kg_status`、`kg_method_detail`、`kg_method_by_class`、`kg_root_entries`、`kg_callees_tree`、`kg_entry_points`、`kg_downstream`、`kg_affecting`、`kg_bridges`、`kg_implementations`、`kg_dashboard`、`kg_dsm`、`kg_hotspots`、`kg_domains`、`kg_service_topology`、`kg_blast_radius`、`kg_api_consumers`、`kg_backend_deps`、`hybrid_search` |
-| `LOG_MCP` | `hybrid_search`、`kg_method_detail`、`kg_method_by_class`、`kg_root_entries`、`kg_callees_tree`、`kg_entry_points`、`kg_downstream`、`kg_affecting`、`kg_bridges`、`kg_mybatis_sql`、`log_query`、`log_report`、`log_report_status` |
-| `RAM_MCP` | `hybrid_search`、`kg_method_detail`、`kg_method_by_class`、`kg_callees_tree`、`kg_root_entries`、`kg_entry_points`、`kg_bridges`、`kg_mybatis_sql` |
+| `LOG_MCP` | `hybrid_search`、`kg_list_projects`、`kg_method_detail`、`kg_method_by_class`、`kg_root_entries`、`kg_callees_tree`、`kg_entry_points`、`kg_downstream`、`kg_affecting`、`kg_bridges`、`kg_mybatis_sql`、`log_query`、`log_report`、`log_report_status` |
+| `RAM_MCP` | `hybrid_search`、`kg_list_projects`、`kg_method_detail`、`kg_method_by_class`、`kg_callees_tree`、`kg_root_entries`、`kg_entry_points`、`kg_bridges`、`kg_mybatis_sql` |
 | `RAM_ACT_MCP`（动作工具） | `act_start_analysis`、`act_start_status`、`act_resume_session`、`act_submit_clarification`、`act_confirm_node` |
-| `CHAT_MCP` | `hybrid_search`、`kg_method_detail`、`kg_method_by_class`、`kg_root_entries`、`kg_callees_tree`、`kg_entry_points`、`kg_bridges`、`kg_dashboard`、`kg_hotspots`、`kg_domains`、`kg_service_topology`、`kg_blast_radius`、`kg_api_consumers`、`log_query`、`log_report`、`log_report_status`、`apm_list_traces`、`apm_get_trace`、`apm_get_report` |
+| `CHAT_MCP` | `hybrid_search`、`kg_list_projects`、`kg_method_detail`、`kg_method_by_class`、`kg_root_entries`、`kg_callees_tree`、`kg_entry_points`、`kg_bridges`、`kg_dashboard`、`kg_hotspots`、`kg_domains`、`kg_service_topology`、`kg_blast_radius`、`kg_api_consumers`、`log_query`、`log_report`、`log_report_status`、`apm_list_traces`、`apm_get_trace`、`apm_get_report` |
 
-MCP 工具在白名单里带前缀 `mcp__hisi_mcp_server__`。git（commit / push）不属于任何清单，提交推送由后端执行。
+MCP 工具在白名单里带前缀 `mcp__hisi_mcp_inproc__`（服务名 `hisi-mcp-inproc` 归一化后的形式）。git（commit / push）不属于任何清单，提交推送由后端执行。
 
 启动参数（`cliArgs()`）：
 
@@ -212,16 +212,15 @@ MCP 工具在白名单里带前缀 `mcp__hisi_mcp_server__`。git（commit / pus
 
 ### 5.1 启动自检与自动安装 `PiAgentInstaller`
 
-`@PostConstruct init()`：`piagent.enabled=false` 或激活 `test` profile 时跳过。已经装好就同步把配置写完（快）；**需要跑 npm 时（pi 未装、hisi-mcp-server 要构建）转后台线程 `pi-agent-install` 执行**，启动不被拖住；`ensure()` 全部完成才把就绪标志置位。
+`@PostConstruct init()`：`piagent.enabled=false` 或激活 `test` profile 时跳过。已经装好就同步把配置写完（快）；**需要跑 npm 时（pi 没装）转后台线程 `pi-agent-install` 执行**，启动不被拖住；`ensure()` 全部完成才把就绪标志置位。
 
 | 步骤 | 动作 | 失败表现 |
 |------|------|---------|
 | 1 | 解析 `install-dir`、`agent-dir` 并建目录 | 记 error 日志，`installDir` 置空 |
 | 2 | `checkNode()`：`node -v` ≥ 22.19.0 | 抛异常，整体失败 |
 | 3 | `ensurePackage()`：包版本等于锁定版本且 CLI 入口存在才算已装；否则删旧目录后 `npm install` | 抛异常，整体失败 |
-| 4 | `ensureMcpDist()`：`hisi-mcp-server` 的 `dist/index.js` 缺失或比 `src/*.ts` 旧时执行 `npm ci`（失败回退 `npm install`）+ `npm run build` | 告警，MCP 工具不可用 |
-| 5 | `writeModelsJson()` | 写 `models.json` |
-| 6 | `writeMcpJson()` | 写 `mcp.json`（找不到 MCP 入口则跳过） |
+| 4 | `writeConfig(agentDir, false)` | 写 `models.json`、`mcp.json`（只含进程内 MCP）、`settings.json`，同步 skills |
+| 5 | `writeConfig(agentDir-act, true)` | 同上，但 `mcp.json` 多一个令牌请求头 `X-Scope-Token: ${HISI_SCOPE_TOKEN}` |
 | 7 | `writeSettingsJson()` | 合并写 `settings.json` 的 `compaction` 段 |
 | 8 | `syncSkills()` | 把声明的 skill 同步到 `<agent-dir>/skills/`，删除已下线的 |
 
@@ -232,12 +231,10 @@ MCP 工具在白名单里带前缀 `mcp__hisi_mcp_server__`。git（commit / pus
 | 文件（`<agent-dir>/` 下） | 内容 |
 |--------------------------|------|
 | `models.json` | 两个 provider：`hisi-gw`（不声明推理能力）与 `hisi-gw-nothink`（`reasoning: true`）；`api` 为 `anthropic-messages`；`apiKey` 写环境变量引用 `$HISI_LLM_KEY`，真实密钥不落盘 |
-| `mcp.json` | `mcpServers.hisi-mcp-server`：只有 `node <dist/index.js>`，**不写 `env`**——pi 会把自身进程环境原样传给 stdio MCP 子进程（实测），`HISI_API_URL` / `HISI_SCOPE_TOKEN` 由 `PiFlowClient` 启动 pi 时按需放入环境 |
+| `mcp.json` | `mcpServers.hisi-mcp-inproc`：进程内 MCP 服务（streamable HTTP `<后端地址>/mcp`）。动作流用的配置目录在 `headers` 里多一个 `X-Scope-Token: ${HISI_SCOPE_TOKEN}`——pi 把自身进程环境传给 MCP 客户端后插值（实测：**空环境变量一律视为未设置**，所以 `HISI_SCOPE_TOKEN` 由 `PiFlowClient` 启动 pi 时按需放入环境，只读流不放） |
 | `settings.json` | `compaction.enabled=true`、`reserveTokens`、`keepRecentTokens` |
 
 安装的包为 `@earendil-works/pi-coding-agent`，CLI 入口为 `<install-dir>/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js`（由 node 直接运行，不依赖 PATH）。
-
-`hisi-mcp-server` 项目目录探测顺序：配置了 `piagent.mcp-dist-path` 则只认配置；否则相对后端工作目录依次探测 `../hisi-mcp-server`、`hisi-mcp-server`、`../hisi_dev_tool v5.0/hisi-mcp-server`，以 `package.json` 存在为准。
 
 ### 5.2 运行一次流 `PiFlowClient`
 
@@ -349,7 +346,6 @@ sequenceDiagram
 | `piagent.registry` | `https://registry.npmmirror.com` | npm 源 |
 | `piagent.model-base-url` | 见 `application.yml` | 模型网关地址（Anthropic 协议） |
 | `piagent.model-id` | `deepseek-v4-pro-cc` | 模型 id |
-| `piagent.mcp-dist-path` | `""` | `hisi-mcp-server` 入口；留空自动探测并按需构建 |
 | `piagent.max-concurrent-processes` | `4` | 同时运行的 pi 进程上限 |
 | `piagent.deadline-minutes` | `60` | 单次流时限，超时 abort 并强杀 |
 | `piagent.context.max-input-tokens` | `32000` | 单次提交（system + user）的 token 上限 |
@@ -374,7 +370,7 @@ sequenceDiagram
 |------|------|---------|
 | 启动时安装失败 | 不阻断启动，记 error 日志；下次有流要用 pi 时 `ensureReady()` 重试 | pi 相关功能在装好前不可用 |
 | node 未安装或版本过低 | `ensure()` 抛异常 | 同上 |
-| `hisi-mcp-server` 构建失败 | 告警，不写 `mcp.json` | 该流的 MCP 工具不可用 |
+| 进程内 MCP 不可用 | pi 会连不上工具，模型调用仍可进行 | 该流的 MCP 工具不可用 |
 | pi 未就绪时执行流 | `IllegalStateException`，消息指明 `piagent.enabled` 或安装失败 | 流启动失败 |
 | 等不到并发槽位（2 分钟） | `IllegalStateException` | 流启动失败 |
 | 超过 deadline | kill 进程，`stopReason=timeout`、`timedOut=true` | 结果带超时说明 |
@@ -410,7 +406,7 @@ sequenceDiagram
 |------|------|------|
 | 上游 | `ram.contract.SchemaValidator` | 契约校验 |
 | 上游 | `ram.repository.AgentEventRepository`、`ram.model.*` | `PiEventSink` 写事件 |
-| 上游 | `hisi-mcp-server`（子项目） | 只读与动作工具 |
+| 上游 | [进程内MCP工具](./进程内MCP工具.md)（`com.huawei.hisi.mcp`） | 只读与动作工具 |
 | 下游 | [工作流引擎](./工作流引擎.md) | `FlowEngine` 按声明建链 |
 | 下游 | [工作台与自动修复](./工作台与自动修复.md) | `develop` 阶段直接调 `PiFlowClient`；`proposal` / `spec` / `tasks` 阶段走 `AgentLlmClient` |
 | 下游 | [架构诊断](./架构诊断.md) | `arch-review` |

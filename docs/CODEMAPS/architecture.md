@@ -4,9 +4,8 @@
 
 ## Monorepo Layout
 ```
-hisi-dev-tool/            → Spring Boot 3.2 + Java 17 backend
+hisi-dev-tool/            → Spring Boot 3.5 + Java 17 backend（含进程内 MCP 工具服务 /mcp）
 hisi-dev-tool-frontend/   → Vue 3 + TypeScript + Element Plus frontend
-hisi-mcp-server/          → MCP Server (Node.js/TypeScript)
 ```
 
 ## Module Boundaries (Backend)

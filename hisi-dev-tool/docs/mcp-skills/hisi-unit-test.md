@@ -1,5 +1,7 @@
 # HiSi 单元测试生成 Skill
 
+> 工具由后端进程内 MCP 服务（`hisi-mcp-inproc`，streamable HTTP `/mcp`）提供，见 CodeWiki「进程内MCP工具」篇。
+
 ## 目的
 为指定方法生成高质量的单元测试
 
@@ -8,8 +10,8 @@
 
 ## 步骤
 1. 使用 `kg_method_detail` 获取目标方法的完整信息（签名、注解、所属类）
-2. 使用 `kg_callers` 了解该方法被谁调用（推断使用场景）
-3. 使用 `kg_callees` 了解该方法调用了哪些依赖（需要mock的对象）
+2. 使用 `kg_root_entries` 了解该方法的直接调用方（推断使用场景）
+3. 使用 `kg_callees_tree` 了解该方法调用了哪些依赖（需要mock的对象）
 4. 分析方法签名确定参数类型和返回值
 5. 生成测试代码
 

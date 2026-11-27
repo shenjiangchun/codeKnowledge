@@ -32,16 +32,23 @@
   - 13 个 skill 文件随启动同步到 pi 目录（jar 内流式复制）。
   - 保留一个直连客户端：批量 / 向量等非 agent 调用仍直连（GLM 文本、embedding），与 pi 无关。
 - **部署新增配置**（远端 `application-local.yml` 需补；均有默认值，可不动）：
-  - `piagent.*`：`enabled` / `install-dir` / `agent-dir`（默认 `lib/pi`、`lib/pi-agent`，后端项目内、已 gitignore）/ `package-version` / `registry` / `model-base-url` / `model-id` / `mcp-dist-path` / `max-concurrent-processes` / `deadline-minutes`；
+  - `piagent.*`：`enabled` / `install-dir` / `agent-dir`（默认 `lib/pi`、`lib/pi-agent`，后端项目内、已 gitignore）/ `package-version` / `registry` / `model-base-url` / `model-id` / `max-concurrent-processes` / `deadline-minutes`（`mcp-dist-path` 随 MCP 迁入进程内已移除）；
   - `piagent.context.*`：`max-input-tokens` / `compaction-reserve-tokens` / `compaction-keep-recent-tokens`；
   - `piagent.flows.arch-react` / `one-shot`（其余 per-flow 开关为占位：迁移是 bean 级平替，开关未接线）；
-  - hisi-mcp-server 随后端启动自动构建（dist 缺失或源码更新时自动 `npm ci` + `tsc`），远端无需单独启动；真机用「无 node_modules、无 dist」的全新副本实测：18 秒构建完成，拉起后 40 个工具（35 只读 + 5 `act_*`）。**本轮补强**：需要跑 npm 的情况（pi 未装、MCP 要构建）转后台线程执行，启动不被拖住（远端慢网络卡死问题之一）；就绪标志只在安装与配置全部完成后置位，首个流执行时等待其结束；
-  - **MCP 连接修复（远端真机故障）**：`mcp.json` 此前写 `"HISI_SCOPE_TOKEN": "${HISI_SCOPE_TOKEN}"`。pi 把空值也当未设置、且不支持默认值写法，只读流不带令牌时引用解析失败 → 整个 MCP 服务连接失败。架构分析、日志分析、需求分析、通用对话、工作台自引入令牌通道起一直没有任何 MCP 工具（只有带令牌的 ram-act 正常）。改为 `mcp.json` 只写启动命令：实测 pi 会把自身进程环境原样传给 stdio MCP 子进程，`HISI_API_URL` / `HISI_SCOPE_TOKEN` 由 `PiFlowClient` 启动 pi 时按需放入环境。验证：不带令牌 `pi mcp list` → connected, 40 tools；对话流沙箱内可见 19 个 MCP 工具（修复前 0 个）；
+  - hisi-mcp-server 随后端启动自动构建（dist 缺失或源码更新时自动 `npm ci` + `tsc`），远端无需单独启动；真机用「无 node_modules、无 dist」的全新副本实测：18 秒构建完成，拉起后 40 个工具（35 只读 + 5 `act_*`）。**本轮补强**：需要跑 npm 的情况（pi 未装）转后台线程执行，启动不被拖住（远端慢网络卡死问题之一）；就绪标志只在安装与配置全部完成后置位，首个流执行时等待其结束（**此条已被进程内 MCP 取代，见下节**）；
+  - **MCP 连接修复（远端真机故障，后被进程内 MCP 取代，见下节）**：`mcp.json` 此前写 `"HISI_SCOPE_TOKEN": "${HISI_SCOPE_TOKEN}"`。pi 把空值也当未设置、且不支持默认值写法，只读流不带令牌时引用解析失败 → 整个 MCP 服务连接失败。架构分析、日志分析、需求分析、通用对话、工作台自引入令牌通道起一直没有任何 MCP 工具（只有带令牌的 ram-act 正常）。改为 `mcp.json` 只写启动命令：实测 pi 会把自身进程环境原样传给 stdio MCP 子进程，`HISI_API_URL` / `HISI_SCOPE_TOKEN` 由 `PiFlowClient` 启动 pi 时按需放入环境。验证：不带令牌 `pi mcp list` → connected, 40 tools；对话流沙箱内可见 19 个 MCP 工具（修复前 0 个）；
   - 对话清单 `CHAT_MCP` 里的 `apm_spans` / `apm_metrics` 在 MCP 服务中不存在（旧工具名残留），换成真实存在的 3 个只读 APM 查询工具；新增守卫测试：每张清单里的 MCP 工具名必须存在于 hisi-mcp-server 源码（缺 APM 工具源文件时测试精确报出那 3 个）；
   - **日志指纹修复（远端真机故障）**：没有错误类型、也没有非框架栈帧的普通日志行（如 WARN）此前都落到同一个默认指纹，互不相同的行被当成重复日志合并进同一份报告（真机 1000 条互不相关的 eureka 告警全部计成同一 report 的出现次数）；改为按内容哈希，且逐行 INFO/WARN 日志降为 DEBUG（每次拉取周期上千行，淹没真实问题）；
   - **向量索引初始化不再拖住启动**：索引创建与上线等待（每个索引最多 120s）从启动路径移到后台线程，就绪前查询走全表扫描回退（与初始化失败行为一致）。远端启动卡住的另一半原因在此；
   - SQLite 结构无需手工建表：全新机器首次启动由各模块 initializer 自动创建（实测空目录首启建出 28 张表，本分支新增的工作台 3 张表 + 5 个索引在工作台接口上可用）；老库升级靠 `CREATE TABLE IF NOT EXISTS` 与幂等补列，本分支没有改既有表的列。顺手修了一处既有的首启顺序问题：KG 队列与架构分析两处启动恢复此前跑在建表之前，全新库首启会报 2 条 `no such table`（功能无害），现以 `@DependsOn` 约束顺序，空库首启 0 ERROR；
   - 移除：`spring.ai.*` 全块与 `chat-models.yml` 引用、`model-provider`（改内部常量）；本地密钥仍放 `application-local.yml` / `.env.local`。
+
+### MCP 迁入进程内（Spring 原生 MCP 服务端，本轮）
+- **删除 Node 版 `hisi-mcp-server` 子项目**（含启动时 `npm ci`+`tsc` 构建链路、`McpController` 的 6 个 `/api/mcp` 安装接口、`mcp-dist-path` 配置）；MCP 不再单独启动、不再随版本漂移失效。
+- **进程内服务端**：`spring-ai-starter-mcp-server-webmvc`，streamable HTTP 端点 `/mcp`，服务名 `hisi-mcp-inproc`；40 个工具直接标注在后端接口实现上（`@McpTool`，7 个工具类：KG 作用域/查询/桥接/架构 25 + 日志 4 + APM 6 + `act_*` 5），项目代码改动即时反映到 MCP 契约。
+- **令牌通道重做**：动作流用独立 pi 配置目录，其 `mcp.json` 声明请求头 `X-Scope-Token: ${HISI_SCOPE_TOKEN}`（HTTP header 引用，pi 同样要求变量已设置）；`McpEndpointFilter` 把令牌按 `Mcp-Session-Id` 绑定进 `McpRequestContext`（2h TTL），`act_*` 工具以用户 JWT 回调后端；只读流不带令牌，动作工具无令牌时明确拒绝。`/mcp` 只监听回环。
+- **契约测试**：`McpToolCatalogTest` 64 条实时断言逐点核对工具名 / 参数 / 必填 / 类型 / 枚举常量（对比迁移前的 Node 服务 dump），全部通过；`FlowToolManifest` 前缀改为 `mcp__hisi_mcp_inproc__`。
+- 服务端配置见 `spring.ai.mcp.server.*`（application.yml）；详细机制见 CodeWiki「进程内MCP工具」篇。
 
 ### 架构诊断
 - 本地源码注入扫描 `injection_scan`（区分接口注入与直接依赖实现类）；ReAct 提示词补充抽样查证规则（`scannedFileCount=0` 不得判误报）。

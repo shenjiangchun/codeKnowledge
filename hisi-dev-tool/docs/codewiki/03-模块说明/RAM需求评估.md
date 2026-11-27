@@ -270,7 +270,7 @@ sequenceDiagram
 
 ## 7. 进程内工具 `mcp/`
 
-`RamMcpServer` 是进程内的门面：把工具调用派发给 Spring 自动发现的 `McpTool` 实现。它不是独立的 MCP 服务端；独立的 `hisi-mcp-server` 是另一个子项目。
+`RamMcpServer` 是进程内的门面：把工具调用派发给 Spring 自动发现的 `McpTool` 实现，供 RAM 自己的 REST 端点用。它不对外；对外给 pi 的 40 个工具由 `com.huawei.hisi.mcp` 的 `@McpTool` 方法经进程内 MCP 服务端（`/mcp`）暴露，见 [进程内MCP工具](./进程内MCP工具.md)。
 
 | 工具 | 类 |
 |------|-----|
@@ -337,7 +337,7 @@ sequenceDiagram
 | 上游 | [Neo4j图存储与检索](./Neo4j图存储与检索.md)、[知识图谱构建](./知识图谱构建.md) | 图谱查询与检索 |
 | 上游 | `service/UnifiedTextService` | `QueryDecomposer` 首选（直连） |
 | 下游 | [合并影响分析](./合并影响分析.md)、[日志云与运维](./日志云与运维.md)、[工作台与自动修复](./工作台与自动修复.md)、[工作流引擎](./工作流引擎.md) | 共用 `agent_session` / `agent_event`、`SessionMappingService`、`SchemaValidator` |
-| 下游 | `hisi-mcp-server` 的 `act_*` 工具 | 回调 RAM 的启动 / 澄清 / 确认接口 |
+| 下游 | 进程内 MCP 的 `act_*` 工具 | 回调 RAM 的启动 / 澄清 / 确认接口 |
 
 ---
 

@@ -15,7 +15,7 @@
 | JDK | 17（`pom.xml` 的 `java.version`） | 运行后端 | `java -version` |
 | Maven | 3.x | 构建后端 | `mvn -v` |
 | Node.js | **≥ 22.19.0** | 运行 pi（代码常量 `REQUIRED_NODE_MAJOR = "22.19.0"`） | `node -v` |
-| npm | 随 Node | 安装 pi、构建 `hisi-mcp-server`（Windows 上后端调用的是 `npm.cmd`） | `npm -v` |
+| npm | 随 Node | 安装 pi（Windows 上后端调用的是 `npm.cmd`；MCP 工具由进程内服务提供，不需要 npm 构建） | `npm -v` |
 | Neo4j | ≥ 5.11（向量索引的最低版本，代码常量 `MIN_VECTOR_INDEX_VERSION`） | 图数据库；或改用进程内嵌入式模式 | 在 Neo4j Browser 执行 `RETURN 1` |
 | Git | — | 克隆、增量构建判断、worktree | `git --version` |
 | `claude` CLI | 可选 | 浏览器终端对话；默认从 PATH 解析 | `claude --version` |
@@ -35,7 +35,6 @@
 | 安装 pi | `piagent.registry` 指定的 npm 源 | 首次启动必需 |
 | 模型调用 | Anthropic 协议模型网关（`piagent.model-base-url`）、OpenAI 兼容的文本与向量端点（`text-model.*`、`embedding.*`） | 用到 LLM 与检索时必需 |
 | 图数据库 | `neo4j.uri`（外部）或本地目录（嵌入式） | 必需 |
-| hisi-mcp-server | 本机 sibling 目录，或 `piagent.mcp-dist-path` | 用 MCP 工具的 agent 流必需 |
 | 日志云 | `logcloud.*` | 只有用日志拉取时 |
 | OTel agent 下载 | Maven Central 镜像，失败回退 GitHub releases | 只有用 APM 调试时 |
 
@@ -102,9 +101,8 @@
 | 变量 | 由谁设置 | 传给谁 | 用途 |
 |------|---------|-------|------|
 | `HISI_LLM_KEY` | 后端（取 `anthropic.api-key`） | pi 子进程 | `models.json` 里写的是 `$HISI_LLM_KEY` 引用，真实密钥不落盘 |
-| `HISI_SCOPE_TOKEN` | 后端（取调用方传入的用户令牌） | pi 子进程 → `hisi-mcp-server` | 动作工具以用户身份回调后端 |
-| `HISI_API_URL` | 后端（`http://localhost:<server.port>`） | `hisi-mcp-server` | 写在 `mcp.json` 里，MCP 服务回调后端的地址 |
-| `PI_CODING_AGENT_DIR` | 后端 | pi 子进程 | pi 的配置目录 |
+| `HISI_SCOPE_TOKEN` | 后端（取调用方传入的用户令牌） | pi 子进程 | 带用户的流经 `mcp.json` 的请求头引用把它带进进程内 MCP，动作工具以用户身份回调后端 |
+| `PI_CODING_AGENT_DIR` | 后端 | pi 子进程 | pi 的配置目录（只读流用 `<agent-dir>`，带用户的流用 `<agent-dir>-act`） |
 | `HISI_ENCRYPT_KEY` | 部署方 | Spring（松散绑定到 `hisi.encrypt.key`） | 凭据加密密钥 |
 
 ### 2.4 配置键清单
@@ -136,7 +134,7 @@
 | 熔断 | `resilience4j.circuitbreaker.configs.default.sliding-window-size`、`.failure-rate-threshold`、`.wait-duration-in-open-state`、`.permitted-number-of-calls-in-half-open-state`；`resilience4j.circuitbreaker.instances.llm-anthropic.base-config`、`resilience4j.circuitbreaker.instances.llm-zhipu.base-config`（Java 代码中未发现对这两个实例名的引用） |
 | 构建脚本 | `maven.settings`、`maven.repo`、`maven.java-home`、`maven.ssl.insecure`、`maven.ssl.allowall`、`maven.ssl.ignore-validity-dates` |
 | 工作台 | `workbench.sync.enabled`、`workbench.sync.interval-ms`、`workbench.fix.push-enabled`、`workbench.fix.max-concurrent-runs`、`workbench.fix.max-iterations` |
-| pi | `piagent.enabled`、`piagent.install-dir`、`piagent.agent-dir`、`piagent.package-version`、`piagent.registry`、`piagent.model-base-url`、`piagent.model-id`、`piagent.mcp-dist-path`、`piagent.max-concurrent-processes`、`piagent.deadline-minutes`、`piagent.context.max-input-tokens`、`piagent.context.compaction-reserve-tokens`、`piagent.context.compaction-keep-recent-tokens`、`piagent.flows.arch-react`、`piagent.flows.one-shot`、`piagent.flows.workbench-sdd`、`piagent.flows.log-v2`、`piagent.flows.ram` |
+| pi | `piagent.enabled`、`piagent.install-dir`、`piagent.agent-dir`、`piagent.package-version`、`piagent.registry`、`piagent.model-base-url`、`piagent.model-id`、`piagent.max-concurrent-processes`、`piagent.deadline-minutes`、`piagent.context.max-input-tokens`、`piagent.context.compaction-reserve-tokens`、`piagent.context.compaction-keep-recent-tokens`、`piagent.flows.arch-react`、`piagent.flows.one-shot`、`piagent.flows.workbench-sdd`、`piagent.flows.log-v2`、`piagent.flows.ram` |
 
 **只在代码里给默认值、`application.yml` 未定义的键**
 
@@ -156,7 +154,7 @@
 | 工作台 | `workbench.fix.e2e.start-service`（true）、`workbench.fix.e2e.isolate-home`（true） |
 | APM | `hisi.apm.diagnose.enabled`、`.executor-core-pool-size`、`.executor-max-pool-size`、`.executor-queue-capacity`、`.executor-keep-alive-seconds`、`.timeout-seconds`、`.llm-enabled`、`.llm-timeout-seconds`、`.kg-enabled`、`.confidence-low-threshold`；`apm.otel-extension-path`、`apm.otlp-receiver-port` |
 | 终端 | `claude.working-directory`、`claude.claude-path` |
-| 技能与 MCP | `skill.market.codeai.path`、`mcp.project.path` |
+| 技能 | `skill.market.codeai.path` |
 | 其他 | `cost.limiter.daily-limit`、`snowflake.datacenter.id`、`snowflake.machine.id`、`zhipu.*` |
 
 ---
@@ -172,7 +170,6 @@ flowchart TD
     C["PiAgentInstaller.ensure()"]:::process
     D{{"node ≥ 22.19 ?"}}:::dec
     E["npm install pi<br/>@earendil-works/pi-coding-agent"]:::process
-    F["hisi-mcp-server：<br/>dist 缺失或比源码旧 → npm ci + build"]:::process
     G["写 models.json / mcp.json / settings.json<br/>同步 pi-skills"]:::process
     H["恢复中断的修复运行"]:::process
     I["注册工作流与定时任务"]:::process
@@ -198,8 +195,7 @@ flowchart TD
 | 建表 | 5 处初始化器依次执行 | 启动失败 |
 | 检查 node | `node -v` 低于 22.19.0 即失败 | pi 相关功能不可用；不阻断启动 |
 | 安装 pi | 版本与锁定值一致且 CLI 入口存在才算已装；否则删旧目录后 `npm install` | 同上 |
-| 构建 `hisi-mcp-server` | 探测项目目录：`piagent.mcp-dist-path`，或相对后端工作目录的 `../hisi-mcp-server`、`hisi-mcp-server` 等候选位置；`npm ci` 失败回退 `npm install` | MCP 工具不可用，pi 仍可运行 |
-| 写配置 | `models.json`、`mcp.json`、`settings.json` 写入 `piagent.agent-dir` | 同上 |
+| 写配置 | `models.json`、`mcp.json`、`settings.json` 写入 `piagent.agent-dir`（另写一份带令牌请求头的到 `<agent-dir>-act`） | 同上 |
 | 同步 skills | `resources/pi-skills/` → `<agent-dir>/skills/`，并删除已下线的 | — |
 
 每条外部命令最长等 10 分钟。pi 安装失败不阻断后端启动：之后任何流执行前都会调 `ensureReady()` 再试一次。
@@ -235,7 +231,7 @@ flowchart LR
     AN["ANTLR4 插件<br/>生成 Python3 词法/语法"]:::process
     CP["编译 Java 17"]:::process
     PK["spring-boot-maven-plugin<br/>打可执行 jar"]:::process
-    RT["启动时安装 pi<br/>构建 hisi-mcp-server"]:::process
+    RT["启动时安装 pi<br/>（MCP 工具随 jar 提供）"]:::process
     D["部署完成"]:::done
 
     S --> AN --> CP --> PK --> RT --> D
@@ -256,7 +252,6 @@ flowchart TD
     subgraph HOST["后端所在主机"]
         BE["hisi-dev-tool<br/>Spring Boot :8080"]:::proc2
         PI["pi 子进程<br/>lib/pi"]:::process
-        MCPS["hisi-mcp-server<br/>（stdio）"]:::process
         SQLITE[("SQLite<br/>~/.hisi-devtool/devtool.db")]:::data
         FILES["pi 配置与 skills<br/>worktree / 日志文件"]:::data
         NEOE["Neo4j harness<br/>（嵌入式模式）"]:::data
@@ -274,10 +269,8 @@ flowchart TD
     BE --> NEOE
     BE --> NEO
     BE --> PI
-    BE --> MCPS
     PI --> GW
-    PI --> MCPS
-    MCPS -->|回调| BE
+    PI -->|"streamable HTTP /mcp"| BE
     BE --> GW
     BE --> CLOUD
     BE --> GITR
@@ -369,7 +362,7 @@ Spring Boot Actuator 依赖在 `pom.xml` 中，`application.yml` 没有修改暴
 |------|------|------|
 | 启动报 pi 未就绪 | 没装 node，或版本低于 22.19.0 | 安装满足要求的 Node.js 与 npm |
 | `npm install` 失败 | 网络或 npm 源不可达 | 检查 `piagent.registry` 与代理；修复后下一次 agent 流会自动重试 |
-| MCP 工具不可用 | 找不到 `hisi-mcp-server`，或 `npm ci` / `npm run build` 失败 | 确认 sibling 目录存在，或设置 `piagent.mcp-dist-path` |
+| MCP 工具不可用 | pi 连不上 `/mcp`（端口被占或非本机回环访问） | 确认 `server.port` 与回环网络；重启后端恢复 |
 | `Connection refused 7687` | 外部 Neo4j 未启动 | 启动 Neo4j，或设 `NEO4J_EMBEDDED=true` 用嵌入式模式 |
 | 向量索引创建失败 | Neo4j 版本低于 5.11 | 升级 Neo4j |
 | 全新库首次启动报 `no such table` | 启动恢复跑在建表之前 | 升级到包含该修复的版本 |

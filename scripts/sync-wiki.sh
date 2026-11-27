@@ -32,7 +32,6 @@ WIKI_REMOTE="https://github.com/shenjiangchun/codeKnowlage.wiki.git"
 declare -A SUBPROJECTS=(
   [Backend]="${ROOT_DIR}/hisi-dev-tool/docs/codewiki"
   [Frontend]="${ROOT_DIR}/hisi-dev-tool-frontend/docs/codewiki"
-  [MCP]="${ROOT_DIR}/hisi-mcp-server/docs/codewiki"
 )
 
 # Filled by flatten_codewiki: maps flat filename (e.g. "Backend-03-模块说明-REST接口层.md")
@@ -217,7 +216,6 @@ generate_navigation() {
     echo "| --- | --- | --- |"
     echo "| Backend | hisi-dev-tool 后端服务 | [Backend-README](Backend-README.md) |"
     echo "| Frontend | hisi-dev-tool-frontend Vue 前端 | [Frontend-README](Frontend-README.md) |"
-    echo "| MCP | hisi-mcp-server MCP 工具服务 | [MCP-README](MCP-README.md) |"
     echo
     echo "## 推荐阅读路径"
     echo

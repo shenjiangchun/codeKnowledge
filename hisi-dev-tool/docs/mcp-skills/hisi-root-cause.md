@@ -1,5 +1,7 @@
 # HiSi 根因分析 Skill
 
+> 工具由后端进程内 MCP 服务（`hisi-mcp-inproc`，streamable HTTP `/mcp`）提供，见 CodeWiki「进程内MCP工具」篇。
+
 ## 目的
 结合日志和代码知识图谱进行深度根因分析
 
