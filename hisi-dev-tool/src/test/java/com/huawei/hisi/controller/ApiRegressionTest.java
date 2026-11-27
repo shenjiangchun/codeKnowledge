@@ -7,18 +7,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-import reactor.core.publisher.Flux;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -30,6 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>Tests the HTTP contract: routing, validation, error codes, and SSE format.
  * LLM backends are mocked; this is NOT an integration test against real AI models.
  */
+@Import(com.huawei.hisi.mcp.McpRequestContext.class)
 @WebMvcTest(controllers = AgentChatController.class)
 @AutoConfigureMockMvc(addFilters = false)
 @DisplayName("API Regression — AgentChatController SSE")
@@ -37,7 +35,7 @@ class ApiRegressionTest {
 
     @Autowired private MockMvc mockMvc;
 
-    @MockBean private ChatClient agentChatClient;
+    @MockBean private com.huawei.hisi.agentbase.ReActSession reactSession;
     @MockBean private AgentTypeRegistry agentTypeRegistry;
     @MockBean private AdminOnlyInterceptor adminOnlyInterceptor;
     @MockBean private JwtTokenProvider jwtTokenProvider;
@@ -45,6 +43,9 @@ class ApiRegressionTest {
     @BeforeEach
     void setUp() throws Exception {
         when(adminOnlyInterceptor.preHandle(any(), any(), any())).thenReturn(true);
+        // 会话：无事件、空正文即结束（增量经事件监听器，测试里不发）
+        when(reactSession.run(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(com.huawei.hisi.agentbase.ReActSession.Result.of("", null, null));
     }
 
     @Test
@@ -52,14 +53,6 @@ class ApiRegressionTest {
     void knownAgentType_returns200Sse() throws Exception {
         when(agentTypeRegistry.get("apm-diagnose"))
                 .thenReturn(new AgentTypeRegistry.AgentTypeConfig("You are APM expert.", "anthropic", null));
-
-        var reqSpec = mock(ChatClient.ChatClientRequestSpec.class);
-        var streamSpec = mock(ChatClient.StreamResponseSpec.class);
-        when(agentChatClient.prompt()).thenReturn(reqSpec);
-        when(reqSpec.system(anyString())).thenReturn(reqSpec);
-        when(reqSpec.user(anyString())).thenReturn(reqSpec);
-        when(reqSpec.stream()).thenReturn(streamSpec);
-        when(streamSpec.chatResponse()).thenReturn(Flux.empty());
 
         mockMvc.perform(post("/api/chat/apm-diagnose")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -110,13 +103,6 @@ class ApiRegressionTest {
     @DisplayName("all 6 known agent types return 200")
     void allAgentTypes_return200() throws Exception {
         String[] types = {"apm-diagnose", "call-chain-analysis", "log-analysis", "code-analysis", "dialog", "fix"};
-        var reqSpec = mock(ChatClient.ChatClientRequestSpec.class);
-        var streamSpec = mock(ChatClient.StreamResponseSpec.class);
-        when(agentChatClient.prompt()).thenReturn(reqSpec);
-        when(reqSpec.system(anyString())).thenReturn(reqSpec);
-        when(reqSpec.user(anyString())).thenReturn(reqSpec);
-        when(reqSpec.stream()).thenReturn(streamSpec);
-        when(streamSpec.chatResponse()).thenReturn(Flux.empty());
 
         for (String type : types) {
             when(agentTypeRegistry.get(type))
