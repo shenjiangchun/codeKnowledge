@@ -1,12 +1,12 @@
 # RAM 需求评估
 
-> 自动生成于 2026-11-26，基于 `99d0037` 版本
+> 自动生成于 2026-11-26，基于 `99d0037` 版本；2026-11-28 按 `ecc9370` 更新 Phase2 v2 与已删除类
 
 | 属性 | 值 |
 |------|-----|
 | **所属层** | 应用层（DAG 编排与 SSE 入口）+ 领域服务层（分析节点） |
-| **目录** | `ram/`（95 个文件：`chat` / `config` / `contract` / `controller` / `hitl` / `kg` / `mcp` / `model` / `nodes` / `orchestrator` / `registry` / `repository` / `sdk` / `service`） |
-| **核心类** | `RamController`、`RamChatController`、`RamChatOrchestrator`、`RequirementAnalysisOrchestrator`、`ClarifyNode`、`ImpactNode`、`ImplementNode`、`VerifyNode`、`TechPlanNode` |
+| **目录** | `ram/`（94 个文件：`chat` / `config` / `contract` / `controller` / `hitl` / `kg` / `mcp` / `model` / `nodes` / `orchestrator` / `registry` / `repository` / `sdk` / `service`） |
+| **核心类** | `RamController`、`RamStatusController`、`RamPhase2V2Controller`、`RamChatController`、`RamChatOrchestrator`、`RequirementAnalysisOrchestrator`、`ClarifyNode`、`ImpactNode`、`ImplementNode`、`VerifyNode`、`TechPlanNode` |
 | **REST 基础路径** | `/api/ram`（27 个端点，不经过登录拦截） |
 | **工作流** | `ram-demand`、`ram-status`、`ram-phase2` |
 | **SQLite 表** | `agent_session`、`agent_event`（被全部 agent 类流程共用） |
@@ -33,14 +33,14 @@
 |------|------|------|
 | `controller/RamController.java` | REST + SSE | 需求分析会话的启动、续跑、澄清、确认、中止、导出 |
 | `controller/RamStatusController.java` | REST | 项目现状分析；类上标 `@deprecated`，由对话接口取代 |
-| `controller/RamPhase2Controller.java` | REST | Phase2 精准定位 |
+| `controller/RamPhase2V2Controller.java` | REST | Phase2 精准定位 v2：多链路编排 + 分层报告 |
 | `chat/RamChatController.java` 等 | REST + WS | 多轮对话式助手 |
 | `orchestrator/RequirementAnalysisOrchestrator.java` | 编排 | `start` 建会话并跑节点链；`resume` 记录澄清后重跑 |
 | `nodes/ClarifyNode.java`、`ImplementNode.java`、`TechPlanNode.java`、`VerifyNode.java` | DAG 节点 | 需求分析链的 4 个确定性 / LLM 节点 |
 | `nodes/impact/*`（16 个文件） | DAG 节点与子组件 | `ImpactNode` 及影响环解析、查询分解、风险评分 |
 | `nodes/ProjectOverviewNode.java`、`Phase2AnalysisNode.java` | DAG 节点 | 现状分析、Phase2 |
 | `nodes/impl/*LlmClient.java`（8 个） | LLM 客户端 | pi 实现、基类、Stub |
-| `nodes/Phase2LlmClient.java`、`ProjectOverviewLlmClient.java` | LLM 客户端 | 现状与 Phase2 的生成 |
+| `nodes/ProjectOverviewLlmClient.java` | LLM 客户端 | 现状报告的生成（v1 `Phase2LlmClient` 已于 `ecc9370` 删除，Phase2 生成并入 v2 控制器） |
 | `mcp/RamMcpServer.java`、`mcp/tools/*` | 进程内工具 | 需求分析类工具的派发 |
 | `kg/impl/DirectKgClient.java` | KG 访问 | 直接调用内部 Neo4j 服务 |
 | `contract/SchemaValidator.java` | 契约校验 | JSON Schema（draft-07）校验，被全部 ReAct agent 复用 |
@@ -112,7 +112,7 @@ flowchart TD
 |-------|-------|--------|------|
 | `ram-demand` | `clarify` → `impact` → `implement` → `verify` → `tech_plan` | `hitlNodes = [clarify, impact, implement]` | `POST /api/ram/sessions` |
 | `ram-status` | `project_overview` | `skipHitl`、`emitNodeEvents` | `POST /api/ram/status/start` |
-| `ram-phase2` | `phase2_analysis` | `skipHitl`、`emitNodeEvents` | `POST /api/ram/status/phase2/start` |
+| `ram-phase2` | `phase2_analysis`（v1 声明保留，供 FlowEngine 派发） | `skipHitl`、`emitNodeEvents` | v2 入口 `POST /api/ram/status/phase2/v2/start`（见 6.2） |
 
 ### 3.1 节点说明
 
@@ -141,6 +141,16 @@ flowchart TD
 
 关键词抽取（LLM）→ 领域推断 → 多关键词混合检索（去重，上限 30）→ 上游调用链（`maxDepth=5`）→ 下游调用链（`maxDepth=5`）→ 入口点溯源 → 加载方法体（上限 20）→ 桥接点识别（Feign / MQ / Mapper）。
 
+### 3.5 Phase2 v2（多链路编排 + 分层报告）
+
+v2 把精准定位从「单报告」升级为「按调用链拆分的分层报告」（`a41b1d5` 补齐后端，v1 控制器于 `ecc9370` 删除）：
+
+1. **启动**：`RamPhase2V2Controller` 收到父会话 ID + 追问，先跑 `Phase2AnalysisNode`（上面的 8 步）得到 `Phase2Context`；
+2. **拆链**：以根入口为锚拆出调用链（根入口缺失时退化为核心方法链），每条链一个 `Chain`（短类名命名）；
+3. **逐链分析**：每条链一次 pi one-shot（`AgentLlmClient.completeJson`，`CHAIN_SYSTEM` 提示词，maxTokens 2000），产出该链的摘要与要点；
+4. **合并**：全部链完成后 LLM 汇总为两层报告——`summaryLayer`（领域概览、总流程图 SVG、关键发现、跨链影响、整体建议）+ `detailLayer`（逐链详情、链数、分析方法数、代码片段数）；
+5. **进度**：`progressBySession`（内存态）按会话汇报 `chainsTotal / chainsCompleted / currentChain / estimatedTimeRemaining`，终态 `DONE / FAILED`，检查点事件 `nodeName=phase2_v2_analysis`。
+
 ### 3.4 影响面子组件 `nodes/impact/`（16 个文件）
 
 | 组件 | 职责（据类注释） |
@@ -168,10 +178,10 @@ RAM 是 agent 类流程，LLM 层经 pi，但各节点用的入口不同：
 | 实现方案 | `PiImplementLlmClient`（`@Primary`，继承 `ClaudeImplementLlmClient`），声明 `ram-design` | 清单 `ram`；契约 `implement.output`；失败回退 `StubImplementLlmClient` |
 | 技术方案 | `PiTechPlanLlmClient`（`@Primary`，继承 `ClaudeTechPlanLlmClient`），声明 `ram-techplan` | 清单 `ram`；契约 `tech_plan.output` |
 | RAM 对话 | `RamChatOrchestrator`，声明 `ram-chat` | 清单 `ram-act`（只读 + 5 个动作工具，带用户令牌） |
-| 现状报告、Phase2 生成、受影响入口标注、范围收敛 | `AgentLlmClient` | 清单 `one-shot`（无工具、关闭思考） |
+| 现状报告、受影响入口标注、范围收敛、Phase2 v2 逐链分析 | `AgentLlmClient` | 清单 `one-shot`（无工具、关闭思考） |
 | 查询分解 | `QueryDecomposer` | **首选 `UnifiedTextService`（直连 GLM）**，其次 `AgentLlmClient`，最后规则切分 |
 
-`Claude*` 三个类已不带 Spring bean 注解，只保留提示词与结果归一化供 pi 版继承。其中 `ClaudeImplementLlmClient` 的 Javadoc 仍写「Spring AI ChatClient」，属注释过期。`QueryDecomposer` 的类 Javadoc 写「Claude 不可用时回退 GLM」，与实际顺序相反。
+`Claude*` 三个类已不带 Spring bean 注解，只保留提示词与结果归一化供 pi 版继承（`ecc9370` 已同步修正其中过期注释）。`QueryDecomposer` 的类 Javadoc 写「Claude 不可用时回退 GLM」，与实际顺序相反。
 
 ---
 
@@ -240,16 +250,17 @@ sequenceDiagram
 | GET | `/api/ram/sessions/{sid}/export/md` | 导出为 Markdown |
 | GET | `/api/ram/health` | 健康检查 |
 
-### 6.2 现状与 Phase2
+### 6.2 现状与 Phase2 v2
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/ram/status/start` | 启动项目现状分析 |
 | GET | `/api/ram/status/{sid}/report` | 最新 `project_overview` 检查点输出 |
-| POST | `/api/ram/status/phase2/start` | 启动 Phase2 精准定位 |
-| GET | `/api/ram/status/phase2/{sid}/report` | 最新 `phase2_analysis` 检查点输出 |
+| POST | `/api/ram/status/phase2/v2/start` | 启动 Phase2 精准定位 v2（入参：父会话 ID、追问、focusAreas） |
+| GET | `/api/ram/status/phase2/v2/{sid}/status` | v2 进度（链总数 / 已完成 / 当前链 / 剩余时间估计） |
+| GET | `/api/ram/status/phase2/v2/{sid}/report` | v2 分层报告（`summaryLayer` + `detailLayer`） |
 
-`RamStatusController` 类上标有 `@deprecated`：新架构用多轮对话（`/api/ram/chat/*`）取代两阶段 REST 端点，但端点仍然注册。
+v1 端点 `/api/ram/status/phase2/*` 已于 `ecc9370` 删除，返回 404。`RamStatusController` 类上标有 `@deprecated`：新架构用多轮对话（`/api/ram/chat/*`）取代两阶段 REST 端点，但端点仍然注册。
 
 ### 6.3 对话 `/api/ram/chat`
 
@@ -292,7 +303,6 @@ sequenceDiagram
 | `ram.sse.timeout-ms` | `300000` | SSE 超时（由 `WorkflowController` 读取） |
 | `ram.chat.timeout-seconds` | `300` | 对话轮次超时 |
 | `ram.registry.path` | `ram/agents.yaml` | `ram.registry.AgentRegistry` 读取的清单 |
-| `piagent.flows.ram` | `false` | 代码中未发现读取方 |
 
 契约 schema 文件：`resources/schemas/ram/` 下的 `clarify.input.json`、`clarify.output.json`、`impact.output.json`、`implement.output.json`、`tech_plan.output.json`、`verify.output.json`。
 
@@ -317,8 +327,8 @@ sequenceDiagram
 |------|------|
 | 两个同名 `AgentRegistry` | `agentbase.AgentRegistry`（agent 与工作流声明）与 `ram.registry.AgentRegistry`（读 `agents.yaml`）并存，阅读时易混 |
 | `HitlQueue` 为内存态 | 源码注释写明持久化留待后续阶段 |
-| 现状 / Phase2 控制器已废弃但仍在路由 | 类上标 `@deprecated` |
-| 多处 Javadoc 过期 | `ClaudeImplementLlmClient` 仍写「Spring AI ChatClient」；`QueryDecomposer` 的回退顺序与代码相反；`StubClarifyLlmClient` 仍称 `ClaudeClarifyLlmClient` 是 `@Primary` |
+| 现状分析 REST 控制器已废弃但仍在路由 | `RamStatusController` 类上标 `@deprecated`（Phase2 v1 控制器已删除，v2 为正式入口） |
+| `QueryDecomposer` Javadoc 过期 | 回退顺序与代码相反（代码先 `UnifiedTextService`） |
 | `/api/ram/**` 不要求登录 | 写接口同样放行 |
 
 | 扩展点 | 方式 |

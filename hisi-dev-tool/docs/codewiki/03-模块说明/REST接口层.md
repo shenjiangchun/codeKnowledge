@@ -1,6 +1,6 @@
 # REST 接口层
 
-> 自动生成于 2026-11-26，基于 `99d0037` 版本
+> 自动生成于 2026-11-26，基于 `99d0037` 版本；2026-11-28 按 `ecc9370` 更新
 
 | 属性 | 值 |
 |------|-----|
@@ -103,7 +103,7 @@ SSE 与文件下载接口的协议细节见 [05-接口文档](../05-接口文档
 | `AgentChatController` | `/api/chat` | 2 | 0 / 0 / 2 | [智能诊断与对话](./智能诊断与对话.md) |
 | `GenerationController` | `/api/knowledge-graph` | 2 | 0 / 0 / 2 | [知识图谱构建](./知识图谱构建.md) |
 | `KgPathAdminController` | `/api/knowledge-graph/admin` | 2 | 1 / 0 / 1 | [知识图谱构建](./知识图谱构建.md) |
-| `RamPhase2Controller` | `/api/ram/status/phase2` | 2 | 2 / 0 / 0 | [RAM需求评估](./RAM需求评估.md) |
+| `RamPhase2V2Controller` | `/api/ram/status/phase2/v2` | 3 | 3 / 0 / 0 | [RAM需求评估](./RAM需求评估.md) |
 | `RamStatusController` | `/api/ram/status` | 2 | 2 / 0 / 0 | [RAM需求评估](./RAM需求评估.md) |
 | `UserController` | `/api/users` | 2 | 0 / 0 / 2 | [应用启动与全局配置](./应用启动与全局配置.md) |
 | `VectorSearchController` | `/api/vector-search` | 2 | 2 / 0 / 0 | [Neo4j图存储与检索](./Neo4j图存储与检索.md) |

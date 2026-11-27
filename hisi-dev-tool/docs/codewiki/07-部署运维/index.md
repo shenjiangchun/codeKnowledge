@@ -1,6 +1,6 @@
 # 部署运维
 
-> 自动生成于 2026-11-26，基于 `99d0037` 版本
+> 自动生成于 2026-11-26，基于 `99d0037` 版本；2026-11-28 按 `ecc9370` 更新
 
 本页只写键名、环境变量名与占位示例，不写任何密钥、口令、令牌、内网地址或本机绝对路径；具体取值以部署环境的 `application-local.yml` 与环境变量为准。
 
@@ -134,7 +134,7 @@
 | 熔断 | `resilience4j.circuitbreaker.configs.default.sliding-window-size`、`.failure-rate-threshold`、`.wait-duration-in-open-state`、`.permitted-number-of-calls-in-half-open-state`；`resilience4j.circuitbreaker.instances.llm-anthropic.base-config`、`resilience4j.circuitbreaker.instances.llm-zhipu.base-config`（Java 代码中未发现对这两个实例名的引用） |
 | 构建脚本 | `maven.settings`、`maven.repo`、`maven.java-home`、`maven.ssl.insecure`、`maven.ssl.allowall`、`maven.ssl.ignore-validity-dates` |
 | 工作台 | `workbench.sync.enabled`、`workbench.sync.interval-ms`、`workbench.fix.push-enabled`、`workbench.fix.max-concurrent-runs`、`workbench.fix.max-iterations` |
-| pi | `piagent.enabled`、`piagent.install-dir`、`piagent.agent-dir`、`piagent.package-version`、`piagent.registry`、`piagent.model-base-url`、`piagent.model-id`、`piagent.max-concurrent-processes`、`piagent.deadline-minutes`、`piagent.context.max-input-tokens`、`piagent.context.compaction-reserve-tokens`、`piagent.context.compaction-keep-recent-tokens`、`piagent.flows.arch-react`、`piagent.flows.one-shot`、`piagent.flows.workbench-sdd`、`piagent.flows.log-v2`、`piagent.flows.ram` |
+| pi | `piagent.enabled`、`piagent.install-dir`、`piagent.agent-dir`、`piagent.package-version`、`piagent.registry`、`piagent.model-base-url`、`piagent.model-id`、`piagent.max-concurrent-processes`、`piagent.deadline-minutes`、`piagent.context.max-input-tokens`、`piagent.context.compaction-reserve-tokens`、`piagent.context.compaction-keep-recent-tokens`、`piagent.flows.arch-react`、`piagent.flows.one-shot` |
 
 **只在代码里给默认值、`application.yml` 未定义的键**
 
@@ -145,7 +145,6 @@
 | 向量生成 | `vector.generation.concurrency`（6）、`vector.generation.batch-size`、`vector.generation.progress-update-interval`（10） |
 | codegraph | `codegraph.dist-path`（`lib/codegraph`）、`codegraph.timeout-seconds`（600） |
 | 直连 JSON 客户端 | `deepseek.connect-timeout-ms`（10000）、`deepseek.read-timeout-ms`（600000） |
-| 架构分析 | `arch.react.max-steps`（10）、`arch.react.observation-max-chars`（2000） |
 | 一次性调用 | `agentflow.llm.call-timeout-seconds`（300） |
 | RAM | `ram.sse.timeout-ms`（300000）、`ram.chat.timeout-seconds`（300）、`ram.registry.path`（`ram/agents.yaml`） |
 | 日志 | `log.followup.timeout-seconds`、`loganalysis.v2.max-frames`、`loganalysis.v2.max-bodies`、`loganalysis.v2.body-chars`、`loganalysis.v2.upstream-depth`、`loganalysis.v2.evidence-max-chars`、`loganalysis.v2.hypothesis-max-tokens`、`loganalysis.v2.synthesis-max-tokens`、`loganalysis.v2.evaluator-max-tokens`、`loganalysis.v2.evaluator.enabled` |

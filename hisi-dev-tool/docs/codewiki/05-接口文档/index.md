@@ -1,6 +1,6 @@
 # 接口文档
 
-> 自动生成于 2026-11-26，基于 `99d0037` 版本
+> 自动生成于 2026-11-26，基于 `99d0037` 版本；2026-11-28 按 `ecc9370` 更新
 
 本页列出后端全部 HTTP 接口与 WebSocket 端点。路径、方法、鉴权要求逐个对照控制器源码的映射注解得出；入参与出参只在读到了源码的地方写明，其余以「—」表示未展开。
 
@@ -334,8 +334,9 @@ flowchart LR
 | GET | `/api/ram/sessions/{sid}/export/md` | 公开 | 导出 Markdown |
 | POST | `/api/ram/status/start` | 公开 | 项目现状分析 |
 | GET | `/api/ram/status/{sid}/report` | 公开 | 现状报告 |
-| POST | `/api/ram/status/phase2/start` | 公开 | Phase2 精准定位 |
-| GET | `/api/ram/status/phase2/{sid}/report` | 公开 | Phase2 报告 |
+| POST | `/api/ram/status/phase2/v2/start` | 公开 | Phase2 精准定位 v2（多链路编排） |
+| GET | `/api/ram/status/phase2/v2/{sid}/status` | 公开 | Phase2 v2 进度 |
+| GET | `/api/ram/status/phase2/v2/{sid}/report` | 公开 | Phase2 v2 分层报告 |
 | POST | `/api/ram/chat/sessions` | 公开 | 创建对话会话 |
 | POST | `/api/ram/chat/{sid}/messages` | 公开 | 发消息 |
 | GET | `/api/ram/chat/{sid}/events` | 公开 | 对话事件 |

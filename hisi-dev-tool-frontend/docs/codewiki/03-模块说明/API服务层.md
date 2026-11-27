@@ -1,6 +1,6 @@
 # API服务层
 
-> 自动生成于 2026-11-26，基于 `99d0037` 版本
+> 自动生成于 2026-11-26，基于 `99d0037` 版本；2026-11-28 按 `ecc9370` 更新
 
 | 属性 | 值 |
 |------|-----|
@@ -144,11 +144,11 @@ flowchart TD
 
 | 模块 | 状态 |
 |------|------|
-| `ops.ts` | 没有任何文件导入 |
-| `callChain.ts` | 仅被 `views/call-chain/ProjectList.vue` 与 `UriList.vue` 导入，而这两个组件本身没有路由或父组件引用 |
+| `ops.ts` | 没有任何文件导入（`ecc9370` 已删除） |
+| `callChain.ts` | 曾仅被 `views/call-chain/ProjectList.vue` 与 `UriList.vue` 导入；这些旧调用链视图删除后成为零导入，`ecc9370` 一并删除 |
 | `frontendBackend.ts` | 仅被 `views/knowledge-graph/components/FrontendBackendTab.vue` 导入，该组件本身没有父组件引用 |
 
-这三个模块的接口路径见 [05-接口文档](../05-接口文档/index.md)，其中标注了"未接线"。
+剩余未接线模块的接口路径见 [05-接口文档](../05-接口文档/index.md)，其中标注了"未接线"。
 
 ---
 
