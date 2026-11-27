@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Check, Warning, Loading } from '@element-plus/icons-vue'
 import { useWorkflow } from '@/composables/useWorkflow'
@@ -181,6 +181,38 @@ const isRunning = computed(() => wf.status.value === 'running')
 
 const storageKey = computed(() => `arch-deep-analysis-session:${selectedProjectPaths.value.join('|')}`)
 
+/**
+ * 回放历史分析时用来拼存储键的项目路径。
+ *
+ * 面板里的勾选（selectedNames）不会跨刷新保留，挂载时恒为空；而保存时键里拼的是那次分析的项目路径。
+ * 若直接用 selectedProjectPaths 拼键，刷新后读到的永远是空串键，历史永远回放不了、只能重跑。
+ * 所以回放时回退到页面全局已选项目（appStore.selectedProjects，经父组件传入）——
+ * 这正是「从页头按钮发起分析」时 start() 默认采用的那组项目，与保存时的键对得上。
+ */
+const restoreProjectPaths = computed<string[]>(() =>
+  selectedProjectPaths.value.length > 0
+    ? selectedProjectPaths.value
+    : props.availableProjects.map(p => p.path),
+)
+const restoreKey = computed(() => `arch-deep-analysis-session:${restoreProjectPaths.value.join('|')}`)
+
+/** 只尝试回放一次：找到历史前，勾选变化可能让键从对不上变成对得上；找到后不再重复请求。 */
+let restoreAttempted = false
+
+async function restoreLatestSession(): Promise<void> {
+  if (restoreAttempted || restoreProjectPaths.value.length === 0) return
+  const sid = localStorage.getItem(restoreKey.value)
+  if (!sid) return
+  restoreAttempted = true
+  try {
+    await wf.rejoin(sid)
+  } catch {
+    // 会话已被清理等：清掉这条失效记录，避免每次进页面都去拉一个不存在的会话
+    localStorage.removeItem(restoreKey.value)
+    restoreAttempted = false
+  }
+}
+
 function nodeTagType(s: NodeState) {
   if (s === 'done') return 'success'
   if (s === 'running') return 'primary'
@@ -245,8 +277,21 @@ function exportMarkdown() {
 }
 
 onMounted(() => {
-  const sid = localStorage.getItem(storageKey.value)
-  if (sid) wf.rejoin(sid).catch(() => {})
+  restoreLatestSession()
+})
+
+// 勾选变化后键可能才对得上（例如刷新后手动重新勾上当初分析的项目）：补一次回放。
+// 不在运行中、且还没有任何结果时才尝试，绝不打断正在进行的分析或盖掉已展示的报告。
+watch(selectedProjectPaths, () => {
+  if (isRunning.value || wf.report.value) return
+  restoreLatestSession()
+})
+
+// 全局已选项目是异步就绪的（来自 appStore，经父组件传入）：挂载那一刻可能还是空的，
+// 等它到位后再试一次，否则又变成「只在挂载时读一次、读到空键」。
+watch(() => props.availableProjects, () => {
+  if (isRunning.value || wf.report.value) return
+  restoreLatestSession()
 })
 
 defineExpose({ start, isRunning })
