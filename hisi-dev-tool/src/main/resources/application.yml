@@ -14,17 +14,6 @@ spring:
   # 允许循环依赖（临时解决方案）
   main:
     allow-circular-references: true
-  autoconfigure:
-    # ChatClient 与 Spring AI 模型 bean 已全部移除（模型调用走 pi 或直连客户端）：
-    # 这些自动配置没有配置项可读，会直接启动失败，显式排除（类名以依赖 jar 里实际存在的为准）
-    exclude:
-      - org.springframework.ai.model.anthropic.autoconfigure.AnthropicChatAutoConfiguration
-      - org.springframework.ai.model.openai.autoconfigure.OpenAiChatAutoConfiguration
-      - org.springframework.ai.model.openai.autoconfigure.OpenAiEmbeddingAutoConfiguration
-      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
-      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration
-      - org.springframework.ai.model.openai.autoconfigure.OpenAiImageAutoConfiguration
-      - org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration
   # 进程内 MCP 服务端（pi 经 streamable HTTP 连接；只监听本机回环——见 McpEndpointFilter）
   ai:
     mcp:

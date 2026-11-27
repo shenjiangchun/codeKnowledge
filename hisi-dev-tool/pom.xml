@@ -319,19 +319,8 @@
             <version>2.0.0</version>
         </dependency>
 
-        <!-- Spring AI — Anthropic chat agent model -->
-        <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-model-anthropic</artifactId>
-        </dependency>
-
-        <!-- Spring AI — OpenAI compat (Zhipu KG batch processing) -->
-        <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-model-openai</artifactId>
-        </dependency>
-
-        <!-- Spring AI — 进程内 MCP 服务端（streamable HTTP，pi 经 HTTP 连接本进程的工具） -->
+        <!-- Spring AI — 进程内 MCP 服务端（streamable HTTP，pi 经 HTTP 连接本进程的工具）。
+             模型 starter（anthropic/openai）已随 ChatClient 迁移 pi 一并移除（2026-11-28） -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
