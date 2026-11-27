@@ -35,27 +35,6 @@ public class VectorGenerationController {
     private final Neo4jMethodNodeRepository neo4jMethodNodeRepository;
     private final EmbeddingService embeddingService;
 
-    @GetMapping("/test-embedding")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> testEmbedding(
-            @RequestParam(defaultValue = "测试文本") String text) {
-        try {
-            Map<String, Object> result = new java.util.HashMap<>();
-            result.put("inputText", text);
-            result.put("available", embeddingService.isEmbeddingAvailable());
-            result.put("dimension", embeddingService.getEmbeddingDimension());
-
-            float[] embedding = embeddingService.generateEmbedding(text);
-            result.put("embeddingDimension", embedding != null ? embedding.length : null);
-            result.put("embeddingSample", embedding != null && embedding.length >= 5 ?
-                Arrays.toString(Arrays.copyOf(embedding, 5)) : null);
-
-            return ResponseEntity.ok(ApiResponse.success(result));
-        } catch (Exception e) {
-            log.error("测试embedding失败", e);
-            return ResponseEntity.ok(ApiResponse.error(500, "测试失败: " + e.getMessage()));
-        }
-    }
-
     @GetMapping("/status")
     public ResponseEntity<ApiResponse<VectorGenerationTask>> getStatus(
             @RequestParam String projectPath) {
@@ -74,37 +53,6 @@ public class VectorGenerationController {
         } catch (Exception e) {
             return ResponseEntity.ok(ApiResponse.error(500, "向量生成服务不可用: " + e.getMessage()));
         }
-    }
-
-    @PostMapping("/regenerate")
-    public ResponseEntity<ApiResponse<String>> regenerateAll(
-            @RequestParam String projectPath) {
-        projectPath = normalizePath(projectPath);
-        try {
-            vectorGenerationService.regenerateAll(projectPath);
-            return ResponseEntity.ok(ApiResponse.success("全量重新生成任务已启动"));
-        } catch (Exception e) {
-            return ResponseEntity.ok(ApiResponse.error(500, "全量重新生成失败: " + e.getMessage()));
-        }
-    }
-
-    @GetMapping("/stats")
-    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>> getStats(
-            @RequestParam String projectPath) {
-        projectPath = normalizePath(projectPath);
-        long totalMethods = neo4jMethodNodeRepository.countByProjectPath(projectPath);
-        long withDescription = neo4jMethodNodeRepository.countWithDescription(projectPath);
-        long withEmbedding = neo4jMethodNodeRepository.countWithDescriptionEmbedding(projectPath);
-
-        java.util.Map<String, Object> stats = java.util.Map.of(
-            "totalMethods", totalMethods,
-            "withDescription", withDescription,
-            "withEmbedding", withEmbedding,
-            "pendingDescription", totalMethods - withDescription,
-            "pendingEmbedding", totalMethods - withEmbedding
-        );
-
-        return ResponseEntity.ok(ApiResponse.success(stats));
     }
 
     @GetMapping("/status/batch")

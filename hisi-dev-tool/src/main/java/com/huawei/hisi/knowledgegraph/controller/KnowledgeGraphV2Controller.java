@@ -1,26 +1,19 @@
 package com.huawei.hisi.knowledgegraph.controller;
 
-import com.huawei.hisi.knowledgegraph.binding.service.ProjectBindingService;
-import com.huawei.hisi.knowledgegraph.model.BridgeRelation;
 import com.huawei.hisi.knowledgegraph.model.BridgeStats;
 import com.huawei.hisi.knowledgegraph.model.CallChainGraphResponse;
 import com.huawei.hisi.knowledgegraph.model.GenerationTask;
-import com.huawei.hisi.knowledgegraph.service.CrossLayerGraphService;
 import com.huawei.hisi.model.ApiResponse;
 import com.huawei.hisi.neo4j.model.ServiceEntryGroup;
-import com.huawei.hisi.neo4j.model.SqlNode;
 import com.huawei.hisi.neo4j.repository.Neo4jApiClientNodeRepository;
 import com.huawei.hisi.neo4j.repository.Neo4jEntryPointNodeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * 知识图谱 V2 API —— 所有查询接口统一使用 projectPaths（必填），不再接受单个 projectPath。
@@ -35,8 +28,6 @@ public class KnowledgeGraphV2Controller {
     private final Neo4jEntryPointNodeRepository neo4jEntryPointNodeRepository;
     private final Neo4jApiClientNodeRepository neo4jApiClientNodeRepository;
     private final GenerationController generationController;
-    private final CrossLayerGraphService crossLayerGraphService;
-    private final ProjectBindingService projectBindingService;
 
     @GetMapping("/status")
     public ApiResponse<Map<String, Object>> getStatus(
@@ -104,36 +95,6 @@ public class KnowledgeGraphV2Controller {
         return v1.getCallChainByKey(entryKey, null, projectPaths);
     }
 
-    @GetMapping("/call-chain/by-type")
-    public ApiResponse<List<Map<String, Object>>> getCallChainsByType(
-            @RequestParam String entryType,
-            @RequestParam List<String> projectPaths) {
-        return v1.getCallChainsByType(entryType, null, projectPaths);
-    }
-
-    @GetMapping("/call-chain/affecting")
-    public ApiResponse<List<Map<String, Object>>> getCallChainsAffecting(
-            @RequestParam String className,
-            @RequestParam String methodName,
-            @RequestParam List<String> projectPaths) {
-        return v1.getCallChainsAffecting(className, methodName, null, projectPaths);
-    }
-
-    @GetMapping("/implementations")
-    public ApiResponse<List<String>> getImplementations(
-            @RequestParam String interfaceName,
-            @RequestParam List<String> projectPaths) {
-        return v1.getImplementations(interfaceName, null, projectPaths);
-    }
-
-    @GetMapping("/call-chain/downstream")
-    public ApiResponse<CallChainGraphResponse> getDownstreamCallChain(
-            @RequestParam String nodeId,
-            @RequestParam List<String> projectPaths,
-            @RequestParam(defaultValue = "10") int maxDepth) {
-        return v1.getDownstreamCallChain(nodeId, null, projectPaths, maxDepth);
-    }
-
     @GetMapping("/call-chain/graph")
     public ApiResponse<CallChainGraphResponse> getCallChainGraph(
             @RequestParam String entryKey,
@@ -141,21 +102,6 @@ public class KnowledgeGraphV2Controller {
             @RequestParam(defaultValue = "true") boolean includeCycles,
             @RequestParam(defaultValue = "50") int maxDepth) {
         return v1.getCallChainGraph(entryKey, null, projectPaths, includeCycles, maxDepth);
-    }
-
-    @GetMapping("/cycles/detect")
-    public ApiResponse<Map<String, Object>> detectCycles(
-            @RequestParam List<String> projectPaths,
-            @RequestParam(required = false) String entryKey,
-            @RequestParam(required = false) String nodeId) {
-        return v1.detectCycles(null, projectPaths, entryKey, nodeId);
-    }
-
-    @GetMapping("/interfaces")
-    public ApiResponse<List<String>> getInterfaces(
-            @RequestParam String className,
-            @RequestParam List<String> projectPaths) {
-        return v1.getInterfaces(className, null, projectPaths);
     }
 
     @GetMapping("/method/search")
@@ -178,50 +124,6 @@ public class KnowledgeGraphV2Controller {
             @RequestParam String className,
             @RequestParam List<String> projectPaths) {
         return v1.getMethodsByClass(className, null, projectPaths);
-    }
-
-    @GetMapping("/mybatis/mappers")
-    public ApiResponse<List<String>> getMyBatisMappers(
-            @RequestParam List<String> projectPaths) {
-        return v1.getMyBatisMappers(null, projectPaths);
-    }
-
-    @GetMapping("/mybatis/sql")
-    public ApiResponse<List<SqlNode>> getMyBatisSqlList(
-            @RequestParam List<String> projectPaths,
-            @RequestParam(required = false) String mapperInterface,
-            @RequestParam(required = false) String statementType) {
-        return v1.getMyBatisSqlList(null, projectPaths, mapperInterface, statementType);
-    }
-
-    @GetMapping("/call-chain/{nodeId}/bridges")
-    public ApiResponse<List<BridgeRelation>> getMethodBridges(
-            @PathVariable String nodeId,
-            @RequestParam List<String> projectPaths) {
-        return v1.getMethodBridges(nodeId, null, projectPaths);
-    }
-
-    @GetMapping("/mapper/{mapperInterface}/sql")
-    public ApiResponse<List<SqlNode>> getMapperSql(
-            @PathVariable String mapperInterface,
-            @RequestParam List<String> projectPaths) {
-        return v1.getMapperSql(mapperInterface, null, projectPaths);
-    }
-
-    @GetMapping("/feign/{serviceName}/call-chain")
-    public ApiResponse<CallChainGraphResponse> getFeignCallChain(
-            @PathVariable String serviceName,
-            @RequestParam List<String> projectPaths,
-            @RequestParam(defaultValue = "10") int maxDepth) {
-        return v1.getFeignCallChain(serviceName, null, projectPaths, maxDepth);
-    }
-
-    @GetMapping("/mq/{topic}/call-chain")
-    public ApiResponse<CallChainGraphResponse> getMQCallChain(
-            @PathVariable String topic,
-            @RequestParam List<String> projectPaths,
-            @RequestParam(defaultValue = "10") int maxDepth) {
-        return v1.getMQCallChain(topic, null, projectPaths, maxDepth);
     }
 
     @GetMapping("/bridge-stats")
@@ -286,28 +188,6 @@ public class KnowledgeGraphV2Controller {
         return v1.getDsmDrillDown(null, projectPaths, modules);
     }
 
-    @GetMapping("/hotspots")
-    public ApiResponse<Map<String, Object>> getHotspots(
-            @RequestParam List<String> projectPaths,
-            @RequestParam(required = false) String language,
-            @RequestParam(required = false, defaultValue = "20") int limit) {
-        return v1.getHotspots(null, projectPaths, language, limit);
-    }
-
-    @GetMapping("/domains")
-    public ApiResponse<Map<String, Object>> getDomains(
-            @RequestParam List<String> projectPaths,
-            @RequestParam(required = false) String language) {
-        return v1.getDomains(null, projectPaths, language);
-    }
-
-    @GetMapping("/domains/{domainId}/classes")
-    public ApiResponse<Map<String, Object>> getDomainClasses(
-            @PathVariable String domainId,
-            @RequestParam List<String> projectPaths) {
-        return v1.getDomainClasses(domainId, null, projectPaths);
-    }
-
     @PostMapping("/architecture-analysis")
     public ApiResponse<Map<String, Object>> runArchitectureAnalysis(
             @RequestParam List<String> projectPaths) {
@@ -318,55 +198,6 @@ public class KnowledgeGraphV2Controller {
     public ApiResponse<List<GenerationTask>> getArchitectureAnalysisStatus(
             @RequestParam List<String> projectPaths) {
         return v1.getArchitectureAnalysisStatus(null, projectPaths);
-    }
-
-    @GetMapping("/service-topology")
-    public ApiResponse<Map<String, Object>> getServiceTopology(
-            @RequestParam List<String> projectPaths,
-            @RequestParam(required = false) String language) {
-        return v1.getServiceTopology(null, projectPaths, language);
-    }
-
-    @GetMapping("/blast-radius/{nodeId}")
-    public ApiResponse<Map<String, Object>> getBlastRadius(
-            @PathVariable String nodeId,
-            @RequestParam(defaultValue = "5") int maxDepth,
-            @RequestParam List<String> projectPaths) {
-        return v1.getBlastRadius(nodeId, maxDepth, null, projectPaths);
-    }
-
-    @GetMapping("/module-dependency-graph")
-    public ApiResponse<Map<String, Object>> getModuleDependencyGraph(
-            @RequestParam List<String> projectPaths,
-            @RequestParam String sourceModule,
-            @RequestParam String targetModule) {
-        return v1.getModuleDependencyGraph(null, projectPaths, sourceModule, targetModule);
-    }
-
-    @GetMapping("/domain-dependency-graph")
-    public ApiResponse<Map<String, Object>> getDomainDependencyGraph(
-            @RequestParam List<String> projectPaths,
-            @RequestParam String sourceDomain,
-            @RequestParam String targetDomain) {
-        return v1.getDomainDependencyGraph(null, projectPaths, sourceDomain, targetDomain);
-    }
-
-    @GetMapping("/build-modules")
-    public ApiResponse<Map<String, Object>> getBuildModules(
-            @RequestParam List<String> projectPaths) {
-        return v1.getBuildModules(null, projectPaths);
-    }
-
-    @GetMapping("/build-module-cycles")
-    public ApiResponse<Map<String, Object>> getBuildModuleCycles(
-            @RequestParam List<String> projectPaths) {
-        return v1.getBuildModuleCycles(null, projectPaths);
-    }
-
-    @GetMapping("/build-module-layer-violations")
-    public ApiResponse<Map<String, Object>> getBuildModuleLayerViolations(
-            @RequestParam List<String> projectPaths) {
-        return v1.getBuildModuleLayerViolations(null, projectPaths);
     }
 
     @GetMapping("/package-cycles")
@@ -381,23 +212,10 @@ public class KnowledgeGraphV2Controller {
         return v1.getPackageDependencies(null, projectPaths);
     }
 
-    @GetMapping("/module-cycles")
-    public ApiResponse<Map<String, Object>> getModuleCycles(
-            @RequestParam List<String> projectPaths) {
-        return v1.getModuleCycles(null, projectPaths);
-    }
-
     @GetMapping("/class-layer-violations")
     public ApiResponse<Map<String, Object>> getClassLayerViolations(
             @RequestParam List<String> projectPaths) {
         return v1.getClassLayerViolations(null, projectPaths);
-    }
-
-    @GetMapping("/class-dependencies")
-    public ApiResponse<Map<String, Object>> getClassDependencies(
-            @RequestParam List<String> projectPaths,
-            @RequestParam(required = false) List<String> packages) {
-        return v1.getClassDependencies(null, projectPaths, packages);
     }
 
     @GetMapping("/layer-domain-matrix")
@@ -429,6 +247,7 @@ public class KnowledgeGraphV2Controller {
 
     /**
      * 查某后端接口（EntryPoint）的前端调用方列表（沿 INVOKES_API 边反向）。
+     * 供 MCP 工具 kg_api_consumers 直接调用。
      */
     @GetMapping("/api-consumers")
     public ApiResponse<Map<String, Object>> getApiConsumers(@RequestParam String entryId) {
@@ -441,6 +260,7 @@ public class KnowledgeGraphV2Controller {
 
     /**
      * 查某前端 ApiClient 调用的后端接口列表（沿 INVOKES_API 边正向）。
+     * 供 MCP 工具 kg_backend_deps 直接调用。
      */
     @GetMapping("/backend-deps")
     public ApiResponse<Map<String, Object>> getBackendDeps(@RequestParam String apiClientId) {
@@ -449,35 +269,5 @@ public class KnowledgeGraphV2Controller {
         result.put("apiClientId", apiClientId);
         result.put("deps", deps);
         return ApiResponse.success(result);
-    }
-
-    /**
-     * 前后端跨层骨架图：一次返回「前端路由→组件→API调用点→后端入口→入口方法」整张图。
-     * 对给定 projectPaths 做绑定范围展开，再构建骨架（调用链不展开，由前端懒加载）。
-     */
-    @GetMapping("/frontend-backend/graph")
-    public ApiResponse<CallChainGraphResponse> getFrontendBackendGraph(
-            @RequestParam List<String> projectPaths) {
-        List<String> expanded = expandBindingScope(projectPaths);
-        return ApiResponse.success(crossLayerGraphService.buildSkeleton(expanded));
-    }
-
-    /**
-     * 绑定范围展开：对每个路径调用 {@link ProjectBindingService#resolve} 展开绑定组，去重合并。
-     */
-    private List<String> expandBindingScope(List<String> paths) {
-        if (paths == null || paths.isEmpty()) {
-            return List.of();
-        }
-        List<String> expanded = new ArrayList<>();
-        Set<String> seen = new LinkedHashSet<>();
-        for (String p : paths) {
-            for (String resolved : projectBindingService.resolve(p)) {
-                if (seen.add(resolved)) {
-                    expanded.add(resolved);
-                }
-            }
-        }
-        return expanded;
     }
 }

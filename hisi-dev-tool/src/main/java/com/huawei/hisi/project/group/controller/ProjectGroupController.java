@@ -42,23 +42,6 @@ public class ProjectGroupController {
     }
 
     /**
-     * 获取单个分组
-     */
-    @GetMapping("/{appId}")
-    public ApiResponse<ProjectGroup> getGroup(@PathVariable String appId) {
-        try {
-            ProjectGroup group = repository.findByAppId(appId);
-            if (group == null) {
-                return ApiResponse.error(404, "分组不存在");
-            }
-            return ApiResponse.success(group);
-        } catch (Exception e) {
-            log.error("获取分组失败: appId={}", appId, e);
-            return ApiResponse.error("获取分组失败: " + e.getMessage());
-        }
-    }
-
-    /**
      * 创建或更新分组
      * 同时同步更新 remote_project 表中对应项目的 group_id
      */
@@ -121,23 +104,6 @@ public class ProjectGroupController {
         } catch (Exception e) {
             log.error("删除分组失败: appId={}", appId, e);
             return ApiResponse.error("删除分组失败: " + e.getMessage());
-        }
-    }
-
-    /**
-     * 查询项目路径所属的分组
-     */
-    @GetMapping("/by-path")
-    public ApiResponse<ProjectGroup> getGroupByPath(@RequestParam String path) {
-        try {
-            ProjectGroup group = repository.findContainingPath(path);
-            if (group == null) {
-                return ApiResponse.error(404, "该项目不属于任何分组");
-            }
-            return ApiResponse.success(group);
-        } catch (Exception e) {
-            log.error("查询项目分组失败: path={}", path, e);
-            return ApiResponse.error("查询项目分组失败: " + e.getMessage());
         }
     }
 }

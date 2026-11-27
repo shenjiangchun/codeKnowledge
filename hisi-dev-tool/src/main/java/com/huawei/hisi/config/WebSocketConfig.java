@@ -5,7 +5,7 @@ import com.huawei.hisi.handler.TerminalWebSocketHandler;
 import com.huawei.hisi.loganalysis.websocket.LogAnalysisWebSocketHandler;
 import com.huawei.hisi.loganalysis.websocket.LogFollowupWebSocketHandler;
 import com.huawei.hisi.ram.chat.RamChatWebSocketHandler;
-import com.huawei.hisi.agent.event.AgentEventPublisher;
+
 import com.huawei.hisi.websocket.UnifiedWebSocketHandler;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
@@ -33,7 +33,6 @@ import java.util.Arrays;
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final TerminalWebSocketHandler terminalWebSocketHandler;
-    private final AgentEventPublisher agentEventPublisher;
     private final ApmWebSocketHandler apmWebSocketHandler;
     private final RamChatWebSocketHandler ramChatWebSocketHandler;
     private final LogAnalysisWebSocketHandler logAnalysisWebSocketHandler;
@@ -54,11 +53,6 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
         // 注册终端 WebSocket 处理器
         registry.addHandler(terminalWebSocketHandler, "/ws/terminal")
-                .setAllowedOrigins(allowedOrigins)
-                .addInterceptors(new HttpSessionHandshakeInterceptor());
-
-        // 注册 Agent 诊断事件 WebSocket 处理器
-        registry.addHandler(agentEventPublisher, "/ws/diagnosis")
                 .setAllowedOrigins(allowedOrigins)
                 .addInterceptors(new HttpSessionHandshakeInterceptor());
 

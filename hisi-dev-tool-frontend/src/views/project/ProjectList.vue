@@ -240,12 +240,10 @@
                       v-if="hasGit(row) && appStore.projectDirConfigured"
                       :project-path="getProjectPath(row.name)"
                     />
-                    <el-button type="primary" link @click="handlePull(row)">拉取</el-button>
                     <el-button type="info" link @click="handleRefreshProject(row)" :disabled="!appStore.projectDirConfigured">
                       <el-icon><Refresh /></el-icon>
                       图谱刷新
                     </el-button>
-                    <el-button type="danger" link @click="handleDelete(row)">删除</el-button>
                   </template>
                 </el-table-column>
               </el-table>
@@ -1728,48 +1726,6 @@ const handleSelect = (row: GitRepositoryInfo) => {
   ElMessage.success(`已选择项目: ${row.name}`)
 }
 
-const loadProjects = async () => {
-  loading.value = true
-  try {
-    // Merge scanned repos with existing project list
-    const [scannedRes, listRes] = await Promise.all([
-      projectApi.scanGitRepos(),
-      projectApi.getProjects().catch(() => [])
-    ])
-
-    // axios 拦截器已提取 data，scannedRes 直接就是仓库数组
-    const scannedRepos = Array.isArray(scannedRes) ? scannedRes : []
-    const existingNames = new Set(scannedRepos.map(r => r.name))
-
-    // Convert legacy projects to GitRepositoryInfo format
-    // listRes 也已被拦截器提取，直接就是字符串数组
-    const legacyProjects = (Array.isArray(listRes) ? listRes : [])
-      .filter((name: string) => !existingNames.has(name))
-      .map((name: string): GitRepositoryInfo => ({
-        name,
-        path: getProjectPath(name),
-        branch: 'unknown',
-        clean: true,
-        source: 'cloned',
-        status: 'READY'
-      }))
-
-    projects.value = [...scannedRepos, ...legacyProjects]
-
-    // Load task statuses in parallel after projects are loaded
-    await Promise.all([
-      loadAllKnowledgeGraphStatuses(),
-      loadAllVectorGenerationStatuses(),
-      loadGroups()
-    ])
-  } catch (error) {
-    ElMessage.error('加载项目列表失败')
-    console.error('Failed to load projects:', error)
-  } finally {
-    loading.value = false
-  }
-}
-
 const handleScan = async () => {
   if (!appStore.projectDirConfigured) {
     ElMessage.warning('请先配置项目目录')
@@ -1811,34 +1767,6 @@ const handleClone = async () => {
   } finally {
     cloning.value = false
   }
-}
-
-const handlePull = async (row: GitRepositoryInfo) => {
-  try {
-    await projectApi.pull(row.name)
-    ElMessage.success('拉取成功')
-    loadProjects()
-  } catch (error) {
-    ElMessage.error('拉取失败')
-  }
-}
-
-const handleDelete = (row: GitRepositoryInfo) => {
-  ElMessageBox.confirm(`确定要删除项目 ${row.name} 吗？`, '确认删除', {
-    type: 'warning'
-  }).then(async () => {
-    try {
-      await projectApi.delete(row.name)
-      ElMessage.success('删除成功')
-      // Clear selection if deleted project was selected
-      if (appStore.selectedProjectNames.includes(row.name)) {
-        appStore.selectProjects(appStore.selectedProjects.filter(p => p.name !== row.name))
-      }
-      loadProjects()
-    } catch (error) {
-      ElMessage.error('删除失败')
-    }
-  }).catch(() => {})
 }
 
 // Show commit dialog

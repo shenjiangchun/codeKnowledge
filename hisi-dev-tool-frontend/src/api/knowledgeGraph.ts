@@ -367,20 +367,9 @@ export const knowledgeGraphApi = {
     })
   },
 
-  /** 获取生成队列状态（当前执行中 + 排队列表） */
-  getQueueStatus() {
-    return request.get<{ currentProject: string | null; queueSize: number; queue: Array<{ projectPath: string; taskId: string }> }>('/knowledge-graph/tasks/queue')
-  },
-
   getTaskStatus(projectPaths?: string[]) {
     const params = projectPaths ? { projectPaths: projectPaths.join(',') } : {}
     return request.get<KnowledgeGraphTask[]>('/knowledge-graph/tasks/status', { params })
-  },
-
-  getLatestTask(projectPath: string) {
-    return request.get<KnowledgeGraphTask>('/knowledge-graph/tasks/latest', {
-      params: { projectPath }
-    })
   },
 
   // ============================================================
@@ -459,30 +448,6 @@ export const knowledgeGraphApi = {
     })
   },
 
-  getCallChainsByType(entryType: string, projectPaths: string[]) {
-    return request.get<CallChainView[]>('/v2/knowledge-graph/call-chain/by-type', {
-      params: { entryType, projectPaths }
-    })
-  },
-
-  getCallChainsAffecting(className: string, methodName: string, projectPaths: string[]) {
-    return request.get<CallChainView[]>('/v2/knowledge-graph/call-chain/affecting', {
-      params: { className, methodName, projectPaths }
-    })
-  },
-
-  getImplementations(interfaceName: string, projectPaths: string[]) {
-    return request.get<string[]>('/v2/knowledge-graph/implementations', {
-      params: { interfaceName, projectPaths }
-    })
-  },
-
-  getInterfaces(className: string, projectPaths: string[]) {
-    return request.get<string[]>('/v2/knowledge-graph/interfaces', {
-      params: { className, projectPaths }
-    })
-  },
-
   getMethodDetail(nodeId: string, projectPaths: string[]) {
     return request.get<MethodNode>('/v2/knowledge-graph/method/detail', {
       params: { nodeId, projectPaths }
@@ -505,26 +470,6 @@ export const knowledgeGraphApi = {
   // 调用链图数据接口 — V2
   // ============================================================
 
-  getDownstreamChain(nodeId: string, projectPaths: string[], maxDepth?: number) {
-    const params: Record<string, string | number | string[]> = { nodeId, projectPaths }
-    if (maxDepth !== undefined) {
-      params.maxDepth = maxDepth
-    }
-    return request.get<CallChainView>('/v2/knowledge-graph/call-chain/downstream', {
-      params
-    })
-  },
-
-  getDownstreamGraph(nodeId: string, projectPaths: string[], maxDepth?: number) {
-    const params: Record<string, string | number | string[]> = { nodeId, projectPaths }
-    if (maxDepth !== undefined) {
-      params.maxDepth = maxDepth
-    }
-    return request.get<CallChainGraphData>('/v2/knowledge-graph/call-chain/downstream', {
-      params
-    })
-  },
-
   getCallChainGraph(entryKey: string, projectPaths: string[], includeCycles?: boolean, maxDepth?: number) {
     const params: Record<string, string | boolean | string[] | number> = { entryKey, projectPaths }
     if (includeCycles !== undefined) {
@@ -538,75 +483,9 @@ export const knowledgeGraphApi = {
     })
   },
 
-  detectCycles(projectPaths: string[], entryKey?: string, nodeId?: string) {
-    const params: Record<string, string | string[]> = { projectPaths }
-    if (entryKey !== undefined) {
-      params.entryKey = entryKey
-    }
-    if (nodeId !== undefined) {
-      params.nodeId = nodeId
-    }
-    return request.get<CallCycleInfo[]>('/v2/knowledge-graph/cycles/detect', {
-      params
-    })
-  },
-
-  // ============================================================
-  // MyBatis 相关接口
-  // ============================================================
-
-  scanMyBatis(projectPath: string) {
-    return request.post<MyBatisScanResult>('/knowledge-graph/mybatis/scan', {
-      projectPath
-    })
-  },
-
-  getMyBatisMappers(projectPaths: string[]) {
-    return request.get<MyBatisMapperNode[]>('/v2/knowledge-graph/mybatis/mappers', {
-      params: { projectPaths }
-    })
-  },
-
-  getMyBatisSqlStatements(projectPaths: string[], mapperInterface?: string, statementType?: string) {
-    const params: Record<string, string | string[]> = { projectPaths }
-    if (mapperInterface !== undefined) {
-      params.mapperInterface = mapperInterface
-    }
-    if (statementType !== undefined) {
-      params.statementType = statementType
-    }
-    return request.get<MyBatisSqlNode[]>('/v2/knowledge-graph/mybatis/sql', {
-      params
-    })
-  },
-
   // ============================================================
   // 桥接关系查询接口 — V2
   // ============================================================
-
-  getMethodBridges(nodeId: string, projectPaths: string[]) {
-    return request.get<BridgeRelation[]>(`/v2/knowledge-graph/call-chain/${nodeId}/bridges`, {
-      params: { projectPaths }
-    })
-  },
-
-  getMapperSql(mapperInterface: string, projectPaths: string[]) {
-    return request.get<MapperSqlDetail[]>(`/v2/knowledge-graph/mapper/${mapperInterface}/sql`, {
-      params: { projectPaths }
-    })
-  },
-
-  getFeignCallChain(serviceName: string, projectPaths: string[]) {
-    return request.get<FeignCallChain[]>(`/v2/knowledge-graph/feign/${serviceName}/call-chain`, {
-      params: { projectPaths }
-    })
-  },
-
-  getMQCallChain(topic: string, projectPaths: string[]) {
-    return request.get<MQCallChain[]>(`/v2/knowledge-graph/mq/${topic}/call-chain`, {
-      params: { projectPaths }
-    })
-  },
 
   getBridgeStats(projectPaths: string[]) {
     return request.get<BridgeStats>('/v2/knowledge-graph/bridge-stats', {
@@ -719,26 +598,11 @@ export const knowledgeGraphApi = {
   getDsmDrillDown(projectPaths: string[], modules: string[]) {
     return request.get<DsmData>('/v2/knowledge-graph/dsm/drill-down', { params: { projectPaths, modules } })
   },
-  getHotspots(projectPaths: string[], language?: string, limit?: number) {
-    return request.get<{ hotspots: HotspotItem[]; total: number }>('/v2/knowledge-graph/hotspots', { params: { projectPaths, language, limit } })
-  },
-  getDomains(projectPaths: string[], language?: string) {
-    return request.get<{ domains: DomainItem[]; interactions: DomainEdge[] }>('/v2/knowledge-graph/domains', { params: { projectPaths, language } })
-  },
-  getDomainClasses(domainId: string, projectPaths: string[]) {
-    return request.get<{ domainId: string; classes: DomainClass[] }>(`/v2/knowledge-graph/domains/${encodeURIComponent(domainId)}/classes`, { params: { projectPaths } })
-  },
   runArchitectureAnalysis(projectPaths: string[]) {
     return request.post<{ results: { projectPath: string; taskId: number; status: string }[] }>('/v2/knowledge-graph/architecture-analysis', null, { params: { projectPaths } })
   },
   getArchAnalysisStatus(projectPaths: string[]) {
     return request.get<ArchAnalysisTask[]>('/v2/knowledge-graph/architecture-analysis/status', { params: { projectPaths } })
-  },
-  getServiceTopology(projectPaths: string[], language?: string) {
-    return request.get<ServiceTopology>('/v2/knowledge-graph/service-topology', { params: { projectPaths, language } })
-  },
-  getBlastRadius(nodeId: string, projectPaths: string[], maxDepth?: number) {
-    return request.get<BlastRadiusData>(`/v2/knowledge-graph/blast-radius/${encodeURIComponent(nodeId)}`, { params: { projectPaths, maxDepth } })
   },
   generateTestSuggestions(nodeId: string, projectPaths: string[]) {
     return request.post<{ nodeId: string; testCases: TestSuggestion[] }>('/v2/knowledge-graph/test-suggestions', null, { params: { nodeId, projectPaths } })
@@ -746,35 +610,14 @@ export const knowledgeGraphApi = {
   generateRefactorSuggestions(moduleName: string, projectPaths: string[]) {
     return request.post<{ moduleName: string; suggestions: RefactorSuggestion[] }>('/v2/knowledge-graph/refactor-suggestions', null, { params: { moduleName, projectPaths } })
   },
-  getModuleDependencyGraph(projectPaths: string[], sourceModule: string, targetModule: string) {
-    return request.get<ModuleDependencyGraph>('/v2/knowledge-graph/module-dependency-graph', { params: { projectPaths, sourceModule, targetModule } })
-  },
-  getDomainDependencyGraph(projectPaths: string[], sourceDomain: string, targetDomain: string) {
-    return request.get<ModuleDependencyGraph>('/v2/knowledge-graph/domain-dependency-graph', { params: { projectPaths, sourceDomain, targetDomain } })
-  },
-  getBuildModules(projectPaths: string[]) {
-    return request.get<BuildModuleGraphData>('/v2/knowledge-graph/build-modules', { params: { projectPaths } })
-  },
-  getBuildModuleCycles(projectPaths: string[]) {
-    return request.get<{ cycles: string[][]; cycleCount: number }>('/v2/knowledge-graph/build-module-cycles', { params: { projectPaths } })
-  },
-  getBuildModuleLayerViolations(projectPaths: string[]) {
-    return request.get<{ violations: ModuleLayerViolation[] }>('/v2/knowledge-graph/build-module-layer-violations', { params: { projectPaths } })
-  },
   getPackageCycles(projectPaths: string[]) {
     return request.get<{ cycles: ClassifiedCycle[]; cycleCount: number }>('/v2/knowledge-graph/package-cycles', { params: { projectPaths } })
   },
   getPackageDependencies(projectPaths: string[]) {
     return request.get<PackageDependencyGraph>('/v2/knowledge-graph/package-dependencies', { params: { projectPaths } })
   },
-  getModuleCycles(projectPaths: string[]) {
-    return request.get<{ cycles: ClassifiedCycle[]; cycleCount: number }>('/v2/knowledge-graph/module-cycles', { params: { projectPaths } })
-  },
   getClassLayerViolations(projectPaths: string[]) {
     return request.get<{ violations: ClassLayerViolation[] }>('/v2/knowledge-graph/class-layer-violations', { params: { projectPaths } })
-  },
-  getClassDependencies(projectPaths: string[], packages?: string[]) {
-    return request.get<ClassDependencyGraph>('/v2/knowledge-graph/class-dependencies', { params: { projectPaths, packages } })
   },
   getLayerDomainMatrix(projectPaths: string[]) {
     return request.get<{ classes: LayerDomainClass[] }>('/v2/knowledge-graph/layer-domain-matrix', { params: { projectPaths } })

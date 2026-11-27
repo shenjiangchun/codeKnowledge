@@ -208,32 +208,6 @@ public class LogAnalysisController {
     }
 
     /**
-     * Task 71: 查询指定配置的报告列表
-     * GET /api/log/reports/by-config/{configId}
-     *
-     * @param configId 配置 ID（来自 AppLogConfig.id）
-     * @return 该配置的所有报告列表
-     */
-    @GetMapping("/reports/by-config/{configId}")
-    public ApiResponse<ReportListResponse> getReportsByConfigId(@PathVariable("configId") Long configId) {
-        try {
-            List<LogAnalysisReportEntity> reports = repository.findByConfigId(configId);
-
-            ReportListResponse response = new ReportListResponse();
-            response.setTotal(reports.size());
-            response.setPage(1);
-            response.setPageSize(reports.size());
-            response.setList(ReportListResponse.fromEntities(reports));
-
-            return ApiResponse.success(response);
-
-        } catch (Exception e) {
-            log.error("查询配置报告列表失败 (configId={})", configId, e);
-            return ApiResponse.error("查询配置报告列表失败：" + e.getMessage());
-        }
-    }
-
-    /**
      * 获取分析报告详情
      * GET /api/log/report/{id}
      *
@@ -531,21 +505,5 @@ public class LogAnalysisController {
             log.error("继续追问失败 (sessionId={})", sessionId, e);
             return ApiResponse.error("继续追问失败：" + e.getMessage());
         }
-    }
-
-    /**
-     * 获取追问会话状态
-     * GET /api/log/followup/{sessionId}
-     */
-    @GetMapping("/followup/{sessionId}")
-    public ApiResponse<FollowupSessionDto> getFollowupSession(@PathVariable("sessionId") String sessionId) {
-        if (logFollowupService == null) {
-            return ApiResponse.error(503, "追问服务未启用");
-        }
-        FollowupSessionDto session = logFollowupService.getSession(sessionId);
-        if (session == null) {
-            return ApiResponse.error(404, "追问会话不存在");
-        }
-        return ApiResponse.success(session);
     }
 }

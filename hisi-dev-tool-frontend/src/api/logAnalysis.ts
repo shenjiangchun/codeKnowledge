@@ -41,11 +41,6 @@ export const logAnalysisApi = {
     return request.get(`/log/reports/by-app/${appId}`) as Promise<ReportListResponse>
   },
 
-  // Task 71: 按配置ID获取报告列表
-  getReportsByConfigId(configId: number): Promise<ReportListResponse> {
-    return request.get(`/log/reports/by-config/${configId}`) as Promise<ReportListResponse>
-  },
-
   // 获取报告详情
   getReport(id: string): Promise<DetailedAnalysisReport> {
     return request.get(`${LOG_FLOW_BASE}/report/${id}`) as Promise<DetailedAnalysisReport>

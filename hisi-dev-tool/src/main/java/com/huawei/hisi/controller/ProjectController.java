@@ -37,7 +37,8 @@ public class ProjectController {
      */
     @PostMapping("/clone")
     public ApiResponse<Map<String, Object>> cloneProject(@RequestBody Map<String, String> request) {
-        String repository = request.get("repository");
+        // 前端发送 {url, branch, directory}；历史契约是 {repository, branch}——两个键都兼容
+        String repository = request.getOrDefault("url", request.get("repository"));
         String branch = request.getOrDefault("branch", "master");
 
         Map<String, Object> result = projectService.cloneProject(repository, branch);
@@ -46,16 +47,6 @@ public class ProjectController {
         } else {
             return ApiResponse.error(result.getOrDefault("message", "克隆失败").toString());
         }
-    }
-
-    /**
-     * 获取项目状态
-     * GET /api/projects/status?project={project}
-     */
-    @GetMapping("/status")
-    public ApiResponse<Map<String, Object>> getStatus(@RequestParam String project) {
-        Map<String, Object> status = projectService.getStatus(project);
-        return ApiResponse.success(status);
     }
 
     /**

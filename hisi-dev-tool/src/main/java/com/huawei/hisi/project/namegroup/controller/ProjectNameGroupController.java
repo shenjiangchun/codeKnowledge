@@ -39,18 +39,6 @@ public class ProjectNameGroupController {
     }
 
     /**
-     * 获取单个分组
-     */
-    @GetMapping("/{groupName}")
-    public ApiResponse<ProjectNameGroup> getGroup(@PathVariable String groupName) {
-        ProjectNameGroup group = repository.findByGroupName(groupName);
-        if (group == null) {
-            return ApiResponse.error("分组不存在: " + groupName);
-        }
-        return ApiResponse.success(group);
-    }
-
-    /**
      * 创建或更新分组
      */
     @PostMapping

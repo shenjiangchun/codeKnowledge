@@ -1,6 +1,5 @@
 package com.huawei.hisi.config;
 
-import com.huawei.hisi.agent.model.DiagnosisRequest;
 import com.huawei.hisi.model.ImpactAnalysisRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
@@ -30,68 +29,6 @@ class BeanValidationTest {
     static void setUpValidator() {
         ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
         validator = factory.getValidator();
-    }
-
-    // ==================== DiagnosisRequest验证测试 ====================
-
-    @Test
-    @DisplayName("测试DiagnosisRequest - errorMessage不能为空")
-    void testDiagnosisRequestErrorMessageNotBlank() {
-        DiagnosisRequest request = DiagnosisRequest.builder()
-                .errorMessage("")  // 空字符串
-                .stackTrace("test stack trace")
-                .build();
-
-        Set<ConstraintViolation<DiagnosisRequest>> violations = validator.validate(request);
-
-        assertFalse(violations.isEmpty(), "errorMessage为空应有验证错误");
-        assertTrue(violations.stream()
-                .anyMatch(v -> v.getPropertyPath().toString().equals("errorMessage")),
-                "应包含errorMessage的验证错误");
-    }
-
-    @Test
-    @DisplayName("测试DiagnosisRequest - errorMessage为null应验证失败")
-    void testDiagnosisRequestErrorMessageNull() {
-        DiagnosisRequest request = DiagnosisRequest.builder()
-                .errorMessage(null)  // null值
-                .build();
-
-        Set<ConstraintViolation<DiagnosisRequest>> violations = validator.validate(request);
-
-        assertFalse(violations.isEmpty(), "errorMessage为null应有验证错误");
-        assertEquals("错误消息不能为空",
-                violations.iterator().next().getMessage(),
-                "验证消息应为'错误消息不能为空'");
-    }
-
-    @Test
-    @DisplayName("测试DiagnosisRequest - 有效请求应通过验证")
-    void testDiagnosisRequestValid() {
-        DiagnosisRequest request = DiagnosisRequest.builder()
-                .errorMessage("NullPointerException occurred")
-                .stackTrace("at com.example.Test.method(Test.java:10)")
-                .projectPath("/project/src")
-                .build();
-
-        Set<ConstraintViolation<DiagnosisRequest>> violations = validator.validate(request);
-
-        assertTrue(violations.isEmpty(), "有效请求应通过验证");
-    }
-
-    @Test
-    @DisplayName("测试DiagnosisRequest - 可选字段可以为null")
-    void testDiagnosisRequestOptionalFieldsNullable() {
-        DiagnosisRequest request = DiagnosisRequest.builder()
-                .errorMessage("Test error")
-                .stackTrace(null)      // 可选字段为null
-                .projectPath(null)     // 可选字段为null
-                .logContent(null)      // 可选字段为null
-                .build();
-
-        Set<ConstraintViolation<DiagnosisRequest>> violations = validator.validate(request);
-
-        assertTrue(violations.isEmpty(), "可选字段为null应通过验证");
     }
 
     // ==================== ImpactAnalysisRequest验证测试 ====================
@@ -176,7 +113,7 @@ class BeanValidationTest {
         // 验证项目使用的是jakarta.validation而非javax.validation
         // Spring Boot 3.x 使用jakarta命名空间
 
-        DiagnosisRequest request = new DiagnosisRequest();
+        ImpactAnalysisRequest request = new ImpactAnalysisRequest();
         assertNotNull(request, "请求对象应使用jakarta.validation注解");
     }
 

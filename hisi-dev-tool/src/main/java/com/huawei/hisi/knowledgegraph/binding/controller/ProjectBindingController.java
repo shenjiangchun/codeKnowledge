@@ -41,23 +41,6 @@ public class ProjectBindingController {
         }
     }
 
-    @PostMapping
-    public ApiResponse<ProjectBinding> create(@Valid @RequestBody CreateRequest request) {
-        try {
-            ProjectBinding saved = bindingService.create(request.backendPath(), request.frontendPath());
-            return ApiResponse.success(saved);
-        } catch (DuplicateKeyException e) {
-            log.warn("[ProjectBinding] 重复绑定被拒绝: backend={}, frontend={}",
-                    request.backendPath(), request.frontendPath());
-            return ApiResponse.error(409, "该前后端目录已绑定");
-        } catch (IllegalArgumentException e) {
-            return ApiResponse.error(400, e.getMessage());
-        } catch (Exception e) {
-            log.error("[ProjectBinding] 创建绑定失败", e);
-            return ApiResponse.error("创建绑定失败");
-        }
-    }
-
     @DeleteMapping("/{id}")
     public ApiResponse<Map<String, Object>> delete(@PathVariable Long id) {
         try {

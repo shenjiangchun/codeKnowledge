@@ -176,20 +176,6 @@ public class KnowledgeGraphController {
     }
 
     /**
-     * 获取单个项目的最新任务
-     * GET /api/knowledge-graph/tasks/latest?projectPath=xxx
-     */
-    @GetMapping("/tasks/latest")
-    public ResponseEntity<KnowledgeGraphTask> getLatestTask(@RequestParam String projectPath) {
-        projectPath = normalizePath(projectPath);
-        KnowledgeGraphTask task = taskService.getLatestTask(projectPath);
-        if (task == null) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(task);
-    }
-
-    /**
      * 批量启动知识图谱生成任务（排队执行）
      * POST /api/knowledge-graph/tasks/generate-batch
      * 多个项目依次入队，完整完成一个（图谱+描述+向量）后再做下一个。
@@ -232,15 +218,6 @@ public class KnowledgeGraphController {
             error.put("message", e.getMessage());
             return ResponseEntity.internalServerError().body(error);
         }
-    }
-
-    /**
-     * 获取生成队列状态
-     * GET /api/knowledge-graph/tasks/queue
-     */
-    @GetMapping("/tasks/queue")
-    public ResponseEntity<Map<String, Object>> getQueueStatus() {
-        return ResponseEntity.ok(kgGenerationQueue.getQueueStatus());
     }
 
     // ============================================================
@@ -1749,50 +1726,6 @@ public class KnowledgeGraphController {
     // ============================================================
     // MyBatis 相关 API
     // ============================================================
-
-    /**
-     * 扫描项目的 MyBatis XML 文件
-     * POST /api/knowledge-graph/mybatis/scan
-     */
-    @PostMapping("/mybatis/scan")
-    public ApiResponse<Map<String, Object>> scanMyBatisXml(@RequestBody Map<String, String> request) {
-        String projectPath = request.get("projectPath");
-        if (projectPath == null || projectPath.isEmpty()) {
-            throw new IllegalArgumentException("项目路径不能为空");
-        }
-
-        projectPath = normalizePath(projectPath);
-
-        try {
-            log.info("[MyBatis Scan] Starting scan for project: {}", projectPath);
-
-            // 删除旧数据（Neo4j）
-            neo4jSqlNodeRepository.deleteExecutesSqlRelationsByProjectPath(projectPath);
-            neo4jSqlNodeRepository.deleteByProjectPath(projectPath);
-
-            // 执行扫描（返回 Neo4j SqlNode 列表）
-            MyBatisXmlScanner.Neo4jScanResult result = myBatisXmlScanner.scanProjectForNeo4j(projectPath);
-
-            // 保存到 Neo4j
-            if (!result.getSqlNodes().isEmpty()) {
-                neo4jSqlNodeRepository.saveAll(result.getSqlNodes());
-                log.info("[MyBatis Scan] Saved {} SQL nodes to Neo4j", result.getSqlNodes().size());
-            }
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", result.isSuccess());
-            response.put("mapperCount", result.getMapperCount());
-            response.put("sqlCount", result.getSqlCount());
-            response.put("errors", result.getErrors());
-
-            log.info("[MyBatis Scan] Completed: {} mappers, {} SQL statements",
-                    result.getMapperCount(), result.getSqlCount());
-            return ApiResponse.success(response);
-        } catch (Exception e) {
-            log.error("[MyBatis Scan] Failed to scan project: {}", projectPath, e);
-            return ApiResponse.error(500, "扫描失败: " + e.getMessage());
-        }
-    }
 
     /**
      * 获取 Mapper 列表
