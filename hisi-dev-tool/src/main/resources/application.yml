@@ -25,7 +25,7 @@ spring:
       - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration
       - org.springframework.ai.model.openai.autoconfigure.OpenAiImageAutoConfiguration
       - org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration
-  # 进程内 MCP 服务端（pi 经 streamable HTTP 连接；只监听本机回环——见 McpLoopbackFilter）
+  # 进程内 MCP 服务端（pi 经 streamable HTTP 连接；只监听本机回环——见 McpEndpointFilter）
   ai:
     mcp:
       server:

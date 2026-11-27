@@ -196,9 +196,8 @@ public class PiFlowClient {
         // 只读流用的普通目录里没有这个请求头——pi 解析不到环境变量时整个 MCP 服务都连不上
         env.put("PI_CODING_AGENT_DIR", installer.agentDirFor(withToken).toString());
         env.put("HISI_LLM_KEY", anthropicApiKey == null ? "" : anthropicApiKey);
-        // Node 版 MCP 服务是 pi 拉起的子进程，直接继承这份环境：后端地址每次都给；
-        // 动作工具以用户身份调后端时用的令牌只在带用户的流里给——只读流的 MCP 进程里拿不到它，动作工具一律拒绝
-        env.put("HISI_API_URL", installer.backendBaseUrl());
+        // 动作工具以用户身份调后端时用的令牌：pi 按配置目录里 mcp.json 的请求头引用
+        // （${HISI_SCOPE_TOKEN}）带进进程内 MCP 服务。只在带用户的流里给——只读流没有它，动作工具一律拒绝
         if (withToken) {
             env.put("HISI_SCOPE_TOKEN", scopeToken);
         }
