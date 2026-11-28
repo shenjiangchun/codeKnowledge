@@ -88,6 +88,14 @@ public class LogAnalysisExecutorV2 {
         return false;
     }
 
+    /**
+     * 释放 inFlight 占位：看门狗判死（processing 超时）后调用，否则手动重试会被
+     * {@link #reserve} 拒绝，报告永远无法重新分析。
+     */
+    public void release(Long reportId) {
+        inFlight.remove(reportId);
+    }
+
     private void runAnalysis(Long reportId) {
         log.info("[LogAnalysisV2] 开始分析 (reportId={})", reportId);
         try {

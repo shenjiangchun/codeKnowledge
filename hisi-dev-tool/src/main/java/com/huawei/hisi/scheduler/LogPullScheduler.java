@@ -28,6 +28,13 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class LogPullScheduler {
 
+    /**
+     * 每轮每应用最多触发的新分析数：突发大量新日志时削峰，防止 10 个并发 LLM 会话打满模型
+     * 资源池。默认查询窗口是最近 15 分钟、拉取周期 10 分钟，被限流的日志会在下轮窗口重叠期内
+     * 被再次拉取，指纹去重保证不丢数据。稳态吞吐 20 条/10min = 120 条/h。
+     */
+    private static final int MAX_SUBMIT_PER_ROUND = 20;
+
     private final AppLogConfigRepository configRepository;
     private final LogAnalysisExecutor logAnalysisExecutor;
     private final LogCloudService logCloudService;
@@ -85,6 +92,7 @@ public class LogPullScheduler {
         // 3. 入库（带指纹去重）
         int storedCount = 0;
         int duplicateCount = 0;
+        int newAnalyses = 0;
         for (LogEntry entry : logs) {
             if (entry.getMessage() == null || entry.getMessage().isEmpty()) {
                 continue;
@@ -117,6 +125,13 @@ public class LogPullScheduler {
                 // 只有新报告才触发异步分析流水线（避免重复分析）
                 if (result.isNew()) {
                     logAnalysisExecutor.executeAnalysis(result.reportId());
+                    newAnalyses++;
+                    if (newAnalyses >= MAX_SUBMIT_PER_ROUND) {
+                        log.info("[LogPullScheduler] 应用 {} 本轮已触发 {} 条新分析，达到上限，"
+                                + "剩余日志留待下轮（查询窗口重叠，指纹去重不丢数据）",
+                                config.getAppId(), newAnalyses);
+                        break;
+                    }
                 } else if (result.isDuplicate()) {
                     duplicateCount++;
                     log.debug("[LogPullScheduler] 重复日志跳过分析 (reportId={})", result.reportId());

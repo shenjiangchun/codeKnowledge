@@ -78,6 +78,11 @@ public class LogAnalysisExecutor {
             // Duplicate found - increment count and return existing reportId
             repository.incrementOccurrenceCount(existing.getReportId());
             log.info("重复日志检测到 (fingerprint={}), 出现次数增加, reportId={}", fingerprint, existing.getReportId());
+            // 指纹命中的是失败报告：说明同一问题再次出现，自动重新分析一次（幂等由 v2 inFlight 保证）
+            if ("failed".equals(existing.getStatus())) {
+                log.info("失败报告再次出现同指纹日志，自动重新分析 (reportId={})", existing.getReportId());
+                reanalyze(existing.getReportId());
+            }
             return SubmitResult.duplicate(existing.getReportId());
         }
 

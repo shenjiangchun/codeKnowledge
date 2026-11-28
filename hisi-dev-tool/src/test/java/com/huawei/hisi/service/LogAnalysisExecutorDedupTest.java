@@ -120,4 +120,29 @@ class LogAnalysisExecutorDedupTest {
             report.getAnalysisStatus().equals("pending")
         ));
     }
+
+    @Test
+    @DisplayName("提交分析 - 指纹命中的是失败报告时自动触发重新分析")
+    void testSubmitForAnalysis_FailedDuplicateTriggersReanalysis() {
+        // Given
+        String fingerprint = "failed-fp-123";
+        LogAnalysisReportEntity failedReport = new LogAnalysisReportEntity();
+        failedReport.setReportId(12345L);
+        failedReport.setErrorFingerprint(fingerprint);
+        failedReport.setStatus("failed");
+
+        when(fingerprintService.generateFingerprint(anyString())).thenReturn(fingerprint);
+        when(repository.findByFingerprint(fingerprint)).thenReturn(failedReport);
+        // reanalyze 内部查报告：返回 null 让它快速返回（不再深入执行分析链）
+        when(repository.findById(12345L)).thenReturn(null);
+
+        // When
+        SubmitResult result = executor.submitForAnalysis("再次出现的异常", "at a.b.C.m(C.java:10)", "user1", null);
+
+        // Then
+        assertTrue(result.isDuplicate());
+        verify(repository).incrementOccurrenceCount(12345L);
+        // reanalyze 被触发（其第一步是查报告；这里 stub 返回 null，reanalyze 随即快速返回）
+        verify(repository).findById(12345L);
+    }
 }

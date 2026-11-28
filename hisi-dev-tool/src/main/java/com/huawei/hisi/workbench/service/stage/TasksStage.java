@@ -94,7 +94,7 @@ public class TasksStage implements StageHandler {
 
         Map<String, Object> payload = null;
         List<String> problems = List.of("尚未生成");
-        for (int attempt = 0; attempt < 2; attempt++) {
+        for (int attempt = 0; attempt < 3; attempt++) {
             String prompt = user.toString();
             if (attempt > 0) {
                 prompt = prompt + "\n\n上一次输出不符合要求：" + problems
@@ -114,7 +114,11 @@ public class TasksStage implements StageHandler {
             log.warn("[WorkbenchFix] 任务清单结构不符 runId={} attempt={}: {}", ctx.run().getId(), attempt, problems);
         }
         if (payload == null || !problems.isEmpty()) {
-            return StageOutcome.failed("任务拆分失败：两次尝试均不符合要求（" + problems + "）");
+            // 模型连续不配合时不卡死整个修复流：按 Spec 用例与待办位置确定性生成任务清单。
+            // 每条测试类落点一个任务 + 一个主文件修复任务，后续开发阶段仍按 Spec 全量实现与验证。
+            ctx.log("任务拆分降级：模型输出多次不符合契约（" + problems
+                    + "），按 Spec 用例与待办位置确定性生成任务清单");
+            payload = fallbackTasks(spec, testClasses, ctx.item().getLocation());
         }
 
         // 把 Spec 的接口清单带下去：开发阶段据此理解接口约束
@@ -197,6 +201,48 @@ public class TasksStage implements StageHandler {
             }
         }
         return new ArrayList<>(out);
+    }
+
+    /**
+     * 确定性降级：模型输出多次不符合契约时不再卡死修复流，按 Spec 的测试用例落点与待办位置
+     * 机械生成任务清单——每个 repro/unit 用例落点一个测试类任务，再加一个主文件修复任务。
+     * 开发阶段仍按 Spec 全量实现与验证，任务清单只是执行顺序的骨架。
+     */
+    private static Map<String, Object> fallbackTasks(Map<String, Object> spec, List<String> testClasses, String location) {
+        List<Map<String, Object>> tasks = new ArrayList<>();
+        List<Map<String, Object>> specTestCases = testCasesOf(spec);
+        String verifyName = specTestCases.stream()
+                .map(tc -> String.valueOf(tc.get("type")))
+                .filter(type -> type.equalsIgnoreCase("repro") || type.equalsIgnoreCase("unit"))
+                .findFirst().isEmpty() ? null : specTestCases.stream()
+                .filter(tc -> {
+                    String type = String.valueOf(tc.get("type"));
+                    return type.equalsIgnoreCase("repro") || type.equalsIgnoreCase("unit");
+                })
+                .map(tc -> String.valueOf(tc.get("name")))
+                .findFirst().orElse(null);
+        for (String testClass : testClasses) {
+            Map<String, Object> task = new LinkedHashMap<>();
+            task.put("title", "编写测试类 " + testClass.substring(testClass.lastIndexOf('.') + 1));
+            task.put("file", "src/test/java/" + testClass.replace('.', '/') + ".java");
+            task.put("anchor", testClass);
+            task.put("verify", verifyName == null ? "对应 Spec 用例" : verifyName);
+            tasks.add(task);
+        }
+        if (location != null && !location.isBlank() && location.contains(".")) {
+            String className = TestsStage.classNameOf(location);
+            if (className.contains(".")) {
+                Map<String, Object> task = new LinkedHashMap<>();
+                task.put("title", "按 Spec 修复 " + location);
+                task.put("file", "src/main/java/" + className.replace('.', '/') + ".java");
+                task.put("anchor", location);
+                task.put("verify", "编译通过且 Spec 用例全部通过");
+                tasks.add(task);
+            }
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("tasks", tasks);
+        return payload;
     }
 
     private static List<Map<String, Object>> optionsOf(Map<String, Object> proposal) {

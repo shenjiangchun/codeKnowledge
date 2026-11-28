@@ -230,7 +230,7 @@ public class LogAnalysisRepository {
         String sql = """
             UPDATE log_analysis_report
             SET error_summary = ?, root_cause = ?, fix_suggestions = ?, code_snippets = ?,
-                status = 'completed', updated_at = strftime('%s','now')
+                status = 'completed', analysis_status = 'completed', updated_at = strftime('%s','now')
             WHERE report_id = ?
             """;
         try {
@@ -253,7 +253,7 @@ public class LogAnalysisRepository {
     public void updateError(Long reportId, String errorMessage) {
         String sql = """
             UPDATE log_analysis_report
-            SET status = 'failed', log_summary = ?, updated_at = strftime('%s','now')
+            SET status = 'failed', analysis_status = 'failed', log_summary = ?, updated_at = strftime('%s','now')
             WHERE report_id = ?
             """;
         try {
@@ -261,6 +261,76 @@ public class LogAnalysisRepository {
         } catch (Exception e) {
             log.error("更新错误信息失败 (reportId={}): {}", reportId, e.getMessage());
         }
+    }
+
+    // ==================== 僵尸清理（启动恢复 + 运行看门狗） ====================
+
+    /**
+     * 启动恢复：把遗留的 pending/processing 全部标 failed（队列是内存态线程池，重启后执行线程必然已消亡）。
+     * 返回受影响行数。
+     */
+    public int markInterruptedAsFailed(String reason) {
+        String sql = """
+            UPDATE log_analysis_report
+            SET status = 'failed', analysis_status = 'failed', log_summary = ?, updated_at = strftime('%s','now')
+            WHERE status IN ('pending', 'processing')
+            """;
+        try {
+            return jdbcTemplate.update(sql, reason);
+        } catch (Exception e) {
+            log.warn("启动恢复标记失败: {}", e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * 看门狗：processing 超过时限（updated_at 早于 cutoff）→ failed，返回判死的 reportId 列表
+     * （调用方据此释放 LogAnalysisExecutorV2.inFlight）。
+     */
+    public List<Long> markProcessingTimeoutFailed(long updatedBefore, String reason) {
+        List<Long> ids = jdbcTemplate.query("""
+                SELECT report_id FROM log_analysis_report
+                WHERE status = 'processing' AND updated_at < ?
+                """, (rs, i) -> rs.getLong(1), updatedBefore);
+        if (!ids.isEmpty()) {
+            failRows(ids, reason);
+        }
+        return ids;
+    }
+
+    /**
+     * 看门狗：pending 超过 24 小时（created_at 早于 cutoff）→ failed。返回受影响行数。
+     */
+    public int markPendingTimeoutFailed(long createdBefore, String reason) {
+        String sql = """
+            UPDATE log_analysis_report
+            SET status = 'failed', analysis_status = 'failed', log_summary = ?, updated_at = strftime('%s','now')
+            WHERE status = 'pending' AND created_at < ?
+              AND (analysis_status IS NULL OR analysis_status = 'pending')
+            """;
+        try {
+            return jdbcTemplate.update(sql, reason, createdBefore);
+        } catch (Exception e) {
+            log.warn("pending 超时标记失败: {}", e.getMessage());
+            return 0;
+        }
+    }
+
+    private void failRows(List<Long> ids, String reason) {
+        StringBuilder placeholders = new StringBuilder();
+        Object[] params = new Object[ids.size() + 1];
+        params[0] = reason;
+        for (int i = 0; i < ids.size(); i++) {
+            if (i > 0) {
+                placeholders.append(',');
+            }
+            placeholders.append('?');
+            params[i + 1] = ids.get(i);
+        }
+        jdbcTemplate.update("""
+                UPDATE log_analysis_report
+                SET status = 'failed', analysis_status = 'failed', log_summary = ?, updated_at = strftime('%s','now')
+                WHERE report_id IN (""" + placeholders + ")", params);
     }
 
     // ==================== Task 4: Fingerprint Deduplication Methods ====================
@@ -298,11 +368,13 @@ public class LogAnalysisRepository {
 
     /**
      * Task 7: 统计在指定时间之前创建的pending报告数量（用于队列位置计算）
+     * 只按 status 统计：status 是终态权威列（completed/failed 也会残留 analysis_status='pending'，
+     * 按 analysis_status 统计会把已完成任务全算进队里）。
      */
     public int countPendingBefore(LocalDateTime createdAt) {
         String sql = """
             SELECT COUNT(*) FROM log_analysis_report
-            WHERE analysis_status = 'pending'
+            WHERE status = 'pending'
             AND created_at < strftime('%s', ?)
             """;
         try {
