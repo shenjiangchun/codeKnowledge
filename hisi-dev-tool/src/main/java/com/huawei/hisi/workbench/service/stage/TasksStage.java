@@ -126,6 +126,11 @@ public class TasksStage implements StageHandler {
         if (spec.get("httpMappings") != null) {
             output.put("httpMappings", spec.get("httpMappings"));
         }
+        // OpenSpec 的 tasks.md 由任务清单确定性转换；DevelopStage 与 proposal/spec 增量一起落盘
+        output.put("tasksMd", com.huawei.hisi.workbench.service.OpenSpecDocs.tasksMd(
+                output.get("tasks") instanceof List<?> list
+                        ? list.stream().filter(Map.class::isInstance).map(t -> (Map<String, Object>) t).toList()
+                        : List.of()));
         ctx.publish("tasks", output);
         ctx.log("任务拆分完成：" + (output.get("tasks") instanceof List<?> list ? list.size() : 0) + " 个任务");
         return StageOutcome.done(output);

@@ -79,6 +79,18 @@ public class DevelopStage implements StageHandler {
             return StageOutcome.failed("任务清单为空");
         }
         Map<String, Object> spec = ctx.artifact("spec");
+        // OpenSpec 变更目录落盘：Spec/Tasks 阶段的契约确定性转换为 proposal.md / tasks.md / spec 增量，
+        // pi 编码 agent 从这里读「为什么改、改什么、怎么算做完」，并按约定回写勾选状态
+        Map<String, Object> openspec = spec.get("openspec") instanceof Map<?, ?> o ? mapsOfOne(o) : Map.of();
+        if (!openspec.isEmpty()) {
+            com.huawei.hisi.workbench.service.OpenSpecDocs.write(worktree,
+                    String.valueOf(openspec.get("changeId")),
+                    String.valueOf(openspec.getOrDefault("capability", "fix")),
+                    String.valueOf(openspec.getOrDefault("proposalMd", "")),
+                    String.valueOf(ctx.artifact("tasks").getOrDefault("tasksMd", "")),
+                    String.valueOf(openspec.getOrDefault("specDeltaMd", "")));
+            ctx.log("OpenSpec 变更已落盘：openspec/changes/" + openspec.get("changeId") + "/");
+        }
         String failure = failureSummary(ctx);
         if (!failure.isEmpty()) {
             ctx.log("带着上一轮验证的失败详情回到开发");
@@ -197,6 +209,9 @@ public class DevelopStage implements StageHandler {
             你是资深工程师，在一个独立的 git worktree 里完成一项技术债修复的开发任务。工作目录就是 worktree 根，只能修改这个目录里的文件。
 
             工作方式：
+            - 工作目录里有 openspec/changes/ 下的变更目录（业界 OpenSpec 约定）：proposal.md（为什么改）、
+              tasks.md（实现清单）、specs/<capability>/spec.md（需求与场景）。先读它们再动手，任务清单以 tasks.md 为准；
+              完成一项任务就把 tasks.md 里对应的 - [ ] 改成 - [x]（用 edit 工具，不要用 git）。
             - 先读任务清单涉及的文件，弄清现状再动手；需要查调用关系可以用图谱工具。
             - 按任务清单逐项实现；改动尽量小，只改实现任务必需的部分，不重写无关代码。
             - Spec 的测试用例是验收标准：把它们落成自动化用例。不要为了用例通过去削弱断言——要修的是实现代码；
@@ -415,6 +430,11 @@ public class DevelopStage implements StageHandler {
             }
         }
         return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> mapsOfOne(Object raw) {
+        return raw instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
     }
 
     private static String limit(String text, int max) {

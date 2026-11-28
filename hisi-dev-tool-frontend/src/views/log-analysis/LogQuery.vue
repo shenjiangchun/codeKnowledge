@@ -432,7 +432,7 @@
                 <el-button type="info" link size="small" @click="viewReportSnapshot(row)">
                   查看快照
                 </el-button>
-                <el-button type="warning" link size="small" @click="handleReanalyzeReport(row)" :disabled="row.status === 'pending' || row.status === 'processing'" :loading="row.reanalyzing">
+                <el-button type="warning" link size="small" @click="handleReanalyzeReport(row)" :disabled="row.status === 'processing' || row.reanalyzing" :loading="row.reanalyzing">
                   重新分析
                 </el-button>
                 <el-button type="danger" link size="small" @click="handleDeleteReport(row)">
@@ -1072,18 +1072,18 @@ const handleReanalyzeReport = async (report: Report) => {
       { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }
     )
 
-    // Set reanalyzing state
+    // 防呆只在首次点击触发：置灰几秒防止连点重复提交，不做永久禁用（pending 报告也应能重新分析）
     report.reanalyzing = true
     await logAnalysisApi.reanalyze(report.reportId)
     ElMessage.success('已触发重新分析，请稍后刷新查看结果')
-
-    // Refresh reports list after 3 seconds
-    setTimeout(loadReports, 3000)
+    setTimeout(() => {
+      report.reanalyzing = false
+      loadReports()
+    }, 3000)
   } catch (e: any) {
     if (e !== 'cancel') {
       ElMessage.error('触发重新分析失败: ' + e.message)
     }
-  } finally {
     report.reanalyzing = false
   }
 }

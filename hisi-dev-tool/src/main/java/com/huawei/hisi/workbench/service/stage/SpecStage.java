@@ -147,8 +147,19 @@ public class SpecStage implements StageHandler {
         if (!mappings.isEmpty()) {
             output.put("httpMappings", mappings);
         }
+        // OpenSpec 三件套（proposal.md / spec 增量）由契约确定性转换：不依赖模型再写一遍文档。
+        // 任务清单部分在 TasksStage 补 tasks.md；DevelopStage 落盘到 worktree 的 openspec/changes/<id>/。
+        String changeId = com.huawei.hisi.workbench.service.OpenSpecDocs.changeId(ctx.run().getId());
+        String capability = com.huawei.hisi.workbench.service.OpenSpecDocs.capabilityOf(ctx.item());
+        Map<String, Object> openspec = new LinkedHashMap<>();
+        openspec.put("changeId", changeId);
+        openspec.put("capability", capability);
+        openspec.put("proposalMd", com.huawei.hisi.workbench.service.OpenSpecDocs.proposalMd(
+                ctx.item(), evidence, proposal, chosen));
+        openspec.put("specDeltaMd", com.huawei.hisi.workbench.service.OpenSpecDocs.specDeltaMd(output));
+        output.put("openspec", openspec);
         ctx.publish("spec", output);
-        ctx.log("Spec 完成：" + caseCount(output) + " 条测试用例");
+        ctx.log("Spec 完成：" + caseCount(output) + " 条测试用例（OpenSpec 变更 " + changeId + "）");
         return StageOutcome.done(output);
     }
 
