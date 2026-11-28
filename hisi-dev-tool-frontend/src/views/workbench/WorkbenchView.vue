@@ -21,6 +21,9 @@ const syncing = ref(false)
 const projectFilter = ref('')
 const onlyP0 = ref(false)
 const query = ref('')
+const sevFilter = ref('')
+const srcFilter = ref('')
+const statusFilter = ref('')
 const selectedIds = ref<number[]>([])
 
 const drawer = ref(false)
@@ -52,6 +55,9 @@ const rows = computed(() => {
     .filter(i => i.status !== 'IGNORED')
     .filter(i => !projectFilter.value || i.projectPath === projectFilter.value)
     .filter(i => !onlyP0.value || i.severity === 'P0')
+    .filter(i => !sevFilter.value || i.severity === sevFilter.value)
+    .filter(i => !srcFilter.value || i.source === srcFilter.value)
+    .filter(i => !statusFilter.value || i.status === statusFilter.value)
     .filter(i => !q || i.title.toLowerCase().includes(q) || (i.location ?? '').toLowerCase().includes(q))
     .sort((a, b) => {
       const sev = { P0: 0, P1: 1, P2: 2 } as const
@@ -255,7 +261,53 @@ onUnmounted(() => clearInterval(pollTimer))
             <thead>
               <tr>
                 <th class="w-check"><input type="checkbox" :checked="allChecked" :disabled="!selectable.length" @change="toggleAll" /></th>
-                <th>严重度</th><th>待办</th><th>项目</th><th>来源</th><th>证据</th><th>近 7 日</th><th>状态 / 进度</th><th>操作</th>
+                <th>
+                  <div class="th-f">
+                    <span>严重度</span>
+                    <select v-model="sevFilter" class="th-sel" title="按严重度筛选">
+                      <option value="">全部</option>
+                      <option value="P0">P0</option>
+                      <option value="P1">P1</option>
+                      <option value="P2">P2</option>
+                    </select>
+                  </div>
+                </th>
+                <th>待办</th>
+                <th>
+                  <div class="th-f">
+                    <span>项目</span>
+                    <select v-model="projectFilter" class="th-sel" title="按项目筛选">
+                      <option value="">全部</option>
+                      <option v-for="[path] in projectStats" :key="path" :value="path">{{ projectLabel(path) }}</option>
+                    </select>
+                  </div>
+                </th>
+                <th>
+                  <div class="th-f">
+                    <span>来源</span>
+                    <select v-model="srcFilter" class="th-sel" title="按来源筛选">
+                      <option value="">全部</option>
+                      <option value="log">日志</option>
+                      <option value="arch_ai">架构·AI</option>
+                      <option value="arch_rule">架构·规则</option>
+                    </select>
+                  </div>
+                </th>
+                <th>证据</th><th>近 7 日</th>
+                <th>
+                  <div class="th-f">
+                    <span>状态 / 进度</span>
+                    <select v-model="statusFilter" class="th-sel" title="按状态筛选">
+                      <option value="">全部</option>
+                      <option value="NEW">待处理</option>
+                      <option value="RUNNING">修复中</option>
+                      <option value="WAITING">待你确认</option>
+                      <option value="DONE">已清零</option>
+                      <option value="FAILED">失败</option>
+                    </select>
+                  </div>
+                </th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -376,6 +428,9 @@ onUnmounted(() => clearInterval(pollTimer))
 .t-scroll { flex: 1; overflow: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th { position: sticky; top: 0; background: #fcfcfd; text-align: left; font-weight: 500; font-size: 12px; color: #6b7280; padding: 7px 10px; border-bottom: 1px solid #e5e7eb; white-space: nowrap; z-index: 1; }
+.th-f { display: flex; flex-direction: column; gap: 3px; }
+.th-sel { border: 1px solid #e5e7eb; border-radius: 4px; background: #fff; color: #374151; font-size: 11px; padding: 1px 4px; max-width: 104px; cursor: pointer; }
+.th-sel:focus { outline: 1px solid #2563eb; }
 td { padding: 8px 10px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
 tbody tr:hover { background: #f9fafb; }
 tr.waiting { background: #fffbeb; }

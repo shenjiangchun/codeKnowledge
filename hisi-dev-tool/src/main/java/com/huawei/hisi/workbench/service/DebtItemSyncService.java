@@ -100,17 +100,31 @@ public class DebtItemSyncService {
             return SyncStats.of(0, 0, 0);
         }
 
-        Set<String> existing = new LinkedHashSet<>();
+        Set<String> existingKeys = new LinkedHashSet<>();
+        Map<String, WorkbenchItem> existing = new HashMap<>();
         for (WorkbenchItem item : workbenchRepository.listItems()) {
-            existing.add(item.getItemKey());
+            existingKeys.add(item.getItemKey());
+            existing.put(item.getItemKey(), item);
         }
         int created = 0;
         for (WorkbenchItem item : candidates) {
-            if (!existing.contains(item.getItemKey())) {
+            if (!existingKeys.contains(item.getItemKey())) {
                 created++;
             }
+            WorkbenchItem prev = existing.get(item.getItemKey());
             workbenchRepository.upsertItem(item);
-            workbenchRepository.upsertDay(item.getItemKey(), today(), item.getOccurrenceCount() == null ? 1 : item.getOccurrenceCount());
+            // 近 7 日趋势 = 每日「新增出现次数」：只在待办首次出现、或累计出现次数较上次
+            // 同步有增长时给今天记账（增量），其余同步不动 day 表。此前每轮同步都给所有
+            // 待办把今天的累计数盖章一遍，导致所有曲线一模一样。
+            int current = item.getOccurrenceCount() == null ? 1 : item.getOccurrenceCount();
+            if (prev == null) {
+                workbenchRepository.upsertDay(item.getItemKey(), today(), current);
+            } else {
+                int previous = prev.getOccurrenceCount() == null ? 1 : prev.getOccurrenceCount();
+                if (current > previous) {
+                    workbenchRepository.upsertDay(item.getItemKey(), today(), current - previous);
+                }
+            }
         }
         long logItems = candidates.stream().filter(i -> WorkbenchItem.SOURCE_LOG.equals(i.getSource())).count();
         long archItems = candidates.size() - logItems;

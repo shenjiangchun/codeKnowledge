@@ -161,6 +161,39 @@ class DebtItemSyncServiceTest {
         assertEquals(WorkbenchItem.STATUS_NEW, captor.getValue().getStatus());
     }
 
+    @Test
+    void dayCountIsOnlyStampedOnFirstSeenOrOccurrenceGrowth() {
+        LogAnalysisRepository logs = mock(LogAnalysisRepository.class);
+        WorkbenchRepository repo = mock(WorkbenchRepository.class);
+        LogAnalysisReportEntity report = new LogAnalysisReportEntity();
+        report.setReportId(9L);
+        report.setErrorType("SQLException");
+        report.setQueryParams(Map.of("projectPath", "D:/svc"));
+        report.setOccurrenceCount(3);
+        when(logs.findByStatus("completed")).thenReturn(List.of(report));
+
+        // 1) 存量待办、出现次数不变：同步后不记账（修复前每轮都给今天盖章，导致所有曲线一模一样）
+        WorkbenchItem existing = WorkbenchItem.builder()
+                .itemKey("log:D:/svc:9").status(WorkbenchItem.STATUS_NEW).occurrenceCount(3).build();
+        when(repo.listItems()).thenReturn(List.of(existing));
+        service(logs, mock(AppLogConfigRepository.class), mock(ArchDiagnosisSnapshotRepository.class),
+                mock(AgentEventRepository.class), repo).sync();
+        verify(repo, never()).upsertDay(anyString(), anyString(), any(int.class));
+
+        // 2) 首次出现的待办：按当天出现次数记账一次
+        when(repo.listItems()).thenReturn(List.of());
+        service(logs, mock(AppLogConfigRepository.class), mock(ArchDiagnosisSnapshotRepository.class),
+                mock(AgentEventRepository.class), repo).sync();
+        verify(repo).upsertDay(eq("log:D:/svc:9"), anyString(), eq(3));
+
+        // 3) 出现次数较上次增长：按增量记账
+        report.setOccurrenceCount(5);
+        when(repo.listItems()).thenReturn(List.of(existing));
+        service(logs, mock(AppLogConfigRepository.class), mock(ArchDiagnosisSnapshotRepository.class),
+                mock(AgentEventRepository.class), repo).sync();
+        verify(repo).upsertDay(eq("log:D:/svc:9"), anyString(), eq(2));
+    }
+
     // ──────────────────────────── 架构聚合 ────────────────────────────
 
     @Test

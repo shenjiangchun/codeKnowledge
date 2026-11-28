@@ -73,7 +73,8 @@ class WorkbenchControllerTest {
         Map<String, Object> summary = response.getData();
         assertEquals(6, ((Number) summary.get("total")).intValue());
         assertEquals(3, ((Number) summary.get("open")).intValue());
-        assertEquals(1, ((Number) summary.get("running")).intValue());
+        // 在途修复 = RUNNING + WAITING（方案确认门阶段也算在途），waiting 是其中的子集
+        assertEquals(2, ((Number) summary.get("running")).intValue());
         assertEquals(1, ((Number) summary.get("waiting")).intValue());
         assertEquals(1, ((Number) summary.get("done")).intValue());
         // 严重度只统计未清零的

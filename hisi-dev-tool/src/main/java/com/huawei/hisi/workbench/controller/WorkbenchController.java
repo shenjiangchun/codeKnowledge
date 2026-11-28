@@ -58,8 +58,10 @@ public class WorkbenchController {
             for (WorkbenchItem item : items) {
                 switch (item.getStatus()) {
                     case WorkbenchItem.STATUS_NEW -> { open++; }
+                    // 在途修复 = 修复中 + 方案确认中：流程进了确认门待办状态是 WAITING，
+                    // 但修复流水线仍在途，看板大数必须仍把它计为在途
                     case WorkbenchItem.STATUS_RUNNING -> { running++; open++; }
-                    case WorkbenchItem.STATUS_WAITING -> { waiting++; open++; }
+                    case WorkbenchItem.STATUS_WAITING -> { running++; waiting++; open++; }
                     case WorkbenchItem.STATUS_DONE -> {
                         done++;
                         if (item.getUpdatedAt() != null && item.getUpdatedAt() >= weekAgo) {
